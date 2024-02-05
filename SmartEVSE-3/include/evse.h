@@ -190,7 +190,7 @@ extern RemoteDebug Debug;
 #define AP_PASSWORD "00000000"
 #define CARD_OFFSET 0
 #define INITIALIZED 0
-#define ENABLE_C2 NOT_PRESENT
+#define C2_NOT_PRESENT NOT_PRESENT                                              //CvL: change to better name
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
@@ -505,7 +505,7 @@ const struct {
     {"ENE DIVI","Divisor for Energy (kWh) of custom electric meter",  0, 7, EMCUSTOM_EDIVISOR},
     {"READ MAX","Max register read at once of custom electric meter", 3, 255, 3},
     {"WIFI",    "Connect to WiFi access point",                       0, 2, WIFI_MODE},
-    {"CONTACT2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
+    {"CONTACT2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, C2_NOT_PRESENT},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
     {"MODEM",   "Is an ISO15118 modem installed (experimental)",      0, 1, NOTPRESENT},
     {"SUMMAINS","Capacity Rate limit on sum of MAINS Current (A)",    10, 600, MAX_SUMMAINS},

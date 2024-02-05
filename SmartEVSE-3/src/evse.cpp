@@ -152,7 +152,7 @@ String APpassword = "00000000";
 uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
 String TZname = "";
 
-EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
+EnableC2_t EnableC2 = C2_NOT_PRESENT;                                       // Contactor C2
 Modem_t Modem = NOTPRESENT;                                                 // Is an ISO15118 modem installed (experimental)
 uint16_t maxTemp = MAX_TEMPERATURE;
 
@@ -623,8 +623,8 @@ void setMode(uint8_t NewMode) {
     bool switchOnLater = false;
     if (EnableC2 == SOLAR_OFF) {
         if ((Mode != MODE_SOLAR && NewMode == MODE_SOLAR) || (Mode == MODE_SOLAR && NewMode != MODE_SOLAR)) {
-            //we are switching from non-solar to solar
-            //since we EnableC2 == SOLAR_OFF C2 is turned On now, and should be turned off
+            //we are switching from non-solar to solar or vise versa
+            //CvL: status of C2 should be re-evaluated and should be turned off for this
             setAccess(0);                                                       //switch to OFF
             switchOnLater = true;
         }
@@ -939,6 +939,8 @@ void Set_Nr_of_Phases_Charging(void) {
         Nr_Of_Phases_Charging = 0; //undetected
     }
 
+    //CvL: why are these checks required? don't we trust the measurements above?
+    //CvL: It looks like we also do not trust the status of contactor C2?
     if (EnableC2 != AUTO && EnableC2 != NOT_PRESENT) {                         // no further sanity checks possible when AUTO or NOT_PRESENT
         if (Nr_Of_Phases_Charging != 1 && (EnableC2 == ALWAYS_OFF || (EnableC2 == SOLAR_OFF && Mode == MODE_SOLAR))) {
             _LOG_A("Error in detecting phases: EnableC2=%s and Nr_Of_Phases_Charging=%i.\n", StrEnableC2[EnableC2], Nr_Of_Phases_Charging);
@@ -1442,6 +1444,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             break;
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
+            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
             break;
         case MENU_CONFIG:
             Config = val;
@@ -3476,7 +3479,7 @@ void read_settings() {
         DelayedStopTime.epoch2 = preferences.getULong("DelayedStopTime", DELAYEDSTOPTIME);    //epoch2 is 4 bytes long on arduino
         TZname = preferences.getString("Timezone","Europe/Berlin");
 
-        EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
+        EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", C2_NOT_PRESENT);
         Modem = (Modem_t) preferences.getUShort("Modem", NOTPRESENT);
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
@@ -3973,6 +3976,7 @@ void StartwebServer(void) {
 
         if(request->hasParam("enable_C2")) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
+            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
         }
