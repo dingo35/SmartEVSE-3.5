@@ -598,6 +598,7 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
     if(count < 9) return StrErrorNameWeb[count];
     else return "Multiple Errors";
 }
+
 /**
  * Set EVSE mode
  * 
@@ -689,6 +690,17 @@ uint8_t Force_Single_Phase_Charging() {                                         
     //in case we don't know, stick to 3f charging
     return 0;
 }
+/**
+ * Check if switching to single phase still is valid
+ */
+void ReEvaluateSwitchingToSinglePhase(void) {
+    if (Force_Single_Phase_Charging()) { //nothing to do
+        return;
+    }
+    if (State == STATE_C) setState(STATE_C1);                               // tell EV to stop charging
+    Switching_To_Single_Phase = FALSE;                                      // reset Switching_To_Single_Phase to be able to get back to 3f
+                                                                            // evaluation is done in STATE_C of SetState()   
+}                                          
 
 void setState(uint8_t NewState) {
     if (State != NewState) {
@@ -804,7 +816,7 @@ void setAccess(bool Access) {
         else if (State == STATE_B || State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE || State == STATE_MODEM_DENIED) setState(STATE_B1);
     }
 
-    //make mode and start/stoptimes persistent on reboot
+    //make Access and CardOffset persistent on reboot
     if (preferences.begin("settings", false) ) {                        //false = write mode
         preferences.putUChar("Access", Access_bit);
         preferences.putUChar("CardOffset", CardOffset);
@@ -1009,9 +1021,9 @@ void CalcBalancedCurrent(char mod) {
     else { // start MODE_SOLAR || MODE_SMART
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
-        uint8_t Temp_Phases;
-        Temp_Phases = (Nr_Of_Phases_Charging ? Nr_Of_Phases_Charging : 3);      // in case nr of phases not detected, assume 3
-        Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/Temp_Phases));
+        uint8_t Temp_Nr_Of_Phases_Charging;
+        Temp_Nr_Of_Phases_Charging = (Nr_Of_Phases_Charging ? Nr_Of_Phases_Charging : 3);      // in case nr of phases not detected, assume 3
+        Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/Temp_Nr_Of_Phases_Charging));
         if (!mod) {                                                             // no new EVSE's charging
                                                                                 // For Smart mode, no new EVSE asking for current
                                                                                 // But for Solar mode we _also_ have to guard MaxCircuit and Maxmains!
@@ -1055,15 +1067,19 @@ void CalcBalancedCurrent(char mod) {
             }                                                                   // we already corrected Isetbalance in case of NOT enough power MaxCircuit/MaxMains
             _LOG_V("Checkpoint 3 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced/10, (float)IsumImport/10, (float)Isum/10, ImportCurrent);
 
+            // If charging on 1 fase and we have lots of sun power re-evaluate 3f
+            if ( Temp_Nr_Of_Phases_Charging == 1 && IsumImport < (-1 * 3 * BalancedLeft * MinCurrent * 10) ) { 
+                //TODO implement waiting time
+                ReEvaluateSwitchingToSinglePhase();           
+            }
+
             // If IsetBalanced is below MinCurrent or negative, make sure it's set to MinCurrent.
             if ( (IsetBalanced < (BalancedLeft * MinCurrent * 10)) || (IsetBalanced < 0) ) {
                 IsetBalanced = BalancedLeft * MinCurrent * 10;
                 // ----------- Check to see if we have to continue charging on solar power alone ----------
                 if (BalancedLeft && StopTime && (IsumImport > 10)) {
                     //TODO maybe enable solar switching for loadbl = 1
-                    if (EnableC2 == AUTO && LoadBl == 0)
-                        Set_Nr_of_Phases_Charging();
-                    if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && LoadBl == 0) { // when loadbalancing is enabled we don't do forced single phase charging
+                     if (Temp_Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && LoadBl == 0) { // when loadbalancing is enabled we don't do forced single phase charging
                         _LOG_A("Switching to single phase.\n");                 // because we wouldnt know which currents to make available to the nodes...
                                                                                 // since we don't know how many phases the nodes are using...
                         //switching contactor2 off works ok for Skoda Enyaq but Hyundai Ioniq 5 goes into error, so we have to switch more elegantly
@@ -3976,10 +3992,7 @@ void StartwebServer(void) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
-            // when switching EnableC2 setting re-evaluate status Switching_To_Single_Phase
-            setAccess(0);                                                   //switch to OFF
-            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
-            setAccess(1);
+            ReEvaluateSwitchingToSinglePhase();
         }
 
         if(request->hasParam("modem")) {
