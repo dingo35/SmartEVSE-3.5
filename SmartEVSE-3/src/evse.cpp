@@ -598,7 +598,6 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
     if(count < 9) return StrErrorNameWeb[count];
     else return "Multiple Errors";
 }
-
 /**
  * Set EVSE mode
  * 
@@ -1444,7 +1443,6 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             break;
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
-            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
             break;
         case MENU_CONFIG:
             Config = val;
@@ -3976,9 +3974,12 @@ void StartwebServer(void) {
 
         if(request->hasParam("enable_C2")) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
-            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
+            // when switching EnableC2 setting re-evaluate status Switching_To_Single_Phase
+            setAccess(0);                                                   //switch to OFF
+            Switching_To_Single_Phase = FALSE;                              //CvL: reset Switching_To_Single_Phase to be able to get back to 3f                                              
+            setAccess(1);
         }
 
         if(request->hasParam("modem")) {

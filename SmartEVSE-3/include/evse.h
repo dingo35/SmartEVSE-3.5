@@ -27,7 +27,7 @@
 
 #ifndef DBG
 //the wifi-debugger is available by telnetting to your SmartEVSE device
-#define DBG 0  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
+#define DBG 1  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
 #endif
 
 #ifndef FAKE_RFID
@@ -190,7 +190,7 @@ extern RemoteDebug Debug;
 #define AP_PASSWORD "00000000"
 #define CARD_OFFSET 0
 #define INITIALIZED 0
-#define C2_NOT_PRESENT NOT_PRESENT                                              //CvL: change to better name
+#define C2_NOT_PRESENT NOT_PRESENT                                              //CvL: changed to better name
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
@@ -451,9 +451,11 @@ extern uint8_t MenuItems[MENU_EXIT];
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 enum Modem_t { NOTPRESENT, EXPERIMENT };
+enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
 const static char StrModem[][12] = { "Not present", "Experiment" };
-enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
+const static char StrSinglePhase[][16] = { "False", "Going To Switch", "After Switch" };
+
 extern Single_Phase_t Switching_To_Single_Phase;
 extern uint8_t Nr_Of_Phases_Charging;
 
