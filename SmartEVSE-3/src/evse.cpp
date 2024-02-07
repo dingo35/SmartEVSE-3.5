@@ -141,7 +141,7 @@ uint8_t DelayedRepeat;                                                      // 0
 uint8_t MainsMeter = MAINS_METER;                                           // Type of Mains electric meter (0: Disabled / Constants EM_*)
 uint8_t MainsMeterAddress = MAINS_METER_ADDRESS;
 uint8_t Grid = GRID;                                                        // Type of Grid connected to Sensorbox (0:4Wire / 1:3Wire )
-uint8_t EVMeter = EV_METER;                                                 // Type of EV electric meter (0: Disabled / Constants EM_*)
+uint8_t EVMeter = NO_EV_METER;                                              // Type of EV electric meter (0: Disabled / Constants EM_*)
 uint8_t EVMeterAddress = EV_METER_ADDRESS;
 uint8_t RFIDReader = RFID_READER;                                           // RFID Reader (0:Disabled / 1:Enabled / 2:Enable One / 3:Learn / 4:Delete / 5:Delete All)
 #if FAKE_RFID
@@ -161,7 +161,7 @@ int32_t Irms_EV[3]={0, 0, 0};                                               // M
 int32_t Old_Irms[3]={0, 0, 0};                                              // Saved momentary current per Phase (23 = 2.3A) (resolution 100mA)
                                                                             // Max 3 phases supported
 uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
-Single_Phase_t Switching_To_Single_Phase = FALSE;
+UseSinglePhase_t UseSinglePhase = NO;
 
 uint8_t State = STATE_A;
 uint8_t ErrorFlags = NO_ERROR;
@@ -242,6 +242,7 @@ uint8_t CalActive = 0;                                                      // W
 uint16_t Iuncal = 0;                                                        // Uncalibrated CT1 measurement (resolution 10mA)
 
 uint16_t SolarStopTimer = 0;
+uint16_t Solar3PhaseStartTimer = 0;
 int32_t EnergyCharged = 0;                                                  // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
 int32_t EnergyMeterStart = 0;                                               // kWh meter value is stored once EV is connected to EVSE (Wh)
 int32_t PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
@@ -639,6 +640,7 @@ void setMode(uint8_t NewMode) {
     if (NewMode == MODE_SMART) {
         ErrorFlags &= ~(NO_SUN | LESS_6A);                                      // Clear All errors
         setSolarStopTimer(0);                                                   // Also make sure the SolarTimer is disabled.
+        Solar3PhaseStartTimer = 0;                                              // Alse stop 3f start timer
     }
     ChargeDelay = 0;                                                            // Clear any Chargedelay
     BacklightTimer = BACKLIGHT;                                                 // Backlight ON
@@ -690,16 +692,19 @@ uint8_t Force_Single_Phase_Charging() {                                         
     //in case we don't know, stick to 3f charging
     return 0;
 }
+
 /**
- * Check if switching to single phase still is valid
+ * Set new UseSinglePhase gentle
  */
-void ReEvaluateSwitchingToSinglePhase(void) {
-    if (Force_Single_Phase_Charging()) { //nothing to do
-        return;
+void SetUseSinglePhase(UseSinglePhase_t NewUseSinglePhase) {
+    _LOG_D("Trying to switvh from %s to %s.\n", StrSinglePhase[UseSinglePhase], StrSinglePhase[NewUseSinglePhase]);
+    if ((NewUseSinglePhase == UseSinglePhase) || (Force_Single_Phase_Charging() && NewUseSinglePhase == NO)) {
+        return;                                                             // nothing to do
     }
     if (State == STATE_C) setState(STATE_C1);                               // tell EV to stop charging
-    Switching_To_Single_Phase = FALSE;                                      // reset Switching_To_Single_Phase to be able to get back to 3f
-                                                                            // evaluation is done in STATE_C of SetState()   
+    if (NewUseSinglePhase != NOCHANGE) { 
+        UseSinglePhase = NewUseSinglePhase;                                 // work is done in STATE_C of SetState()   
+    }
 }                                          
 
 void setState(uint8_t NewState) {
@@ -764,27 +769,23 @@ void setState(uint8_t NewState) {
             CONTACTOR1_OFF;
             CONTACTOR2_OFF;
             if (Modem)
-                DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
+                DisconnectTimeCounter = -1;                                     // Disable Disconnect timer. Car is connected
             timerAlarmWrite(timerA, PWM_95, false);                             // Enable Timer alarm, set to diode test (95%)
             SetCurrent(ChargeCurrent);                                          // Enable PWM
             break;      
         case STATE_C:                                                           // State C2
             ActivationMode = 255;                                               // Disable ActivationMode
 
-            if (Switching_To_Single_Phase == GOING_TO_SWITCH) {
-                    _LOG_A("Switching CONTACTOR C2 OFF.\n");
-                    CONTACTOR2_OFF;
-                    setSolarStopTimer(0); //TODO still needed? now we switched contactor2 off, review if we need to stop solar charging
-                    //Nr_Of_Phases_Charging = 1; this will be detected automatically
-                    Switching_To_Single_Phase = AFTER_SWITCH;                   // we finished the switching process,
-                                                                                // BUT we don't know which is the single phase
-            }
-
             CONTACTOR1_ON;
-            if (!Force_Single_Phase_Charging() && Switching_To_Single_Phase != AFTER_SWITCH) {                               // in AUTO mode we start with 3phases
+            if (Force_Single_Phase_Charging() || UseSinglePhase == YES) {      
+                _LOG_I("Switching CONTACTOR C2 OFF.\n");
+                CONTACTOR2_OFF;
+            }
+            else {                                                              // in AUTO mode we start with 3phases
                 _LOG_I("Switching CONTACTOR C2 ON.\n");
                 CONTACTOR2_ON;                                                  // Contactor2 ON
             }
+
             LCDTimer = 0;
             break;
         case STATE_C1:
@@ -884,11 +885,7 @@ char IsCurrentAvailable(void) {
     if ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10)) {
         return 0;                                                           // Not enough current available!, return with error
     }
-    //assume the current should be available on all 3 phases
-    bool must_be_single_phase_charging = (EnableC2 == ALWAYS_OFF || (Mode == MODE_SOLAR && EnableC2 == SOLAR_OFF) ||
-            (Mode == MODE_SOLAR && EnableC2 == AUTO && Switching_To_Single_Phase == AFTER_SWITCH));
-    int Phases = must_be_single_phase_charging ? 1 : 3;
-    if ((Phases * ActiveEVSE * (MinCurrent * 10) + Isum) > (MaxSumMains * 10)) {
+    if (((UseSinglePhase == YES ? 1 : 3) * ActiveEVSE * (MinCurrent * 10) + Isum) > (MaxSumMains * 10)) {
         return 0;                                                           // Not enough current available!, return with error
     }
 
@@ -902,7 +899,7 @@ char IsCurrentAvailable(void) {
     return 1;
 }
 
-// Set global var Nr_Of_Phases_Charging
+// Set global var Nr_Of_Phases_Charging, only available with EV meter
 // 0 = undetected, 1 - 3 nr of phases we are charging
 void Set_Nr_of_Phases_Charging(void) {
     uint32_t Max_Charging_Prob = 0;
@@ -910,60 +907,46 @@ void Set_Nr_of_Phases_Charging(void) {
     Nr_Of_Phases_Charging = 0;
 #define THRESHOLD 40
 #define BOTTOM_THRESHOLD 25
-    _LOG_D("Detected Charging Phases: ChargeCurrent=%u, Balanced[0]=%u, IsetBalanced=%u.\n", ChargeCurrent, Balanced[0],IsetBalanced);
-    for (int i=0; i<3; i++) {
-        if (EVMeter) {
-            Charging_Prob = 10 * (abs(Irms_EV[i] - IsetBalanced)) / IsetBalanced;    //100% means this phase is charging, 0% mwans not charging
-                                                                                        //TODO does this work for the slaves too?
+    _LOG_D("Detecting Charging Phases: ChargeCurrent=%u, Balanced[0]=%u, IsetBalanced=%u.\n", ChargeCurrent, Balanced[0], IsetBalanced);
+    if (LoadBl != 0) {
+        _LOG_D("No phases will be detected if loadbalancing is active!\n");
+    }
+    else if (EVMeter) {
+        for (int i=0; i<3; i++) {
+            Charging_Prob = 10 * (abs(Irms_EV[i] - IsetBalanced)) / IsetBalanced;   //100% means this phase is charging, 0% mwans not charging
+                                                                                    //TODO does this work for the slaves too?
             _LOG_D("Trying to detect Charging Phases END Irms_EV[%i]=%.1f A.\n", i, (float)Irms_EV[i]/10);
-        }
-        Max_Charging_Prob = max(Charging_Prob, Max_Charging_Prob);
+            Max_Charging_Prob = max(Charging_Prob, Max_Charging_Prob);
 
-        //normalize percentages so they are in the range [0-100]
-        if (Charging_Prob >= 200)
-            Charging_Prob = 0;
-        if (Charging_Prob > 100)
-            Charging_Prob = 200 - Charging_Prob;
-        _LOG_I("Detected Charging Phases: Charging_Prob[%i]=%i.\n", i, Charging_Prob);
+            //normalize percentages so they are in the range [0-100]
+            if (Charging_Prob >= 200)
+                Charging_Prob = 0;
+            if (Charging_Prob > 100)
+                Charging_Prob = 200 - Charging_Prob;
+            _LOG_I("Detected Charging Phases: Charging_Prob[%i]=%i.\n", i, Charging_Prob);
 
-        if (Charging_Prob == Max_Charging_Prob) {
-            _LOG_D("Suspect I am charging at phase: L%i.\n", i+1);
-            Nr_Of_Phases_Charging++;
-        }
-        else {
-            if ( Charging_Prob <= BOTTOM_THRESHOLD ) {
-                _LOG_D("Suspect I am NOT charging at phase: L%i.\n", i+1);
+            if (Charging_Prob == Max_Charging_Prob) {
+                _LOG_D("Suspect I am charging at phase: L%i.\n", i+1);
+                Nr_Of_Phases_Charging++;
             }
             else {
-                if ( Max_Charging_Prob - Charging_Prob <= THRESHOLD ) {
-                    _LOG_D("Serious candidate for charging at phase: L%i.\n", i+1);
-                    Nr_Of_Phases_Charging++;
+                if ( Charging_Prob <= BOTTOM_THRESHOLD ) {
+                    _LOG_D("Suspect I am NOT charging at phase: L%i.\n", i+1);
+                }
+                else {
+                    if ( Max_Charging_Prob - Charging_Prob <= THRESHOLD ) {
+                        _LOG_D("Serious candidate for charging at phase: L%i.\n", i+1);
+                        Nr_Of_Phases_Charging++;
+                    }
                 }
             }
         }
     }
-
-    // sanity checks
-    // TODO test, this might work with slaves too!
-    if (LoadBl != 0) {
-        _LOG_A("ERROR: detecting phases while LoadBl=%i, this should never happen!\n", LoadBl);
-        Nr_Of_Phases_Charging = 0; //undetected
+    else {
+        _LOG_D("No phases detected, missing EV meter!\n");
     }
-
-    //CvL: why are these checks required? don't we trust the measurements above?
-    //CvL: It looks like we also do not trust the status of contactor C2?
-    if (EnableC2 != AUTO && EnableC2 != NOT_PRESENT) {                         // no further sanity checks possible when AUTO or NOT_PRESENT
-        if (Nr_Of_Phases_Charging != 1 && (EnableC2 == ALWAYS_OFF || (EnableC2 == SOLAR_OFF && Mode == MODE_SOLAR))) {
-            _LOG_A("Error in detecting phases: EnableC2=%s and Nr_Of_Phases_Charging=%i.\n", StrEnableC2[EnableC2], Nr_Of_Phases_Charging);
-            Nr_Of_Phases_Charging = 1;
-            _LOG_A("Setting Nr_Of_Phases_Charging to 1.\n");
-        }
-        if (!Force_Single_Phase_Charging() && Nr_Of_Phases_Charging != 3) {//TODO 2phase charging very rare?
-            _LOG_A("Possible error in detecting phases: EnableC2=%s and Nr_Of_Phases_Charging=%i.\n", StrEnableC2[EnableC2], Nr_Of_Phases_Charging);
-        }
-    }
-
-    _LOG_A("Charging at %i phases.\n", Nr_Of_Phases_Charging);
+    _LOG_I("Charging at %i phases (0 = undetected).\n", Nr_Of_Phases_Charging);
+    _LOG_I("UseSinglePhase: %s.\n", StrSinglePhase[UseSinglePhase]);
 }
 
 // Calculates Balanced PWM current for each EVSE
@@ -1009,8 +992,7 @@ void CalcBalancedCurrent(char mod) {
     {
         if (LoadBl == 1)                                                        // Load Balancing = Master? MaxCircuit is max current for all active EVSE's;
             IsetBalanced = MaxCircuit * 10 - Baseload_EV;                       // subpanel option not valid in Normal Mode;
-                                                                                // limiting is per phase so no Nr_Of_Phases_Charging here!
-        else
+         else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
         if (BalancedLeft && mod) {                                              // Only if we have active EVSE's and New EVSE charging
             // Set max combined charge current to MaxMains - Baseload, or MaxCircuit - Baseload_EV if that is less
@@ -1021,9 +1003,8 @@ void CalcBalancedCurrent(char mod) {
     else { // start MODE_SOLAR || MODE_SMART
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
-        uint8_t Temp_Nr_Of_Phases_Charging;
-        Temp_Nr_Of_Phases_Charging = (Nr_Of_Phases_Charging ? Nr_Of_Phases_Charging : 3);      // in case nr of phases not detected, assume 3
-        Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/Temp_Nr_Of_Phases_Charging));
+        Set_Nr_of_Phases_Charging();
+        Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/(Nr_Of_Phases_Charging ? Nr_Of_Phases_Charging : 3)));
         if (!mod) {                                                             // no new EVSE's charging
                                                                                 // For Smart mode, no new EVSE asking for current
                                                                                 // But for Solar mode we _also_ have to guard MaxCircuit and Maxmains!
@@ -1067,35 +1048,29 @@ void CalcBalancedCurrent(char mod) {
             }                                                                   // we already corrected Isetbalance in case of NOT enough power MaxCircuit/MaxMains
             _LOG_V("Checkpoint 3 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced/10, (float)IsumImport/10, (float)Isum/10, ImportCurrent);
 
-            // If charging on 1 fase and we have lots of sun power re-evaluate 3f
-            if ( Temp_Nr_Of_Phases_Charging == 1 && IsumImport < (-1 * 3 * BalancedLeft * MinCurrent * 10) ) { 
-                //TODO implement waiting time
-                ReEvaluateSwitchingToSinglePhase();           
+            // If we have lots of sun power and charging on 1 fase, C2 = AUTO and no running timer: start timer to re-evaluate 3f
+            // for now reuse StopTime for start 3f timer
+            if (IsumImport < (-1 * 3 * BalancedLeft * MinCurrent * 10)) {
+                if ( UseSinglePhase == YES && EnableC2 == AUTO && StopTime ) { 
+                    if (Solar3PhaseStartTimer == 0) {                           // after timer runs out: SetUseSinglePhase(NO)    
+                        Solar3PhaseStartTimer = StopTime * 60;                  // Convert minutes into seconds
+                    }                                                              
+                }
+                else Solar3PhaseStartTimer = 0;
             }
+            else Solar3PhaseStartTimer = 0;
 
             // If IsetBalanced is below MinCurrent or negative, make sure it's set to MinCurrent.
             if ( (IsetBalanced < (BalancedLeft * MinCurrent * 10)) || (IsetBalanced < 0) ) {
                 IsetBalanced = BalancedLeft * MinCurrent * 10;
                 // ----------- Check to see if we have to continue charging on solar power alone ----------
                 if (BalancedLeft && StopTime && (IsumImport > 10)) {
-                    //TODO maybe enable solar switching for loadbl = 1
-                     if (Temp_Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && LoadBl == 0) { // when loadbalancing is enabled we don't do forced single phase charging
-                        _LOG_A("Switching to single phase.\n");                 // because we wouldnt know which currents to make available to the nodes...
-                                                                                // since we don't know how many phases the nodes are using...
-                        //switching contactor2 off works ok for Skoda Enyaq but Hyundai Ioniq 5 goes into error, so we have to switch more elegantly
-                        if (State == STATE_C) setState(STATE_C1);               // tell EV to stop charging
-                        Switching_To_Single_Phase = GOING_TO_SWITCH;
+                    if (SolarStopTimer == 0) {                                  // after timer runs out: SetUseSinglePhase(YES) and next NO_SUN   
+                        setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
                     }
-                    else {
-                        if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
-                    }
-                } else {
-                    setSolarStopTimer(0);
-                }
-            } else {
-                setSolarStopTimer(0);
-            }
-        } //end MODE_SOLAR
+                } else setSolarStopTimer(0);
+            } else setSolarStopTimer(0);
+         } //end MODE_SOLAR
         else { // MODE_SMART
         // New EVSE charging, and only if we have active EVSE's
             if (mod && BalancedLeft) {                                          // Set max combined charge current to MaxMains - Baseload
@@ -1104,9 +1079,10 @@ void CalcBalancedCurrent(char mod) {
         } //end MODE_SMART
     } // end MODE_SOLAR || MODE_SMART
 
+
     // guard MaxCircuit in all modes; slave doesnt run CalcBalancedCurrent
     if (IsetBalanced > (MaxCircuit * 10) - Baseload_EV)
-        IsetBalanced = MaxCircuit * 10 - Baseload_EV; //limiting is per phase so no Nr_Of_Phases_Charging here!
+        IsetBalanced = MaxCircuit * 10 - Baseload_EV;                           //limiting is per phase
 
     _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
@@ -1119,7 +1095,7 @@ void CalcBalancedCurrent(char mod) {
             NoCurrent = 0;
 
         if (IsetBalanced > ActiveMax) IsetBalanced = ActiveMax;                 // limit to total maximum Amps (of all active EVSE's)
-                                                                                // TODO not sure if Nr_Of_Phases_Charging should be involved here
+
         MaxBalanced = IsetBalanced;                                             // convert to Amps
 
         // Calculate average current per EVSE
@@ -1753,9 +1729,9 @@ void RecomputeSoC(void) {
                 if (PowerMeasured > 0) {
                     // Use real-time PowerMeasured data if available
                     TimeToGo = (3600 * EnergyRemaining) / PowerMeasured;
-                } else if (Nr_Of_Phases_Charging > 0) {
+                } else {
                     // Else, fall back on the theoretical maximum of the cable + nr of phases
-                    TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * (Nr_Of_Phases_Charging * 230));
+                    TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * ((Nr_Of_Phases_Charging ? Nr_Of_Phases_Charging : 3) * 230));
                 }
 
                 // Wait until we have a somewhat sensible estimation while still respecting granny chargers
@@ -1903,6 +1879,7 @@ void CheckSwitch(void)
                         if (Mode == MODE_SOLAR) {
                             setMode(MODE_SMART);
                             setSolarStopTimer(0);                           // Also make sure the SolarTimer is disabled.
+                            Solar3PhaseStartTimer = 0;
                         }
                         break;
                     default:
@@ -1938,6 +1915,7 @@ void CheckSwitch(void)
                             ErrorFlags &= ~(NO_SUN | LESS_6A);                   // Clear All errors
                             ChargeDelay = 0;                                // Clear any Chargedelay
                             setSolarStopTimer(0);                           // Also make sure the SolarTimer is disabled.
+                            Solar3PhaseStartTimer = 0;
                             LCDTimer = 0;
                         }
                         RB2low = 0;
@@ -2030,6 +2008,7 @@ void EVSEStates(void * parameter) {
             ErrorFlags &= ~(NO_SUN | LESS_6A);                              // Clear All errors
             ChargeDelay = 0;                                                // Clear any Chargedelay
             setSolarStopTimer(0);                                           // Also make sure the SolarTimer is disabled.
+            Solar3PhaseStartTimer = 0;
             LCDTimer = 0;
             leftbutton = 5;
         } else if (leftbutton && ButtonState == 0x7) leftbutton--;
@@ -2881,13 +2860,28 @@ void Timer1S(void * parameter) {
         // When Solar Charging, once the current drops to MINcurrent a timer is started.
         // Charging is stopped when the timer reaches the time set in 'StopTime' (in minutes)
         // Except when Stoptime =0, then charging will continue.
-
         if (SolarStopTimer) {
             SolarStopTimer--;
             if (SolarStopTimer == 0) {
+                if (UseSinglePhase == NO && EnableC2 == AUTO && LoadBl == 0) {  // when loadbalancing is enabled we don't do forced single phase charging
+                    _LOG_A("Switching to single phase.\n");                     // because we wouldnt know which currents to make available to the nodes...
+                    ErrorFlags &= ~NO_SUN;                                      // since we don't know how many phases the nodes are using...
+                    SetUseSinglePhase(YES);                                     // try 3 phases
+                    setSolarStopTimer(StopTime);                                // reset stop timer
+                }
+                else {                                                          // if switching to 1 phase is not possible then raise NO_SUN error
+                    if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
+                    ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
+                }
+            }
+        }
 
-                if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
-                ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
+        // when 1f charging and abundant sun a timer is started
+        // try 3f after timer runs out
+        if (Solar3PhaseStartTimer) {
+            Solar3PhaseStartTimer--;
+            if (Solar3PhaseStartTimer == 0) {
+                SetUseSinglePhase(NO);
             }
         }
 
@@ -3474,7 +3468,7 @@ void read_settings() {
 
         MainsMeter = preferences.getUChar("MainsMeter", MAINS_METER);
         MainsMeterAddress = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
-        EVMeter = preferences.getUChar("EVMeter",EV_METER);
+        EVMeter = preferences.getUChar("EVMeter",NO_EV_METER);
         EVMeterAddress = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
@@ -3992,7 +3986,7 @@ void StartwebServer(void) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
-            ReEvaluateSwitchingToSinglePhase();
+            SetUseSinglePhase(NOCHANGE);
         }
 
         if(request->hasParam("modem")) {

@@ -170,7 +170,7 @@ extern RemoteDebug Debug;
 #define MAINS_METER_ADDRESS 10
 #define PV_METER 0
 #define PV_METER_ADDRESS 11
-#define EV_METER 0
+#define NO_EV_METER 0
 #define EV_METER_ADDRESS 12
 #define MIN_METER_ADDRESS 10
 #define MAX_METER_ADDRESS 247
@@ -451,12 +451,13 @@ extern uint8_t MenuItems[MENU_EXIT];
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 enum Modem_t { NOTPRESENT, EXPERIMENT };
-enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
+enum UseSinglePhase_t { NOCHANGE, NO, YES };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
 const static char StrModem[][12] = { "Not present", "Experiment" };
-const static char StrSinglePhase[][16] = { "False", "Going To Switch", "After Switch" };
+const static char StrSinglePhase[][12] = { "No Change", "No", "Yes" };
 
-extern Single_Phase_t Switching_To_Single_Phase;
+//extern Single_Phase_t Switching_To_Single_Phase;
+extern UseSinglePhase_t UseSinglePhase;
 extern uint8_t Nr_Of_Phases_Charging;
 
 const struct {
@@ -479,7 +480,7 @@ const struct {
     {"SWITCH",  "Switch function control on pin SW",                  0, 4, SWITCH},
     {"RCMON",   "Residual Current Monitor on pin RCM",                0, 1, RC_MON},
     {"RFID",    "RFID reader, learn/remove cards",                    0, 5, RFID_READER},
-    {"EV METER","Type of EV electric meter",                          0, EM_CUSTOM, EV_METER},
+    {"EV METER","Type of EV electric meter",                          0, EM_CUSTOM, NO_EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
 
     // System configuration
