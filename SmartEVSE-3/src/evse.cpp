@@ -696,14 +696,19 @@ uint8_t Force_Single_Phase_Charging() {                                         
 
 /**
  * Set new SinglePhaseOverride gently
+ * only if no multi (loadbalancing) and EnableC2 == AUTO
  */
 void SetSinglePhaseOverride(SinglePhaseOverride_t NewSinglePhaseOverride) {
-   _LOG_D("Trying to switch from %s to %s.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
+    if (EnableC2 != AUTO || LoadBl > 0) { 
+        _LOG_D("Do not switch from %s to %s because loadbalancing is active or C2 is not AUTO.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
+        return;
+    }
     uint8_t OldForceSinglePhaseCharging = Force_Single_Phase_Charging();
     if (NewSinglePhaseOverride != NOCHANGE) { 
         SinglePhaseOverride = NewSinglePhaseOverride;                                    
     }
     if (OldForceSinglePhaseCharging != Force_Single_Phase_Charging()) {         // changed?
+        _LOG_D("Trying to switch from %s to %s.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
         if (State == STATE_C) setState(STATE_C1);                               // tell EV to stop charging
                                                                                 // work is done in STATE_C of SetState() after restart
     }
@@ -901,26 +906,21 @@ char IsCurrentAvailable(void) {
     return 1;
 }
 
-// NOT IN USE ANYMORE, DID I MISS SOMETHING?
 // Set global var Nr_Of_Phases_Charging
-// use EV meter to get actual number of phases we are charging
-// 1 - 3 nr of phases we are charging, 0 = undetected
+// 0 = undetected, 1 - 3 nr of phases we are charging
 void Set_Nr_of_Phases_Charging(void) {
     uint32_t Max_Charging_Prob = 0;
-    uint32_t Charging_Prob=0;                                                   // Per phase, the probability that Charging is done at this phase
-    uint8_t NrOfPhasesCharging = 0;                                         // (local variable) to avoid side effects
+    uint32_t Charging_Prob=0;                                       // Per phase, the probability that Charging is done at this phase
+    Nr_Of_Phases_Charging = 0;                                      // TODO use local variable    
 #define THRESHOLD 40
 #define BOTTOM_THRESHOLD 25
-    _LOG_D("Detecting Charging Phases: ChargeCurrent=%u, Balanced[0]=%u, IsetBalanced=%u.\n", ChargeCurrent, Balanced[0], IsetBalanced);
-    if (!EVMeter) {   
-        Nr_Of_Phases_Charging = 0;
-        _LOG_I("No EV meter, no phases detected (0)).\n");
-        return;
-    }
+    _LOG_D("Detected Charging Phases: ChargeCurrent=%u, Balanced[0]=%u, IsetBalanced=%u.\n", ChargeCurrent, Balanced[0],IsetBalanced);
     for (int i=0; i<3; i++) {
-        Charging_Prob = 10 * (abs(Irms_EV[i] - IsetBalanced)) / IsetBalanced;   //100% means this phase is charging, 0% mwans not charging
-                                                                                //TODO does this work for the slaves too?
-        _LOG_D("Trying to detect Charging Phases END Irms_EV[%i]=%.1f A.\n", i, (float)Irms_EV[i]/10);
+        if (EVMeter) {
+            Charging_Prob = 10 * (abs(Irms_EV[i] - IsetBalanced)) / IsetBalanced;    //100% means this phase is charging, 0% mwans not charging
+                                                                                        //TODO does this work for the slaves too?
+            _LOG_D("Trying to detect Charging Phases END Irms_EV[%i]=%.1f A.\n", i, (float)Irms_EV[i]/10);
+        }
         Max_Charging_Prob = max(Charging_Prob, Max_Charging_Prob);
 
         //normalize percentages so they are in the range [0-100]
@@ -932,7 +932,7 @@ void Set_Nr_of_Phases_Charging(void) {
 
         if (Charging_Prob == Max_Charging_Prob) {
             _LOG_D("Suspect I am charging at phase: L%i.\n", i+1);
-            NrOfPhasesCharging++;
+            Nr_Of_Phases_Charging++;
         }
         else {
             if ( Charging_Prob <= BOTTOM_THRESHOLD ) {
@@ -941,22 +941,42 @@ void Set_Nr_of_Phases_Charging(void) {
             else {
                 if ( Max_Charging_Prob - Charging_Prob <= THRESHOLD ) {
                     _LOG_D("Serious candidate for charging at phase: L%i.\n", i+1);
-                    NrOfPhasesCharging++;
+                    Nr_Of_Phases_Charging++;
                 }
             }
         }
     }
-    Nr_Of_Phases_Charging = NrOfPhasesCharging;
-    _LOG_I("Accorcing to EV meter charging at %i phases (0 = undetected).\n", Nr_Of_Phases_Charging);
+
+    // sanity checks
+    // TODO test, this might work with slaves too!
+    if (LoadBl != 0) {
+        _LOG_A("ERROR: detecting phases while LoadBl=%i, this should never happen!\n", LoadBl);
+        Nr_Of_Phases_Charging = 0; //undetected
+    }
+
+    if (EnableC2 != AUTO && EnableC2 != NOT_PRESENT) {                         // no further sanity checks possible when AUTO or NOT_PRESENT
+        if (Nr_Of_Phases_Charging != 1 && (EnableC2 == ALWAYS_OFF || (EnableC2 == SOLAR_OFF && Mode == MODE_SOLAR))) {
+            _LOG_A("Error in detecting phases: EnableC2=%s and Nr_Of_Phases_Charging=%i.\n", StrEnableC2[EnableC2], Nr_Of_Phases_Charging);
+            Nr_Of_Phases_Charging = 1;
+            _LOG_A("Setting Nr_Of_Phases_Charging to 1.\n");
+        }
+        if (!Force_Single_Phase_Charging() && Nr_Of_Phases_Charging != 3) {//TODO 2phase charging very rare?
+            _LOG_A("Possible error in detecting phases: EnableC2=%s and Nr_Of_Phases_Charging=%i.\n", StrEnableC2[EnableC2], Nr_Of_Phases_Charging);
+        }
+    }
+
+    _LOG_A("Charging at %i phases.\n", Nr_Of_Phases_Charging);
 }
 
 // estimate number of phases we are charging with (1 or 3)
 uint8_t EstimateNrOfPhasesCharging(void) {
-    if (LoadBl != 0) {
-        return 3;
-    }
-    return Force_Single_Phase_Charging() ? 1 : 3;
- }
+    uint8_t FirstEstimateNrOfPhasesCharging = Force_Single_Phase_Charging() ? 1 : 3;
+//    uint8_t EvMeterNrOfPhasesCharging = Nr_Of_Phases_Charging;
+//    if (FirstEstimateNrOfPhasesCharging != EvMeterNrOfPhasesCharging) {
+//        _LOG_A("Mismatch in number of phases charging between EV meter and EVSE settings!");
+//    }
+    return FirstEstimateNrOfPhasesCharging;                                 // use EVSE settings and ignore EV meter
+}
 
 // Calculates Balanced PWM current for each EVSE
 // mod =0 normal
@@ -1058,7 +1078,8 @@ void CalcBalancedCurrent(char mod) {
 
             // If we have lots of sun power start timer to re-evaluate number of phases to charge with
             // for now reuse StopTime
-            if (IsumImport < (-1 * 3 * BalancedLeft * MinCurrent * 10)) {
+            if (-1 * Isum >  (3 * MinCurrent * 10)) {                           // Isum is negative when supplying energy back to the grid
+                                                                                // for 3 phases as a minimum 3 * Mincurrent is required
                 if (Solar3PhaseStartTimer == 0) {                               // after timer runs out: SinglePhaseOverride to NO    
                     Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
                 }                                                              
@@ -2868,11 +2889,7 @@ void Timer1S(void * parameter) {
             if (SolarStopTimer == 0) {
                 if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
                 ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
-
-                if (SinglePhaseOverride == NO && EnableC2 == AUTO && LoadBl == 0) {  // when loadbalancing is enabled we do not auto switch number of phases
-                    _LOG_A("Auto switching to single phase.\n");                     
-                    SetSinglePhaseOverride(YES);                            // try 1 phase
-                }
+                SetSinglePhaseOverride(YES);                                // try 1 phase
             }
         }
 
@@ -2880,11 +2897,7 @@ void Timer1S(void * parameter) {
         // try 3 phases after timer runs out
         if (Solar3PhaseStartTimer) {
             Solar3PhaseStartTimer--;
-            if (Solar3PhaseStartTimer == 0) {
-                if ( SinglePhaseOverride == YES && EnableC2 == AUTO && LoadBl == 0) {  // when loadbalancing is enabled we do not auto switch number of phases
-                   SetSinglePhaseOverride(NO);                              // try 3 phases
-                }
-            }
+            if (Solar3PhaseStartTimer == 0) SetSinglePhaseOverride(NO);     // try 3 phases
         }
 
         if (ChargeDelay) ChargeDelay--;                                     // Decrease Charge Delay counter
@@ -3989,7 +4002,7 @@ void StartwebServer(void) {
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
             SetSinglePhaseOverride(NOCHANGE);
-        }
+         }
 
         if(request->hasParam("modem")) {
             Modem = (Modem_t) request->getParam("modem")->value().toInt();
