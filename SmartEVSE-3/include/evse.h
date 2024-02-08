@@ -451,13 +451,13 @@ extern uint8_t MenuItems[MENU_EXIT];
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 enum Modem_t { NOTPRESENT, EXPERIMENT };
-enum UseSinglePhase_t { NOCHANGE, NO, YES };
+enum SinglePhaseOverride_t { NOCHANGE, NO, YES };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
 const static char StrModem[][12] = { "Not present", "Experiment" };
 const static char StrSinglePhase[][12] = { "No Change", "No", "Yes" };
 
 //extern Single_Phase_t Switching_To_Single_Phase;
-extern UseSinglePhase_t UseSinglePhase;
+extern SinglePhaseOverride_t SinglePhaseOverride;
 extern uint8_t Nr_Of_Phases_Charging;
 
 const struct {
@@ -562,5 +562,7 @@ uint16_t getItemValue(uint8_t nav);
 void ConfigureModbusMode(uint8_t newmode);
 
 void handleWIFImode(void);
+
+uint8_t EstimateNrOfPhasesCharging(void);
 
 #endif
