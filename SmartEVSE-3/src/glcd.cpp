@@ -694,13 +694,13 @@ void GLCD(void) {
         glcd_clrln(4, 0);                                                       // Clear line 4
         if (ErrorFlags & LESS_6A) {
             if (!LCDToggle) {
-                 GLCD_print_buf2(5, (const char *) "WAITING");
+                GLCD_print_buf2(5, (const char *) "WAITING");
             } else GLCD_print_buf2(5, (const char *) "FOR POWER");
         } else if (ErrorFlags & NO_SUN) {
             if (!LCDToggle) {
                 GLCD_print_buf2(5, (const char *) "WAITING");
             } else GLCD_print_buf2(5, (const char *) "FOR SOLAR");
-        } else if (State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE) {   // Modem states
+        } else if (State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE) {                                          // Modem states
             GLCD_print_buf2(5, (const char *) "MODEM");
         } else if (State != STATE_C) {
                 sprintf(Str, "READY %u", ChargeDelay);

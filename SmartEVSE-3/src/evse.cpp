@@ -776,7 +776,7 @@ void setState(uint8_t NewState) {
             CONTACTOR1_OFF;
             CONTACTOR2_OFF;
             if (Modem)
-                DisconnectTimeCounter = -1;                                     // Disable Disconnect timer. Car is connected
+                DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
             timerAlarmWrite(timerA, PWM_95, false);                             // Enable Timer alarm, set to diode test (95%)
             SetCurrent(ChargeCurrent);                                          // Enable PWM
             break;      
@@ -909,7 +909,7 @@ char IsCurrentAvailable(void) {
 // 0 = undetected, 1 - 3 nr of phases we are charging
 void Set_Nr_of_Phases_Charging(void) {
     uint32_t Max_Charging_Prob = 0;
-    uint32_t Charging_Prob=0;                                       // Per phase, the probability that Charging is done at this phase
+    uint32_t Charging_Prob=0;                                        // Per phase, the probability that Charging is done at this phase
     Nr_Of_Phases_Charging = 0;
 #define THRESHOLD 40
 #define BOTTOM_THRESHOLD 25
@@ -1016,7 +1016,7 @@ void CalcBalancedCurrent(char mod) {
         if (LoadBl == 1)                                                        // Load Balancing = Master? MaxCircuit is max current for all active EVSE's;
             IsetBalanced = MaxCircuit * 10 - Baseload_EV;                       // subpanel option not valid in Normal Mode;
                                                                                 // limiting is per phase so no Nr_Of_Phases_Charging here!
-         else
+        else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
         if (BalancedLeft && mod) {                                              // Only if we have active EVSE's and New EVSE charging
             // Set max combined charge current to MaxMains - Baseload, or MaxCircuit - Baseload_EV if that is less
@@ -1089,9 +1089,12 @@ void CalcBalancedCurrent(char mod) {
                     if (SolarStopTimer == 0) {                                  // after timer runs out:  NO_SUN and SinglePhaseOverride to YES  
                         setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
                     }
-                } else setSolarStopTimer(0);
-            } else setSolarStopTimer(0);
-
+                } else {
+                    setSolarStopTimer(0);
+                }
+            } else {
+                setSolarStopTimer(0);
+            }
          } //end MODE_SOLAR
         else { // MODE_SMART
         // New EVSE charging, and only if we have active EVSE's
@@ -2908,7 +2911,7 @@ void Timer1S(void * parameter) {
             }
         } else AccessTimer = 0;                                             // Not in state A, then disable timer
 
-        if ((TempEVSE < (maxTemp - 10)) && (ErrorFlags & TEMP_HIGH)) {      // Temperature below limit?
+        if ((TempEVSE < (maxTemp - 10)) && (ErrorFlags & TEMP_HIGH)) {                  // Temperature below limit?
             ErrorFlags &= ~TEMP_HIGH; // clear Error
         }
 
