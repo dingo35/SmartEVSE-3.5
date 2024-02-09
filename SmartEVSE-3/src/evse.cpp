@@ -860,6 +860,14 @@ char IsCurrentAvailable(void) {
         TotalCurrent += Balanced[n];                                            // Calculate total of all set charge currents
     }
 
+    // Allow solar Charging if surplus current is above 'StartCurrent' (sum of all phases)
+    // Charging will start after the timeout (chargedelay) period has ended
+     // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
+    if (Mode == MODE_SOLAR) {                                                   // no active EVSE yet?
+        if (ActiveEVSE == 0 && Isum >= ((signed int)StartCurrent *-10)) return 0;
+        else if ((ActiveEVSE * MinCurrent * 10) > TotalCurrent) return 0;       // check if we can split the available current between all active EVSE's
+    }
+
     ActiveEVSE++;                                                           // Do calculations with one more EVSE
     if (ActiveEVSE > NR_EVSES) ActiveEVSE = NR_EVSES;
     Baseload = Imeasured - TotalCurrent;                                    // Calculate Baseload (load without any active EVSE)
