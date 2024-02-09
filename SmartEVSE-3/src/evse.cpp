@@ -617,20 +617,6 @@ void setMode(uint8_t NewMode) {
         OverrideCurrent = 0;
     }
 
-    // when switching modes, we just keep charging at the phases we were charging at;
-    // it's only the regulation algorithm that is changing...
-    // EXCEPT when EnableC2 == Solar Off, because we would expect C2 to be off when in Solar Mode and EnableC2 == Solar Off
-    // and also the other way around, multiple phases might be wanted when changing from Solar to Normal or Smart
-    bool switchOnLater = false;
-    if (EnableC2 == SOLAR_OFF) {
-        if ((Mode != MODE_SOLAR && NewMode == MODE_SOLAR) || (Mode == MODE_SOLAR && NewMode != MODE_SOLAR)) {
-            //we are switching from non-solar to solar
-            //since we EnableC2 == SOLAR_OFF C2 is turned On now, and should be turned off
-            setAccess(0);                                                       //switch to OFF
-            switchOnLater = true;
-        }
-    }
-
 #if MQTT
     // Update MQTT faster
     lastMqttUpdate = 10;
@@ -644,9 +630,12 @@ void setMode(uint8_t NewMode) {
     }
     ChargeDelay = 0;                                                            // Clear any Chargedelay
     BacklightTimer = BACKLIGHT;                                                 // Backlight ON
+
+    bool OldFSPC = Force_Single_Phase_Charging();
     Mode = NewMode;
-    if (switchOnLater)
-        setAccess(1);
+    if (OldFSPC != Force_Single_Phase_Charging()) { 
+        SetSinglePhaseOverride(REFRESH);                                        // we only need to restart if Force_Single_Phase_Charging changed
+    }
 
     //make mode and start/stoptimes persistent on reboot
     if (preferences.begin("settings", false) ) {                        //false = write mode
@@ -676,42 +665,43 @@ void setSolarStopTimer(uint16_t Timer) {
  * This is only relevant on a 3f mains and 3f car installation!
  * 1f car will always charge 1f undetermined by CONTACTOR2
  */
-uint8_t Force_Single_Phase_Charging() {                                         // abbreviated to FSPC
+bool Force_Single_Phase_Charging(void) {                                        // abbreviated to FSPC
     if (LoadBl != 0)                                                            // No FSPC allowed when loadbalancing
-        return 0;       //3f
+        return false;       //3f
     switch (EnableC2) {
         case ALWAYS_OFF:                                                        // basically same as SOLAR_OFF!
-            return 1;
+            return true;
         case SOLAR_OFF:
             return (Mode == MODE_SOLAR);
         case AUTO:
             return (SinglePhaseOverride == NO);                                 // for AUTO check SinglePhaseOverride
         case NOT_PRESENT:                                                       // NOT_PRESENT (not wired) means ALWAYS_ON for 3f
         case ALWAYS_ON:
-            return 0;   //3f charging
+            return false;   //3f charging
     }
     //in case we don't know, stick to 3f charging
-    return 0;
+    return false;
 }
 
 /**
  * Set new SinglePhaseOverride gently
- * only if no multi (loadbalancing) and EnableC2 == AUTO
+ * REFRESH only stops charging to allow for a previous change of SinglePhaseOverride elsewhere 
  */
 void SetSinglePhaseOverride(SinglePhaseOverride_t NewSinglePhaseOverride) {
-    if (EnableC2 != AUTO || LoadBl > 0) { 
-        _LOG_D("Do not switch from %s to %s because loadbalancing is active or C2 is not AUTO.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
+    bool OldFSPC = Force_Single_Phase_Charging();
+    if (NewSinglePhaseOverride != REFRESH) {
+        SinglePhaseOverride = NewSinglePhaseOverride;
+        if (OldFSPC != Force_Single_Phase_Charging() && State == STATE_C) {     // changed?
+            _LOG_D("Trying to switch SinglePhaseOverride from %s to %s.\n", StrSinglePhase[NewSinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
+            setState(STATE_C1);                                                 // tell EV to stop charging
+        }
+    }
+    else if (State == STATE_C && LoadBl == 0) {                                 // refresh required?
+        _LOG_D("Refreshing SinglePhaseOverride %s.\n", StrSinglePhase[SinglePhaseOverride]);
+        setState(STATE_C1);                                                     // tell EV to stop charging
         return;
-    }
-    uint8_t OldForceSinglePhaseCharging = Force_Single_Phase_Charging();
-    if (NewSinglePhaseOverride != NOCHANGE) { 
-        SinglePhaseOverride = NewSinglePhaseOverride;                                    
-    }
-    if (OldForceSinglePhaseCharging != Force_Single_Phase_Charging()) {         // changed?
-        _LOG_D("Trying to switch from %s to %s.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
-        if (State == STATE_C) setState(STATE_C1);                               // tell EV to stop charging
-                                                                                // work is done in STATE_C of SetState() after restart
-    }
+    } 
+
 }                                          
 
 void setState(uint8_t NewState) {
@@ -1095,7 +1085,7 @@ void CalcBalancedCurrent(char mod) {
             } else {
                 setSolarStopTimer(0);
             }
-         } //end MODE_SOLAR
+        } //end MODE_SOLAR
         else { // MODE_SMART
         // New EVSE charging, and only if we have active EVSE's
             if (mod && BalancedLeft) {                                          // Set max combined charge current to MaxMains - Baseload
@@ -1713,13 +1703,13 @@ uint16_t getItemValue(uint8_t nav) {
 
 void printStatus(void)
 {
-        char Str[140];
-        snprintf(Str, sizeof(Str) , "#STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A\n", getStateName(State), ErrorFlags, StartCurrent,
-                                                                        ChargeDelay, SolarStopTimer,  NoCurrent,
+        char Str[170];
+        snprintf(Str, sizeof(Str) , "#STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u Solar3PhaseStartTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A\n", getStateName(State), ErrorFlags, StartCurrent,
+                                                                        ChargeDelay, SolarStopTimer, Solar3PhaseStartTimer, NoCurrent,
                                                                         (float)Imeasured/10,
                                                                         (float)IsetBalanced/10);
         _LOG_I("%s",Str+1);
-        _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, (float)Isum/10);
+        _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A 1Ph: %d\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, (float)Isum/10, Force_Single_Phase_Charging());
 }
 
 // Recompute State of Charge, in case we have a known initial state of charge
@@ -4000,10 +3990,15 @@ void StartwebServer(void) {
         }
 
         if(request->hasParam("enable_C2")) {
+            bool OldFSPC = Force_Single_Phase_Charging();
+
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
             write_settings();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
-            SetSinglePhaseOverride(NOCHANGE);
+
+            if (OldFSPC != Force_Single_Phase_Charging()) { 
+                SetSinglePhaseOverride(REFRESH);
+            }
          }
 
         if(request->hasParam("modem")) {
