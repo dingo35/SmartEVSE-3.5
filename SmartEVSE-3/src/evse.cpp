@@ -141,7 +141,7 @@ uint8_t DelayedRepeat;                                                      // 0
 uint8_t MainsMeter = MAINS_METER;                                           // Type of Mains electric meter (0: Disabled / Constants EM_*)
 uint8_t MainsMeterAddress = MAINS_METER_ADDRESS;
 uint8_t Grid = GRID;                                                        // Type of Grid connected to Sensorbox (0:4Wire / 1:3Wire )
-uint8_t EVMeter = NO_EV_METER;                                              // Type of EV electric meter (0: Disabled / Constants EM_*)
+uint8_t EVMeter = EV_METER;                                                 // Type of EV electric meter (0: Disabled / Constants EM_*)
 uint8_t EVMeterAddress = EV_METER_ADDRESS;
 uint8_t RFIDReader = RFID_READER;                                           // RFID Reader (0:Disabled / 1:Enabled / 2:Enable One / 3:Learn / 4:Delete / 5:Delete All)
 #if FAKE_RFID
@@ -152,7 +152,7 @@ String APpassword = "00000000";
 uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
 String TZname = "";
 
-EnableC2_t EnableC2 = C2_NOT_PRESENT;                                       // Contactor C2
+EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
 Modem_t Modem = NOTPRESENT;                                                 // Is an ISO15118 modem installed (experimental)
 uint16_t maxTemp = MAX_TEMPERATURE;
 
@@ -624,8 +624,8 @@ void setMode(uint8_t NewMode) {
     bool switchOnLater = false;
     if (EnableC2 == SOLAR_OFF) {
         if ((Mode != MODE_SOLAR && NewMode == MODE_SOLAR) || (Mode == MODE_SOLAR && NewMode != MODE_SOLAR)) {
-            //we are switching from non-solar to solar or vise versa
-            //CvL: status of C2 should be re-evaluated and should be turned off for this
+            //we are switching from non-solar to solar
+            //since we EnableC2 == SOLAR_OFF C2 is turned On now, and should be turned off
             setAccess(0);                                                       //switch to OFF
             switchOnLater = true;
         }
@@ -680,7 +680,7 @@ uint8_t Force_Single_Phase_Charging() {                                         
     if (LoadBl != 0)                                                            // No FSPC allowed when loadbalancing
         return 0;       //3f
     switch (EnableC2) {
-        case ALWAYS_OFF:
+        case ALWAYS_OFF:                                                        // basically same as SOLAR_OFF!
             return 1;
         case SOLAR_OFF:
             return (Mode == MODE_SOLAR);
@@ -792,7 +792,6 @@ void setState(uint8_t NewState) {
                 _LOG_I("Switching CONTACTOR C2 ON.\n");
                 CONTACTOR2_ON;                                                  // Contactor2 ON
             }
-
             LCDTimer = 0;
             break;
         case STATE_C1:
@@ -824,7 +823,7 @@ void setAccess(bool Access) {
         else if (State == STATE_B || State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE || State == STATE_MODEM_DENIED) setState(STATE_B1);
     }
 
-    //make Access and CardOffset persistent on reboot
+    //make mode and start/stoptimes persistent on reboot
     if (preferences.begin("settings", false) ) {                        //false = write mode
         preferences.putUChar("Access", Access_bit);
         preferences.putUChar("CardOffset", CardOffset);
@@ -911,7 +910,7 @@ char IsCurrentAvailable(void) {
 void Set_Nr_of_Phases_Charging(void) {
     uint32_t Max_Charging_Prob = 0;
     uint32_t Charging_Prob=0;                                       // Per phase, the probability that Charging is done at this phase
-    Nr_Of_Phases_Charging = 0;                                      // TODO use local variable    
+    Nr_Of_Phases_Charging = 0;
 #define THRESHOLD 40
 #define BOTTOM_THRESHOLD 25
     _LOG_D("Detected Charging Phases: ChargeCurrent=%u, Balanced[0]=%u, IsetBalanced=%u.\n", ChargeCurrent, Balanced[0],IsetBalanced);
@@ -970,12 +969,7 @@ void Set_Nr_of_Phases_Charging(void) {
 
 // estimate number of phases we are charging with (1 or 3)
 uint8_t EstimateNrOfPhasesCharging(void) {
-    uint8_t FirstEstimateNrOfPhasesCharging = Force_Single_Phase_Charging() ? 1 : 3;
-//    uint8_t EvMeterNrOfPhasesCharging = Nr_Of_Phases_Charging;
-//    if (FirstEstimateNrOfPhasesCharging != EvMeterNrOfPhasesCharging) {
-//        _LOG_A("Mismatch in number of phases charging between EV meter and EVSE settings!");
-//    }
-    return FirstEstimateNrOfPhasesCharging;                                 // use EVSE settings and ignore EV meter
+    return Force_Single_Phase_Charging() ? 1 : 3;                                 // use EVSE settings and ignore EV meter
 }
 
 // Calculates Balanced PWM current for each EVSE
@@ -1021,6 +1015,7 @@ void CalcBalancedCurrent(char mod) {
     {
         if (LoadBl == 1)                                                        // Load Balancing = Master? MaxCircuit is max current for all active EVSE's;
             IsetBalanced = MaxCircuit * 10 - Baseload_EV;                       // subpanel option not valid in Normal Mode;
+                                                                                // limiting is per phase so no Nr_Of_Phases_Charging here!
          else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
         if (BalancedLeft && mod) {                                              // Only if we have active EVSE's and New EVSE charging
@@ -1089,6 +1084,7 @@ void CalcBalancedCurrent(char mod) {
             // If IsetBalanced is below MinCurrent or negative, make sure it's set to MinCurrent.
             if ( (IsetBalanced < (BalancedLeft * MinCurrent * 10)) || (IsetBalanced < 0) ) {
                 IsetBalanced = BalancedLeft * MinCurrent * 10;
+                // ----------- Check to see if we have to continue charging on solar power alone ----------
                 if (BalancedLeft && StopTime && (IsumImport > 10)) {
                     if (SolarStopTimer == 0) {                                  // after timer runs out:  NO_SUN and SinglePhaseOverride to YES  
                         setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
@@ -1105,10 +1101,9 @@ void CalcBalancedCurrent(char mod) {
         } //end MODE_SMART
     } // end MODE_SOLAR || MODE_SMART
 
-
     // guard MaxCircuit in all modes; slave doesnt run CalcBalancedCurrent
     if (IsetBalanced > (MaxCircuit * 10) - Baseload_EV)
-        IsetBalanced = MaxCircuit * 10 - Baseload_EV;                           //limiting is per phase
+        IsetBalanced = MaxCircuit * 10 - Baseload_EV; //limiting is per phase so no Nr_Of_Phases_Charging here!
 
     _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
@@ -1121,7 +1116,7 @@ void CalcBalancedCurrent(char mod) {
             NoCurrent = 0;
 
         if (IsetBalanced > ActiveMax) IsetBalanced = ActiveMax;                 // limit to total maximum Amps (of all active EVSE's)
-
+                                                                                // TODO not sure if Nr_Of_Phases_Charging should be involved here
         MaxBalanced = IsetBalanced;                                             // convert to Amps
 
         // Calculate average current per EVSE
@@ -1985,6 +1980,8 @@ void CheckSwitch(void)
     
 
 }
+
+
 
 // Task that handles EVSE State Changes
 // Reads buttons, and updates the LCD.
@@ -2884,9 +2881,11 @@ void Timer1S(void * parameter) {
         // When Solar Charging, once the current drops to MINcurrent a timer is started.
         // Charging is stopped when the timer reaches the time set in 'StopTime' (in minutes)
         // Except when Stoptime =0, then charging will continue.
+
         if (SolarStopTimer) {
             SolarStopTimer--;
             if (SolarStopTimer == 0) {
+
                 if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
                 ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
                 SetSinglePhaseOverride(YES);                                // try 1 phase
@@ -3483,7 +3482,7 @@ void read_settings() {
 
         MainsMeter = preferences.getUChar("MainsMeter", MAINS_METER);
         MainsMeterAddress = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
-        EVMeter = preferences.getUChar("EVMeter",NO_EV_METER);
+        EVMeter = preferences.getUChar("EVMeter",EV_METER);
         EVMeterAddress = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
@@ -3502,7 +3501,7 @@ void read_settings() {
         DelayedStopTime.epoch2 = preferences.getULong("DelayedStopTime", DELAYEDSTOPTIME);    //epoch2 is 4 bytes long on arduino
         TZname = preferences.getString("Timezone","Europe/Berlin");
 
-        EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", C2_NOT_PRESENT);
+        EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
         Modem = (Modem_t) preferences.getUShort("Modem", NOTPRESENT);
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);

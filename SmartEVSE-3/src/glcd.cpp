@@ -718,8 +718,8 @@ void GLCD(void) {
                     } else LCDText++;
                     // fall through
                 case 1:
-                    if (Mode == MODE_SOLAR) sprintf(Str,"%uF CHARGING", EstimateNrOfPhasesCharging());
-                        else sprintf(Str, "SMART");
+                    if (EstimateNrOfPhasesCharging() == 1) sprintf(Str,"1F CHARGING");
+                        else sprintf(Str, "CHARGING");
                     GLCD_print_buf2(5, Str);
                     break;
                 case 2:
@@ -946,8 +946,8 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_START;                                            // - Start Surplus Current (A)
         MenuItems[m++] = MENU_STOP;                                             // - Stop time (min)
         MenuItems[m++] = MENU_IMPORT;                                           // - Import Current from Grid (A)
+        MenuItems[m++] = MENU_C2;
     }
-    MenuItems[m++] = MENU_C2;
     MenuItems[m++] = MENU_SWITCH;                                               // External Switch on SW (0:Disable / 1:Access / 2:Smart-Solar)
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)

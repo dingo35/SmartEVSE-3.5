@@ -27,7 +27,7 @@
 
 #ifndef DBG
 //the wifi-debugger is available by telnetting to your SmartEVSE device
-#define DBG 1  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
+#define DBG 0  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
 #endif
 
 #ifndef FAKE_RFID
@@ -170,7 +170,7 @@ extern RemoteDebug Debug;
 #define MAINS_METER_ADDRESS 10
 #define PV_METER 0
 #define PV_METER_ADDRESS 11
-#define NO_EV_METER 0
+#define EV_METER 0
 #define EV_METER_ADDRESS 12
 #define MIN_METER_ADDRESS 10
 #define MAX_METER_ADDRESS 247
@@ -190,7 +190,7 @@ extern RemoteDebug Debug;
 #define AP_PASSWORD "00000000"
 #define CARD_OFFSET 0
 #define INITIALIZED 0
-#define C2_NOT_PRESENT NOT_PRESENT                                              //CvL: changed to better name
+#define ENABLE_C2 NOT_PRESENT
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
@@ -455,8 +455,6 @@ enum SinglePhaseOverride_t { NOCHANGE, NO, YES };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
 const static char StrModem[][12] = { "Not present", "Experiment" };
 const static char StrSinglePhase[][12] = { "No Change", "No", "Yes" };
-
-//extern Single_Phase_t Switching_To_Single_Phase;
 extern SinglePhaseOverride_t SinglePhaseOverride;
 extern uint8_t Nr_Of_Phases_Charging;
 
@@ -480,7 +478,7 @@ const struct {
     {"SWITCH",  "Switch function control on pin SW",                  0, 4, SWITCH},
     {"RCMON",   "Residual Current Monitor on pin RCM",                0, 1, RC_MON},
     {"RFID",    "RFID reader, learn/remove cards",                    0, 5, RFID_READER},
-    {"EV METER","Type of EV electric meter",                          0, EM_CUSTOM, NO_EV_METER},
+    {"EV METER","Type of EV electric meter",                          0, EM_CUSTOM, EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
 
     // System configuration
@@ -508,7 +506,7 @@ const struct {
     {"ENE DIVI","Divisor for Energy (kWh) of custom electric meter",  0, 7, EMCUSTOM_EDIVISOR},
     {"READ MAX","Max register read at once of custom electric meter", 3, 255, 3},
     {"WIFI",    "Connect to WiFi access point",                       0, 2, WIFI_MODE},
-    {"CONTACT2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, C2_NOT_PRESENT},
+    {"CONTACT2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
     {"MODEM",   "Is an ISO15118 modem installed (experimental)",      0, 1, NOTPRESENT},
     {"SUMMAINS","Capacity Rate limit on sum of MAINS Current (A)",    10, 600, MAX_SUMMAINS},
