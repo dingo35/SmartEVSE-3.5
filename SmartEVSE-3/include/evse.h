@@ -51,9 +51,16 @@
 #endif
 
 #if FAKE_SUNNY_DAY
-#define INJECT_CURRENT_L1 10
-#define INJECT_CURRENT_L2 0
-#define INJECT_CURRENT_L3 0
+#define INJECT_CURRENT_L1_0 0
+#define INJECT_CURRENT_L2_0 0
+#define INJECT_CURRENT_L3_0 0
+#define INJECT_CURRENT_L1_1 7
+#define INJECT_CURRENT_L2_1 0
+#define INJECT_CURRENT_L3_1 0
+#define INJECT_CURRENT_L1_2 13
+#define INJECT_CURRENT_L2_2 13
+#define INJECT_CURRENT_L3_2 13
+#define SUN_STATUS_SWITCH_TIME 120                                          // sun status switch time in seconds
 #endif
 
 #ifndef MQTT
@@ -451,10 +458,10 @@ extern uint8_t MenuItems[MENU_EXIT];
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 enum Modem_t { NOTPRESENT, EXPERIMENT };
-enum SinglePhaseOverride_t { NOCHANGE, NO, YES };
+enum SinglePhaseOverride_t { REFRESH, NO, YES };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
 const static char StrModem[][12] = { "Not present", "Experiment" };
-const static char StrSinglePhase[][12] = { "No Change", "No", "Yes" };
+const static char StrSinglePhase[][12] = { "Refresh", "No", "Yes" };
 extern SinglePhaseOverride_t SinglePhaseOverride;
 extern uint8_t Nr_Of_Phases_Charging;
 
@@ -562,5 +569,7 @@ void ConfigureModbusMode(uint8_t newmode);
 void handleWIFImode(void);
 
 uint8_t EstimateNrOfPhasesCharging(void);
+void SetSinglePhaseOverride(SinglePhaseOverride_t NewSinglePhaseOverride);
+bool Force_Single_Phase_Charging(void);
 
 #endif

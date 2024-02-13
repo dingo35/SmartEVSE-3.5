@@ -147,6 +147,12 @@ uint8_t RFIDReader = RFID_READER;                                           // R
 #if FAKE_RFID
 uint8_t Show_RFID = 0;
 #endif
+#if FAKE_SUNNY_DAY
+uint8_t SunStatus = 0;                                                      //0= no extra sun 1= extra sun for 1 phase 2= extra sun for 3 phases
+uint8_t PreviousSunStatus = 2;                                              //previous sun status
+uint16_t SunStatusTimer = SUN_STATUS_SWITCH_TIME;                           //timer to switch sun status
+#endif
+
 uint8_t WIFImode = WIFI_MODE;                                               // WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
 String APpassword = "00000000";
 uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
@@ -162,6 +168,7 @@ int32_t Old_Irms[3]={0, 0, 0};                                              // S
                                                                             // Max 3 phases supported
 uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
 SinglePhaseOverride_t SinglePhaseOverride = NO;                             // Override to switch to single phase, used for AUTO mode EnableC2
+bool Active_Force_Single_Phase_Charging = false;                            // activated Force_Single_Phase_Charging, relevant as long as new setting has not been activated
 
 uint8_t State = STATE_A;
 uint8_t ErrorFlags = NO_ERROR;
@@ -674,7 +681,7 @@ bool Force_Single_Phase_Charging(void) {                                        
         case SOLAR_OFF:
             return (Mode == MODE_SOLAR);
         case AUTO:
-            return (SinglePhaseOverride == NO);                                 // for AUTO check SinglePhaseOverride
+            return (SinglePhaseOverride == YES);                                // for AUTO check SinglePhaseOverride
         case NOT_PRESENT:                                                       // NOT_PRESENT (not wired) means ALWAYS_ON for 3f
         case ALWAYS_ON:
             return false;   //3f charging
@@ -688,20 +695,18 @@ bool Force_Single_Phase_Charging(void) {                                        
  * REFRESH only stops charging to allow for a previous change of SinglePhaseOverride elsewhere 
  */
 void SetSinglePhaseOverride(SinglePhaseOverride_t NewSinglePhaseOverride) {
-    bool OldFSPC = Force_Single_Phase_Charging();
+    _LOG_D("Entering SetSinglePhaseOverride to set %s to %s.\n", StrSinglePhase[SinglePhaseOverride], StrSinglePhase[NewSinglePhaseOverride]);
     if (NewSinglePhaseOverride != REFRESH) {
         SinglePhaseOverride = NewSinglePhaseOverride;
-        if (OldFSPC != Force_Single_Phase_Charging() && State == STATE_C) {     // changed?
-            _LOG_D("Trying to switch SinglePhaseOverride from %s to %s.\n", StrSinglePhase[NewSinglePhaseOverride], StrSinglePhase[SinglePhaseOverride]);
-            setState(STATE_C1);                                                 // tell EV to stop charging
+        if (Active_Force_Single_Phase_Charging != Force_Single_Phase_Charging()) { 
+            _LOG_D("Trying to switch SinglePhaseOverride to %s.\n", StrSinglePhase[SinglePhaseOverride]);
+            if (State == STATE_C) setState(STATE_C1);                           // tell EV to stop charging
         }
     }
-    else if (State == STATE_C && LoadBl == 0) {                                 // refresh required?
+    else if (State == STATE_C) {
         _LOG_D("Refreshing SinglePhaseOverride %s.\n", StrSinglePhase[SinglePhaseOverride]);
-        setState(STATE_C1);                                                     // tell EV to stop charging
-        return;
-    } 
-
+        setState(STATE_C1);                               // tell EV to stop charging
+    }
 }                                          
 
 void setState(uint8_t NewState) {
@@ -774,7 +779,8 @@ void setState(uint8_t NewState) {
             ActivationMode = 255;                                               // Disable ActivationMode
 
             CONTACTOR1_ON;
-            if (Force_Single_Phase_Charging()) {                                // switch C2 off if charging with 1 phase
+            Active_Force_Single_Phase_Charging = Force_Single_Phase_Charging(); // get current value of Force_Single_Phase_Charging and save for later
+            if (Active_Force_Single_Phase_Charging) {                           // set C2 according to Active_Force_Single_Phase_Charging
                 _LOG_I("Switching CONTACTOR C2 OFF.\n");
                 CONTACTOR2_OFF;                                                 // Contactor2 OFF
             }
@@ -782,6 +788,7 @@ void setState(uint8_t NewState) {
                 _LOG_I("Switching CONTACTOR C2 ON.\n");
                 CONTACTOR2_ON;                                                  // Contactor2 ON
             }
+
             LCDTimer = 0;
             break;
         case STATE_C1:
@@ -858,7 +865,7 @@ int getBatteryCurrent(void) {
 // returns 1 if there is 6A available
 // returns 0 if there is no current available
 // only runs on the Master or when loadbalancing Disabled
-char IsCurrentAvailable(void) {
+char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
     uint8_t n, ActiveEVSE = 0;
     int Baseload, Baseload_EV, TotalCurrent = 0;
 
@@ -881,15 +888,15 @@ char IsCurrentAvailable(void) {
     if ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10)) {
         return 0;                                                           // Not enough current available!, return with error
     }
-    if ((EstimateNrOfPhasesCharging() * ActiveEVSE * (MinCurrent * 10) + Isum) > (MaxSumMains * 10)) {
+    if ((RequestedNrOfPhasesCharging * (MinCurrent * 10) + Isum) > (MaxSumMains * 10)) { // add one EVSE with RequestedNrOfPhasesCharging
         return 0;                                                           // Not enough current available!, return with error
     }
 
     // Allow solar Charging if surplus current is above 'StartCurrent' (sum of all phases)
     // Charging will start after the timeout (chargedelay) period has ended
      // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
-    if (Mode == MODE_SOLAR) {                                                   // no active EVSE yet?
-        if (ActiveEVSE == 1 && Isum >= ((signed int)StartCurrent *-10)) return 0;
+    if (Mode == MODE_SOLAR) { 
+        if (Isum >= ((signed int)StartCurrent *-10)) return 0;
     }
 
     return 1;
@@ -959,7 +966,7 @@ void Set_Nr_of_Phases_Charging(void) {
 
 // estimate number of phases we are charging with (1 or 3)
 uint8_t EstimateNrOfPhasesCharging(void) {
-    return Force_Single_Phase_Charging() ? 1 : 3;                                 // use EVSE settings and ignore EV meter
+    return Active_Force_Single_Phase_Charging ? 1 : 3;
 }
 
 // Calculates Balanced PWM current for each EVSE
@@ -1061,29 +1068,28 @@ void CalcBalancedCurrent(char mod) {
             }                                                                   // we already corrected Isetbalance in case of NOT enough power MaxCircuit/MaxMains
             _LOG_V("Checkpoint 3 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced/10, (float)IsumImport/10, (float)Isum/10, ImportCurrent);
 
-            // If we have lots of sun power start timer to re-evaluate number of phases to charge with
+            // If IsCurrentAvailable then start timer to re-evaluate number of phases to charge with
             // for now reuse StopTime
-            if (-1 * Isum >  (3 * MinCurrent * 10)) {                           // Isum is negative when supplying energy back to the grid
-                                                                                // for 3 phases as a minimum 3 * Mincurrent is required
-                if (Solar3PhaseStartTimer == 0) {                               // after timer runs out: SinglePhaseOverride to NO    
+            if (SinglePhaseOverride == YES  && IsCurrentAvailable(3)) {         // Only start try for 3 phases when in 1 phase
+                if (BalancedLeft && Solar3PhaseStartTimer == 0) {               // after timer runs out: SinglePhaseOverride to NO    
                     Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
                 }                                                              
             }
             else Solar3PhaseStartTimer = 0;
 
-            // If IsetBalanced is below MinCurrent or negative, make sure it's set to MinCurrent.
-            if ( (IsetBalanced < (BalancedLeft * MinCurrent * 10)) || (IsetBalanced < 0) ) {
-                IsetBalanced = BalancedLeft * MinCurrent * 10;
-                // ----------- Check to see if we have to continue charging on solar power alone ----------
-                if (BalancedLeft && StopTime && (IsumImport > 10)) {
-                    if (SolarStopTimer == 0) {                                  // after timer runs out:  NO_SUN and SinglePhaseOverride to YES  
-                        setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
-                    }
-                } else {
-                    setSolarStopTimer(0);
+            // start timer if current is below minimum
+            // stop timer if current is 0.5A above minimum, extra 0,5A needed as IsetBalanced is set to the minimum later and this makes the loop unstable.
+            if (IsetBalanced < (BalancedLeft * MinCurrent * 10)) {
+                IsetBalanced = BalancedLeft * MinCurrent * 10;                  // set here to prevent no_current flag later
+                 _LOG_V("Checkpoint 3a Lacking power, SolarStopTimer: %u.\n", SolarStopTimer);
+                if (BalancedLeft && SolarStopTimer == 0) {                      // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
+                    setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
                 }
             } else {
-                setSolarStopTimer(0);
+                if (IsetBalanced > (BalancedLeft * MinCurrent * 10) + 10) {
+                    _LOG_V("Checkpoint 3b Power is 1A over minimum for stop timer, SolarStopTimer: %u.\n", SolarStopTimer);
+                    setSolarStopTimer(0);
+                }
             }
         } //end MODE_SOLAR
         else { // MODE_SMART
@@ -1357,7 +1363,7 @@ void processAllNodeStates(uint8_t NodeNr) {
 
     values[0] = BalancedState[NodeNr];
 
-    current = IsCurrentAvailable();
+    current = IsCurrentAvailable(EstimateNrOfPhasesCharging());
     if (current) {                                                              // Yes enough current
         if (BalancedError[NodeNr] & (LESS_6A|NO_SUN)) {
             BalancedError[NodeNr] &= ~(LESS_6A | NO_SUN);                       // Clear Error flags
@@ -1709,7 +1715,10 @@ void printStatus(void)
                                                                         (float)Imeasured/10,
                                                                         (float)IsetBalanced/10);
         _LOG_I("%s",Str+1);
-        _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A 1Ph: %d\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, (float)Isum/10, Force_Single_Phase_Charging());
+        _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A F1Ph: %d SPhO: %s CA: %u\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, (float)Isum/10, Force_Single_Phase_Charging(), StrSinglePhase[SinglePhaseOverride], (IsCurrentAvailable(EstimateNrOfPhasesCharging())) ?1:0); 
+#if FAKE_SUNNY_DAY
+        _LOG_I("Rotating sun status: %u (timer: %u).\n", SunStatus, SunStatusTimer); 
+#endif
 }
 
 // Recompute State of Charge, in case we have a known initial state of charge
@@ -1790,9 +1799,23 @@ void CalcIsum(void) {
     Isum = 0;
 #if FAKE_SUNNY_DAY
     int32_t temp[3]={0, 0, 0};
-    temp[0] = INJECT_CURRENT_L1 * 10;                   //Irms is in units of 100mA
-    temp[1] = INJECT_CURRENT_L2 * 10;
-    temp[2] = INJECT_CURRENT_L3 * 10;
+    switch (SunStatus) {                                                    // rotating sun status
+        case 1:
+            temp[0] = INJECT_CURRENT_L1_1 * 10;                             //Irms is in units of 100mA
+            temp[1] = INJECT_CURRENT_L2_1 * 10;
+            temp[2] = INJECT_CURRENT_L3_1 * 10;
+            break;
+        case 2:
+            temp[0] = INJECT_CURRENT_L1_2 * 10;                             //Irms is in units of 100mA
+            temp[1] = INJECT_CURRENT_L2_2 * 10;
+            temp[2] = INJECT_CURRENT_L3_2 * 10;
+            break;
+        default:
+            temp[0] = INJECT_CURRENT_L1_0 * 10;                             //Irms is in units of 100mA
+            temp[1] = INJECT_CURRENT_L2_0 * 10;
+            temp[2] = INJECT_CURRENT_L3_0 * 10;
+            break;
+    }
 #endif
 
     for (int x = 0; x < 3; x++) {
@@ -2076,7 +2099,7 @@ void EVSEStates(void * parameter) {
                     setState(STATE_COMM_B);                                     // Node wants to switch to State B
 
                 // Load Balancing: Master or Disabled
-                } else if (IsCurrentAvailable()) {                             
+                } else if (IsCurrentAvailable(EstimateNrOfPhasesCharging())) {                             
                     BalancedMax[0] = MaxCapacity * 10;
                     Balanced[0] = ChargeCurrent;                                // Set pilot duty cycle to ChargeCurrent (v2.15)
                     if (Modem == EXPERIMENT && ModemStage == 0){
@@ -2087,7 +2110,11 @@ void EVSEStates(void * parameter) {
                     ActivationMode = 30;                                        // Activation mode is triggered if state C is not entered in 30 seconds.
                     AccessTimer = 0;
                 } else if (Mode == MODE_SOLAR) {                                // Not enough power:
-                    ErrorFlags |= NO_SUN;                                       // Not enough solar power
+                    if (SinglePhaseOverride == NO) {
+                        SetSinglePhaseOverride(YES);                            // try 1 phase first
+                    } else {
+                        ErrorFlags |= NO_SUN;                                   // Not enough solar power
+                    }
                 } else ErrorFlags |= LESS_6A;                                   // Not enough power available
             }
         }
@@ -2120,7 +2147,7 @@ void EVSEStates(void * parameter) {
                     // Load Balancing: Master or Disabled
                     } else { 
                         BalancedMax[0] = ChargeCurrent;
-                        if (IsCurrentAvailable()) {
+                        if (IsCurrentAvailable(EstimateNrOfPhasesCharging())) {
 
                             Balanced[0] = 0;                                    // For correct baseload calculation set current to zero
                             CalcBalancedCurrent(1);                             // Calculate charge current for all connected EVSE's
@@ -2131,7 +2158,11 @@ void EVSEStates(void * parameter) {
                                                                                 // immediately update LCD (20ms)
                         }
                         else if (Mode == MODE_SOLAR) {                          // Not enough power:
-                            ErrorFlags |= NO_SUN;                               // Not enough solar power
+                            if (SinglePhaseOverride == NO) {
+                                SetSinglePhaseOverride(YES);                    // try 1 phase first
+                            } else {
+                                ErrorFlags |= NO_SUN;                           // Not enough solar power
+                            }
                         } else ErrorFlags |= LESS_6A;                           // Not enough power available
                     }
                 }
@@ -2878,10 +2909,12 @@ void Timer1S(void * parameter) {
         if (SolarStopTimer) {
             SolarStopTimer--;
             if (SolarStopTimer == 0) {
-
-                if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
-                ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
-                SetSinglePhaseOverride(YES);                                // try 1 phase
+                if (SinglePhaseOverride == YES) {
+                    if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
+                    ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
+                } else {
+                    SetSinglePhaseOverride(YES);                                // try 1 phase
+                }
             }
         }
 
@@ -2891,6 +2924,35 @@ void Timer1S(void * parameter) {
             Solar3PhaseStartTimer--;
             if (Solar3PhaseStartTimer == 0) SetSinglePhaseOverride(NO);     // try 3 phases
         }
+
+#if FAKE_SUNNY_DAY
+//TODO switch 0,1,2,3,2,1,0,1,2,3,2,1,0
+//geen switch up na afloop timer
+        if (SunStatusTimer) {
+            SunStatusTimer--;
+            if (SunStatusTimer == 0) {
+                uint8_t OldSunStatus = SunStatus;
+                switch(SunStatus) {
+                    default:
+                        SunStatus = 1;
+                        break;
+                    case 1:
+                        if (PreviousSunStatus == 0) {
+                            SunStatus = 2;
+                        } else {
+                            SunStatus = 0;
+                        }
+                        break;
+                    case 2:
+                        SunStatus = 1;
+                        break;
+                }
+                PreviousSunStatus = OldSunStatus;
+                SunStatusTimer = SUN_STATUS_SWITCH_TIME;
+                _LOG_D("Fake sunny day: switch sun state to %u.\n", SunStatus);
+            }
+        } else SunStatusTimer = SUN_STATUS_SWITCH_TIME;
+#endif
 
         if (ChargeDelay) ChargeDelay--;                                     // Decrease Charge Delay counter
         if (PilotDisconnectTime) PilotDisconnectTime--;                     // Decrease PilotDisconnectTimer
@@ -2905,7 +2967,7 @@ void Timer1S(void * parameter) {
             ErrorFlags &= ~TEMP_HIGH; // clear Error
         }
 
-        if ( (ErrorFlags & (LESS_6A|NO_SUN) ) && (LoadBl < 2) && (IsCurrentAvailable())) {
+        if ( (ErrorFlags & (LESS_6A|NO_SUN) ) && (LoadBl < 2) && (IsCurrentAvailable(EstimateNrOfPhasesCharging()))) {
             ErrorFlags &= ~LESS_6A;                                         // Clear Errors if there is enough current available, and Load Balancing is disabled or we are Master
             ErrorFlags &= ~NO_SUN;
             _LOG_I("No sun/current Errors Cleared.\n");
@@ -3806,6 +3868,7 @@ void StartwebServer(void) {
         doc["settings"]["solar_start_current"] = StartCurrent;
         doc["settings"]["solar_stop_time"] = StopTime;
         doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
+        doc["settings"]["SinglePhaseOverride"] = StrSinglePhase[SinglePhaseOverride];
         doc["settings"]["modem"] = StrModem[Modem];
         doc["settings"]["mains_meter"] = EMConfig[MainsMeter].Desc;
         doc["settings"]["starttime"] = (DelayedStartTime.epoch2 ? DelayedStartTime.epoch2 + EPOCH2_OFFSET : 0);
