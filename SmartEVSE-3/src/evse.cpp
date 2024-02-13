@@ -1085,7 +1085,7 @@ void CalcBalancedCurrent(char mod) {
             // If IsCurrentAvailable then start timer to re-evaluate number of phases to charge with
             // for now reuse StopTime
             if (SinglePhaseOverride == YES  && IsCurrentAvailable(3)) {         // Only start try for 3 phases when in 1 phase
-                if (BalancedLeft && Solar3PhaseStartTimer == 0) {               // after timer runs out: SinglePhaseOverride to NO    
+                if (ActiveEVSE && Solar3PhaseStartTimer == 0) {               // after timer runs out: SinglePhaseOverride to NO    
                     Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
                 }                                                              
             }
@@ -1093,14 +1093,14 @@ void CalcBalancedCurrent(char mod) {
 
             // start timer if current is below minimum
             // stop timer if current is 0.5A above minimum, extra 0,5A needed as IsetBalanced is set to the minimum later and this makes the loop unstable.
-            if (IsetBalanced < (BalancedLeft * MinCurrent * 10)) {
-                IsetBalanced = BalancedLeft * MinCurrent * 10;                  // set here to prevent no_current flag later
+            if (IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
+                IsetBalanced = ActiveEVSE * MinCurrent * 10;                  // set here to prevent no_current flag later
                  _LOG_V("Checkpoint 3a Lacking power, SolarStopTimer: %u.\n", SolarStopTimer);
-                if (BalancedLeft && SolarStopTimer == 0) {                      // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
+                if (ActiveEVSE && SolarStopTimer == 0) {                      // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
                     setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
                 }
             } else {
-                if (IsetBalanced > (BalancedLeft * MinCurrent * 10) + 10) {
+                if (IsetBalanced > (ActiveEVSE * MinCurrent * 10) + 10) {
                     _LOG_V("Checkpoint 3b Power is 1A over minimum for stop timer, SolarStopTimer: %u.\n", SolarStopTimer);
                     setSolarStopTimer(0);
                 }
@@ -3337,14 +3337,14 @@ void BroadcastWorker(ModbusMessage Msg) {
             }
             _LOG_V_NO_FUNC("\n");
         }
-        else {
 #if DBG != 0
+        else {
             _LOG_A("Received invalid broadcast packet, reg=%04x (%i bytes)", Register, Msg.size());
             for (auto b : Msg)
                 _LOG_A_NO_FUNC(" %02x", b);
             _LOG_A_NO_FUNC("\n");
-#endif
         }
+#endif
     }
 }
 
@@ -3434,10 +3434,12 @@ void MBhandleData(ModbusMessage msg, uint32_t token)
         // token: first byte address, second byte function, third and fourth reg
         uint8_t token_function = (token & 0x00FF0000) >> 16;
         uint8_t token_address = token >> 24;
-        if (token_address != MB.Address)
+        if (token_address != MB.Address) {
             _LOG_A("ERROR: Address=%u, MB.Address=%u, token_address=%u.\n", Address, MB.Address, token_address);
-        if (token_function != MB.Function)
+        }
+        if (token_function != MB.Function) {
             _LOG_A("ERROR: MB.Function=%u, token_function=%u.\n", MB.Function, token_function);
+        }
         uint16_t reg = (token & 0x0000FFFF);
         MB.Register = reg;
 
