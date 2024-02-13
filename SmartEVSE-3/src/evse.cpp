@@ -875,6 +875,20 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
         TotalCurrent += Balanced[n];                                            // Calculate total of all set charge currents
     }
 
+    // Allow solar Charging if surplus current is above 'StartCurrent' (sum of all phases)
+    // Charging will start after the timeout (chargedelay) period has ended
+     // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
+    if (Mode == MODE_SOLAR) {                                                   // no active EVSE yet?
+        if (ActiveEVSE == 0 && Isum >= ((signed int)StartCurrent *-10)) {
+            _LOG_D("No current available checkpoint A. ActiveEVSE=%i, TotalCurrent=%iA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, TotalCurrent, StartCurrent, (float)Isum/10, ImportCurrent);
+            return 0;
+        }
+        else if ((ActiveEVSE * MinCurrent * 10) > TotalCurrent) {               // check if we can split the available current between all active EVSE's
+            _LOG_D("No current available checkpoint B. ActiveEVSE=%i, TotalCurrent=%iA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, TotalCurrent, StartCurrent, (float)Isum/10, ImportCurrent);
+            return 0;
+        }
+    }
+
     ActiveEVSE++;                                                           // Do calculations with one more EVSE
     if (ActiveEVSE > NR_EVSES) ActiveEVSE = NR_EVSES;
     Baseload = Imeasured - TotalCurrent;                                    // Calculate Baseload (load without any active EVSE)
@@ -896,7 +910,7 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
     // Charging will start after the timeout (chargedelay) period has ended
      // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
     if (Mode == MODE_SOLAR) { 
-        if (Isum >= ((signed int)StartCurrent *-10)) return 0;
+        if (ActiveEVSE == 1 && Isum >= ((signed int)StartCurrent *-10)) return 0;
     }
 
     return 1;
@@ -975,7 +989,7 @@ uint8_t EstimateNrOfPhasesCharging(void) {
 // only runs on the Master or when loadbalancing Disabled
 void CalcBalancedCurrent(char mod) {
     int Average, MaxBalanced, Idifference, Baseload_EV;
-    int BalancedLeft = 0;
+    int ActiveEVSE = 0;
     signed int IsumImport;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -993,7 +1007,7 @@ void CalcBalancedCurrent(char mod) {
     BalancedMax[0] = ChargeCurrent;
                                                                                 // update BalancedMax[0] if the MAX current was adjusted using buttons or CLI
     for (n = 0; n < NR_EVSES; n++) if (BalancedState[n] == STATE_C) {
-            BalancedLeft++;                                                     // Count nr of Active (Charging) EVSE's
+            ActiveEVSE++;                                                       // Count nr of Active (Charging) EVSE's
             ActiveMax += BalancedMax[n];                                        // Calculate total Max Amps for all active EVSEs
             TotalCurrent += Balanced[n];                                        // Calculate total of all set charge currents
     }
@@ -1015,7 +1029,7 @@ void CalcBalancedCurrent(char mod) {
                                                                                 // limiting is per phase so no Nr_Of_Phases_Charging here!
         else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
-        if (BalancedLeft && mod) {                                              // Only if we have active EVSE's and New EVSE charging
+        if (ActiveEVSE && mod) {                                                // Only if we have active EVSE's and New EVSE charging
             // Set max combined charge current to MaxMains - Baseload, or MaxCircuit - Baseload_EV if that is less
             IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_EV); //TODO: why are we checking MaxMains and MaxCircuit while we are in Normal mode?
                                                                                               //TODO: capacity rate limiting here?
@@ -1094,7 +1108,7 @@ void CalcBalancedCurrent(char mod) {
         } //end MODE_SOLAR
         else { // MODE_SMART
         // New EVSE charging, and only if we have active EVSE's
-            if (mod && BalancedLeft) {                                          // Set max combined charge current to MaxMains - Baseload
+            if (mod && ActiveEVSE) {                                            // Set max combined charge current to MaxMains - Baseload
                 IsetBalanced = min((MaxMains * 10) - Baseload, min((MaxCircuit * 10 ) - Baseload_EV, ((MaxSumMains * 10) - Isum)/3)); //assume the current should be available on all 3 phases
             }
         } //end MODE_SMART
@@ -1106,9 +1120,9 @@ void CalcBalancedCurrent(char mod) {
 
     _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
-    if (BalancedLeft) {                                                         // Only if we have active EVSE's
-        if (IsetBalanced < 0 || IsetBalanced < (BalancedLeft * MinCurrent * 10)) {
-            IsetBalanced = BalancedLeft * MinCurrent * 10;                      // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
+    if (ActiveEVSE) {                                                           // Only if we have active EVSE's
+        if (IsetBalanced < 0 || IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
+            IsetBalanced = ActiveEVSE * MinCurrent * 10;                        // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
             NoCurrent++;                                                        // Flag NoCurrent left
             _LOG_I("No Current!!\n");
         } else
@@ -1121,45 +1135,42 @@ void CalcBalancedCurrent(char mod) {
         // Calculate average current per EVSE
         n = 0;
         do {
-            Average = MaxBalanced / BalancedLeft;                               // Average current for all active EVSE's
+            Average = MaxBalanced / ActiveEVSE;                                 // Average current for all active EVSE's
 
             // Check for EVSE's that have a lower MAX current
             if ((BalancedState[n] == STATE_C) && (!CurrentSet[n]) && (Average >= BalancedMax[n])) // Active EVSE, and current not yet calculated?
             {
                 Balanced[n] = BalancedMax[n];                                   // Set current to Maximum allowed for this EVSE
                 CurrentSet[n] = 1;                                              // mark this EVSE as set.
-                BalancedLeft--;                                                 // decrease counter of active EVSE's
+                ActiveEVSE--;                                                   // decrease counter of active EVSE's
                 MaxBalanced -= Balanced[n];                                     // Update total current to new (lower) value
                 n = 0;                                                          // check all EVSE's again
             } else n++;
-        } while (n < NR_EVSES && BalancedLeft);
+        } while (n < NR_EVSES && ActiveEVSE);
 
         // All EVSE's which had a Max current lower then the average are set.
         // Now calculate the current for the EVSE's which had a higher Max current
         n = 0;
-        if (BalancedLeft) {                                                     // Any Active EVSE's left?
+        if (ActiveEVSE) {                                                     // Any Active EVSE's left?
             do {                                                                // Check for EVSE's that are not set yet
                 if ((BalancedState[n] == STATE_C) && (!CurrentSet[n])) {        // Active EVSE, and current not yet calculated?
-                    Balanced[n] = MaxBalanced / BalancedLeft;                   // Set current to Average
+                    Balanced[n] = MaxBalanced / ActiveEVSE;                   // Set current to Average
                     CurrentSet[n] = 1;                                          // mark this EVSE as set.
-                    BalancedLeft--;                                             // decrease counter of active EVSE's
+                    ActiveEVSE--;                                             // decrease counter of active EVSE's
                     MaxBalanced -= Balanced[n];                                 // Update total current to new (lower) value
                 }                                                               //TODO since the average has risen the other EVSE's should be checked for exceeding their MAX's too!
-            } while (++n < NR_EVSES && BalancedLeft);
+            } while (++n < NR_EVSES && ActiveEVSE);
         }
 
 
-    } // BalancedLeft
+    } // ActiveEVSE
     _LOG_V("Checkpoint 5 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
-
-    char Str[128];
-    char *cur = Str, * const end = Str + sizeof Str;
     if (LoadBl == 1) {
+        _LOG_D("Balance: ");
         for (n = 0; n < NR_EVSES; n++) {
-            if (cur < end) cur += snprintf(cur, end-cur, "EVSE%u:%s(%u.%1uA),", n, getStateName(BalancedState[n]), Balanced[n]/10, Balanced[n]%10);
-            else strcpy(end-sizeof("**truncated**"), "**truncated**");
+            _LOG_D_NO_FUNC("EVSE%u:%s(%.1fA) ", n, getStateName(BalancedState[n]), (float)Balanced[n]/10);
         }
-    _LOG_D("Balance: %s\n", Str);
+        _LOG_D_NO_FUNC("\n");
     }
 } //CalcBalancedCurrent
 
@@ -1195,6 +1206,30 @@ void CalcBalancedCurrent(char mod) {
  * Broadcast momentary currents to all Node EVSE's
  */
 void BroadcastCurrent(void) {
+
+    // We prepend the broadcastmessage with the 2 byte register number
+    uint16_t reg = 0x0030;
+    // Send message
+    ModbusMessage Msg;
+    Msg.clear();
+    Msg.add(reg);
+    for (uint16_t i=0; i<3; i++) {
+        Msg.add(Irms[i]);
+    }
+    Error err = MBclient.addBroadcastMessage(Msg.data(), Msg.size());
+    if (err!=SUCCESS) {
+        ModbusError e(err);
+        _LOG_A("Error creating request: %02X - %s\n", (int)e, (const char *)e);
+    }
+    else {
+        _LOG_D("Sent broadcast packet");
+    }
+#if DBG != 0
+    _LOG_V_NO_FUNC(" (%i bytes)", Msg.size());
+    for (auto b : Msg)
+        _LOG_V_NO_FUNC(" %02x", b);
+    _LOG_D_NO_FUNC("\n");
+#endif
     ModbusWriteMultipleRequest(BROADCAST_ADR, 0x0020, Balanced, NR_EVSES);
 }
 
@@ -1329,6 +1364,10 @@ Regist 	Access  Description 	        Unit 	Values
 0x000B 	R 	Serial number
 0x0020 - 0x0027
         W 	Broadcast charge current. SmartEVSE uses only one value depending on the "Load Balancing" configuration
+                                        0.1 A 	0:no current available
+//this data sent through actual addBroadcast function of emodbus library so we keep backwards compatibility
+0x0030 - 0x0032
+        W 	Broadcast MainsMeter currents L1 - L3.
                                         0.1 A 	0:no current available
 **/
 
@@ -1695,7 +1734,7 @@ uint16_t getItemValue(uint8_t nav) {
 
         // Status readonly
         case STATUS_MAX:
-            return MaxCapacity;
+            return min(MaxCapacity,MaxCurrent);
         case STATUS_TEMP:
             return (signed int)TempEVSE;
         case STATUS_SERIAL:
@@ -3217,10 +3256,13 @@ ModbusMessage MBNodeRequest(ModbusMessage request) {
             if (ItemID) {
                 response.add(MB.Address, MB.Function, (uint8_t)(MB.RegisterCount * 2));
 
+                _LOG_D("Node answering NodeStatus request");
                 for (i = 0; i < MB.RegisterCount; i++) {
                     values[i] = getItemValue(ItemID + i);
                     response.add(values[i]);
+                    _LOG_V_NO_FUNC(" value[%u]=%u", i, values[i]);
                 }
+                _LOG_D_NO_FUNC("\n");
                 //ModbusReadInputResponse(MB.Address, MB.Function, values, MB.RegisterCount);
             } else {
                 response.setError(MB.Address, MB.Function, ILLEGAL_DATA_ADDRESS);
@@ -3272,6 +3314,40 @@ ModbusMessage MBNodeRequest(ModbusMessage request) {
   return response;
 }
 
+// Worker function for broadcast requests
+void BroadcastWorker(ModbusMessage Msg) {
+    uint16_t Register;
+    //notice that the first byte is a leading 0x00 byte
+    uint16_t index = 1;
+    index=Msg.get(index, Register);
+#if DBG != 0
+    _LOG_D("Received broadcast packet, reg=%04x (%i bytes)", Register, Msg.size());
+    for (auto b : Msg)
+        _LOG_V_NO_FUNC(" %02x", b);
+    _LOG_V_NO_FUNC("\n");
+#endif
+    if (Register == 0x0030) {
+        if (Msg.size() == 15) {
+            Isum = 0;
+            _LOG_V("Irms from MainsMeter received: ");
+            for (int i=0; i<3; i++) {
+                index = Msg.get(index, Irms[i]);
+                Isum = Isum + Irms[i];
+                _LOG_V_NO_FUNC("Index=%u, L%i=%.1fA,", index, i+1, (float)Irms[i]/10);
+            }
+            _LOG_V_NO_FUNC("\n");
+        }
+        else {
+#if DBG != 0
+            _LOG_A("Received invalid broadcast packet, reg=%04x (%i bytes)", Register, Msg.size());
+            for (auto b : Msg)
+                _LOG_A_NO_FUNC(" %02x", b);
+            _LOG_A_NO_FUNC("\n");
+#endif
+        }
+    }
+}
+
 // The Node/Server receives a broadcast message from the Master
 // Does not send any data back.
 ModbusMessage MBbroadcast(ModbusMessage request) {
@@ -3293,7 +3369,7 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
                 }
 
                 if (OK && ItemID < STATUS_STATE) write_settings();
-                _LOG_D("Broadcast FC06 Item:%u val:%u\n",ItemID, MB.Value);
+                _LOG_D("Broadcast received FC06 Item:%u val:%u\n",ItemID, MB.Value);
                 break;
             case 0x10: // (Write multiple register))
                 // 0x0020: Balance currents
@@ -3301,7 +3377,7 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
                     Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
                     if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
                     else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
-                    _LOG_V("Broadcast received, Node %u.%1u A\n", Balanced[0]/10, Balanced[0]%10);
+                    _LOG_V("Broadcast received, Node %.1f A\n", (float) Balanced[0]/10);
                     timeout = COMM_TIMEOUT;                     // reset 10 second timeout
                 } else {
                     //WriteMultipleItemValueResponse();
@@ -3329,8 +3405,7 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
 // Responses from Slaves/Nodes are handled here
 void MBhandleData(ModbusMessage msg, uint32_t token) 
 {
-   uint8_t Address = msg.getServerID();
-
+    uint8_t Address = msg.getServerID();    // returns Server ID or 0 if MM_data is shorter than 3
     if (Address == MainsMeterAddress) {
         //_LOG_A("MainsMeter data\n");
         MBMainsMeterResponse(msg);
@@ -3339,7 +3414,32 @@ void MBhandleData(ModbusMessage msg, uint32_t token)
         MBEVMeterResponse(msg);
     // Only responses to FC 03/04 are handled here. FC 06/10 response is only a acknowledge.
     } else {
+        //_LOG_V("Received Packet with ServerID=%i, FunctionID=%i, token=%08x.\n", msg.getServerID(), msg.getFunctionCode(), token);
         ModbusDecode( (uint8_t*)msg.data(), msg.size());
+        // ModbusDecode does NOT always decodes the register correctly.
+        // This bug manifested itself as the <Mode=186 bug>:
+
+        // (Timer100ms)(C1) ModbusRequest 4: Request Configuration Node 1
+        // (D) (ModbusSend8)(C1) Sent packet address: 02, function: 04, reg: 0108, data: 0002.
+        // (D) (ModbusDecode)(C0) Received packet (7 bytes) 02 04 04 00 00 00 0c
+        // (V) (ModbusDecode)(C0)  valid Modbus packet: Address 02 Function 04 Register 0000 Response
+        // (D) (receiveNodeStatus)(C0) ReceivedNode[1]Status State:0 Error:12, BalancedMax:2530, Mode:186, ConfigChanged:253.
+
+        // The response is the response for a request of node config 0x0108, but is interpreted as a request for node status 0x0000
+        //
+        // Using a global variable struct ModBus MB is not a good idea, but localizing it does not
+        // solve the problem.
+
+        // Luckily we have coded the register in the token we sent....
+        // token: first byte address, second byte function, third and fourth reg
+        uint8_t token_function = (token & 0x00FF0000) >> 16;
+        uint8_t token_address = token >> 24;
+        if (token_address != MB.Address)
+            _LOG_A("ERROR: Address=%u, MB.Address=%u, token_address=%u.\n", Address, MB.Address, token_address);
+        if (token_function != MB.Function)
+            _LOG_A("ERROR: MB.Function=%u, token_function=%u.\n", MB.Function, token_function);
+        uint16_t reg = (token & 0x0000FFFF);
+        MB.Register = reg;
 
         if (MB.Address > 1 && MB.Address <= NR_EVSES && (MB.Function == 03 || MB.Function == 04)) {
         
@@ -3399,6 +3499,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             MBserver.registerWorker(LoadBl, ANY_FUNCTION_CODE, &MBNodeRequest);      
             // Also add handler for all broadcast messages from Master.
             MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
+            MBserver.registerBroadcastWorker(BroadcastWorker);
 
 
             if (MainsMeter && MainsMeter != EM_API) MBserver.registerWorker(MainsMeterAddress, ANY_FUNCTION_CODE, &MBMainsMeterResponse);
@@ -4467,9 +4568,6 @@ void WiFiSetup(void) {
     // Initialize the server (telnet or web socket) of RemoteDebug
     Debug.begin(APhostname, 23, 1);
     Debug.showColors(true); // Colors
-#endif
-#if DBG == 2
-    Debug.setSerialEnabled(true); // if you wants serial echo - only recommended if ESP is plugged in USB
 #endif
     handleWIFImode();                                                           //go into the mode that was saved in nonvolatile memory
     StartwebServer();
