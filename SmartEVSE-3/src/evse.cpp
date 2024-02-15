@@ -889,23 +889,21 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
         }
     }
 
-    ActiveEVSE++;                                                           // Do calculations with one more EVSE
-    if (ActiveEVSE > NR_EVSES) ActiveEVSE = NR_EVSES;
-    Baseload = Imeasured - TotalCurrent;                                    // Calculate Baseload (load without any active EVSE)
-    Baseload_EV = Imeasured_EV - TotalCurrent;                              // Load on the EV subpanel excluding any active EVSE
-    if (Baseload < 0) Baseload = 0;                                         // only relevant for Smart/Solar mode
-
-    // Check if the lowest charge current(6A) x ActiveEV's + baseload would be higher then the MaxMains.
-    if ((ActiveEVSE * (MinCurrent * 10) + Baseload) > (MaxMains * 10)) {
+    Baseload_EV = Imeasured_EV - TotalCurrent;                              // Calculate Baseload EV-meter (load without any active EVSE)
+    if (Baseload_EV < 0) {
+        Baseload_EV = 0;
+    }
+    Baseload = Imeasured - TotalCurrent;                                    // Calculate Baseload P1 (load without any active EVSE)
+    if (Baseload < 0) {
+        Baseload = 0;
+    }
+    // Check if the lowest charge current(6A) x ActiveEV's + baseload would be higher then max available.
+    int ImaxAvailable = min((MaxMains * 10) - Baseload, min((MaxCircuit * 10 ) - Baseload_EV, ((MaxSumMains * 10)/EstimateNrOfPhasesCharging()) - Baseload));
+    int Irequested = (ActiveEVSE * MinCurrent * 10) + (MinCurrent * 10 * RequestedNrOfPhasesCharging / 3 );
+    if (Irequested > ImaxAvailable) {                                       // check with one extra EVSE with requested number of phases           
         return 0;                                                           // Not enough current available!, return with error
     }
-    if ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10)) {
-        return 0;                                                           // Not enough current available!, return with error
-    }
-    if ((RequestedNrOfPhasesCharging * (MinCurrent * 10) + Isum) > (MaxSumMains * 10)) { // add one EVSE with RequestedNrOfPhasesCharging
-        return 0;                                                           // Not enough current available!, return with error
-    }
-
+ 
     // Allow solar Charging if surplus current is above 'StartCurrent' (sum of all phases)
     // Charging will start after the timeout (chargedelay) period has ended
      // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
@@ -988,140 +986,157 @@ uint8_t EstimateNrOfPhasesCharging(void) {
 // mod =1 we have a new EVSE requesting to start charging.
 // only runs on the Master or when loadbalancing Disabled
 void CalcBalancedCurrent(char mod) {
-    int Average, MaxBalanced, Idifference, Baseload_EV;
+    int Average, MaxBalanced, Idifference, ImaxAvailable, Baseload_EV;
     int ActiveEVSE = 0;
-    signed int IsumImport;
+    signed int IsumImport = 0;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
 
-    if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config)
+    if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config) {
         ChargeCurrent = MaxCapacity * 10;
-    else
-        ChargeCurrent = MaxCurrent * 10;                                        // Instead use new variable ChargeCurrent.
+    } else {
+        ChargeCurrent = MaxCurrent * 10;
+    }
 
     // Override current temporary if set
     if (OverrideCurrent)
         ChargeCurrent = OverrideCurrent;
 
     BalancedMax[0] = ChargeCurrent;
-                                                                                // update BalancedMax[0] if the MAX current was adjusted using buttons or CLI
+                                                                            // update BalancedMax[0] if the MAX current was adjusted using buttons or CLI
     for (n = 0; n < NR_EVSES; n++) if (BalancedState[n] == STATE_C) {
-            ActiveEVSE++;                                                       // Count nr of Active (Charging) EVSE's
-            ActiveMax += BalancedMax[n];                                        // Calculate total Max Amps for all active EVSEs
-            TotalCurrent += Balanced[n];                                        // Calculate total of all set charge currents
+            ActiveEVSE++;                                                   // Count nr of Active (Charging) EVSE's
+            ActiveMax += BalancedMax[n];                                    // Calculate total Max Amps for all active EVSEs
+            TotalCurrent += Balanced[n];                                    // Calculate total of all set charge currents
     }
-    _LOG_V("Checkpoint 1 Isetbalanced=%.1f A Imeasured=%.1f A MaxCircuit=%i Imeasured_EV=%.1f A, Battery Current = %.1f A, mode=%i.\n", (float)IsetBalanced/10, (float)Imeasured/10, MaxCircuit, (float)Imeasured_EV/10, (float)homeBatteryCurrent/10, Mode);
+    _LOG_V("Checkpoint 0 Isetbalanced=%.1f A Imeasured=%.1f A MaxCircuit=%i Imeasured_EV=%.1f A, Battery Current = %.1f A, mode=%i.\n", (float)IsetBalanced/10, (float)Imeasured/10, MaxCircuit, (float)Imeasured_EV/10, (float)homeBatteryCurrent/10, Mode);
 
-    // When Load balancing = Master,  Limit total current of all EVSEs to MaxCircuit
-    // Also, when not in Normal Mode, if MaxCircuit is set, it will limit the total current (subpanel configuration)
-    Baseload_EV = Imeasured_EV - TotalCurrent;                                  // Calculate Baseload (load without any active EVSE)
-    if (Baseload_EV < 0)
+    // Calculate Baseloads (P1 en EV-meter) for use later
+    Baseload_EV = Imeasured_EV - TotalCurrent;                              // Calculate Baseload EV-meter (load without any active EVSE)
+    if (Baseload_EV < 0) {
         Baseload_EV = 0;
-    Baseload = Imeasured - TotalCurrent;                                        // Calculate Baseload (load without any active EVSE)
-    if (Baseload < 0)
+    }
+    Baseload = Imeasured - TotalCurrent;                                    // Calculate Baseload P1 (load without any active EVSE)
+    if (Baseload < 0) {
         Baseload = 0;
+    }
 
-    if (Mode == MODE_NORMAL)                                                    // Normal Mode
-    {
-        if (LoadBl == 1)                                                        // Load Balancing = Master? MaxCircuit is max current for all active EVSE's;
-            IsetBalanced = MaxCircuit * 10 - Baseload_EV;                       // subpanel option not valid in Normal Mode;
-                                                                                // limiting is per phase so no Nr_Of_Phases_Charging here!
-        else
-            IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
-        if (ActiveEVSE && mod) {                                                // Only if we have active EVSE's and New EVSE charging
-            // Set max combined charge current to MaxMains - Baseload, or MaxCircuit - Baseload_EV if that is less
-            IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_EV); //TODO: why are we checking MaxMains and MaxCircuit while we are in Normal mode?
-                                                                                              //TODO: capacity rate limiting here?
-        }
-    } //end MODE_NORMAL
-    else { // start MODE_SOLAR || MODE_SMART
-        // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
+    // Room for extra current (per phase) upto any of the max settings: MaxMains, MaxCircuit en MaxSumMains
+    // May be negative in case not enough power is available
+    Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/EstimateNrOfPhasesCharging()));
+    // Maximum current (per phase) from baseload upto  any of the max settings: MaxMains, MaxCircuit en MaxSumMains
+    ImaxAvailable = min((MaxMains * 10) - Baseload, min((MaxCircuit * 10 ) - Baseload_EV, ((MaxSumMains * 10)/EstimateNrOfPhasesCharging()) - Baseload));
+    _LOG_V("Checkpoint 1 Idifference=%.1f A, ImaxAvailable=%.1f.\n", (float)Idifference / 10, (float)ImaxAvailable / 10);
 
-        Idifference = min((MaxMains * 10) - Imeasured, min((MaxCircuit * 10) - Imeasured_EV, ((MaxSumMains * 10) - Isum)/EstimateNrOfPhasesCharging()));
-        if (!mod) {                                                             // no new EVSE's charging
-                                                                                // For Smart mode, no new EVSE asking for current
-                                                                                // But for Solar mode we _also_ have to guard MaxCircuit and Maxmains!
-            if (Idifference > 0) {
-                if (Mode == MODE_SMART) {
-                    _LOG_V("phaseLastUpdate=%i,processed=%i.\n", phasesLastUpdate ,phasesLastUpdate_processed);
-                    if (phasesLastUpdate > phasesLastUpdate_processed) {        // only increase current if phases are updated; even in subpanel mode, if EVMeter says
-                                                                                // there is current available, still wait until last phases update to increase
-                        IsetBalanced += (Idifference / 4);                      // increase with 1/4th of difference (slowly increase current)
-                        if ( LocalTimeSet ) phasesLastUpdate_processed = time(NULL); //only load phasesLastUpdate_processed with valid time
-                    }
-                }
-            }                                                                   // in Solar mode we compute increase of current later on!
-            else
-                IsetBalanced += Idifference;                                    // last PWM setting + difference (immediately decrease current)
-            if (IsetBalanced < 0) IsetBalanced = 0;
-            if (IsetBalanced > 800) IsetBalanced = 800;                         // hard limit 80A (added 11-11-2017)
-        }
-        _LOG_V("Checkpoint 2 Isetbalanced=%.1f A, Idifference=%.1f, mod=%i.\n", (float)IsetBalanced/10, (float)Idifference/10, mod);
-
-        if (Mode == MODE_SOLAR)                                                 // Solar version
+    if (Mode == MODE_NORMAL) // Normal Mode
+    {                                         
+        IsetBalanced = ChargeCurrent;                                       // Set current to ChargeCurrent (fix: v2.05)
+        if (LoadBl == 1 || (ActiveEVSE && mod))                             // Load Balancing = Master or new EVSE and already active;
         {
-            IsumImport = Isum - (10 * ImportCurrent);                           // Allow Import of power from the grid when solar charging
-            if (Idifference > 0) {                                              // so we had some room for power as far as MaxCircuit and MaxMains are concerned
-                if (IsumImport < 0) {
-                    // negative, we have surplus (solar) power available
-                    if (IsumImport < -10 && Idifference > 10)
-                        IsetBalanced = IsetBalanced + 5;                        // more then 1A available, increase Balanced charge current with 0.5A
-                    else
-                        IsetBalanced = IsetBalanced + 1;                        // less then 1A available, increase with 0.1A
-                } else {
-                    // positive, we use more power then is generated
+            IsetBalanced = ImaxAvailable;
+        }
+    } // end MODE_NORMAL
+    else if (Mode == MODE_SMART)
+    { // Smart mode
+        if (Idifference < 0)                                                // we have to guard MaxCircuit and Maxmains!
+        {
+            IsetBalanced += Idifference;                                    // last PWM setting + difference (immediately decrease current)
+        }
+        else if (!mod)                                                      // no new EVSE's charging
+        {
+            _LOG_V("phaseLastUpdate=%i,processed=%i.\n", phasesLastUpdate, phasesLastUpdate_processed);
+            if (phasesLastUpdate > phasesLastUpdate_processed)
+            {
+                // only increase current if phases are updated; even in subpanel mode, if EVMeter says
+                // there is current available, still wait until last phases update to increase
+                IsetBalanced += (Idifference / 4);                          // increase with 1/4th of difference (slowly increase current)
+                if (LocalTimeSet)
+                {
+                    phasesLastUpdate_processed = time(NULL);                // only load phasesLastUpdate_processed with valid time
+                }
+            }
+        }
+        else if (ActiveEVSE)                                                // New EVSE charging and already active
+        {
+            IsetBalanced = ImaxAvailable;
+        }
+    } // end MODE_SMART
+    else if (Mode == MODE_SOLAR) // Solar mode
+    {
+        if (Idifference < 0)                                                // we have to guard MaxCircuit and Maxmains!
+        {
+            IsetBalanced += Idifference;                                    // last PWM setting + difference (immediately decrease current)
+        }
+        else if (!mod)                                                      // no new EVSE's charging
+        { 
+            {                                                               // so we had some room for extra power and we have surplus (solar) power available
+                IsumImport = Isum - (10 * ImportCurrent);                   // Allow Import of power from the grid when solar charging
+                if (IsumImport > 0)
+                {                                                           // we use more power then is generated
                     if (IsumImport > 20)
-                        IsetBalanced = IsetBalanced - (IsumImport / 2);         // we use atleast 2A more then available, decrease Balanced charge current.
+                        IsetBalanced = IsetBalanced - (IsumImport / 2);     // we use atleast 2A more then available, decrease Balanced charge current.
                     else if (IsumImport > 10)
-                        IsetBalanced = IsetBalanced - 5;                        // we use 1A more then available, decrease with 0.5A
+                        IsetBalanced = IsetBalanced - 5;                    // we use 1A more then available, decrease with 0.5A
                     else if (IsumImport > 3)
-                        IsetBalanced = IsetBalanced - 1;                        // we still use > 0.3A more then available, decrease with 0.1A
-                                                                                // if we use <= 0.3A we do nothing
+                        IsetBalanced = IsetBalanced - 1;                    // we still use > 0.3A more then available, decrease with 0.1A
+                                                                            // if we use <= 0.3A we do nothing
                 }
-            }                                                                   // we already corrected Isetbalance in case of NOT enough power MaxCircuit/MaxMains
-            _LOG_V("Checkpoint 3 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced/10, (float)IsumImport/10, (float)Isum/10, ImportCurrent);
-
-            // If IsCurrentAvailable then start timer to re-evaluate number of phases to charge with
-            // for now reuse StopTime
-            if (SinglePhaseOverride == YES  && IsCurrentAvailable(3)) {         // Only start try for 3 phases when in 1 phase
-                if (BalancedLeft && Solar3PhaseStartTimer == 0) {               // after timer runs out: SinglePhaseOverride to NO    
-                    Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
-                }                                                              
-            }
-            else Solar3PhaseStartTimer = 0;
-
-            // start timer if current is below minimum
-            // stop timer if current is 0.5A above minimum, extra 0,5A needed as IsetBalanced is set to the minimum later and this makes the loop unstable.
-            if (IsetBalanced < (BalancedLeft * MinCurrent * 10)) {
-                IsetBalanced = BalancedLeft * MinCurrent * 10;                  // set here to prevent no_current flag later
-                 _LOG_V("Checkpoint 3a Lacking power, SolarStopTimer: %u.\n", SolarStopTimer);
-                if (BalancedLeft && SolarStopTimer == 0) {                      // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
-                    setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
-                }
-            } else {
-                if (IsetBalanced > (BalancedLeft * MinCurrent * 10) + 10) {
-                    _LOG_V("Checkpoint 3b Power is 1A over minimum for stop timer, SolarStopTimer: %u.\n", SolarStopTimer);
-                    setSolarStopTimer(0);
+                else
+                {                                                           // we have surplus (solar) power available
+                    if (IsumImport < -10 && Idifference > 10)
+                        IsetBalanced = IsetBalanced + 5;                    // more then 1A available, increase Balanced charge current with 0.5A
+                    else
+                        IsetBalanced = IsetBalanced + 1;                    // less then 1A available, increase with 0.1A
                 }
             }
-        } //end MODE_SOLAR
-        else { // MODE_SMART
-        // New EVSE charging, and only if we have active EVSE's
-            if (mod && ActiveEVSE) {                                            // Set max combined charge current to MaxMains - Baseload
-                IsetBalanced = min((MaxMains * 10) - Baseload, min((MaxCircuit * 10 ) - Baseload_EV, ((MaxSumMains * 10) - Isum)/3)); //assume the current should be available on all 3 phases
+        }
+        _LOG_V("Checkpoint 2 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced / 10, (float)IsumImport / 10, (float)Isum / 10, ImportCurrent);
+
+        // If IsCurrentAvailable then start timer to re-evaluate number of phases to charge with
+        // for now reuse StopTime
+        if (SinglePhaseOverride == YES && IsCurrentAvailable(2))            // Only start try for 3 phases when in 1 phase and 2 extra phases are available
+        {
+            if (ActiveEVSE && Solar3PhaseStartTimer == 0)
+            {                                                               // after timer runs out: SinglePhaseOverride to NO
+                Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
             }
-        } //end MODE_SMART
-    } // end MODE_SOLAR || MODE_SMART
+        }
+        else
+            Solar3PhaseStartTimer = 0;
 
-    // guard MaxCircuit in all modes; slave doesnt run CalcBalancedCurrent
-    if (IsetBalanced > (MaxCircuit * 10) - Baseload_EV)
-        IsetBalanced = MaxCircuit * 10 - Baseload_EV; //limiting is per phase so no Nr_Of_Phases_Charging here!
+        // start timer if current is below minimum
+        // stop timer if current is 1A above minimum, extra 1A needed as IsetBalanced is set to the minimum later and this makes the loop unstable.
+        if (IsetBalanced < (ActiveEVSE * MinCurrent * 10))
+        {
+            IsetBalanced = ActiveEVSE * MinCurrent * 10;                    // set here to prevent no_current flag later
+            _LOG_V("Checkpoint 3 Lacking power, SolarStopTimer: %u.\n", SolarStopTimer);
+            if (ActiveEVSE && SolarStopTimer == 0)                          // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
+            {                                     
+                setSolarStopTimer(StopTime * 60);                           // Convert minutes into seconds
+            }
+        }
+        else
+        {
+            if (IsetBalanced > (ActiveEVSE * MinCurrent * 10) + 10)
+            {
+                _LOG_V("Checkpoint 4 Power is 1A over minimum so reset stop timer, SolarStopTimer: %u.\n", SolarStopTimer);
+                setSolarStopTimer(0);
+            }
+        }
+    } // end MODE_SOLAR
 
-    _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
+   // guard MaxCircuit in all modes; slave doesnt run CalcBalancedCurrent
+    if (IsetBalanced > ImaxAvailable)
+        IsetBalanced = ImaxAvailable;
+    if (IsetBalanced < 0)
+        IsetBalanced = 0;
+    if (IsetBalanced > 800)
+        IsetBalanced = 800; // hard limit 80A (added 11-11-2017)
+    _LOG_V("Checkpoint 5 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
     if (ActiveEVSE) {                                                           // Only if we have active EVSE's
-        if (IsetBalanced < 0 || IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
+        if (IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
             IsetBalanced = ActiveEVSE * MinCurrent * 10;                        // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
             NoCurrent++;                                                        // Flag NoCurrent left
             _LOG_I("No Current!!\n");
@@ -1129,7 +1144,6 @@ void CalcBalancedCurrent(char mod) {
             NoCurrent = 0;
 
         if (IsetBalanced > ActiveMax) IsetBalanced = ActiveMax;                 // limit to total maximum Amps (of all active EVSE's)
-                                                                                // TODO not sure if Nr_Of_Phases_Charging should be involved here
         MaxBalanced = IsetBalanced;                                             // convert to Amps
 
         // Calculate average current per EVSE
@@ -1151,12 +1165,12 @@ void CalcBalancedCurrent(char mod) {
         // All EVSE's which had a Max current lower then the average are set.
         // Now calculate the current for the EVSE's which had a higher Max current
         n = 0;
-        if (ActiveEVSE) {                                                     // Any Active EVSE's left?
+        if (ActiveEVSE) {                                                       // Any Active EVSE's left?
             do {                                                                // Check for EVSE's that are not set yet
                 if ((BalancedState[n] == STATE_C) && (!CurrentSet[n])) {        // Active EVSE, and current not yet calculated?
-                    Balanced[n] = MaxBalanced / ActiveEVSE;                   // Set current to Average
+                    Balanced[n] = MaxBalanced / ActiveEVSE;                     // Set current to Average
                     CurrentSet[n] = 1;                                          // mark this EVSE as set.
-                    ActiveEVSE--;                                             // decrease counter of active EVSE's
+                    ActiveEVSE--;                                               // decrease counter of active EVSE's
                     MaxBalanced -= Balanced[n];                                 // Update total current to new (lower) value
                 }                                                               //TODO since the average has risen the other EVSE's should be checked for exceeding their MAX's too!
             } while (++n < NR_EVSES && ActiveEVSE);
@@ -1164,7 +1178,7 @@ void CalcBalancedCurrent(char mod) {
 
 
     } // ActiveEVSE
-    _LOG_V("Checkpoint 5 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
+    _LOG_V("Checkpoint 6 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
     if (LoadBl == 1) {
         _LOG_D("Balance: ");
         for (n = 0; n < NR_EVSES; n++) {
@@ -3337,14 +3351,14 @@ void BroadcastWorker(ModbusMessage Msg) {
             }
             _LOG_V_NO_FUNC("\n");
         }
-        else {
 #if DBG != 0
+        else {
             _LOG_A("Received invalid broadcast packet, reg=%04x (%i bytes)", Register, Msg.size());
             for (auto b : Msg)
                 _LOG_A_NO_FUNC(" %02x", b);
             _LOG_A_NO_FUNC("\n");
-#endif
         }
+#endif
     }
 }
 
@@ -3434,10 +3448,12 @@ void MBhandleData(ModbusMessage msg, uint32_t token)
         // token: first byte address, second byte function, third and fourth reg
         uint8_t token_function = (token & 0x00FF0000) >> 16;
         uint8_t token_address = token >> 24;
-        if (token_address != MB.Address)
+        if (token_address != MB.Address) {
             _LOG_A("ERROR: Address=%u, MB.Address=%u, token_address=%u.\n", Address, MB.Address, token_address);
-        if (token_function != MB.Function)
+        }
+        if (token_function != MB.Function) {
             _LOG_A("ERROR: MB.Function=%u, token_function=%u.\n", MB.Function, token_function);
+        }
         uint16_t reg = (token & 0x0000FFFF);
         MB.Register = reg;
 
