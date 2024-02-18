@@ -27,7 +27,7 @@
 
 #ifndef DBG
 //the wifi-debugger is available by telnetting to your SmartEVSE device
-#define DBG 0  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
+#define DBG 1  //comment or set to 0 for production release, 0 = no debug 1 = debug over telnet, 2 = debug over usb serial
 #endif
 
 #ifndef FAKE_RFID
@@ -45,7 +45,7 @@
 
 #ifndef FAKE_SUNNY_DAY
 //set this to 1 to emulate a sunny day where your solar charger is injecting current in the grid:
-#define FAKE_SUNNY_DAY 0
+#define FAKE_SUNNY_DAY 1
 //disclaimer: might not work for CT1 calibration/uncalibration stuff, since I can't test that
 //the number of Amperes you want to have fake injected into Lx
 #endif
@@ -54,13 +54,13 @@
 #define INJECT_CURRENT_L1_0 0
 #define INJECT_CURRENT_L2_0 0
 #define INJECT_CURRENT_L3_0 0
-#define INJECT_CURRENT_L1_1 7
+#define INJECT_CURRENT_L1_1 13
 #define INJECT_CURRENT_L2_1 0
 #define INJECT_CURRENT_L3_1 0
 #define INJECT_CURRENT_L1_2 13
 #define INJECT_CURRENT_L2_2 13
 #define INJECT_CURRENT_L3_2 13
-#define SUN_STATUS_SWITCH_TIME 120                                          // sun status switch time in seconds
+#define SUN_STATUS_SWITCH_TIME 180                                          // sun status switch time in seconds
 #endif
 
 #ifndef MQTT

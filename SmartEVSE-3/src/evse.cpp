@@ -182,6 +182,8 @@ uint16_t OverrideCurrent = 0;                                               // T
 int16_t Imeasured = 0;                                                      // Max of all Phases (Amps *10) of mains power
 int16_t Imeasured_EV = 0;                                                   // Max of all Phases (Amps *10) of EV power
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
+signed int IsumImportHistory[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; //last 20 IsumImport values, used to find recent maximum and minimum value
+                                                                            // actual charging may drop to 0 temporarily while adjusting the charge current
 
 // Load Balance variables
 int16_t IsetBalanced = 0;                                                   // Max calculated current (Amps *10) available for all EVSE's
@@ -994,6 +996,7 @@ void CalcBalancedCurrent(char mod) {
     int Average, MaxBalanced, Idifference, ImaxAvailable, Baseload_EV;
     int ActiveEVSE = 0;
     signed int IsumImport = 0;
+    signed int IsumImportHistoryMax = 0, IsumImportHistoryMin = 0;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
@@ -1077,36 +1080,27 @@ void CalcBalancedCurrent(char mod) {
     }                            // end MODE_SMART
     else if (Mode == MODE_SOLAR) // Solar mode
     {
+        IsumImport = Isum - (10 * ImportCurrent); // Check flow to/from grid and allow Import of some power from the grid
+
         if (Idifference < 0) // we have to guard MaxCircuit and Maxmains!
         {
             IsetBalanced += Idifference; // last PWM setting + difference (immediately decrease current)
+            _LOG_V("Checkpoint 3 Using too much power, immediate decrease: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
         }
         else if (!mod) // no new EVSE's charging
         {
-            {                                             // so we had some room for extra power and we have surplus (solar) power available
-                IsumImport = Isum - (10 * ImportCurrent); // Allow Import of power from the grid when solar charging
+            {
                 if (IsumImport > 0)
                 { // we use more power then is generated
                     if (IsumImport > 20)
-                        IsetBalanced = IsetBalanced - (IsumImport / 2); // we use atleast 2A more then available, decrease Balanced charge current.
+                        IsetBalanced = IsetBalanced - 10; // we use atleast 2A more then available, decrease with 1A.
+                                                          // not too fast otherwise car will reduce to 0 and slowly increase again from there
                     else if (IsumImport > 10)
                         IsetBalanced = IsetBalanced - 5; // we use 1A more then available, decrease with 0.5A
                     else if (IsumImport > 3)
                         IsetBalanced = IsetBalanced - 1; // we still use > 0.3A more then available, decrease with 0.1A
                                                          // if we use <= 0.3A we do nothing
-
-                    // start the solar stop timer as we use more power then is generated
-                    if (ActiveEVSE && SolarStopTimer == 0) // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
-                    {
-                        _LOG_V("Checkpoint 3a Lacking power (IsumImport: %.1f) so start the solar stop timer.\n", (float)IsumImport / 10);
-                        setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
-                    }
-
-                    if (Solar3PhaseStartTimer != 0)  
-                    {
-                        _LOG_V("Checkpoint 3 Lacking solar power (IsumImport: %.1f) so reset the solar 3phase start timer.\n", (float)IsumImport / 10);
-                        Solar3PhaseStartTimer = 0;
-                    }
+                    _LOG_V("Checkpoint 4 Using more power than generated, so decrease: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
                 }
                 else
                 { // we have surplus solar power available
@@ -1115,32 +1109,90 @@ void CalcBalancedCurrent(char mod) {
                     else
                         IsetBalanced = IsetBalanced + 1; // less then 1A available, increase with 0.1A
 
-                    if (SolarStopTimer != 0) {
-                        _LOG_V("Checkpoint 4 we have surplus solar power (IsumImport: %.1f) so reset stop timer.\n", (float)IsumImport / 10);
-                        setSolarStopTimer(0);
+                    _LOG_V("Checkpoint 5 Surplus solar power, so increase: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
+                }
+
+                // build IsumImport history with min and max values
+                for (int n = 0; n < 20; n++)  
+                {
+                    if (n == 0)
+                    {
+                        IsumImportHistory[0] = IsumImportHistory[1];
+                        IsumImportHistoryMax = IsumImportHistory[0];
+                        IsumImportHistoryMin = IsumImportHistory[0];
+                    }
+                    else if (n == 19)
+                    {
+                        IsumImportHistory[n] = IsumImport;
+                    }
+                    else
+                    {
+                        IsumImportHistory[n] = IsumImportHistory[n + 1];
                     }
 
-                    // If IsCurrentAvailable then start timer to re-evaluate number of phases to charge with
-                    // for now reuse StopTime
-                    if (EstimateNrOfPhasesCharging() == 1 && IsumImport < (MinCurrent * -20 )) // Only start try for 3 phases when in 1 phase and 2 extra phases are available
+                    if (IsumImportHistoryMax < IsumImportHistory[n])
                     {
-                        if (ActiveEVSE && Solar3PhaseStartTimer == 0)
-                        {                                          // after timer runs out: SinglePhaseOverride to NO
-                            _LOG_V("Checkpoint 4a we have surplus solar power (IsumImport: %.1f) so start the solar 3phase start timer.\n", (float)IsumImport / 10);
-                            Solar3PhaseStartTimer = StopTime * 60; // Convert minutes into seconds
-                        }
+                        IsumImportHistoryMax = IsumImportHistory[n];
+                    }
+                    if (IsumImportHistoryMin > IsumImportHistory[n])
+                    {
+                        IsumImportHistoryMin = IsumImportHistory[n];
                     }
                 }
+                _LOG_V("Checkpoint 6 IsumImport history min: %.1f and max: %.1f.\n", (float)IsumImportHistoryMin / 10, (float)IsumImportHistoryMax / 10);
+
+
+                if (IsumImportHistoryMax < (MinCurrent * -20))
+                { // we had enough solar energy available for 2 extra phases at any time in the stored history
+                    if (EstimateNrOfPhasesCharging() == 1 && ActiveEVSE && Solar3PhaseStartTimer == 0)
+                    {
+                        _LOG_V("Checkpoint 7 Enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n", (float)IsumImportHistoryMin / 10, (float)IsumImportHistoryMax / 10);
+                        // after timer runs out: SinglePhaseOverride to NO
+                        // for now reuse StopTime
+                        Solar3PhaseStartTimer = StopTime * 60; // Convert minutes into seconds
+                    }
+                }
+                
+                if (IsumImportHistoryMax < 0)
+                { // we had surplus solar energy available at any time in the stored history
+                    if (SolarStopTimer != 0)
+                    {
+                        _LOG_V("Checkpoint 8 we have surplus solar power (IsumImport: %.1f) so reset stop timer.\n", (float)IsumImport / 10);
+                        setSolarStopTimer(0);
+                    }
+                }
+                
+                if (IsumImportHistoryMin > 0)
+                { // we used more power then is generated at any time in the stored history
+                    if (ActiveEVSE && SolarStopTimer == 0) // start the solar stop timer if not already running
+                    {
+                        _LOG_V("Checkpoint 9 Lacking power (IsumImport: %.1f) so start the solar stop timer.\n", (float)IsumImport / 10);
+                        // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
+                        setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                    }
+
+                    if (Solar3PhaseStartTimer != 0)
+                    {
+                        _LOG_V("Checkpoint 10 Not enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n", (float)IsumImport / 10);
+                        Solar3PhaseStartTimer = 0;
+                    }
+
+                }
             }
+        }
+        else
+        {
+            _LOG_V("Checkpoint 11 New EVSE charging.\n");
         }
 
         // Set to minimum here to prevent no_current flag later
         if (IsetBalanced < (ActiveEVSE * MinCurrent * 10))
         {
             IsetBalanced = ActiveEVSE * MinCurrent * 10;
+            _LOG_V("Checkpoint 12 Power less than minimum, so increase to minimum: new Isetbalanced=%.1f A!\n", (float)IsetBalanced/10);
         }
 
-        _LOG_V("Checkpoint 5 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced / 10, (float)IsumImport / 10, (float)Isum / 10, ImportCurrent);
+        _LOG_V("Checkpoint 13 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced / 10, (float)IsumImport / 10, (float)Isum / 10, ImportCurrent);
 
     } // end MODE_SOLAR
 
@@ -1151,7 +1203,7 @@ void CalcBalancedCurrent(char mod) {
         IsetBalanced = 0;
     if (IsetBalanced > 800)
         IsetBalanced = 800; // hard limit 80A (added 11-11-2017)
-    _LOG_V("Checkpoint 6 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
+    _LOG_V("Checkpoint 14 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
     if (ActiveEVSE) {                                                           // Only if we have active EVSE's
         if (IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
@@ -1196,7 +1248,7 @@ void CalcBalancedCurrent(char mod) {
 
 
     } // ActiveEVSE
-    _LOG_V("Checkpoint 7 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
+    _LOG_V("Checkpoint 15 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
     if (LoadBl == 1) {
         _LOG_D("Balance: ");
         for (n = 0; n < NR_EVSES; n++) {
@@ -1870,6 +1922,7 @@ void CalcIsum(void) {
     Isum = 0;
 #if FAKE_SUNNY_DAY
     int32_t temp[3]={0, 0, 0};
+    _LOG_V("BEFORE FAKE SUNNY DAY L1: %.1f A L2: %.1f A L3: %.1f A DutyCycle: %u\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, CurrentPWM);
     switch (SunStatus) {                                                    // rotating sun status
         case 1:
             temp[0] = INJECT_CURRENT_L1_1 * 10;                             //Irms is in units of 100mA
@@ -1897,6 +1950,9 @@ void CalcIsum(void) {
         Irms[x] -= batteryPerPhase;
         Isum = Isum + Irms[x];
     }
+#if FAKE_SUNNY_DAY
+    _LOG_V(" AFTER FAKE SUNNY DAY L1: %.1f A L2: %.1f A L3: %.1f A\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10); 
+#endif
 }
 
 /**
@@ -3360,13 +3416,12 @@ void BroadcastWorker(ModbusMessage Msg) {
 #endif
     if (Register == 0x0030) {
         if (Msg.size() == 15) {
-            Isum = 0;
             _LOG_V("Irms from MainsMeter received: ");
             for (int i=0; i<3; i++) {
                 index = Msg.get(index, Irms[i]);
-                Isum = Isum + Irms[i];
                 _LOG_V_NO_FUNC("Index=%u, L%i=%.1fA,", index, i+1, (float)Irms[i]/10);
             }
+            CalcIsum();
             _LOG_V_NO_FUNC("\n");
         }
 #if DBG != 0
