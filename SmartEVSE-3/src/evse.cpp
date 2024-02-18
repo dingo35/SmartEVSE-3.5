@@ -1146,7 +1146,7 @@ void CalcBalancedCurrent(char mod) {
                 { // we had enough solar energy available for 2 extra phases at any time in the stored history
                     if (EstimateNrOfPhasesCharging() == 1 && ActiveEVSE && Solar3PhaseStartTimer == 0)
                     {
-                        _LOG_V("Checkpoint 7 Enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n", (float)IsumImportHistoryMin / 10, (float)IsumImportHistoryMax / 10);
+                        _LOG_V("Checkpoint 7 Enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n",  (float)IsumImport / 10);
                         // after timer runs out: SinglePhaseOverride to NO
             // for now reuse StopTime
                     Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
