@@ -996,7 +996,7 @@ void CalcBalancedCurrent(char mod) {
     int Average, MaxBalanced, Idifference, ImaxAvailable, Baseload_EV;
     int ActiveEVSE = 0;
     signed int IsumImport = 0;
-    signed int IsumImportHistoryMax = 0, IsumImportHistoryMin = 0;
+    signed int IsumImportHistoryMax = 0, IsumImportHistoryMin = 0, IsumImportAvg = 0;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
@@ -1090,30 +1090,9 @@ void CalcBalancedCurrent(char mod) {
         else if (!mod) // no new EVSE's charging
         {
             {
-                if (IsumImport > 0)
-                { // we use more power then is generated
-                    if (IsumImport > 20)
-                        IsetBalanced = IsetBalanced - 10; // we use atleast 2A more then available, decrease with 1A.
-                                                          // not too fast otherwise car will reduce to 0 and slowly increase again from there
-                    else if (IsumImport > 10)
-                        IsetBalanced = IsetBalanced - 5;                        // we use 1A more then available, decrease with 0.5A
-                    else if (IsumImport > 3)
-                        IsetBalanced = IsetBalanced - 1;                        // we still use > 0.3A more then available, decrease with 0.1A
-                                                                                // if we use <= 0.3A we do nothing
-                    _LOG_V("Checkpoint 4 Using more power than generated, so decrease: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
-                }
-                else
-                { // we have surplus solar power available
-                    if (IsumImport < -10 && Idifference > 10)
-                        IsetBalanced = IsetBalanced + 5; // more then 1A available, increase Balanced charge current with 0.5A
-                    else
-                        IsetBalanced = IsetBalanced + 1; // less then 1A available, increase with 0.1A
-
-                    _LOG_V("Checkpoint 5 Surplus solar power, so increase: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
-                }
-
                 // build IsumImport history with min and max values
-                for (int n = 0; n < 20; n++)  
+                IsumImportAvg = 0;
+                for (int n = 0; n < 20; n++)
                 {
                     if (n == 0)
                     {
@@ -1130,6 +1109,7 @@ void CalcBalancedCurrent(char mod) {
                         IsumImportHistory[n] = IsumImportHistory[n + 1];
                     }
 
+                    IsumImportAvg += IsumImportHistory[n];
                     if (IsumImportHistoryMax < IsumImportHistory[n])
                     {
                         IsumImportHistoryMax = IsumImportHistory[n];
@@ -1139,45 +1119,69 @@ void CalcBalancedCurrent(char mod) {
                         IsumImportHistoryMin = IsumImportHistory[n];
                     }
                 }
-                _LOG_V("Checkpoint 6 IsumImport history min: %.1f and max: %.1f.\n", (float)IsumImportHistoryMin / 10, (float)IsumImportHistoryMax / 10);
+                IsumImportAvg /= 20;
+                _LOG_V("Checkpoint 6 IsumImport  %.1f, avg %.1f, history min: %.1f and max: %.1f.\n", (float)IsumImport / 10, (float)IsumImportAvg / 10, (float)IsumImportHistoryMin / 10, (float)IsumImportHistoryMax / 10);
 
+                if (IsumImportAvg > 0)
+                { // we use more power then is generated
+                    if (IsumImportAvg > 20)
+                        IsetBalanced = IsetBalanced - 10; // we use atleast 2A more then available, decrease with 1A.
+                                                          // not too fast otherwise car will reduce to 0 and slowly increase again from there
+                    else if (IsumImportAvg > 10)
+                        IsetBalanced = IsetBalanced - 5; // we use 1A more then available, decrease with 0.5A
+                    else if (IsumImportAvg > 3)
+                        IsetBalanced = IsetBalanced - 1; // we still use > 0.3A more then available, decrease with 0.1A
+                                                         // if we use <= 0.3A we do nothing
+                    _LOG_V("Checkpoint 4 Using more power than generated, so decrease: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
+                }
+                else
+                { // we have surplus solar power available
+                    if (IsumImportAvg < -10 && Idifference > 10)
+                        IsetBalanced = IsetBalanced + 5; // more then 1A available, increase Balanced charge current with 0.5A
+                    else
+                        IsetBalanced = IsetBalanced + 1; // less then 1A available, increase with 0.1A
 
-                if (IsumImportHistoryMax < (MinCurrent * -20))
-                { // we had enough solar energy available for 2 extra phases at any time in the stored history
+                    _LOG_V("Checkpoint 5 Surplus solar power, so increase: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
+                }
+
+                if (IsumImportAvg < (MinCurrent * -20))
+                { // we had enough solar energy available for 2 extra phases in the stored history
                     if (EstimateNrOfPhasesCharging() == 1 && ActiveEVSE && Solar3PhaseStartTimer == 0)
                     {
-                        _LOG_V("Checkpoint 7 Enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n",  (float)IsumImport / 10);
+                        _LOG_V("Checkpoint 7 Enough solar power (IsumImportAvg: %.1f) for 3 phases so reset the solar 3phase start timer.\n", (float)IsumImportAvg / 10);
                         // after timer runs out: SinglePhaseOverride to NO
-            // for now reuse StopTime
-                    Solar3PhaseStartTimer = StopTime * 60;                      // Convert minutes into seconds
-                }                                                              
-            }
-
-                if (IsumImportHistoryMax < 0)
-                { // we had surplus solar energy available at any time in the stored history
-                    if (SolarStopTimer != 0)
-                    {
-                        _LOG_V("Checkpoint 8 we have surplus solar power (IsumImport: %.1f) so reset stop timer.\n", (float)IsumImport / 10);
-                        setSolarStopTimer(0);
+                        // for now reuse StopTime
+                        Solar3PhaseStartTimer = StopTime * 60; // Convert minutes into seconds
                     }
                 }
-                
-                if (IsumImportHistoryMin > 0)
-                { // we used more power then is generated at any time in the stored history
+
+                if (IsumImportAvg < 0 && IsetBalanced > MinCurrent * 10)
+                { // we had surplus solar energy available in the stored history
+                    if (SolarStopTimer != 0)
+                    {
+                        _LOG_V("Checkpoint 8 we have surplus solar power (IsumImport: %.1f) so add to stop timer.\n", (float)IsumImport / 10);
+                        SolarStopTimer += 1;
+                        if (SolarStopTimer > StopTime * 60) {
+                            SolarStopTimer = StopTime * 60;
+                        }
+                    }
+                }
+
+                if (IsumImportAvg > 0 && IsetBalanced <=  MinCurrent * 10)
+                {                                          // we used more power then is generated at any time in the stored history
                     if (ActiveEVSE && SolarStopTimer == 0) // start the solar stop timer if not already running
                     {
                         _LOG_V("Checkpoint 9 Lacking power (IsumImport: %.1f) so start the solar stop timer.\n", (float)IsumImport / 10);
                         // after timer runs out:  SinglePhaseOverride to YES or NO_SUN when already in 1 phase
-                    setSolarStopTimer(StopTime * 60);                       // Convert minutes into seconds
-                }
+                        setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                    }
 
                     if (Solar3PhaseStartTimer != 0)
                     {
                         _LOG_V("Checkpoint 10 Not enough solar power (IsumImport: %.1f) for 3 phases so reset the solar 3phase start timer.\n", (float)IsumImport / 10);
                         Solar3PhaseStartTimer = 0;
+                    }
                 }
-
-            }
             }
         }
         else
@@ -1189,7 +1193,7 @@ void CalcBalancedCurrent(char mod) {
         if (IsetBalanced < (ActiveEVSE * MinCurrent * 10))
         {
             IsetBalanced = ActiveEVSE * MinCurrent * 10;
-            _LOG_V("Checkpoint 12 Power less than minimum, so increase to minimum: new Isetbalanced=%.1f A!\n", (float)IsetBalanced/10);
+            _LOG_V("Checkpoint 12 Power less than minimum, so increase to minimum: new Isetbalanced=%.1f A!\n", (float)IsetBalanced / 10);
         }
 
         _LOG_V("Checkpoint 13 Isetbalanced=%.1f A, IsumImport=%.1f, Isum=%.1f, ImportCurrent=%i.\n", (float)IsetBalanced / 10, (float)IsumImport / 10, (float)Isum / 10, ImportCurrent);
