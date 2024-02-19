@@ -861,6 +861,7 @@ int getBatteryCurrent(void) {
 }
 
 
+
 // Is there at least 6A(configurable MinCurrent) available for a new EVSE?
 // Look whether there would be place for one more EVSE if we could lower them all down to MinCurrent
 // returns 1 if there is 6A available
@@ -881,14 +882,16 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
      // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
     if (Mode == MODE_SOLAR) {                                                   // no active EVSE yet?
         if (ActiveEVSE == 0 && Isum >= ((signed int)StartCurrent *-10)) {
-            _LOG_D("No current available checkpoint A. ActiveEVSE=%i, TotalCurrent=%iA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, TotalCurrent, StartCurrent, (float)Isum/10, ImportCurrent);
+            _LOG_D("No current available checkpoint A. ActiveEVSE=%i, TotalCurrent=%.1fA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, (float) TotalCurrent/10, StartCurrent, (float)Isum/10, ImportCurrent);
             return 0;
         }
         else if ((ActiveEVSE * MinCurrent * 10) > TotalCurrent) {               // check if we can split the available current between all active EVSE's
-            _LOG_D("No current available checkpoint B. ActiveEVSE=%i, TotalCurrent=%iA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, TotalCurrent, StartCurrent, (float)Isum/10, ImportCurrent);
+            _LOG_D("No current available checkpoint B. ActiveEVSE=%i, TotalCurrent=%.1fA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, (float) TotalCurrent/10, StartCurrent, (float)Isum/10, ImportCurrent);
             return 0;
         }
     }
+
+    ActiveEVSE++;                                                           // Do calculations with one more EVSE
 
     Baseload_EV = Imeasured_EV - TotalCurrent;                              // Calculate Baseload EV-meter (load without any active EVSE)
     if (Baseload_EV < 0) {
@@ -910,14 +913,17 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
         return 0;                                                           // Not enough current available!, return with error
     }
 
-    // Allow solar Charging if surplus current is above 'StartCurrent' (sum of all phases)
-    // Charging will start after the timeout (chargedelay) period has ended
-     // Only when StartCurrent configured or Node MinCurrent detected or Node inactive
-    if (Mode == MODE_SOLAR) { 
-        if (ActiveEVSE == 1 && Isum >= ((signed int)StartCurrent *-10)) return 0;
-    }
-
+    _LOG_D("Current available checkpoint C. ActiveEVSE increased by one=%i, TotalCurrent=%.1fA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, (float) TotalCurrent/10, StartCurrent, (float)Isum/10, ImportCurrent);
     return 1;
+}
+
+void ResetBalancedStates(void) {
+    uint8_t n;
+
+    for (n = 1; n < NR_EVSES; n++) {
+        BalancedState[n] = STATE_A;                                             // Yes, disable old active Node states
+        Balanced[n] = 0;                                                        // reset ChargeCurrent to 0
+		}
 }
 
 // Set global var Nr_Of_Phases_Charging
@@ -999,11 +1005,12 @@ void CalcBalancedCurrent(char mod) {
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
 
-    if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config) {
+    if (!LoadBl) ResetBalancedStates();                                         // Load balancing disabled?, Reset States
+                                                                                // Do not modify MaxCurrent as it is a config setting. (fix 2.05)
+    if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config)
         ChargeCurrent = MaxCapacity * 10;
-    } else {
+    else
         ChargeCurrent = MaxCurrent * 10;
-    }
 
     // Override current temporary if set
     if (OverrideCurrent)
@@ -1121,6 +1128,7 @@ void CalcBalancedCurrent(char mod) {
                         if (SolarStopTimer != 0)
                         {
                             _LOG_V("Checkpoint 7b Surplus solar power (IsumImportAvg: %.1f) so stop the SolarStopTimer.\n", (float)IsumImport / 10);
+                    _LOG_D("Checkpoint a: Resetting SolarStopTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
                             setSolarStopTimer(0);
                         }
                     }
@@ -1235,8 +1243,6 @@ void CalcBalancedCurrent(char mod) {
                 }                                                               //TODO since the average has risen the other EVSE's should be checked for exceeding their MAX's too!
             } while (++n < NR_EVSES && ActiveEVSE);
         }
-
-
     } // ActiveEVSE
     _LOG_V("Checkpoint 15 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
     if (LoadBl == 1) {
@@ -1980,6 +1986,9 @@ void UpdateCurrentData(void) {
             // STOP charging for all EVSE's
             // Display error message
             ErrorFlags |= LESS_6A; //NOCURRENT;
+            // Set all EVSE's to State A
+            ResetBalancedStates();
+
             // Broadcast Error code over RS485
             ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, LESS_6A);
             NoCurrent = 0;
@@ -2904,10 +2913,11 @@ void Timer1S(void * parameter) {
     uint8_t Broadcast = 1;
     //uint8_t Timer5sec = 0;
     uint8_t x;
-
+    unsigned long loopstart;
 
     while(1) { // infinite loop
 
+        loopstart = millis();
         if (homeBatteryLastUpdate != 0 && homeBatteryLastUpdate < (time(NULL) - 60)) {
             homeBatteryCurrent = 0;
             homeBatteryLastUpdate = 0;
@@ -3029,6 +3039,7 @@ void Timer1S(void * parameter) {
                 if (SinglePhaseOverride == YES) {
                     if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
                     ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
+                		ResetBalancedStates();                                      // reset all states
                 } else {
                     SetSinglePhaseOverride(YES);                                // try 1 phase
                 }
@@ -3118,6 +3129,7 @@ void Timer1S(void * parameter) {
             _LOG_W("Error, communication error!\n");
             // Try to broadcast communication error to Nodes if we are Master
             if (LoadBl < 2) ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, ErrorFlags);         
+            ResetBalancedStates();
         } else if (timeout) timeout--;
 
         if (TempEVSE > maxTemp && !(ErrorFlags & TEMP_HIGH))                         // Temperature too High?
@@ -3126,6 +3138,7 @@ void Timer1S(void * parameter) {
             if (State == STATE_C) setState(STATE_C1);                       // tell EV to stop charging
             else setState(STATE_B1);                                        // when we are not charging switch to State B1
             _LOG_W("Error, temperature %i C !\n", TempEVSE);
+            ResetBalancedStates();
         }
 
         if (ErrorFlags & (NO_SUN | LESS_6A)) {
@@ -3170,7 +3183,7 @@ void Timer1S(void * parameter) {
 #endif
 
         // Pause the task for 1 Sec
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay((1000 - (millis() - loopstart)) / portTICK_PERIOD_MS);
 
     } // while(1)
 }
@@ -3427,14 +3440,14 @@ void BroadcastWorker(ModbusMessage Msg) {
             }
             _LOG_V_NO_FUNC("\n");
         }
-#if DBG != 0
         else {
+#if DBG != 0
             _LOG_A("Received invalid broadcast packet, reg=%04x (%i bytes)", Register, Msg.size());
             for (auto b : Msg)
                 _LOG_A_NO_FUNC(" %02x", b);
             _LOG_A_NO_FUNC("\n");
-        }
 #endif
+        }
     }
 }
 
@@ -3524,15 +3537,12 @@ void MBhandleData(ModbusMessage msg, uint32_t token)
         // token: first byte address, second byte function, third and fourth reg
         uint8_t token_function = (token & 0x00FF0000) >> 16;
         uint8_t token_address = token >> 24;
-        if (token_address != MB.Address) {
+        if (token_address != MB.Address)
             _LOG_A("ERROR: Address=%u, MB.Address=%u, token_address=%u.\n", Address, MB.Address, token_address);
-        }
-        if (token_function != MB.Function) {
+        if (token_function != MB.Function)
             _LOG_A("ERROR: MB.Function=%u, token_function=%u.\n", MB.Function, token_function);
-        }
         uint16_t reg = (token & 0x0000FFFF);
         MB.Register = reg;
-
         if (MB.Address > 1 && MB.Address <= NR_EVSES && (MB.Function == 03 || MB.Function == 04)) {
         
             // Packet from Node EVSE
