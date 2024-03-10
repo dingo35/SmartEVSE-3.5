@@ -645,9 +645,10 @@ void setMode(uint8_t NewMode) {
     ChargeDelay = 0;                                                            // Clear any Chargedelay
     BacklightTimer = BACKLIGHT;                                                 // Backlight ON
 
-    bool OldFSPC = Force_Single_Phase_Charging();
     if (Mode != NewMode) NodeNewMode = NewMode + 1;
-    Mode = NewMode;    
+    Mode = NewMode;  
+
+    bool OldFSPC = Force_Single_Phase_Charging();
     if (OldFSPC != Force_Single_Phase_Charging()) { 
         SetSinglePhaseOverride(REFRESH);                                        // we only need to restart if Force_Single_Phase_Charging changed
     }
@@ -937,15 +938,6 @@ char IsCurrentAvailable(uint8_t RequestedNrOfPhasesCharging) {
     return 1;
 }
 
-void ResetBalancedStates(void) {
-    uint8_t n;
-
-    for (n = 1; n < NR_EVSES; n++) {
-        BalancedState[n] = STATE_A;                                             // Yes, disable old active Node states
-        Balanced[n] = 0;                                                        // reset ChargeCurrent to 0
-		}
-}
-
 // Set global var Nr_Of_Phases_Charging
 // 0 = undetected, 1 - 3 nr of phases we are charging
 void Set_Nr_of_Phases_Charging(void) {
@@ -1024,8 +1016,7 @@ void CalcBalancedCurrent(char mod) {
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
-    if (!LoadBl) ResetBalancedStates();                                         // Load balancing disabled?, Reset States
-                                                                                // Do not modify MaxCurrent as it is a config setting. (fix 2.05)
+
     if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config)
         ChargeCurrent = MaxCapacity * 10;
     else
@@ -2008,8 +1999,6 @@ void UpdateCurrentData(void) {
             // STOP charging for all EVSE's
             // Display error message
             ErrorFlags |= LESS_6A; //NOCURRENT;
-            // Set all EVSE's to State A
-            ResetBalancedStates();
 
             // Broadcast Error code over RS485
             ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, ErrorFlags);
@@ -2940,7 +2929,6 @@ void Timer1S(void * parameter) {
     uint8_t Broadcast = 1;
     //uint8_t Timer5sec = 0;
     uint8_t x;
-    unsigned long loopstart;
 
     while(1) { // infinite loop
 
@@ -3058,13 +3046,12 @@ void Timer1S(void * parameter) {
             SolarStopTimer--;
             if (SolarStopTimer == 0) {
                 if (SinglePhaseOverride == YES) {
-                if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
-                ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
-                		ResetBalancedStates();                                      // reset all states
+                    if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
+                    ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
                 } else {
                     SetSinglePhaseOverride(YES);                                // try 1 phase
+                }
             }
-        }
         }
 
         // when charging with 1 phase and abundant sun is available a timer is started
@@ -3175,7 +3162,6 @@ void Timer1S(void * parameter) {
             ErrorFlags |= TEMP_HIGH;
             setStatePowerUnavailable();
             _LOG_W("Error, temperature %i C !\n", TempEVSE);
-            ResetBalancedStates();
         }
 
         if (ErrorFlags & (NO_SUN | LESS_6A)) {
@@ -3215,7 +3201,7 @@ void Timer1S(void * parameter) {
 #endif
 
         // Pause the task for 1 Sec
-        vTaskDelay((1000 - (millis() - loopstart)) / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     } // while(1)
 }
