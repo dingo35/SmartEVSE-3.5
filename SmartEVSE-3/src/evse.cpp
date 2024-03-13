@@ -795,7 +795,6 @@ void setState(uint8_t NewState) {
         case STATE_C:                                                           // State C2
             ActivationMode = 255;                                               // Disable ActivationMode
 
-            CONTACTOR1_ON;
             Active_Force_Single_Phase_Charging = Force_Single_Phase_Charging(); // get current value of Force_Single_Phase_Charging and save for later
             if (Active_Force_Single_Phase_Charging) {                           // set C2 according to Active_Force_Single_Phase_Charging
                 _LOG_I("Switching CONTACTOR C2 OFF.\n");
@@ -805,6 +804,7 @@ void setState(uint8_t NewState) {
                 _LOG_I("Switching CONTACTOR C2 ON.\n");
                 CONTACTOR2_ON;                                                  // Contactor2 ON
             }
+            CONTACTOR1_ON;
 
             LCDTimer = 0;
             break;
@@ -2357,6 +2357,7 @@ void EVSEStates(void * parameter) {
         if (State == STATE_C) {
         
             if (pilot == PILOT_12V) {                                           // Disconnected ?
+                _LOG_V("state C and pilot 12V, disconnected?\n");
                 setState(STATE_A);                                              // switch back to STATE_A
                 GLCD_init();                                                    // Re-init LCD
     
