@@ -644,7 +644,6 @@ void setMode(uint8_t NewMode) {
     }
     ChargeDelay = 0;                                                            // Clear any Chargedelay
     BacklightTimer = BACKLIGHT;                                                 // Backlight ON
-
     if (Mode != NewMode) NodeNewMode = NewMode + 1;
     Mode = NewMode;  
 
@@ -652,6 +651,8 @@ void setMode(uint8_t NewMode) {
     if (OldFSPC != Force_Single_Phase_Charging()) { 
         SetSinglePhaseOverride(REFRESH);                                        // we only need to restart if Force_Single_Phase_Charging changed
     }
+    //TODO if (switchOnLater)
+    //    setAccess(1);
 
     //make mode and start/stoptimes persistent on reboot
     if (preferences.begin("settings", false) ) {                        //false = write mode
@@ -1016,7 +1017,6 @@ void CalcBalancedCurrent(char mod) {
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
     char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
-
     if (BalancedState[0] == STATE_C && MaxCurrent > MaxCapacity && !Config)
         ChargeCurrent = MaxCapacity * 10;
     else
@@ -1296,17 +1296,13 @@ void CalcBalancedCurrent(char mod) {
  * Broadcast momentary currents to all Node EVSE's
  */
 void BroadcastCurrent(void) {
-    //prepare registers 0x0020 thru 0x002A (including) to be sent
-    uint8_t buf[sizeof(Balanced)+ 6], i;
+    //prepare registers 0x0020 thru 0x0030 (including) to be sent
+    uint8_t buf[sizeof(Balanced)+sizeof(Irms)];
     uint8_t *p=buf;
     memcpy(p, Balanced, sizeof(Balanced));
     p = p + sizeof(Balanced);
-    // Irms values, we only send the 16 least significant bits (range -3276A to +3276A) per phase
-    for ( i=0; i<3; i++) {
-        p[i * 2] = Irms[i] & 0xff;
-        p[(i * 2) + 1] = Irms[i] >> 8;    
-    }
-    ModbusWriteMultipleRequest(BROADCAST_ADR, 0x0020, (uint16_t *) buf, 8 + 3);
+    memcpy(p, Irms, sizeof(Irms));
+    ModbusWriteMultipleRequest(BROADCAST_ADR, 0x0020, (uint16_t *) buf, sizeof(Balanced)+sizeof(Irms));
 }
 
 /**
@@ -1551,7 +1547,7 @@ void processAllNodeStates(uint8_t NodeNr) {
     // Error Flags
     values[1] = BalancedError[NodeNr];
     // Charge Current
-    values[2] = 0;                                                              // This does nothing for Nodes. Currently the Chargecurrent can only be written to the Master
+    values[2] = Balanced[NodeNr];                                               // This does nothing for Nodes. Currently the Chargecurrent can only be written to the Master
     // Mode
     values[3] = Mode;
     
@@ -1842,15 +1838,11 @@ uint16_t getItemValue(uint8_t nav) {
 
 void printStatus(void)
 {
-        char Str[170];
-        snprintf(Str, sizeof(Str) , "#STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u Solar3PhaseStartTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A\n", getStateName(State), ErrorFlags, StartCurrent,
-                                                                        ChargeDelay, SolarStopTimer, Solar3PhaseStartTimer, NoCurrent,
+    _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A\n", getStateName(State), ErrorFlags, StartCurrent,
+                                                                        ChargeDelay, SolarStopTimer,  NoCurrent,
                                                                         (float)Imeasured/10,
                                                                         (float)IsetBalanced/10);
-        _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A AF1Ph: %d SPhO: %s CurrentAvailable: %u\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, Active_Force_Single_Phase_Charging, StrSinglePhase[SinglePhaseOverride], (IsCurrentAvailable(EstimateNrOfPhasesCharging())) ?1:0); 
-#if FAKE_SUNNY_DAY
-        _LOG_I("Rotating sun status: %u (timer: %u).\n", SunStatus, SunStatusTimer); 
-#endif
+    _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A\n", (float)Irms[0]/10, (float)Irms[1]/10, (float)Irms[2]/10, (float)Isum/10);
 }
 
 // Recompute State of Charge, in case we have a known initial state of charge
@@ -3468,23 +3460,29 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
             case 0x10: // (Write multiple register))
                 // 0x0020: Balance currents
                 if (MB.Register == 0x0020 && LoadBl > 1) {      // Message for Node(s)
+                    //prepare registers 0x0020 thru 0x0030 (including) to be received
+                    //for some reason the modbus library swaps bytes, we've got to swap them back:
+                    uint8_t tmp;
+                    uint8_t *buf=MB.Data+sizeof(Balanced);
+                    for (int i=0; i<sizeof(Irms); i = i + 2 ) {
+                        tmp=buf[i];
+                        buf[i]=buf[i+1];
+                        buf[i+1]=tmp;
+                    }
+                    memcpy(Irms, buf, sizeof(Irms));
                     Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
                     if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
                     else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
                     MainsMeterTimeout = COMM_TIMEOUT;                     // reset 10 second timeout
                     _LOG_V("Broadcast received, Node %.1f A, MainsMeter Irms ", (float) Balanced[0]/10);
 
-                    //now decode registers 0x0028-0x002A
-                    if (MB.DataLength >= 16+6) {
-                        Isum = 0;    
-                        for (i=0; i<3; i++ ) {
-                            combined = (MB.Data[(i * 2) + 16] <<8) + MB.Data[(i * 2) + 17]; 
-                            Isum = Isum + combined;
-                            Irms[i] = combined;
-                            _LOG_V_NO_FUNC("L%i=%.1fA,", i+1, (float)Irms[i]/10);
-                        }
-                        _LOG_V_NO_FUNC("\n");
+                    //now decode registers 0x0028-0x0030
+                    Isum = 0;
+                    for (int i=0; i<3; i++) {
+                        Isum = Isum + Irms[i];
+                        _LOG_V_NO_FUNC("L%i=%.1fA,", i+1, (float)Irms[i]/10);
                     }
+                    _LOG_V_NO_FUNC("\n");
                 } else {
 
                     //WriteMultipleItemValueResponse();
@@ -4899,6 +4897,7 @@ void setup() {
         APhostname = "SmartEVSE-" + String( serialnr & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
         _LOG_A("hwversion %04x serialnr:%u \n",hwversion, serialnr);
         WiFi.setHostname(APhostname.c_str());
+        MQTTprefix = APhostname;
         //_LOG_A(ec_public);
 
     } else {
