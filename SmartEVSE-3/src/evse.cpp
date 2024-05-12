@@ -228,6 +228,8 @@ uint16_t SolarStopTimer = 0;
 int32_t EnergyCharged = 0;                                                  // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
 int32_t EnergyMeterStart = 0;                                               // kWh meter value is stored once EV is connected to EVSE (Wh)
 int16_t PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
+int16_t MainsPower = 0;                                                     // Measured Mains power in watts
+uint16_t MainsVoltage = 0;                                                  // Measured Mains L1 voltage in volts
 uint8_t RFIDstatus = 0;
 bool PilotDisconnected = false;
 uint8_t PilotDisconnectTime = 0;                                            // Time the Control Pilot line should be disconnected (Sec)
@@ -264,7 +266,7 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"Eastron3P", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x34, 0,  0x48 , 0,0x4A  , 0}, // Eastron SDM630 (V / A / W / kWh) max read count 80
     {"InvEastrn", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x34, 0,  0x48 , 0,0x4A  , 0}, // Since Eastron SDM series are bidirectional, sometimes they are connected upsidedown, so positive current becomes negative etc.; Eastron SDM630 (V / A / W / kWh) max read count 80
     {"ABB",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 2,0x5004, 2}, // ABB B23 212-100 (0.1V / 0.01A / 0.01W / 0.01kWh) RS485 wiring reversed / max read count 125
-    {"SolarEdge", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT16,    40196, 0,  40191, 0,  40083, 0,  40234, 3, 40226, 3}, // SolarEdge SunSpec (0.01V (16bit) / 0.1A (16bit) / 1W  (16bit) / 1 Wh (32bit))
+    {"SolarEdge", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT16,    40196, 0,  40191, 0,  40206, 0,  40234, 3, 40226, 3}, // SolarEdge SunSpec (0.01V (16bit) / 0.1A (16bit) / 1W  (16bit) / 1 Wh (32bit))
     {"WAGO",      ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, -3, 0x600C, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)//TODO maar WAGO heeft ook totaal
     {"API",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, 3, 0x6000, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)
     {"Eastron1P", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x0C, 0,  0x48 , 0,0x4A  , 0}, // Eastron SDM630 (V / A / W / kWh) max read count 80
@@ -2388,6 +2390,24 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                     }
                     ModbusRequest++;
                     // fall through
+                case 22:
+                    // Mains power meter, Power measurement (momentary power in Watt)
+                    // Request Power if Mains meter is configured
+                    if  (MainsMeter) {
+                        ModbusReadInputRequest(MainsMeterAddress, EMConfig[MainsMeter].Function, EMConfig[MainsMeter].PRegister, 2);
+                        break;
+                    }
+                    ModbusRequest++;
+                    // fall through
+                case 23:
+                    // Mains voltage meter, Voltage measurement for L1
+                    // Request Voltage if Mains meter is configured
+                    if  (MainsMeter) {
+                        ModbusReadInputRequest(MainsMeterAddress, EMConfig[MainsMeter].Function, EMConfig[MainsMeter].URegister, 2);
+                        break;
+                    }
+                    ModbusRequest++;
+                    // fall through
                 default:
                     // slave never gets here
                     // what about normal mode with no meters attached?
@@ -2618,7 +2638,12 @@ void SetupMQTTClient() {
         announce("Mains Current L1", "sensor");
         announce("Mains Current L2", "sensor");
         announce("Mains Current L3", "sensor");
+        optional_payload = jsna("device_class","power") + jsna("unit_of_measurement","W");
+        announce("Mains Power", "sensor");
+        optional_payload = jsna("device_class","voltage") + jsna("unit_of_measurement","V");
+        announce("Mains Voltage", "sensor");
     }
+    optional_payload = jsna("device_class","current") + jsna("unit_of_measurement","A") + jsna("value_template", R"({{ value | int / 10 }})");
     if (EVMeter) {
         announce("EV Current L1", "sensor");
         announce("EV Current L2", "sensor");
@@ -2627,7 +2652,6 @@ void SetupMQTTClient() {
     if (homeBatteryLastUpdate) {
         announce("Home Battery Current", "sensor");
     }
-
     if (Modem) {
         //set the parameters for modem/SoC sensor entities:
         optional_payload = jsna("unit_of_measurement","%") + jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
@@ -2708,6 +2732,8 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", String(Irms[0]), false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", String(Irms[1]), false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", String(Irms[2]), false, 0);
+            MQTTclient.publish(MQTTprefix + "/MainsPower", String(MainsPower), false, 0);
+            MQTTclient.publish(MQTTprefix + "/MainsVoltage", String(MainsVoltage), false, 0);
         }
         if (EVMeter) {
             MQTTclient.publish(MQTTprefix + "/EVCurrentL1", String(Irms_EV[0]), false, 0);
@@ -3025,28 +3051,19 @@ signed int receiveEnergyMeasurement(uint8_t *buf, uint8_t Meter) {
  * @return signed int Power (W)
   */
 signed int receivePowerMeasurement(uint8_t *buf, uint8_t Meter) {
-    switch (Meter) {
-        case EM_SOLAREDGE:
-        {
-            // Note:
-            // - SolarEdge uses 16-bit values, with a extra 16-bit scaling factor
-            // - EM_SOLAREDGE should not be used for EV power measurements, only PV power measurements are supported
-            int scalingFactor = -(int)receiveMeasurement(
-                        buf,
-                        1,
-                        EMConfig[Meter].Endianness,
-                        EMConfig[Meter].DataType,
-                        0
-            );
-            return receiveMeasurement(buf, 0, EMConfig[Meter].Endianness, EMConfig[Meter].DataType, scalingFactor);
-        }
-        case EM_EASTRON3P_INV:
-            return -receiveMeasurement(buf, 0, EMConfig[Meter].Endianness, EMConfig[Meter].DataType, EMConfig[Meter].PDivisor);
-        default:
-            return receiveMeasurement(buf, 0, EMConfig[Meter].Endianness, EMConfig[Meter].DataType, EMConfig[Meter].PDivisor);
-    }
+    return receiveMeasurement(buf, 0, EMConfig[Meter].Endianness, EMConfig[Meter].DataType, EMConfig[Meter].PDivisor);
 }
 
+/**
+ * Read Voltage measurement from modbus
+ *
+ * @param pointer to buf
+ * @param uint8_t Meter
+ * @return signed int Voltage (V)
+  */
+signed int receiveVoltageMeasurement(uint8_t *buf, uint8_t Meter) {
+    return receiveMeasurement(buf, 0, EMConfig[Meter].Endianness, EMConfig[Meter].DataType, EMConfig[Meter].UDivisor);
+}
 
 // Modbus functions
 
@@ -3135,8 +3152,11 @@ ModbusMessage MBMainsMeterResponse(ModbusMessage request) {
                 Irms[x] = (signed int)(CM[x] / 100);            // Convert to AMPERE * 10
             }
             CalcIsum();
-        }
-        else
+        } else if (MB.Register == EMConfig[MainsMeter].PRegister) {
+                     MainsPower = receivePowerMeasurement(MB.Data, MainsMeter);
+        } else if (MB.Register == EMConfig[MainsMeter].URegister) {
+                     MainsVoltage = receiveVoltageMeasurement(MB.Data, MainsMeter);
+        } else
             StoreEnergyResponse(MainsMeter, Mains_import_active_energy, Mains_export_active_energy);
     }
 
@@ -4137,6 +4157,8 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         doc["phase_currents"]["original_data"]["L1"] = IrmsOriginal[0];
         doc["phase_currents"]["original_data"]["L2"] = IrmsOriginal[1];
         doc["phase_currents"]["original_data"]["L3"] = IrmsOriginal[2];
+        doc["phase_currents"]["original_data"]["mains_power"] = MainsPower;
+        doc["phase_currents"]["original_data"]["mains_voltage"] = MainsVoltage;
         
         doc["backlight"]["timer"] = BacklightTimer;
         doc["backlight"]["status"] = backlight;
