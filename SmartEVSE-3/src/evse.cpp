@@ -29,6 +29,7 @@
 #include "utils.h"
 #include "OneWire.h"
 #include "modbus.h"
+#include <monocypher-ed25519.h>
 
 #ifndef DEBUG_DISABLED
 RemoteDebug Debug;
@@ -2420,7 +2421,8 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                         // Broadcast Error code over RS485
                         ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, ErrorFlags);
                         NoCurrent = 0;
-                    } else if (LoadBl == 1 && !(ErrorFlags & CT_NOCOMM) ) BroadcastCurrent();               // When there is no Comm Error, Master sends current to all connected EVSE's
+                    }
+                    if (LoadBl == 1 && !(ErrorFlags & CT_NOCOMM) ) BroadcastCurrent();               // When there is no Comm Error, Master sends current to all connected EVSE's
 
                     if ((State == STATE_B || State == STATE_C) && !CPDutyOverride) SetCurrent(Balanced[0]); // set PWM output for Master //mind you, the !CPDutyOverride was not checked in Smart/Solar mode, but I think this was a bug!
                     printStatus();  //for debug purposes
@@ -3016,7 +3018,12 @@ void Timer1S(void * parameter) {
 }
 
 void Mongoose_Poll(void * parameter) {
-    while (true) mg_mgr_poll(&mgr, 3000);  // Infinite event loop
+    while (true) {
+        if (WiFi.isConnected())
+            mg_mgr_poll(&mgr, 1000);
+        else
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
 }
 
 /**
@@ -3132,6 +3139,7 @@ ModbusMessage MBEVMeterResponse(ModbusMessage request) {
 //
 // Monitor Mains Meter responses, and update Irms values
 // Does not send any data back.
+// Only runs on master, slave gets the MainsMeter currents via MBbroadcast
 ModbusMessage MBMainsMeterResponse(ModbusMessage request) {
     uint8_t x;
     ModbusMessage response;     // response message to be sent back
@@ -3142,9 +3150,9 @@ ModbusMessage MBMainsMeterResponse(ModbusMessage request) {
     if (MB.Type == MODBUS_RESPONSE) {
         if (MB.Register == EMConfig[MainsMeter].IRegister) {
 
-        //_LOG_A("Mains Meter Response\n");
+            //_LOG_A("Mains Meter Response\n");
             x = receiveCurrentMeasurement(MB.Data, MainsMeter, CM);
-            if (x && LoadBl <2) MainsMeterTimeout = COMM_TIMEOUT;         // only reset timeout when data is ok, and Master/Disabled
+            if (x) MainsMeterTimeout = COMM_TIMEOUT;         // only reset timeout when data is ok
 
             // Convert Irms from mA to (A * 10)
             for (x = 0; x < 3; x++) {
@@ -3513,7 +3521,6 @@ void validate_settings(void) {
 
     // If the address of the MainsMeter or EVmeter on a Node has changed, we must re-register the Modbus workers.
     if (LoadBl > 1) {
-        if (MainsMeter && MainsMeter != EM_API) MBserver.registerWorker(MainsMeterAddress, ANY_FUNCTION_CODE, &MBMainsMeterResponse);
         if (EVMeter && EVMeter != EM_API) MBserver.registerWorker(EVMeterAddress, ANY_FUNCTION_CODE, &MBEVMeterResponse);
     }
     MainsMeterTimeout = COMM_TIMEOUT;
@@ -3789,6 +3796,8 @@ const String& webServerRequest::value() {
 }
 //end of wrapper
 
+struct mg_str empty = mg_str_n("", 0UL);
+
 #if MQTT
 char s_mqtt_url[80];
 //TODO perhaps integrate multiple fn callback functions?
@@ -3802,7 +3811,6 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
     } else if (ev == MG_EV_CONNECT) {
         // If target URL is SSL/TLS, command client connection to use TLS
         if (mg_url_is_ssl(s_mqtt_url)) {
-            struct mg_str empty = { "", 0 };
             struct mg_tls_opts opts = {.ca = empty, .cert = empty, .key = empty, .name = mg_url_host(s_mqtt_url)};
             //struct mg_tls_opts opts = {.ca = empty};
             mg_tls_init(c, &opts);
@@ -3873,7 +3881,6 @@ static void fn_client(struct mg_connection *c, int ev, void *ev_data) {
         struct mg_str host = mg_url_host(s_url);
 
         if (mg_url_is_ssl(s_url)) {
-            struct mg_str empty = { "", 0 };
             struct mg_tls_opts opts = {.ca = empty, .cert = empty, .key = empty, .name = mg_url_host(s_url)};
             mg_tls_init(c, &opts);
         }
@@ -3907,9 +3914,17 @@ static void fn_client(struct mg_connection *c, int ev, void *ev_data) {
     }
 }
 
+static crypto_sha512_ctx sha;
+unsigned char signature[64] = "";
 // Connection event handler function
 // indenting lower level two spaces to stay compatible with old StartWebServer
-static void fn(struct mg_connection *c, int ev, void *ev_data) {
+// We use the same event handler function for HTTP and HTTPS connections
+// fn_data is NULL for plain HTTP, and non-NULL for HTTPS
+static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
+  if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
+    struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty};
+    mg_tls_init(c, &opts);
+  }
   if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
     webServerRequest* request = new webServerRequest();
@@ -3976,6 +3991,65 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                     }
                 }
             } else //end of firmware.bin
+            if (!memcmp(file,"firmware.signed.bin", sizeof("firmware.signed.bin")) || !memcmp(file,"firmware.debug.signed.bin", sizeof("firmware.debug.signed.bin"))) {
+#define dump(X)   for (int i= 0; i< sizeof(X); i++) _LOG_A_NO_FUNC("%02x",X[i]); _LOG_A_NO_FUNC(".\n");
+                if(!offset) {
+                    _LOG_A("Update Start: %s\n", file);
+                    crypto_sha512_init(&sha);
+                    memcpy(signature, hm->body.ptr, sizeof(signature));         //signature is prepended to firmware.bin
+                    hm->body.ptr = hm->body.ptr + sizeof(signature);
+                    hm->body.len = hm->body.len - sizeof(signature);
+                    _LOG_A("Firmware signature:");
+                    dump(signature);
+                    if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
+                            Update.printError(Serial);
+                    }
+                }
+                if(!Update.hasError()) {
+                    if(Update.write((uint8_t*) hm->body.ptr, hm->body.len) != hm->body.len) {
+                        Update.printError(Serial);
+                    } else {
+                        crypto_sha512_update(&sha, (const unsigned char *) hm->body.ptr, hm->body.len);
+                        _LOG_A("bytes written %lu\r", offset + hm->body.len);
+                    }
+                }
+                if (offset + hm->body.len >= size) {                                           //EOF
+                    //get hash
+                    unsigned char hash[64];
+                    crypto_sha512_final(&sha, hash);
+                    _LOG_A("HASH info: hash = ");
+                    dump(hash);
+
+                    //get public key
+                    unsigned char public_key[32];
+                    char buffer[] = PUBLIC_KEY;
+                    int result = 1;
+                    for (int i=0; i<sizeof(public_key) || result != 1; i++) {
+                        result = sscanf(buffer + i*2, "%02x", (unsigned int *) &public_key[i]);
+                    }
+                    printf("Public key: ");
+                    dump(public_key);
+
+                    // Verify the signature
+                    int verification_result = crypto_ed25519_ph_check(signature, public_key, hash);
+
+                    if (verification_result == 0) {
+                        _LOG_A("Signature is valid!\n");
+                        if(Update.end(true)) {
+                            _LOG_A("\nUpdate Success\n");
+                            delay(1000);
+                            ESP.restart();
+                        } else {
+                            Update.printError(Serial);
+                        }
+                    } else {
+                        _LOG_A("Signature is invalid!\n");
+                        Update.abort(); //not sure this does anything in this stage
+                        Update.rollBack();
+                        mg_http_reply(c, 400, "", "firmware.signed.bin signature verification failed!");
+                    }
+                }
+            } else //end of firmware.signed.bin
             if (!memcmp(file,"rfid.txt", sizeof("rfid.txt"))) {
                 if (offset != 0) {
                     mg_http_reply(c, 400, "", "rfid.txt too big, only 120 rfid's allowed!");
@@ -4007,7 +4081,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                     }
                 }
             } else //end of rfid.txt
-                mg_http_reply(c, 400, "", "only allowed to flash firmware.bin, firmware.debug.bin or rfid.txt");
+                mg_http_reply(c, 400, "", "only allowed to flash firmware.bin, firmware.debug.bin, firmware.signed.bin, firmware.debug.signed.bin or rfid.txt");
           mg_http_reply(c, 200, "", "%ld", res);
         }
     } else if (mg_http_match_uri(hm, "/settings")) {                            // REST API call?
@@ -4639,7 +4713,8 @@ void onWifiEvent(WiFiEvent_t event) {
                 mg_http_connect(&mgr, s_url, fn_client, &done);  // Create client connection
             }
             //end mongoose
-            mg_http_listen(&mgr, "http://0.0.0.0:80", fn, NULL);  // Setup listener
+            mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
+            mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
             _LOG_A("HTTP server started\n");
 
 #if DBG == 1
@@ -4652,6 +4727,7 @@ void onWifiEvent(WiFiEvent_t event) {
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             if (WIFImode == 1) {
+                delay(1500);                                                    // so mg_mgr_poll has timed out
                 mg_mgr_free(&mgr);
 #if MQTT
                 //mg_timer_free(&mgr);

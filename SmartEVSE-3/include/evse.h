@@ -215,6 +215,7 @@ extern RemoteDebug Debug;
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
+#define PUBLIC_KEY "5c7a848c3445793002487608a65fa259cefb16790f7c2f4a1d10af702393f7db\0";
 
 
 // Mode settings
@@ -239,8 +240,8 @@ extern RemoteDebug Debug;
 #define STATE_COMM_C 6                                                          // G State change request B->C (set by node)
 #define STATE_COMM_C_OK 7                                                       // H State change B->C OK (set by master)
 #define STATE_ACTSTART 8                                                        // I Activation mode in progress
-#define STATE_B1 9                                                              // J Vehicle connected / no PWM signal
-#define STATE_C1 10                                                             // K Vehicle charging / no PWM signal (temp state when stopping charge from EVSE)
+#define STATE_B1 9                                                              // J Vehicle connected / EVSE not ready to deliver energy: no PWM signal
+#define STATE_C1 10                                                             // K Vehicle charging / EVSE not ready to deliver energy: no PWM signal (temp state when stopping charge from EVSE)
 #define STATE_MODEM_REQUEST 11                                                          // L Vehicle connected / requesting ISO15118 communication, 0% duty
 #define STATE_MODEM_WAIT 12                                                          // M Vehicle connected / requesting ISO15118 communication, 5% duty
 #define STATE_MODEM_DONE 13                                                // Modem communication succesful, SoCs extracted. Here, re-plug vehicle
