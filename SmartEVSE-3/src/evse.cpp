@@ -1012,7 +1012,10 @@ void CalcBalancedCurrent(char mod) {
             if (phasesLastUpdateFlag) {                                         // only increase or decrease current if measurements are updated
                 _LOG_V("phaseLastUpdate=%i.\n", phasesLastUpdate);
             if (Idifference > 0) {
-                    if (Mode == MODE_SMART) IsetBalanced += (Idifference / 4);  // increase with 1/4th of difference (slowly increase current)
+                    if (Mode == MODE_SMART){ 
+                        if (Idifference < 4) IsetBalanced += 1;                  // to converge to Idifference = 0 when Idifference < 4
+                        else IsetBalanced += (Idifference / 4);                  // this is an integer division .. increase with 1/4th of difference (slowly increase current)
+                    }
                 }                                                               // in Solar mode we compute increase of current later on!
             else
                     IsetBalanced += Idifference;                                // last PWM setting + difference (immediately decrease current) (Smart and Solar mode)
