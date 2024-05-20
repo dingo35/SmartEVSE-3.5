@@ -456,7 +456,7 @@ void SetCurrent(uint16_t current) {
                                                                             // calculate DutyCycle from current
     else if ((current > 510) && (current <= 800)) DutyCycle = (current / 2.5) + 640;
     else DutyCycle = 100;                                                   // invalid, use 6A
-    DutyCycle = DutyCycle * 1024 / 1000;                                    // conversion to 1024 = 100%
+    DutyCycle = 10 + DutyCycle * 1024 / 1000;                                    // conversion to 1024 = 100% // offset of 10 to get accurate current drawn by EV
     SetCPDuty(DutyCycle);
 }
 
