@@ -474,6 +474,21 @@ void SetCPDuty(uint32_t DutyCycle){
     CurrentPWM = DutyCycle;
 }
 
+// Inverse function of SetCurrent (for monitoring and debugging purposes)
+uint16_t GetCurrent() {
+    uint32_t DutyCycle = CurrentPWM;
+
+    if (DutyCycle < 102) {
+        return 0; //PWM off or ISO15118 modem enabled
+    } else if (DutyCycle < 870) {
+        return (DutyCycle * 1000 / 1024) * 0.6 + 1; //
+    } else if (DutyCycle <= 983) {
+        return ((DutyCycle * 1000 / 1024)- 640) * 2.5 + 3;
+    } else {
+        return 0; //constant +12V
+    }
+}
+
 
 // Sample the Temperature sensor.
 //
@@ -4813,8 +4828,8 @@ void ocppInit() {
 
     g_ocppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
-            "wss://echo.websocket.events/",
-            "p3naf0hg");
+            "wss://echo.websocket.events/", //OCPP backend URL (factory default)
+            "p3naf0hg"); //ChargeBoxId (factory default)
 
     mocpp_initialize(
             *g_ocppWsClient, //WebSocket adapter for MicroOcpp
@@ -4822,7 +4837,33 @@ void ocppInit() {
 
     //setup OCPP hardware bindings
 
-    //TODO
+    setEnergyMeterInput([] () { //Input of the electricity meter register in Wh
+        return EnergyEV;
+    });
+
+    setPowerMeterInput([] () { //Input of the power meter reading in W
+        return PowerMeasured;
+    });
+
+    setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
+        return State >= STATE_B && State < NOSTATE;
+    });
+
+    setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
+        return State == STATE_C ||
+               State == STATE_C1;
+    });
+
+    setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
+        return GetCurrent() > 0; //PWM is enabled
+    });
+
+    addMeterValueInput([] () {
+            return (float)GetCurrent() * 0.1f;
+        },
+        "Current.Offered",
+        "A");
+
 }
 
 void ocppDeinit() {
