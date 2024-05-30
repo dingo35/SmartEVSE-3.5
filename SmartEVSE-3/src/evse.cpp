@@ -2999,15 +2999,6 @@ void Timer1S(void * parameter) {
     } // while(1)
 }
 
-void Mongoose_Poll(void * parameter) {
-    while (true) {
-        if (WiFi.isConnected())
-            mg_mgr_poll(&mgr, 1000);
-        else
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
-}
-
 /**
  * Read energy measurement from modbus
  *
@@ -4677,8 +4668,6 @@ void onWifiEvent(WiFiEvent_t event) {
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
             _LOG_A("Connected or reconnected to WiFi\n");
             delay(1000);
-            //mongoose
-            mg_mgr_init(&mgr);  // Initialise event manager
             //load dhcp dns ip4 address into mongoose
             static char dns4url[]="udp://123.123.123.123:53";
             sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
@@ -5007,16 +4996,6 @@ void setup() {
         NULL            // Task handle
     );
 
-    // Create Task for mongoose loop
-    xTaskCreate(
-        Mongoose_Poll,        // Function that should be called
-        "Mongoose_Poll",      // Name of the task (for debugging)
-        4096,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority - low
-        NULL            // Task handle
-    );
-
     // Setup WiFi, webserver and firmware OTA
     // Please be aware that after doing a OTA update, its possible that the active partition is set to OTA1.
     // Uploading a new firmware through USB will however update OTA0, and you will not notice any changes...
@@ -5031,21 +5010,28 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
-
+    //mongoose
+    mg_mgr_init(&mgr);  // Initialise event manager
 }
 
 void loop() {
-    //this loop is for non-time critical stuff that needs to run approx 1 / second
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    getLocalTime(&timeinfo, 1000U);
-    if (!LocalTimeSet && WIFImode == 1) {
-        _LOG_A("Time not synced with NTP yet.\n");
+
+    static unsigned long lastNtpCheck = 0;
+    if (millis() - lastNtpCheck >= 1000) {
+        lastNtpCheck = millis();
+        //this block is for non-time critical stuff that needs to run approx 1 / second
+        getLocalTime(&timeinfo, 1000U);
+        if (!LocalTimeSet && WIFImode == 1) {
+            _LOG_A("Time not synced with NTP yet.\n");
+        }
     }
 
     if (shouldReboot) {
         delay(1000);
         ESP.restart();
     }
+
+    mg_mgr_poll(&mgr, 1000);
 
 #ifndef DEBUG_DISABLED
     // Remote debug over WiFi
