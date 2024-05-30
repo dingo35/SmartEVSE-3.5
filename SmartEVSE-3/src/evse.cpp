@@ -47,6 +47,10 @@ struct tm timeinfo;
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
+//OCPP includes
+#include <MicroOcpp.h>
+#include <MicroOcppMongooseClient.h>
+
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
 
 #if MQTT
@@ -277,6 +281,9 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
+
+bool g_ocppEnable = true; //set true or false to start / stop OCPP client
+MicroOcpp::MOcppMongooseClient *g_ocppWsClient;
 
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -4800,6 +4807,41 @@ void handleWIFImode() {
     }    
 }
 
+void ocppInit() {
+
+    //load OCPP library modules: Mongoose WS adapter and Core OCPP library
+
+    g_ocppWsClient = new MicroOcpp::MOcppMongooseClient(
+            &mgr,
+            "wss://echo.websocket.events/",
+            "p3naf0hg");
+
+    mocpp_initialize(
+            *g_ocppWsClient, //WebSocket adapter for MicroOcpp
+            ChargerCredentials("SmartEVSE", "Stegen Electronics", "3.5"));
+
+    //setup OCPP hardware bindings
+
+    //TODO
+}
+
+void ocppDeinit() {
+
+    mocpp_deinitialize();
+
+    delete g_ocppWsClient;
+    g_ocppWsClient = nullptr;
+}
+
+void ocppLoop() {
+
+    mocpp_loop();
+
+    //handle RFID input
+
+    //TODO
+}
+
 
 void setup() {
 
@@ -5032,6 +5074,17 @@ void loop() {
     }
 
     mg_mgr_poll(&mgr, 1000);
+
+    //OCPP lifecycle management
+    if (g_ocppEnable && !getOcppContext()) {
+        ocppInit();
+    } else if (!g_ocppEnable && getOcppContext()) {
+        ocppDeinit();
+    }
+
+    if (g_ocppEnable) {
+        ocppLoop();
+    }
 
 #ifndef DEBUG_DISABLED
     // Remote debug over WiFi
