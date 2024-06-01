@@ -4903,6 +4903,12 @@ void ocppLoop() {
         setAccess(false);
     }
     g_ocppTrackPermitsCharge = ocppPermitsCharge();
+
+    // Check if OCPP charge permission has been revoked by other moule
+    if (g_ocppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
+            !Access_bit) { // Access_bit is not active anymore
+        endTransaction(nullptr, "Other");
+    }
 }
 
 
