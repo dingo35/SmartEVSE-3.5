@@ -283,6 +283,8 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
 };
 
 bool g_ocppEnable = true; //set true or false to start / stop OCPP client
+bool g_ocppTrackPermitsCharge = false;
+uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
 MicroOcpp::MOcppMongooseClient *g_ocppWsClient;
 
 
@@ -4846,12 +4848,11 @@ void ocppInit() {
     });
 
     setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
-        return State >= STATE_B && State < NOSTATE;
+        return g_ocppTrackCPpositive >= PILOT_9V && g_ocppTrackCPpositive <= PILOT_3V;
     });
 
     setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
-        return State == STATE_C ||
-               State == STATE_C1;
+        return g_ocppTrackCPpositive >= PILOT_6V && g_ocppTrackCPpositive <= PILOT_3V;
     });
 
     setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
@@ -4876,11 +4877,32 @@ void ocppDeinit() {
 
 void ocppLoop() {
 
+    // Update pilot tracking variable (last measured positive part)
+    auto pilot = Pilot();
+    //_LOG_A("pilot in: %i", pilot);
+    if (pilot >= PILOT_12V && pilot <= PILOT_3V) {
+        if (g_ocppTrackCPpositive != pilot) {
+            _LOG_A("OCPP tracks new CP stauts: %i", pilot);
+        }
+        g_ocppTrackCPpositive = pilot;
+    }
+
     mocpp_loop();
 
     //handle RFID input
 
     //TODO
+
+    // Set / unset Access_bit
+    // Allow to toggle Access_bit only once per OCPP transaction because other modules may override the Access_bit
+    if (!g_ocppTrackPermitsCharge && ocppPermitsCharge()) {
+        _LOG_A("OCPP set Access_bit");
+        setAccess(true);
+    } else if (g_ocppTrackPermitsCharge && !ocppPermitsCharge()) {
+        _LOG_A("OCPP unset Access_bit");
+        setAccess(false);
+    }
+    g_ocppTrackPermitsCharge = ocppPermitsCharge();
 }
 
 
