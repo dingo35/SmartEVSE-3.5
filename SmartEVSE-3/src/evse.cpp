@@ -4920,14 +4920,22 @@ void ocppInit() {
 
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
 
+    auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
+            MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
+            ); 
+
     OcppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
-            "wss://echo.websocket.events/", //OCPP backend URL (factory default)
-            "p3naf0hg"); //ChargeBoxId (factory default)
+            "wss://echo.websocket.events/", // OCPP backend URL (factory default)
+            "smart-evse-001", // ChargeBoxId (factory default)
+            nullptr,    // WebSocket Basic Auth token (factory default)
+            nullptr,    // CA cert (cert string must outlive WS client)
+            filesystem);
 
     mocpp_initialize(
             *OcppWsClient, //WebSocket adapter for MicroOcpp
-            ChargerCredentials("SmartEVSE", "Stegen Electronics", "3.5"));
+            ChargerCredentials("SmartEVSE", "Stegen Electronics", "3.5"),
+            filesystem);
 
     //setup OCPP hardware bindings
 
