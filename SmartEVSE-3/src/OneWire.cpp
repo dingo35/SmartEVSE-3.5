@@ -270,11 +270,11 @@ void CheckRFID(void) {
     unsigned char x;
     // When RFID is enabled, a OneWire RFID reader is expected on the SW input
     uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
-    uint8_t OCPPmode = 1; //TODO take global value
     if (RFIDReader) {                                        // RFID Reader set to Enabled, Learn or Delete
         if (OneWireReadCardId() ) {                                             // Read card ID
 #if ENABLE_OCPP
-            if (OCPPmode &&                                                     // Remote authorization via OCPP?
+            uint8_t OcppMode = getItemValue(MENU_OCPP);
+            if (OcppMode &&                                                     // Remote authorization via OCPP?
                     (RFIDReader == 1 || // EnableAll
                      RFIDReader == 2)) { // EnableOne
                 // Use OCPP

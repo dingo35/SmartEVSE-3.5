@@ -1619,6 +1619,9 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_RFIDREADER:
             RFIDReader = val;
             break;
+        case MENU_OCPP:
+            OcppMode = val;
+            break;
         case MENU_WIFI:
             WIFImode = val;
             break;    
@@ -1738,6 +1741,8 @@ uint16_t getItemValue(uint8_t nav) {
             return EMConfig[EM_CUSTOM].EDivisor;
         case MENU_RFIDREADER:
             return RFIDReader;
+        case MENU_OCPP:
+            return OcppMode;
         case MENU_WIFI:
             return WIFImode;    
 

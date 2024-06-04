@@ -381,7 +381,8 @@ extern RemoteDebug Debug;
 #define MENU_SUMMAINS 37
 #define MENU_OFF 38                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
 #define MENU_ON 39                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 40
+#define MENU_OCPP 40                                                            // OCPP Disable / Enable / Further modes
+#define MENU_EXIT 41
 
 #define MENU_STATE 50
 
@@ -539,6 +540,7 @@ const struct {
     {"SUM MAINS","Capacity Rate limit on sum of MAINS Current (A)",    10, 600, MAX_SUMMAINS},
     {"", "Hold 2 sec to stop charging", 0, 0, 0},
     {"", "Hold 2 sec to start charging", 0, 0, 0},
+    {"OCPP",    "Select OCPP mode",                                   0, 1, OCPP_MODE},
 
     {"EXIT", "EXIT", 0, 0, 0}
 };
