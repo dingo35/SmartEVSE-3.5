@@ -3610,6 +3610,10 @@ void read_settings() {
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
 #endif
 
+#if ENABLE_OCPP
+        OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
+#endif //ENABLE_OCPP
+
         preferences.end();                                  
 
         // Store settings when not initialized
@@ -3678,6 +3682,10 @@ void write_settings(void) {
     preferences.putString("MQTTHost", MQTTHost);
     preferences.putUShort("MQTTPort", MQTTPort);
 #endif
+
+#if ENABLE_OCPP
+    preferences.putUChar("OcppMode", OcppMode);
+#endif //ENABLE_OCPP
 
     preferences.end();
 
