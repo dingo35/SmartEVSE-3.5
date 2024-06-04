@@ -283,15 +283,16 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
 };
 
 #if ENABLE_OCPP
+uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
+
 unsigned char OcppRfidUuid [7];
 size_t OcppRfidUuidLen;
 unsigned long OcppLastRfidUpdate;
 unsigned long OcppTrackLastRfidUpdate;
 
-bool g_ocppEnable = true; //set true or false to start / stop OCPP client
 bool g_ocppTrackPermitsCharge = false;
 uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
-MicroOcpp::MOcppMongooseClient *g_ocppWsClient;
+MicroOcpp::MOcppMongooseClient *OcppWsClient;
 #endif
 
 
@@ -4210,6 +4211,19 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
 #endif
 
+#if ENABLE_OCPP
+        doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
+        doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
+        doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
+        doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+
+        if (OcppWsClient && OcppWsClient->isConnected()) {
+            doc["ocpp"]["status"] = "Connected";
+        } else {
+            doc["ocpp"]["status"] = "Disconnected";
+        }
+#endif //ENABLE_OCPP
+
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
 
@@ -4491,6 +4505,51 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
         }
 #endif
+
+#if ENABLE_OCPP
+        if(request->hasParam("ocpp_update")) {
+            if (request->getParam("ocpp_update")->value().toInt() == 1) {
+
+                if(request->hasParam("ocpp_mode")) {
+                    OcppMode = request->getParam("ocpp_mode")->value().toInt();
+                    doc["ocpp_mode"] = OcppMode;
+                }
+
+                if(request->hasParam("ocpp_backend_url")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setBackendUrl(request->getParam("ocpp_backend_url")->value().c_str());
+                        doc["ocpp_backend_url"] = OcppWsClient->getBackendUrl();
+                    } else {
+                        doc["ocpp_backend_url"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_cb_id")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setChargeBoxId(request->getParam("ocpp_cb_id")->value().c_str());
+                        doc["ocpp_cb_id"] = OcppWsClient->getChargeBoxId();
+                    } else {
+                        doc["ocpp_cb_id"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_auth_key")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setAuthKey(request->getParam("ocpp_auth_key")->value().c_str());
+                        doc["ocpp_auth_key"] = OcppWsClient->getAuthKey();
+                    } else {
+                        doc["ocpp_auth_key"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                // Apply changes in OcppWsClient
+                if (OcppWsClient) {
+                    OcppWsClient->reloadConfigs();
+                }
+                write_settings();
+            }
+        }
+#endif //ENABLE_OCPP
 
         String json;
         serializeJson(doc, json);
@@ -4844,13 +4903,13 @@ void ocppInit() {
 
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
 
-    g_ocppWsClient = new MicroOcpp::MOcppMongooseClient(
+    OcppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
             "wss://echo.websocket.events/", //OCPP backend URL (factory default)
             "p3naf0hg"); //ChargeBoxId (factory default)
 
     mocpp_initialize(
-            *g_ocppWsClient, //WebSocket adapter for MicroOcpp
+            *OcppWsClient, //WebSocket adapter for MicroOcpp
             ChargerCredentials("SmartEVSE", "Stegen Electronics", "3.5"));
 
     //setup OCPP hardware bindings
@@ -4887,8 +4946,8 @@ void ocppDeinit() {
 
     mocpp_deinitialize();
 
-    delete g_ocppWsClient;
-    g_ocppWsClient = nullptr;
+    delete OcppWsClient;
+    OcppWsClient = nullptr;
 }
 
 void ocppLoop() {
@@ -5178,13 +5237,13 @@ void loop() {
     mg_mgr_poll(&mgr, 1000);
 
     //OCPP lifecycle management
-    if (g_ocppEnable && !getOcppContext()) {
+    if (OcppMode && !getOcppContext()) {
         ocppInit();
-    } else if (!g_ocppEnable && getOcppContext()) {
+    } else if (!OcppMode && getOcppContext()) {
         ocppDeinit();
     }
 
-    if (g_ocppEnable) {
+    if (OcppMode) {
         ocppLoop();
     }
 
