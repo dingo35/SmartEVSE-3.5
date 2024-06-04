@@ -47,6 +47,10 @@ struct tm timeinfo;
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
+//OCPP includes
+#include <MicroOcpp.h>
+#include <MicroOcppMongooseClient.h>
+
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
 
 #if MQTT
@@ -278,6 +282,19 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
 
+#if ENABLE_OCPP
+uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
+
+unsigned char OcppRfidUuid [7];
+size_t OcppRfidUuidLen;
+unsigned long OcppLastRfidUpdate;
+unsigned long OcppTrackLastRfidUpdate;
+
+bool g_ocppTrackPermitsCharge = false;
+uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
+MicroOcpp::MOcppMongooseClient *OcppWsClient;
+#endif
+
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
 //
@@ -465,6 +482,21 @@ void SetCurrent(uint16_t current) {
 void SetCPDuty(uint32_t DutyCycle){
     ledcWrite(CP_CHANNEL, DutyCycle);                                       // update PWM signal
     CurrentPWM = DutyCycle;
+}
+
+// Inverse function of SetCurrent (for monitoring and debugging purposes)
+uint16_t GetCurrent() {
+    uint32_t DutyCycle = CurrentPWM;
+
+    if (DutyCycle < 102) {
+        return 0; //PWM off or ISO15118 modem enabled
+    } else if (DutyCycle < 870) {
+        return (DutyCycle * 1000 / 1024) * 0.6 + 1; //
+    } else if (DutyCycle <= 983) {
+        return ((DutyCycle * 1000 / 1024)- 640) * 2.5 + 3;
+    } else {
+        return 0; //constant +12V
+    }
 }
 
 
@@ -1589,6 +1621,9 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_RFIDREADER:
             RFIDReader = val;
             break;
+        case MENU_OCPP:
+            OcppMode = val;
+            break;
         case MENU_WIFI:
             WIFImode = val;
             break;    
@@ -1708,6 +1743,8 @@ uint16_t getItemValue(uint8_t nav) {
             return EMConfig[EM_CUSTOM].EDivisor;
         case MENU_RFIDREADER:
             return RFIDReader;
+        case MENU_OCPP:
+            return OcppMode;
         case MENU_WIFI:
             return WIFImode;    
 
@@ -2765,6 +2802,10 @@ void mqttPublishData() {
         }
         if (homeBatteryLastUpdate)
             MQTTclient.publish(MQTTprefix + "/HomeBatteryCurrent", String(homeBatteryCurrent), false, 0);
+#if ENABLE_OCPP
+        MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
+        MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
+#endif
 }
 #endif
 
@@ -2997,15 +3038,6 @@ void Timer1S(void * parameter) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     } // while(1)
-}
-
-void Mongoose_Poll(void * parameter) {
-    while (true) {
-        if (WiFi.isConnected())
-            mg_mgr_poll(&mgr, 1000);
-        else
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
 }
 
 /**
@@ -3583,6 +3615,10 @@ void read_settings() {
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
 #endif
 
+#if ENABLE_OCPP
+        OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
+#endif //ENABLE_OCPP
+
         preferences.end();                                  
 
         // Store settings when not initialized
@@ -3651,6 +3687,10 @@ void write_settings(void) {
     preferences.putString("MQTTHost", MQTTHost);
     preferences.putUShort("MQTTPort", MQTTPort);
 #endif
+
+#if ENABLE_OCPP
+    preferences.putUChar("OcppMode", OcppMode);
+#endif //ENABLE_OCPP
 
     preferences.end();
 
@@ -4193,6 +4233,19 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
 #endif
 
+#if ENABLE_OCPP
+        doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
+        doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
+        doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
+        doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+
+        if (OcppWsClient && OcppWsClient->isConnected()) {
+            doc["ocpp"]["status"] = "Connected";
+        } else {
+            doc["ocpp"]["status"] = "Disconnected";
+        }
+#endif //ENABLE_OCPP
+
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
 
@@ -4475,6 +4528,51 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
 #endif
 
+#if ENABLE_OCPP
+        if(request->hasParam("ocpp_update")) {
+            if (request->getParam("ocpp_update")->value().toInt() == 1) {
+
+                if(request->hasParam("ocpp_mode")) {
+                    OcppMode = request->getParam("ocpp_mode")->value().toInt();
+                    doc["ocpp_mode"] = OcppMode;
+                }
+
+                if(request->hasParam("ocpp_backend_url")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setBackendUrl(request->getParam("ocpp_backend_url")->value().c_str());
+                        doc["ocpp_backend_url"] = OcppWsClient->getBackendUrl();
+                    } else {
+                        doc["ocpp_backend_url"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_cb_id")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setChargeBoxId(request->getParam("ocpp_cb_id")->value().c_str());
+                        doc["ocpp_cb_id"] = OcppWsClient->getChargeBoxId();
+                    } else {
+                        doc["ocpp_cb_id"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_auth_key")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setAuthKey(request->getParam("ocpp_auth_key")->value().c_str());
+                        doc["ocpp_auth_key"] = OcppWsClient->getAuthKey();
+                    } else {
+                        doc["ocpp_auth_key"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                // Apply changes in OcppWsClient
+                if (OcppWsClient) {
+                    OcppWsClient->reloadConfigs();
+                }
+                write_settings();
+            }
+        }
+#endif //ENABLE_OCPP
+
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
@@ -4682,8 +4780,6 @@ void onWifiEvent(WiFiEvent_t event) {
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
             _LOG_A("Connected or reconnected to WiFi\n");
             delay(1000);
-            //mongoose
-            mg_mgr_init(&mgr);  // Initialise event manager
             //load dhcp dns ip4 address into mongoose
             static char dns4url[]="udp://123.123.123.123:53";
             sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
@@ -4815,6 +4911,127 @@ void handleWIFImode() {
         _LOG_A("Stopping WiFi..\n");
         WiFi.disconnect(true);
     }    
+}
+
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
+    if (!uuid || uuidLen >= sizeof(OcppRfidUuid)) {
+        _LOG_W("OCPP: invalid UUID\n");
+    }
+    memcpy(OcppRfidUuid, uuid, uuidLen);
+    OcppRfidUuidLen = uuidLen;
+    OcppLastRfidUpdate = millis();
+}
+
+void ocppInit() {
+
+    //load OCPP library modules: Mongoose WS adapter and Core OCPP library
+
+    auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
+            MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
+            ); 
+
+    OcppWsClient = new MicroOcpp::MOcppMongooseClient(
+            &mgr,
+            "wss://echo.websocket.events/", // OCPP backend URL (factory default)
+            "smart-evse-001", // ChargeBoxId (factory default)
+            nullptr,    // WebSocket Basic Auth token (factory default)
+            nullptr,    // CA cert (cert string must outlive WS client)
+            filesystem);
+
+    mocpp_initialize(
+            *OcppWsClient, //WebSocket adapter for MicroOcpp
+            ChargerCredentials("SmartEVSE", "Stegen Electronics", "3.5"),
+            filesystem);
+
+    //setup OCPP hardware bindings
+
+    setEnergyMeterInput([] () { //Input of the electricity meter register in Wh
+        return EnergyEV;
+    });
+
+    setPowerMeterInput([] () { //Input of the power meter reading in W
+        return PowerMeasured;
+    });
+
+    setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
+        return g_ocppTrackCPpositive >= PILOT_9V && g_ocppTrackCPpositive <= PILOT_3V;
+    });
+
+    setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
+        return g_ocppTrackCPpositive >= PILOT_6V && g_ocppTrackCPpositive <= PILOT_3V;
+    });
+
+    setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
+        return GetCurrent() > 0; //PWM is enabled
+    });
+
+    addMeterValueInput([] () {
+            return (float)GetCurrent() * 0.1f;
+        },
+        "Current.Offered",
+        "A");
+
+}
+
+void ocppDeinit() {
+
+    mocpp_deinitialize();
+
+    delete OcppWsClient;
+    OcppWsClient = nullptr;
+}
+
+void ocppLoop() {
+
+    // Update pilot tracking variable (last measured positive part)
+    auto pilot = Pilot();
+    //_LOG_A("pilot in: %i", pilot);
+    if (pilot >= PILOT_12V && pilot <= PILOT_3V) {
+        if (g_ocppTrackCPpositive != pilot) {
+            _LOG_A("OCPP tracks new CP stauts: %i", pilot);
+        }
+        g_ocppTrackCPpositive = pilot;
+    }
+
+    mocpp_loop();
+
+    //handle RFID input
+
+    if (OcppTrackLastRfidUpdate != OcppLastRfidUpdate) {
+        // New RFID card swiped
+
+        char uuidHex [2 * sizeof(OcppRfidUuid) + 1];
+        uuidHex[0] = '\0';
+        for (size_t i = 0; i < OcppRfidUuidLen; i++) {
+            snprintf(uuidHex + 2*i, 3, "%02X", OcppRfidUuid[i]);
+        }
+
+        if (getTransactionIdTag()) {
+            //OCPP lib still has idTag (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
+            endTransaction(uuidHex);
+        } else {
+            //OCPP lib has no idTag --> swiped card is used for new transaction
+            beginTransaction(uuidHex);
+        }
+    }
+    OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
+
+    // Set / unset Access_bit
+    // Allow to toggle Access_bit only once per OCPP transaction because other modules may override the Access_bit
+    if (!g_ocppTrackPermitsCharge && ocppPermitsCharge()) {
+        _LOG_A("OCPP set Access_bit");
+        setAccess(true);
+    } else if (g_ocppTrackPermitsCharge && !ocppPermitsCharge()) {
+        _LOG_A("OCPP unset Access_bit");
+        setAccess(false);
+    }
+    g_ocppTrackPermitsCharge = ocppPermitsCharge();
+
+    // Check if OCPP charge permission has been revoked by other moule
+    if (g_ocppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
+            !Access_bit) { // Access_bit is not active anymore
+        endTransaction(nullptr, "Other");
+    }
 }
 
 
@@ -5013,16 +5230,6 @@ void setup() {
         NULL            // Task handle
     );
 
-    // Create Task for mongoose loop
-    xTaskCreate(
-        Mongoose_Poll,        // Function that should be called
-        "Mongoose_Poll",      // Name of the task (for debugging)
-        4096,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority - low
-        NULL            // Task handle
-    );
-
     // Setup WiFi, webserver and firmware OTA
     // Please be aware that after doing a OTA update, its possible that the active partition is set to OTA1.
     // Uploading a new firmware through USB will however update OTA0, and you will not notice any changes...
@@ -5037,20 +5244,38 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
-
+    //mongoose
+    mg_mgr_init(&mgr);  // Initialise event manager
 }
 
 void loop() {
-    //this loop is for non-time critical stuff that needs to run approx 1 / second
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    getLocalTime(&timeinfo, 1000U);
-    if (!LocalTimeSet && WIFImode == 1) {
-        _LOG_A("Time not synced with NTP yet.\n");
+
+    static unsigned long lastNtpCheck = 0;
+    if (millis() - lastNtpCheck >= 1000) {
+        lastNtpCheck = millis();
+        //this block is for non-time critical stuff that needs to run approx 1 / second
+        getLocalTime(&timeinfo, 1000U);
+        if (!LocalTimeSet && WIFImode == 1) {
+            _LOG_A("Time not synced with NTP yet.\n");
+        }
     }
 
     if (shouldReboot) {
         delay(1000);
         ESP.restart();
+    }
+
+    mg_mgr_poll(&mgr, 1000);
+
+    //OCPP lifecycle management
+    if (OcppMode && !getOcppContext()) {
+        ocppInit();
+    } else if (!OcppMode && getOcppContext()) {
+        ocppDeinit();
+    }
+
+    if (OcppMode) {
+        ocppLoop();
     }
 
 #ifndef DEBUG_DISABLED

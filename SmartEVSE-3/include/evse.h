@@ -60,6 +60,10 @@
 #define MQTT 1  // Uncomment or set to 0 to disable MQTT support in code
 #endif
 
+#ifndef ENABLE_OCPP
+#define ENABLE_OCPP 1
+#endif
+
 #ifndef MODEM
 //the wifi-debugger is available by telnetting to your SmartEVSE device
 #define MODEM 0  //0 = no modem 1 = modem
@@ -216,6 +220,7 @@ extern RemoteDebug Debug;
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
+#define OCPP_MODE 0
 #define PUBLIC_KEY "5c7a848c3445793002487608a65fa259cefb16790f7c2f4a1d10af702393f7db\0";
 
 
@@ -377,7 +382,8 @@ extern RemoteDebug Debug;
 #define MENU_SUMMAINS 37
 #define MENU_OFF 38                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
 #define MENU_ON 39                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 40
+#define MENU_OCPP 40                                                            // OCPP Disable / Enable / Further modes
+#define MENU_EXIT 41
 
 #define MENU_STATE 50
 
@@ -535,6 +541,7 @@ const struct {
     {"SUM MAINS","Capacity Rate limit on sum of MAINS Current (A)",    10, 600, MAX_SUMMAINS},
     {"", "Hold 2 sec to stop charging", 0, 0, 0},
     {"", "Hold 2 sec to start charging", 0, 0, 0},
+    {"OCPP",    "Select OCPP mode",                                   0, 1, OCPP_MODE},
 
     {"EXIT", "EXIT", 0, 0, 0}
 };
@@ -583,5 +590,7 @@ uint16_t getItemValue(uint8_t nav);
 void ConfigureModbusMode(uint8_t newmode);
 
 void handleWIFImode(void);
+
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
 
 #endif
