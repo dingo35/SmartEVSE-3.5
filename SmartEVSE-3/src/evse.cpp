@@ -282,10 +282,17 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
 
+#if ENABLE_OCPP
+unsigned char OcppRfidUuid [7];
+size_t OcppRfidUuidLen;
+unsigned long OcppLastRfidUpdate;
+unsigned long OcppTrackLastRfidUpdate;
+
 bool g_ocppEnable = true; //set true or false to start / stop OCPP client
 bool g_ocppTrackPermitsCharge = false;
 uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
 MicroOcpp::MOcppMongooseClient *g_ocppWsClient;
+#endif
 
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -4824,6 +4831,15 @@ void handleWIFImode() {
     }    
 }
 
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
+    if (!uuid || uuidLen >= sizeof(OcppRfidUuid)) {
+        _LOG_W("OCPP: invalid UUID\n");
+    }
+    memcpy(OcppRfidUuid, uuid, uuidLen);
+    OcppRfidUuidLen = uuidLen;
+    OcppLastRfidUpdate = millis();
+}
+
 void ocppInit() {
 
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
@@ -4891,7 +4907,24 @@ void ocppLoop() {
 
     //handle RFID input
 
-    //TODO
+    if (OcppTrackLastRfidUpdate != OcppLastRfidUpdate) {
+        // New RFID card swiped
+
+        char uuidHex [2 * sizeof(OcppRfidUuid) + 1];
+        uuidHex[0] = '\0';
+        for (size_t i = 0; i < OcppRfidUuidLen; i++) {
+            snprintf(uuidHex + 2*i, 3, "%02X", OcppRfidUuid[i]);
+        }
+
+        if (getTransactionIdTag()) {
+            //OCPP lib still has idTag (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
+            endTransaction(uuidHex);
+        } else {
+            //OCPP lib has no idTag --> swiped card is used for new transaction
+            beginTransaction(uuidHex);
+        }
+    }
+    OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
 
     // Set / unset Access_bit
     // Allow to toggle Access_bit only once per OCPP transaction because other modules may override the Access_bit

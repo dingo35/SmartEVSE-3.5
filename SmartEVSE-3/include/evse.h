@@ -60,6 +60,10 @@
 #define MQTT 1  // Uncomment or set to 0 to disable MQTT support in code
 #endif
 
+#ifndef ENABLE_OCPP
+#define ENABLE_OCPP 1
+#endif
+
 #ifndef MODEM
 //the wifi-debugger is available by telnetting to your SmartEVSE device
 #define MODEM 0  //0 = no modem 1 = modem
@@ -582,5 +586,7 @@ uint16_t getItemValue(uint8_t nav);
 void ConfigureModbusMode(uint8_t newmode);
 
 void handleWIFImode(void);
+
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
 
 #endif
