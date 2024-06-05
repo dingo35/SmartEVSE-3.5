@@ -590,6 +590,8 @@ void ConfigureModbusMode(uint8_t newmode);
 
 void handleWIFImode(void);
 
+#if ENABLE_OCPP
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
+#endif //ENABLE_OCPP
 
 #endif

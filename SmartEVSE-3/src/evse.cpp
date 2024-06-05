@@ -48,8 +48,10 @@ struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
 //OCPP includes
+#if ENABLE_OCPP
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
+#endif //ENABLE_OCPP
 
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
 
@@ -293,7 +295,7 @@ unsigned long OcppTrackLastRfidUpdate;
 bool g_ocppTrackPermitsCharge = false;
 uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
 MicroOcpp::MOcppMongooseClient *OcppWsClient;
-#endif
+#endif //ENABLE_OCPP
 
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -484,6 +486,8 @@ void SetCPDuty(uint32_t DutyCycle){
     CurrentPWM = DutyCycle;
 }
 
+#if ENABLE_OCPP
+
 // Inverse function of SetCurrent (for monitoring and debugging purposes)
 uint16_t GetCurrent() {
     uint32_t DutyCycle = CurrentPWM;
@@ -491,13 +495,14 @@ uint16_t GetCurrent() {
     if (DutyCycle < 102) {
         return 0; //PWM off or ISO15118 modem enabled
     } else if (DutyCycle < 870) {
-        return (DutyCycle * 1000 / 1024) * 0.6 + 1; //
+        return (DutyCycle * 1000 / 1024) * 0.6 + 1; // invert duty cycle formula + fixed rounding error correction
     } else if (DutyCycle <= 983) {
-        return ((DutyCycle * 1000 / 1024)- 640) * 2.5 + 3;
+        return ((DutyCycle * 1000 / 1024)- 640) * 2.5 + 3; // invert duty cycle formula + fixed rounding error correction
     } else {
         return 0; //constant +12V
     }
 }
+#endif //ENABLE_OCPP
 
 
 // Sample the Temperature sensor.
@@ -1619,9 +1624,11 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_RFIDREADER:
             RFIDReader = val;
             break;
+#if ENABLE_OCPP
         case MENU_OCPP:
             OcppMode = val;
             break;
+#endif //ENABLE_OCPP
         case MENU_WIFI:
             WIFImode = val;
             break;    
@@ -1741,8 +1748,10 @@ uint16_t getItemValue(uint8_t nav) {
             return EMConfig[EM_CUSTOM].EDivisor;
         case MENU_RFIDREADER:
             return RFIDReader;
+#if ENABLE_OCPP
         case MENU_OCPP:
             return OcppMode;
+#endif //ENABLE_OCPP
         case MENU_WIFI:
             return WIFImode;    
 
@@ -2805,7 +2814,7 @@ void mqttPublishData() {
 #if ENABLE_OCPP
         MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
         MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
-#endif
+#endif //ENABLE_OCPP
 }
 #endif
 
@@ -4907,6 +4916,11 @@ void handleWIFImode() {
     }    
 }
 
+/*
+ * OCPP-related function definitions
+ */
+#if ENABLE_OCPP
+
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
     if (!uuid || uuidLen >= sizeof(OcppRfidUuid)) {
         _LOG_W("OCPP: invalid UUID\n");
@@ -5027,6 +5041,8 @@ void ocppLoop() {
         endTransaction(nullptr, "Other");
     }
 }
+
+#endif //ENABLE_OCPP
 
 
 void setup() {
@@ -5262,6 +5278,8 @@ void loop() {
     mg_mgr_poll(&mgr, 1000);
 
     //OCPP lifecycle management
+#if ENABLE_OCPP
+
     if (OcppMode && !getOcppContext()) {
         ocppInit();
     } else if (!OcppMode && getOcppContext()) {
@@ -5271,6 +5289,7 @@ void loop() {
     if (OcppMode) {
         ocppLoop();
     }
+#endif //ENABLE_OCPP
 
 #ifndef DEBUG_DISABLED
     // Remote debug over WiFi
