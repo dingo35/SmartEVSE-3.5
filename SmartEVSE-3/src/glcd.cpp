@@ -965,10 +965,10 @@ uint8_t getMenuItems (void) {
     MenuItems[m++] = MENU_SWITCH;                                               // External Switch on SW (0:Disable / 1:Access / 2:Smart-Solar)
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)
+    MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
 #if ENABLE_OCPP
     MenuItems[m++] = MENU_OCPP;                                                 // OCPP (0:Disable / 1:Enable)
 #endif
-    MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
     MenuItems[m++] = MENU_MAX_TEMP;
     if (MainsMeter && LoadBl < 2)
         MenuItems[m++] = MENU_SUMMAINS;
