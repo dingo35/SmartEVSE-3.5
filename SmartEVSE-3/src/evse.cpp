@@ -2722,6 +2722,10 @@ void SetupMQTTClient() {
     announce("State", "sensor");
     announce("RFID", "sensor");
     announce("RFIDLastRead", "sensor");
+#if ENABLE_OCPP
+    announce("OCPP", "sensor");
+    announce("OCPPConnection", "sensor");
+#endif //ENABLE_OCPP
 
     //set the parameters for and announce diagnostic sensor entities:
     optional_payload = jsna("entity_category","diagnostic");
