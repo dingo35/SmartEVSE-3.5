@@ -4983,6 +4983,32 @@ void ocppInit() {
         "Current.Offered",
         "A");
 
+    addErrorCodeInput([] () {
+        return (ErrorFlags & TEMP_HIGH) ? "HighTemperature" : (const char*)nullptr;
+    });
+
+    addErrorCodeInput([] () {
+        return (ErrorFlags & RCM_TRIPPED) ? "GroundFailure" : (const char*)nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & CT_NOCOMM) {
+            MicroOcpp::ErrorData error = "PowerMeterFailure";
+            error.info = "Communication with mains meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & EV_NOCOMM) {
+            MicroOcpp::ErrorData error = "PowerMeterFailure";
+            error.info = "Communication with EV meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
 }
 
 void ocppDeinit() {
