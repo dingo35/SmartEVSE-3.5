@@ -4958,7 +4958,7 @@ void ocppInit() {
     //setup OCPP hardware bindings
 
     setEnergyMeterInput([] () { //Input of the electricity meter register in Wh
-        return EnergyEV;
+        return EV_import_active_energy;
     });
 
     setPowerMeterInput([] () { //Input of the power meter reading in W
@@ -4978,10 +4978,107 @@ void ocppInit() {
     });
 
     addMeterValueInput([] () {
+            return (float) (Irms_EV[0] + Irms_EV[1] + Irms_EV[2]);
+        },
+        "Current.Import",
+        "A");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[0];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L1");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[1];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L2");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[2];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L3");
+    
+    addMeterValueInput([] () {
             return (float)GetCurrent() * 0.1f;
         },
         "Current.Offered",
         "A");
+
+    addMeterValueInput([] () {
+            return (float)EV_export_active_energy;
+        },
+        "Energy.Active.Export.Register",
+        "Wh");
+
+    addMeterValueInput([] () {
+            return (float)Mains_import_active_energy;
+        },
+        "Energy.Active.Import.Register",
+        "Wh",
+        "Inlet");
+
+    addMeterValueInput([] () {
+            return (float)Mains_export_active_energy;
+        },
+        "Energy.Active.Export.Register",
+        "Wh",
+        "Inlet");
+
+    addMeterValueInput([] () {
+            return (float) (Irms[0] + Irms[1] + Irms[2]);
+        },
+        "Current.Import",
+        "A",
+        "Inlet");
+
+    addMeterValueInput([] () {
+            return (float) Irms[0];
+        },
+        "Current.Import",
+        "A",
+        "Inlet",
+        "L1");
+
+    addMeterValueInput([] () {
+            return (float) Irms[1];
+        },
+        "Current.Import",
+        "A",
+        "Inlet",
+        "L2");
+
+    addMeterValueInput([] () {
+            return (float) Irms[2];
+        },
+        "Current.Import",
+        "A",
+        "Inlet",
+        "L3");
+
+    addMeterValueInput([] () {
+            return (float)TempEVSE;
+        },
+        "Temperature",
+        "Celsius");
+
+#if MODEM
+    if (Modem) {ComputedSoC
+        addMeterValueInput([] () {
+                return (float)ComputedSoC;
+            },
+            "SoC",
+            "Percent");
+    }
+#endif
 
     addErrorCodeInput([] () {
         return (ErrorFlags & TEMP_HIGH) ? "HighTemperature" : (const char*)nullptr;
