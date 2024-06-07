@@ -5110,6 +5110,8 @@ void ocppInit() {
 
 void ocppDeinit() {
 
+    endTransaction(nullptr, "Other"); // If a transaction is running, shut it down forcefully. The StopTx request will be sent when OCPP runs again.
+
     mocpp_deinitialize();
 
     delete OcppWsClient;
