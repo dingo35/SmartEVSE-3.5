@@ -295,6 +295,8 @@ unsigned long OcppTrackLastRfidUpdate;
 bool g_ocppTrackPermitsCharge = false;
 uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
 MicroOcpp::MOcppMongooseClient *OcppWsClient;
+
+float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
 #endif //ENABLE_OCPP
 
 
@@ -927,6 +929,17 @@ char IsCurrentAvailable(void) {
         return 0;                                                           // Not enough current available!, return with error
     }
 
+// Use OCPP Smart Charging if Load Balancing is turned off
+#if ENABLE_OCPP
+    if (OcppMode &&                            // OCPP enabled
+            !LoadBl &&                         // Internal LB disabled
+            OcppCurrentLimit >= 0.f &&         // OCPP limit defined
+            OcppCurrentLimit < MinCurrent) {  // OCPP suspends charging
+        _LOG_D("OCPP Smart Charging suspends EVSE\n");
+        return 0;
+    }
+#endif //ENABLE_OCPP
+
     _LOG_D("Current available checkpoint D. ActiveEVSE increased by one=%i, TotalCurrent=%.1fA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, (float) TotalCurrent/10, StartCurrent, (float)Isum/10, ImportCurrent);
     return 1;
 }
@@ -1002,6 +1015,20 @@ void CalcBalancedCurrent(char mod) {
         ChargeCurrent = MaxCapacity * 10;
     else
         ChargeCurrent = MaxCurrent * 10;                                        // Instead use new variable ChargeCurrent.
+
+// Use OCPP Smart Charging if Load Balancing is turned off
+#if ENABLE_OCPP
+    if (OcppMode &&                      // OCPP enabled
+            !LoadBl &&                   // Internal LB disabled
+            OcppCurrentLimit >= 0.f) {   // OCPP limit defined
+
+        if (OcppCurrentLimit < MinCurrent) {
+            ChargeCurrent = 0;
+        } else {
+            ChargeCurrent = std::min(ChargeCurrent, (uint16_t) (10.f * OcppCurrentLimit));
+        }
+    }
+#endif //ENABLE_OCPP
 
     // Override current temporary if set
     if (OverrideCurrent)
@@ -5105,6 +5132,32 @@ void ocppInit() {
         }
         return nullptr;
     });
+
+    // If SmartEVSE load balancer is turned off, then enable OCPP Smart Charging
+    // This means after toggling LB, OCPP must be turned off and on for changes to become effective
+    if (!LoadBl) {
+        setSmartChargingCurrentOutput([] (float currentLimit) {
+            OcppCurrentLimit = currentLimit; // Can be negative which means that no limit is defined
+
+            // Re-evaluate charge rate and apply
+            if (!LoadBl) { // Execute only if LB is still disabled
+
+                CalcBalancedCurrent(0);
+                if (IsCurrentAvailable()) {
+                    // OCPP is the exclusive LB, clear LESS_6A error if set
+                    ErrorFlags &= ~LESS_6A;
+                    ChargeDelay = 0;
+                }
+                if ((State == STATE_B || State == STATE_C) && !CPDutyOverride) {
+                    if (IsCurrentAvailable()) {
+                        SetCurrent(ChargeCurrent);
+                    } else {
+                        setStatePowerUnavailable();
+                    }
+                }
+            }
+        });
+    }
 
 }
 
