@@ -51,6 +51,7 @@ struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 #if ENABLE_OCPP
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
+#include <MicroOcpp/Core/Configuration.h>
 #endif //ENABLE_OCPP
 
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
@@ -291,6 +292,10 @@ unsigned char OcppRfidUuid [7];
 size_t OcppRfidUuidLen;
 unsigned long OcppLastRfidUpdate;
 unsigned long OcppTrackLastRfidUpdate;
+
+bool OcppForcesLock = false;
+std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
+std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
 
 bool g_ocppTrackPermitsCharge = false;
 uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
@@ -2337,6 +2342,14 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
 
                 shouldUnlock = true;
             }
+
+#if ENABLE_OCPP
+            // Overwrite lock control by OCPP?
+            if (OcppMode) {
+                shouldLock = OcppForcesLock;
+                shouldUnlock = !OcppForcesLock;
+            }
+#endif //ENABLE_OCPP
 
             // UnlockCable takes precedence over LockCable
             if (shouldUnlock) {
@@ -5174,11 +5187,35 @@ void ocppInit() {
         });
     }
 
+    setOnUnlockConnectorInOut([] () -> UnlockConnectorResult {
+        // MO also stops transaction which should toggle OcppForcesLock false
+        OcppLockingTx.reset();
+        if (Lock == 0 || digitalRead(PIN_LOCK_IN) == lock2) {
+            // Success
+            return UnlockConnectorResult_Unlocked;
+        }
+
+        // No result yet, wait (MO eventually times out)
+        return UnlockConnectorResult_Pending;
+    });
+
+    setOccupiedInput([] () -> bool {
+        // Keep Finishing state while LockingTx effectively blocks new transactions
+        return OcppLockingTx != nullptr;
+    });
+
+    OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
+
+    endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
 }
 
 void ocppDeinit() {
 
     endTransaction(nullptr, "Other"); // If a transaction is running, shut it down forcefully. The StopTx request will be sent when OCPP runs again.
+
+    OcppUnlockConnectorOnEVSideDisconnect.reset();
+    OcppLockingTx.reset();
+    OcppForcesLock = false;
 
     mocpp_deinitialize();
 
@@ -5211,12 +5248,20 @@ void ocppLoop() {
             snprintf(uuidHex + 2*i, 3, "%02X", OcppRfidUuid[i]);
         }
 
-        if (getTransactionIdTag()) {
-            //OCPP lib still has idTag (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
-            endTransaction(uuidHex);
+        if (OcppLockingTx) {
+            // Connector is still locked by earlier transaction
+            
+            if (!strcmp(uuidHex, OcppLockingTx->getIdTag())) {
+                // Connector can be unlocked again
+                OcppLockingTx.reset();
+                endTransaction(uuidHex, "Local");
+            } // else: Connector remains blocked for now
+        } else if (getTransaction()) {
+            //OCPP lib still has transaction (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
+            endTransaction(uuidHex, "Local");
         } else {
             //OCPP lib has no idTag --> swiped card is used for new transaction
-            beginTransaction(uuidHex);
+            OcppLockingTx = beginTransaction(uuidHex);
         }
     }
     OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
@@ -5224,19 +5269,47 @@ void ocppLoop() {
     // Set / unset Access_bit
     // Allow to toggle Access_bit only once per OCPP transaction because other modules may override the Access_bit
     if (!g_ocppTrackPermitsCharge && ocppPermitsCharge()) {
-        _LOG_A("OCPP set Access_bit");
+        _LOG_A("OCPP set Access_bit\n");
         setAccess(true);
     } else if (g_ocppTrackPermitsCharge && !ocppPermitsCharge()) {
-        _LOG_A("OCPP unset Access_bit");
+        _LOG_A("OCPP unset Access_bit\n");
         setAccess(false);
     }
     g_ocppTrackPermitsCharge = ocppPermitsCharge();
 
-    // Check if OCPP charge permission has been revoked by other moule
+    // Check if OCPP charge permission has been revoked by other module
     if (g_ocppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
             !Access_bit) { // Access_bit is not active anymore
         endTransaction(nullptr, "Other");
     }
+
+    auto& transaction = getTransaction(); // Common tx which OCPP is currently processing (or nullptr if no tx is ongoing)
+
+    // Check if Locking Tx has been invalidated by something other than RFID swipe
+    if (OcppLockingTx) {
+        if (OcppUnlockConnectorOnEVSideDisconnect->getBool() && !OcppLockingTx->isActive()) {
+            // No LockingTx mode configured (still, keep LockingTx until end of transaction because the config could be changed in the middle of tx)
+            OcppLockingTx.reset();
+        } else if (transaction && transaction != OcppLockingTx) {
+            // Another Tx has already started
+            OcppLockingTx.reset();
+        } else if (digitalRead(PIN_LOCK_IN) == lock2 && !OcppLockingTx->isActive()) {
+            // Connector is has been unlocked and LockingTx has already run
+            OcppLockingTx.reset();
+        } // There may be further edge cases
+    }
+
+    OcppForcesLock = false;
+
+    if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
+            (g_ocppTrackCPpositive >= PILOT_9V && g_ocppTrackCPpositive <= PILOT_3V)) { // Connector plugged
+        OcppForcesLock = true;
+    }
+
+    if (OcppLockingTx && OcppLockingTx->getStartSync().isRequested()) { // LockingTx goes beyond tx completion
+        OcppForcesLock = true;
+    }
+
 }
 
 #endif //ENABLE_OCPP
