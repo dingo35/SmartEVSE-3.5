@@ -301,8 +301,8 @@ bool OcppForcesLock = false;
 std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
 std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
 
-bool g_ocppTrackPermitsCharge = false;
-uint8_t g_ocppTrackCPpositive = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
+bool OcppTrackPermitsCharge = false;
+uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
 MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
@@ -5055,11 +5055,11 @@ void ocppInit() {
     });
 
     setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
-        return g_ocppTrackCPpositive >= PILOT_9V && g_ocppTrackCPpositive <= PILOT_3V;
+        return OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V;
     });
 
     setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
-        return g_ocppTrackCPpositive >= PILOT_6V && g_ocppTrackCPpositive <= PILOT_3V;
+        return OcppTrackCPvoltage >= PILOT_6V && OcppTrackCPvoltage <= PILOT_3V;
     });
 
     setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
@@ -5103,64 +5103,13 @@ void ocppInit() {
         "A");
 
     addMeterValueInput([] () {
-            return (float)EV_export_active_energy;
-        },
-        "Energy.Active.Export.Register",
-        "Wh");
-
-    addMeterValueInput([] () {
-            return (float)Mains_import_active_energy;
-        },
-        "Energy.Active.Import.Register",
-        "Wh",
-        "Inlet");
-
-    addMeterValueInput([] () {
-            return (float)Mains_export_active_energy;
-        },
-        "Energy.Active.Export.Register",
-        "Wh",
-        "Inlet");
-
-    addMeterValueInput([] () {
-            return (float) (Irms[0] + Irms[1] + Irms[2]);
-        },
-        "Current.Import",
-        "A",
-        "Inlet");
-
-    addMeterValueInput([] () {
-            return (float) Irms[0];
-        },
-        "Current.Import",
-        "A",
-        "Inlet",
-        "L1");
-
-    addMeterValueInput([] () {
-            return (float) Irms[1];
-        },
-        "Current.Import",
-        "A",
-        "Inlet",
-        "L2");
-
-    addMeterValueInput([] () {
-            return (float) Irms[2];
-        },
-        "Current.Import",
-        "A",
-        "Inlet",
-        "L3");
-
-    addMeterValueInput([] () {
             return (float)TempEVSE;
         },
         "Temperature",
         "Celsius");
 
 #if MODEM
-    if (Modem) {ComputedSoC
+    if (Modem) {
         addMeterValueInput([] () {
                 return (float)ComputedSoC;
             },
@@ -5196,7 +5145,7 @@ void ocppInit() {
     });
 
     // If SmartEVSE load balancer is turned off, then enable OCPP Smart Charging
-    // This means after toggling LB, OCPP must be turned off and on for changes to become effective
+    // This means after toggling LB, OCPP must be disabled and enabled for changes to become effective
     if (!LoadBl) {
         setSmartChargingCurrentOutput([] (float currentLimit) {
             OcppCurrentLimit = currentLimit; // Can be negative which means that no limit is defined
@@ -5251,6 +5200,10 @@ void ocppDeinit() {
     OcppLockingTx.reset();
     OcppForcesLock = false;
 
+    OcppTrackPermitsCharge = false;
+    OcppTrackCPvoltage = PILOT_NOK;
+    OcppCurrentLimit = -1.f;
+
     mocpp_deinitialize();
 
     delete OcppWsClient;
@@ -5261,12 +5214,8 @@ void ocppLoop() {
 
     // Update pilot tracking variable (last measured positive part)
     auto pilot = Pilot();
-    //_LOG_A("pilot in: %i", pilot);
     if (pilot >= PILOT_12V && pilot <= PILOT_3V) {
-        if (g_ocppTrackCPpositive != pilot) {
-            _LOG_A("OCPP tracks new CP stauts: %i", pilot);
-        }
-        g_ocppTrackCPpositive = pilot;
+        OcppTrackCPvoltage = pilot;
     }
 
     mocpp_loop();
@@ -5301,18 +5250,18 @@ void ocppLoop() {
     OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
 
     // Set / unset Access_bit
-    // Allow to toggle Access_bit only once per OCPP transaction because other modules may override the Access_bit
-    if (!g_ocppTrackPermitsCharge && ocppPermitsCharge()) {
+    // Allow to set Access_bit only once per OCPP transaction because other modules may override the Access_bit
+    if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
         _LOG_A("OCPP set Access_bit\n");
         setAccess(true);
-    } else if (g_ocppTrackPermitsCharge && !ocppPermitsCharge()) {
+    } else if (Access_bit && !ocppPermitsCharge()) {
         _LOG_A("OCPP unset Access_bit\n");
         setAccess(false);
     }
-    g_ocppTrackPermitsCharge = ocppPermitsCharge();
+    OcppTrackPermitsCharge = ocppPermitsCharge();
 
     // Check if OCPP charge permission has been revoked by other module
-    if (g_ocppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
+    if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
             !Access_bit) { // Access_bit is not active anymore
         endTransaction(nullptr, "Other");
     }
@@ -5336,7 +5285,7 @@ void ocppLoop() {
     OcppForcesLock = false;
 
     if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
-            (g_ocppTrackCPpositive >= PILOT_9V && g_ocppTrackCPpositive <= PILOT_3V)) { // Connector plugged
+            (OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V)) { // Connector plugged
         OcppForcesLock = true;
     }
 
