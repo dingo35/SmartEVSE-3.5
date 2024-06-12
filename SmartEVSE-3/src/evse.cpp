@@ -64,6 +64,8 @@ String MQTTprefix;
 String MQTTHost = "";
 uint16_t MQTTPort;
 
+mg_timer *MQTTtimer;
+
 uint8_t lastMqttUpdate = 0;
 #endif
 
@@ -4859,7 +4861,9 @@ void onWifiEvent(WiFiEvent_t event) {
             mgr.dns4.url = dns4url;
 
 #if MQTT
-            mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
+            if (!MQTTtimer) {
+                MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
+            }
 #endif
             mg_log_set(MG_LL_NONE);
             //mg_log_set(MG_LL_VERBOSE);
@@ -4888,7 +4892,11 @@ void onWifiEvent(WiFiEvent_t event) {
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             if (WIFImode == 1) {
 #if MQTT
-                //mg_timer_free(&mgr);
+                if (MQTTtimer) {
+                    mg_timer_free(&mgr.timers, MQTTtimer);
+                    free(MQTTtimer);
+                    MQTTtimer = nullptr;
+                }
 #endif
                 _LOG_A("WiFi Disconnected. Reconnecting...\n");
                 //WiFi.setAutoReconnect(true);  //I know this is very counter-intuitive, you would expect this line in WiFiSetup but this is according to docs
