@@ -5036,8 +5036,8 @@ void ocppInit() {
 
     OcppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
-            "wss://echo.websocket.events/", // OCPP backend URL (factory default)
-            "smart-evse-001", // ChargeBoxId (factory default)
+            nullptr,    // OCPP backend URL (factory default)
+            nullptr,    // ChargeBoxId (factory default)
             nullptr,    // WebSocket Basic Auth token (factory default)
             nullptr,    // CA cert (cert string must outlive WS client)
             filesystem);
