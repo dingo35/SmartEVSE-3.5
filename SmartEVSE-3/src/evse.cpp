@@ -73,6 +73,8 @@ WiFiManager wifiManager;
 String Router_SSID;
 String Router_Pass;
 
+mg_connection *HttpListener80, *HttpListener443;
+
 // Create a ModbusRTU server, client and bridge instance on Serial1
 ModbusServerRTU MBserver(2000, PIN_RS485_DIR);     // TCP timeout set to 2000 ms
 ModbusClientRTU MBclient(PIN_RS485_DIR);
@@ -4013,8 +4015,16 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty};
     mg_tls_init(c, &opts);
-  }
-  if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
+  } else if (ev == MG_EV_CLOSE) {
+    if (c == HttpListener80) {
+        _LOG_A("Free HTTP port 80");
+        HttpListener80 = nullptr;
+    }
+    if (c == HttpListener443) {
+        _LOG_A("Free HTTP port 443");
+        HttpListener443 = nullptr;
+    }
+  } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
     webServerRequest* request = new webServerRequest();
     request->setMessage(hm);
@@ -4859,8 +4869,12 @@ void onWifiEvent(WiFiEvent_t event) {
                 mg_http_connect(&mgr, s_url, fn_client, &done);  // Create client connection
             }
             //end mongoose
-            mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
-            mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
+            if (!HttpListener80) {
+                HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
+            }
+            if (!HttpListener443) {
+                HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
+            }
             _LOG_A("HTTP server started\n");
 
 #if DBG == 1
@@ -4873,8 +4887,6 @@ void onWifiEvent(WiFiEvent_t event) {
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             if (WIFImode == 1) {
-                delay(1500);                                                    // so mg_mgr_poll has timed out
-                mg_mgr_free(&mgr);
 #if MQTT
                 //mg_timer_free(&mgr);
 #endif
@@ -4927,6 +4939,20 @@ void WiFiSetup(void) {
 void SetupPortalTask(void * parameter) {
     _LOG_A("Start Portal...\n");
     WiFi.disconnect(true);
+
+    // Close Mongoose HTTP Server
+    if (HttpListener80) {
+        HttpListener80->is_closing = 1;
+    }
+    if (HttpListener443) {
+        HttpListener443->is_closing = 1;
+    }
+
+    while (HttpListener80 || HttpListener443) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        _LOG_A("Waiting for Mongoose Server to terminate\n");
+    }
+
     wifiManager.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
     //wifiManager.setTitle(String title);
 
@@ -5510,6 +5536,9 @@ void setup() {
         NULL            // Task handle
     );
 
+    //mongoose
+    mg_mgr_init(&mgr);  // Initialise event manager
+
     // Setup WiFi, webserver and firmware OTA
     // Please be aware that after doing a OTA update, its possible that the active partition is set to OTA1.
     // Uploading a new firmware through USB will however update OTA0, and you will not notice any changes...
@@ -5524,8 +5553,6 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
-    //mongoose
-    mg_mgr_init(&mgr);  // Initialise event manager
 }
 
 void loop() {
@@ -5545,7 +5572,7 @@ void loop() {
         ESP.restart();
     }
 
-    mg_mgr_poll(&mgr, 1000);
+    mg_mgr_poll(&mgr, 10);
 
     //OCPP lifecycle management
 #if ENABLE_OCPP
