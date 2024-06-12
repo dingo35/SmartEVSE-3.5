@@ -52,6 +52,7 @@ struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
+#include <MicroOcpp/Core/Context.h>
 #endif //ENABLE_OCPP
 
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
@@ -306,6 +307,8 @@ uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for O
 MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
+
+unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 #endif //ENABLE_OCPP
 
 
@@ -5187,6 +5190,11 @@ void ocppInit() {
         return OcppLockingTx != nullptr;
     });
 
+    setStopTxReadyInput([] () {
+        // Stop value synchronization: block StopTransaction for 5 seconds to give the Modbus readings some time to come through
+        return millis() - OcppStopReadingSyncTime >= 5000;
+    });
+
     OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
 
     endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
@@ -5194,11 +5202,25 @@ void ocppInit() {
 
 void ocppDeinit() {
 
+    // Record stop value for transaction manually (normally MO would wait until `mocpp_loop()`, but that's too late here)
+    if (auto& tx = getTransaction()) {
+        if (tx->getMeterStop() < 0) {
+            // Stop value not defined yet
+            tx->setMeterStop(EV_import_active_energy); // Use same reading as in `setEnergyMeterInput()`
+            tx->setStopTimestamp(getOcppContext()->getModel().getClock().now());
+        }
+    }
+
     endTransaction(nullptr, "Other"); // If a transaction is running, shut it down forcefully. The StopTx request will be sent when OCPP runs again.
 
     OcppUnlockConnectorOnEVSideDisconnect.reset();
     OcppLockingTx.reset();
     OcppForcesLock = false;
+
+    if (OcppTrackPermitsCharge) {
+        _LOG_A("OCPP unset Access_bit\n");
+        setAccess(false);
+    }
 
     OcppTrackPermitsCharge = false;
     OcppTrackCPvoltage = PILOT_NOK;
@@ -5264,6 +5286,11 @@ void ocppLoop() {
     if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
             !Access_bit) { // Access_bit is not active anymore
         endTransaction(nullptr, "Other");
+    }
+
+    // Stop value synchronization: block StopTransaction for a short period as long as charging is permitted
+    if (ocppPermitsCharge()) {
+        OcppStopReadingSyncTime = millis();
     }
 
     auto& transaction = getTransaction(); // Common tx which OCPP is currently processing (or nullptr if no tx is ongoing)
