@@ -131,6 +131,7 @@ uint8_t LoadBl = LOADBL;                                                    // L
 uint8_t Switch = SWITCH;                                                    // External Switch (0:Disable / 1:Access B / 2:Access S / 3:Smart-Solar B / 4:Smart-Solar S)
                                                                             // B=momentary push <B>utton, S=toggle <S>witch
 uint8_t RCmon = RC_MON;                                                     // Residual Current Monitor (0:Disable / 1:Enable)
+uint8_t AutoUpdate = AUTOUPDATE;                                            // Automatic Firmware Update (0:Disable / 1:Enable)
 uint16_t StartCurrent = START_CURRENT;
 uint16_t StopTime = STOP_TIME;
 uint16_t ImportCurrent = IMPORT_CURRENT;
@@ -273,7 +274,7 @@ int homeBatteryLastUpdate = 0; // Time in milliseconds
 char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
-
+uint16_t firmwareUpdateTimer = 0;
 
 struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     /* DESC,      ENDIANNESS,      FCT, DATATYPE,            U_REG,DIV, I_REG,DIV, P_REG,DIV, E_REG_IMP,DIV, E_REG_EXP, DIV */
@@ -1699,6 +1700,9 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_WIFI:
             WIFImode = val;
             break;    
+        case MENU_AUTOUPDATE:
+            AutoUpdate = val;
+            break;
 
         // Status writeable
         case STATUS_STATE:
@@ -1821,6 +1825,8 @@ uint16_t getItemValue(uint8_t nav) {
 #endif //ENABLE_OCPP
         case MENU_WIFI:
             return WIFImode;    
+        case MENU_AUTOUPDATE:
+            return AutoUpdate;
 
         // Status writeable
         case STATUS_STATE:
@@ -3689,6 +3695,7 @@ void read_settings() {
             setenv("TZ",TZinfo.c_str(),1);
             tzset();
         }
+        AutoUpdate = preferences.getUChar("AutoUpdate", AUTOUPDATE);
 
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
@@ -3772,6 +3779,7 @@ void write_settings(void) {
     preferences.putUShort("EnableC2", EnableC2);
     preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
     preferences.putUShort("maxTemp", maxTemp);
+    preferences.putUChar("AutoUpdate", AutoUpdate);
 
 #if MQTT
     preferences.putString("MQTTpassword", MQTTpassword);
@@ -3836,7 +3844,7 @@ CV4Ks2dH/hzg1cEo70qLRDEmBDeNiXQ2Lu+lIg+DdEmSx/cQwgwp+7e9un/jX9Wf
 HTTPClient _http;
 WiFiClientSecure _client;
 
-/*
+
 // get version nr. of latest release of off github
 // input:
 // owner_repo format: dingo35/SmartEVSE-3.5
@@ -3851,8 +3859,8 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
     const char* url = useURL.c_str();
     _LOG_A("Connecting to: %s.\n", url );
     if( String(url).startsWith("https") ) {
-        _client.setCACert(root_ca_github); // OR
-        //_client.setInsecure();
+        //_client.setCACert(root_ca_github); // OR
+        _client.setInsecure();
         _http.begin( _client, url );
     } else {
         _http.begin( url );
@@ -3903,7 +3911,10 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
         strlcpy(version, tag_name, 32);
         //strlcpy(version, tag_name, sizeof(version));
     _LOG_V("Found latest version:%s.\n", version);
-    for (JsonObject asset : doc2["assets"].as<JsonArray>()) {
+
+    _http.end();  // We're done with HTTP - free the resources
+    return true;
+/*    for (JsonObject asset : doc2["assets"].as<JsonArray>()) {
         String name = asset["name"] | "";
         if (name == asset_name) {
             const char* asset_browser_download_url = asset["browser_download_url"];
@@ -3922,9 +3933,9 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
     }
     _LOG_A("ERROR: could not find asset %s in repo %s at version %s.\n", asset_name.c_str(), owner_repo.c_str(), version);
     _http.end();  // We're done with HTTP - free the resources
-    return false;
+    return false;*/
 }
-*/
+
 
 // esp32fota esp32fota("<Type of Firmware for this device>", <this version>, <validate signature>, <allow insecure https>);
 esp32FOTA FOTA("esp32-fota-http", 1, false, true);
@@ -5806,7 +5817,39 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
+    //nr of seconds from now that we are going to check for a firmware update
+    firmwareUpdateTimer = random(60, 0xffff);
+    firmwareUpdateTimer = 20; //debug
+}
 
+// returns true if current and latest version can be detected correctly and if the latest version is newer then current
+// this means that ANY home compiled version, which has version format "11:20:03@Jun 17 2024", will NEVER be automatically updated!!
+// same goes for current version with an -RC extension: this will NEVER be automatically updated!
+// same goes for latest version with an -RC extension: this will NEVER be automatically updated! This situation should never occur since
+// we only update from the "stable" repo !!
+bool fwNeedsUpdate(char * version) {
+    // version NEEDS to be in the format: vx.y.z[-RCa] where x, y, z, a are digits, multiple digits are allowed.
+    // valid versions are v3.6.10   v3.17.0-RC13
+    int latest_major, latest_minor, latest_patch, latest_rc, cur_major, cur_minor, cur_patch, cur_rc;
+    int hit = sscanf(version, "v%i.%i.%i-RC%i", &latest_major, &latest_minor, &latest_patch, &latest_rc);
+    _LOG_A("DINGO: hit=%i, version detected=v%i.%i.%i-RC%i.\n", hit, latest_major, latest_minor, latest_patch, latest_rc);
+    int hit2 = sscanf(VERSION, "v%i.%i.%i-RC%i", &cur_major, &cur_minor, &cur_patch, &cur_rc);
+    _LOG_A("DINGO: hit=%i, version detected=v%i.%i.%i-RC%i.\n", hit2, cur_major, cur_minor, cur_patch, cur_rc);
+    if (hit != 3 || hit2 != 3)                                                  // we couldnt detect simple vx.y.z version nrs, either current or latest
+        return false;
+    if (cur_major > latest_major)
+        return false;
+    if (cur_major < latest_major)
+        return true;
+    if (cur_major == latest_major) {
+        if (cur_minor > latest_minor)
+            return false;
+        if (cur_minor < latest_minor)
+            return true;
+        if (cur_minor == latest_minor)
+            return (cur_patch < latest_patch);
+    }
+    return false;
 }
 
 void loop() {
@@ -5855,6 +5898,21 @@ void loop() {
                 else
                     DelayedStopTime.epoch2 = DELAYEDSTOPTIME;
                 setAccess(0);                         //switch to OFF
+            }
+        }
+
+        firmwareUpdateTimer--;
+        _LOG_A("DINGO: firmwareUpdateTimer=%i.\n", firmwareUpdateTimer);
+        if (firmwareUpdateTimer == 0) {
+            //timer is not reset, proceeds to 65535 which is approx 18h from now
+            char version[32];
+            if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) {
+                if (fwNeedsUpdate(version)) {
+                    _LOG_A("DINGO: firmware reported it needs updating!\n");
+                    asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+                    //RunFirmwareUpdate();
+                } else
+                    _LOG_A("DINGO: firmware reported it needs NO update!\n");
             }
         }
         /////end of non-time critical stuff
