@@ -844,6 +844,7 @@ const char * getMenuItemOption(uint8_t nav) {
             else return StrDisabled;
         case MENU_SWITCH:
             return StrSwitch[value];
+        case MENU_AUTOUPDATE:
         case MENU_RCMON:
             if (value) return StrEnabled;
             else return StrDisabled;
@@ -970,6 +971,7 @@ uint8_t getMenuItems (void) {
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)
     MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
+    MenuItems[m++] = MENU_AUTOUPDATE;                                           // Firmware automatic update Disabled / Enabled
 #if ENABLE_OCPP
     MenuItems[m++] = MENU_OCPP;                                                 // OCPP (0:Disable / 1:Enable)
 #endif
