@@ -3561,7 +3561,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             MBclient.onDataHandler(&MBhandleData);
             MBclient.onErrorHandler(&MBhandleError);
             // Start ModbusRTU Master background task
-            MBclient.begin(Serial1, 1);                                         //pinning it to core1 reduces modbus problems
+            MBclient.begin(Serial1);
         } 
     } else if (newmode > 1) {
         // Register worker. at serverID 'LoadBl', all function codes
