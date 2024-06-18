@@ -274,7 +274,13 @@ int homeBatteryLastUpdate = 0; // Time in milliseconds
 char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
-uint16_t firmwareUpdateTimer = 0;
+#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
+//#define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
+uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
+                                                                                // 0 means timer inactive
+                                                                                // 0 < timer < FW_UPDATE_DELAY means we are in countdown for an actual update
+                                                                                // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
+                                                                                //                                              whether an update is necessary
 
 struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     /* DESC,      ENDIANNESS,      FCT, DATATYPE,            U_REG,DIV, I_REG,DIV, P_REG,DIV, E_REG_IMP,DIV, E_REG_EXP, DIV */
@@ -3813,7 +3819,7 @@ void write_settings(void) {
 
     ConfigChanged = 1;
 }
-/*
+
 //github.com L1
     const char* root_ca_github = R"ROOT_CA(
 -----BEGIN CERTIFICATE-----
@@ -3840,7 +3846,7 @@ CV4Ks2dH/hzg1cEo70qLRDEmBDeNiXQ2Lu+lIg+DdEmSx/cQwgwp+7e9un/jX9Wf
 8qn0dNW44bOwgeThpWOjzOoEeJBuv/c=
 -----END CERTIFICATE-----
 )ROOT_CA";
-*/
+
 HTTPClient _http;
 WiFiClientSecure _client;
 
@@ -3859,8 +3865,8 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
     const char* url = useURL.c_str();
     _LOG_A("Connecting to: %s.\n", url );
     if( String(url).startsWith("https") ) {
-        //_client.setCACert(root_ca_github); // OR
-        _client.setInsecure();
+        _client.setCACert(root_ca_github); // OR
+        //_client.setInsecure(); //not working for github
         _http.begin( _client, url );
     } else {
         _http.begin( url );
@@ -5817,9 +5823,8 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
-    //nr of seconds from now that we are going to check for a firmware update
-    firmwareUpdateTimer = random(60, 0xffff);
-    firmwareUpdateTimer = 20; //debug
+    //firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
+    firmwareUpdateTimer = random(FW_UPDATE_DELAY, 120); // DINGO TODO debug max 2 minutes
 }
 
 // returns true if current and latest version can be detected correctly and if the latest version is newer then current
@@ -5832,9 +5837,9 @@ bool fwNeedsUpdate(char * version) {
     // valid versions are v3.6.10   v3.17.0-RC13
     int latest_major, latest_minor, latest_patch, latest_rc, cur_major, cur_minor, cur_patch, cur_rc;
     int hit = sscanf(version, "v%i.%i.%i-RC%i", &latest_major, &latest_minor, &latest_patch, &latest_rc);
-    _LOG_A("DINGO: hit=%i, version detected=v%i.%i.%i-RC%i.\n", hit, latest_major, latest_minor, latest_patch, latest_rc);
+    _LOG_A("Firmware version detection hit=%i, LATEST version detected=v%i.%i.%i-RC%i.\n", hit, latest_major, latest_minor, latest_patch, latest_rc);
     int hit2 = sscanf(VERSION, "v%i.%i.%i-RC%i", &cur_major, &cur_minor, &cur_patch, &cur_rc);
-    _LOG_A("DINGO: hit=%i, version detected=v%i.%i.%i-RC%i.\n", hit2, cur_major, cur_minor, cur_patch, cur_rc);
+    _LOG_A("Firmware version detection hit=%i, CURRENT version detected=v%i.%i.%i-RC%i.\n", hit2, cur_major, cur_minor, cur_patch, cur_rc);
     if (hit != 3 || hit2 != 3)                                                  // we couldnt detect simple vx.y.z version nrs, either current or latest
         return false;
     if (cur_major > latest_major)
@@ -5901,20 +5906,33 @@ void loop() {
             }
         }
 
-        firmwareUpdateTimer--;
-        _LOG_A("DINGO: firmwareUpdateTimer=%i.\n", firmwareUpdateTimer);
-        if (firmwareUpdateTimer == 0) {
-            //timer is not reset, proceeds to 65535 which is approx 18h from now
+        _LOG_A("DINGO: firmwareUpdateTimer just before decrement=%i.\n", firmwareUpdateTimer);
+        if (AutoUpdate) {
+            firmwareUpdateTimer--;
             char version[32];
-            if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) {
-                if (fwNeedsUpdate(version)) {
-                    _LOG_A("DINGO: firmware reported it needs updating!\n");
-                    asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
-                    //RunFirmwareUpdate();
-                } else
-                    _LOG_A("DINGO: firmware reported it needs NO update!\n");
+            if (firmwareUpdateTimer == FW_UPDATE_DELAY) {                       // we now have to check for a new version
+                //timer is not reset, proceeds to 65535 which is approx 18h from now
+                if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) {
+                    if (fwNeedsUpdate(version)) {
+                        _LOG_A("DINGO: firmware reported it needs updating!\n");
+                        asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+                    } else {
+                        _LOG_A("DINGO: firmware reported it needs NO update!\n");
+                        firmwareUpdateTimer = random(FW_UPDATE_DELAY + 36000, 0xffff);  // at least 10 hours in between checks
+                    }
+                }
+            } else if (firmwareUpdateTimer == 0) {                              // time to download & flash!
+                if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) { // recheck version info
+                    if (fwNeedsUpdate(version)) {
+                        _LOG_A("DINGO: firmware AGAIN reported it needs updating!\n");
+                        asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+                        RunFirmwareUpdate();
+                    } else
+                        _LOG_A("DINGO: firmware NOW reported it needs NO update!\n");
+                        firmwareUpdateTimer = random(FW_UPDATE_DELAY + 36000, 0xffff);  // at least 10 hours in between checks
+                }
             }
-        }
+        } // AutoUpdate
         /////end of non-time critical stuff
     }
 
