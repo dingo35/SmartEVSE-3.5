@@ -10,8 +10,6 @@
 #include "mbedtls/md_internal.h"
 
 #include <HTTPClient.h>
-#include <WiFiManager.h>
-
 #include <ESPmDNS.h>
 #include <Update.h>
 
@@ -68,8 +66,6 @@ uint16_t MQTTPort;
 mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
 #endif
-
-WiFiManager wifiManager;
 
 // SSID and PW for your Router
 String Router_SSID;
@@ -5394,8 +5390,6 @@ void timeSyncCallback(struct timeval *tv)
 void WiFiSetup(void) {
     mg_mgr_init(&mgr);  // Initialise event manager
 
-    //wifiManager.setDebugOutput(true);
-    wifiManager.setMinimumSignalQuality(-1);
     WiFi.setAutoReconnect(true);
     //WiFi.persistent(true);
     WiFi.onEvent(onWifiEvent);
@@ -5435,21 +5429,30 @@ void SetupPortalTask(void * parameter) {
         _LOG_A("Waiting for Mongoose Server to terminate\n");
     }
 
-    wifiManager.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-    //wifiManager.setTitle(String title);
 
-    //don't show firmware update buttons in portal
-    std::vector<const char*> wmMenuItems = { "wifi", "info", "erase", "exit" };
-    wifiManager.setMenu(wmMenuItems);
-    wifiManager.setShowInfoUpdate(false);
-    wifiManager.setShowStaticFields(true); // force show static ip fields
-    wifiManager.setShowDnsFields(true);    // force show dns field always
+  //Init WiFi as Station, start SmartConfig
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.beginSmartConfig();
 
-    wifiManager.setConfigPortalTimeout(120);  // Portal will be available 2 minutes to connect to, then close. (if connected within this time, it will remain active)
-    delay(1000);
-    wifiManager.startConfigPortal(APhostname.c_str(), APpassword.c_str());
-    //_LOG_A("SetupPortalTask free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
-    WiFi.disconnect(true);
+  //Wait for SmartConfig packet from mobile
+  _LOG_A("Waiting for SmartConfig.\n");
+  while (!WiFi.smartConfigDone()) {
+    delay(500);
+    _LOG_A_NO_FUNC(".");
+  }
+
+  _LOG_A("\nSmartConfig received.\n");
+
+  //Wait for WiFi to connect to AP
+  _LOG_A("Waiting for WiFi\n");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    _LOG_A_NO_FUNC(".");
+  }
+
+  _LOG_A("\nWiFi Connected.\n");
+
+  _LOG_A("IP Address:%s.\n", WiFi.localIP().toString().c_str());
 
     WIFImode = 1;
     //mongoose
