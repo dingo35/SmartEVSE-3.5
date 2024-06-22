@@ -145,8 +145,6 @@ uint8_t RFIDReader = RFID_READER;                                           // R
 uint8_t Show_RFID = 0;
 #endif
 uint8_t WIFImode = WIFI_MODE;                                               // WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
-String APpassword = "00000000";
-uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
 String TZinfo = "";                                                         // contains POSIX time string
 
 EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
@@ -3618,17 +3616,6 @@ void ConfigureModbusMode(uint8_t newmode) {
 }
 
 
-// Generate random password for AP
-void SetRandomAPpassword(void) {
-    uint8_t i, c;
-    // Set random password
-    for (i=0; i<8 ;i++) {
-            c = random(16) + '0';
-            if (c > '9') c += 'a'-'9'-1;
-            APpassword[i] = c;
-    }
-}
-
 /**
  * Validate setting ranges and dependencies
  */
@@ -3667,13 +3654,6 @@ void validate_settings(void) {
         Node[0].EVMeter = EVMeter;
         Node[0].EVAddress = EVMeterAddress;
     }
-
-    // Check if AP password is unitialized. 
-    // Create random AP password.
-    if (!Initialized) {
-        SetRandomAPpassword();
-        Initialized = 1;
-    }
           
     // Default to modbus input registers
     if (EMConfig[EM_CUSTOM].Function != 3) EMConfig[EM_CUSTOM].Function = 4;
@@ -3701,7 +3681,7 @@ void read_settings() {
     // Open preferences. true = read only,  false = read/write
     // If "settings" does not exist, it will be created, and initialized with the default values
     if (preferences.begin("settings", false) ) {                                
-        Initialized = preferences.getUChar("Initialized", INITIALIZED);
+        bool Initialized = preferences.isKey("Config");
         Config = preferences.getUChar("Config", CONFIG); 
         Lock = preferences.getUChar("Lock", LOCK); 
         Mode = preferences.getUChar("Mode", MODE); 
@@ -3739,7 +3719,6 @@ void read_settings() {
         EMConfig[EM_CUSTOM].DataType = (mb_datatype)preferences.getUChar("EMDataType",EMCUSTOM_DATATYPE);
         EMConfig[EM_CUSTOM].Function = preferences.getUChar("EMFunction",EMCUSTOM_FUNCTION);
         WIFImode = preferences.getUChar("WIFImode",WIFI_MODE);
-        APpassword = preferences.getString("APpassword",AP_PASSWORD);
         DelayedStartTime.epoch2 = preferences.getULong("DelayedStartTim", DELAYEDSTARTTIME); //epoch2 is 4 bytes long on arduino; NVS key has reached max size
         DelayedStopTime.epoch2 = preferences.getULong("DelayedStopTime", DELAYEDSTOPTIME);    //epoch2 is 4 bytes long on arduino
         TZinfo = preferences.getString("TimezoneInfo","");
@@ -3819,8 +3798,6 @@ void write_settings(void) {
     preferences.putUChar("EMDataType", EMConfig[EM_CUSTOM].DataType);
     preferences.putUChar("EMFunction", EMConfig[EM_CUSTOM].Function);
     preferences.putUChar("WIFImode", WIFImode);
-    preferences.putString("APpassword", APpassword);
-    preferences.putUChar("Initialized", Initialized);
     preferences.putULong("DelayedStartTim", DelayedStartTime.epoch2); //epoch2 only needs 4 bytes; NVS key has reached max size
     preferences.putULong("DelayedStopTime", DelayedStopTime.epoch2);   //epoch2 only needs 4 bytes
 
@@ -5950,11 +5927,6 @@ void setup() {
     validate_settings();
     ReadRFIDlist();                                                             // Read all stored RFID's from storage
 
-#if LOG_LEVEL >= 1
-    _LOG_A("APpassword: %s\n",APpassword.c_str());
-#else
-    Serial.printf("APpassword: %s\n",APpassword.c_str());
-#endif
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
         EVSEStates,     // Function that should be called

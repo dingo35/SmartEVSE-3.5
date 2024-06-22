@@ -441,11 +441,8 @@ void GLCD(void) {
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
                     // Show Access Point name
-                    sprintf(Str, "AP:%u", serialnr);
+                    sprintf(Str, "Now use EspTouch app");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
-                    // and password
-                    sprintf(Str, "PW:%s", APpassword.c_str());
-                    GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
                 }
             }
         }

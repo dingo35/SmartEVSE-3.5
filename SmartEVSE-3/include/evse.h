@@ -241,9 +241,7 @@ extern RemoteDebug Debug;
 #define RFID_READER 0
 #define ACCESS_BIT 1
 #define WIFI_MODE 0
-#define AP_PASSWORD "00000000"
 #define CARD_OFFSET 0
-#define INITIALIZED 0
 #define ENABLE_C2 ALWAYS_ON
 #define MAX_TEMPERATURE 65
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
