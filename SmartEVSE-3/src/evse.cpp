@@ -5431,8 +5431,11 @@ void SetupPortalTask(void * parameter) {
 
   _LOG_A("IP Address:%s.\n", WiFi.localIP().toString().c_str());
 
+  WiFi.stopSmartConfig(); // this makes sure repeated SmartConfig calls are succesfull
+    //for some reason the webserver is not accessible after this action, so we have to disable wifi before enabling it:
+    WIFImode = 0;
+    handleWIFImode();
     WIFImode = 1;
-    //mongoose
     handleWIFImode();
     write_settings();
     LCDNav = 0;
