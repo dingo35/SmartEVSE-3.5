@@ -467,7 +467,7 @@ extern portMUX_TYPE rtc_spinlock;   //TODO: Will be placed in the appropriate po
 #define RTC_EXIT_CRITICAL()     portEXIT_CRITICAL(&rtc_spinlock)
 
 
-extern String APpassword;
+extern char APpassword[];
 extern struct tm timeinfo;
 
 
@@ -571,7 +571,7 @@ const struct {
     {"ENE REGI","Register for Energy (kWh) of custom electric meter", 0, 65534, EMCUSTOM_EREGISTER},
     {"ENE DIVI","Divisor for Energy (kWh) of custom electric meter",  0, 7, EMCUSTOM_EDIVISOR},
     {"READ MAX","Max register read at once of custom electric meter", 3, 255, 3},
-    {"WIFI",    "Connect to WiFi access point",                       0, 2, WIFI_MODE},
+    {"WIFI",    "Use ESPTouch APP on your phone",                       0, 2, WIFI_MODE},
     {"AUTOUPDAT","Automatic Firmware Update",                         0, 1, AUTOUPDATE},
     {"CONTACT 2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
@@ -618,7 +618,6 @@ struct DelayedTimeStruct {
 
 extern struct DelayedTimeStruct DelayedStartTime;
 
-void CheckAPpassword(void);
 void read_settings();
 void write_settings(void);
 void setState(uint8_t NewState);

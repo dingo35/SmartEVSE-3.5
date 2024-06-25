@@ -145,6 +145,7 @@ uint8_t RFIDReader = RFID_READER;                                           // R
 uint8_t Show_RFID = 0;
 #endif
 uint8_t WIFImode = WIFI_MODE;                                               // WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
+char APpassword[] = "0000000000000000";
 String TZinfo = "";                                                         // contains POSIX time string
 
 EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
@@ -5409,7 +5410,14 @@ void SetupPortalTask(void * parameter) {
 
   //Init WiFi as Station, start SmartConfig
   WiFi.mode(WIFI_AP_STA);
-  WiFi.beginSmartConfig();
+    uint8_t c;
+    // Set random password, first 8 positions are 0
+    for (uint8_t i=0; i<8 ;i++) {
+            c = random(16) + '0';
+            if (c > '9') c += 'a'-'9'-1;
+            APpassword[i+8] = c;
+    }
+  WiFi.beginSmartConfig(SC_TYPE_ESPTOUCH_V2, APpassword);
 
   //Wait for SmartConfig packet from mobile
   _LOG_A("Waiting for SmartConfig.\n");
