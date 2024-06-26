@@ -6,9 +6,8 @@
 #include <FS.h>
 
 #include <WiFi.h>
-
-#include <esp32fota.h>
 #include "esp_ota_ops.h"
+#include "mbedtls/md_internal.h"
 
 #include <HTTPClient.h>
 #include <WiFiManager.h>
@@ -49,6 +48,14 @@ struct tm timeinfo;
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
+//OCPP includes
+#if ENABLE_OCPP
+#include <MicroOcpp.h>
+#include <MicroOcppMongooseClient.h>
+#include <MicroOcpp/Core/Configuration.h>
+#include <MicroOcpp/Core/Context.h>
+#endif //ENABLE_OCPP
+
 String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
 
 #if MQTT
@@ -58,7 +65,7 @@ String MQTTpassword;
 String MQTTprefix;
 String MQTTHost = "";
 uint16_t MQTTPort;
-
+mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
 #endif
 
@@ -67,6 +74,8 @@ WiFiManager wifiManager;
 // SSID and PW for your Router
 String Router_SSID;
 String Router_Pass;
+
+mg_connection *HttpListener80, *HttpListener443;
 
 // Create a ModbusRTU server, client and bridge instance on Serial1
 ModbusServerRTU MBserver(2000, PIN_RS485_DIR);     // TCP timeout set to 2000 ms
@@ -121,6 +130,7 @@ uint8_t LoadBl = LOADBL;                                                    // L
 uint8_t Switch = SWITCH;                                                    // External Switch (0:Disable / 1:Access B / 2:Access S / 3:Smart-Solar B / 4:Smart-Solar S)
                                                                             // B=momentary push <B>utton, S=toggle <S>witch
 uint8_t RCmon = RC_MON;                                                     // Residual Current Monitor (0:Disable / 1:Enable)
+uint8_t AutoUpdate = AUTOUPDATE;                                            // Automatic Firmware Update (0:Disable / 1:Enable)
 uint16_t StartCurrent = START_CURRENT;
 uint16_t StopTime = STOP_TIME;
 uint16_t ImportCurrent = IMPORT_CURRENT;
@@ -142,7 +152,6 @@ uint8_t Initialized = INITIALIZED;                                          // W
 String TZinfo = "";                                                         // contains POSIX time string
 
 EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
-Modem_t Modem = NOTPRESENT;                                                 // Is an ISO15118 modem installed (experimental)
 uint16_t maxTemp = MAX_TEMPERATURE;
 
 int16_t Irms[3]={0, 0, 0};                                                  // Momentary current per Phase (23 = 2.3A) (resolution 100mA)
@@ -263,7 +272,13 @@ int homeBatteryLastUpdate = 0; // Time in milliseconds
 char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
-
+//#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
+#define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
+uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
+                                                                                // 0 means timer inactive
+                                                                                // 0 < timer < FW_UPDATE_DELAY means we are in countdown for an actual update
+                                                                                // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
+                                                                                //                                              whether an update is necessary
 
 struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     /* DESC,      ENDIANNESS,      FCT, DATATYPE,            U_REG,DIV, I_REG,DIV, P_REG,DIV, E_REG_IMP,DIV, E_REG_EXP, DIV */
@@ -286,6 +301,27 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
+
+#if ENABLE_OCPP
+uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
+
+unsigned char OcppRfidUuid [7];
+size_t OcppRfidUuidLen;
+unsigned long OcppLastRfidUpdate;
+unsigned long OcppTrackLastRfidUpdate;
+
+bool OcppForcesLock = false;
+std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
+std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
+
+bool OcppTrackPermitsCharge = false;
+uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
+MicroOcpp::MOcppMongooseClient *OcppWsClient;
+
+float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
+
+unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
+#endif //ENABLE_OCPP
 
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -475,6 +511,24 @@ void SetCPDuty(uint32_t DutyCycle){
     ledcWrite(CP_CHANNEL, DutyCycle);                                       // update PWM signal
     CurrentPWM = DutyCycle;
 }
+
+
+#if ENABLE_OCPP
+// Inverse function of SetCurrent (for monitoring and debugging purposes)
+uint16_t GetCurrent() {
+    uint32_t DutyCycle = CurrentPWM;
+
+    if (DutyCycle < 102) {
+        return 0; //PWM off or ISO15118 modem enabled
+    } else if (DutyCycle < 870) {
+        return (DutyCycle * 1000 / 1024) * 0.6 + 1; // invert duty cycle formula + fixed rounding error correction
+    } else if (DutyCycle <= 983) {
+        return ((DutyCycle * 1000 / 1024)- 640) * 2.5 + 3; // invert duty cycle formula + fixed rounding error correction
+    } else {
+        return 0; //constant +12V
+    }
+}
+#endif //ENABLE_OCPP
 
 
 // Sample the Temperature sensor.
@@ -748,12 +802,12 @@ void setState(uint8_t NewState) {
 #endif
             break;
         case STATE_B:
-            if (Modem)
-                CP_ON;
+#if MODEM
+            CP_ON;
+            DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
+#endif
             CONTACTOR1_OFF;
             CONTACTOR2_OFF;
-            if (Modem)
-                DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
             timerAlarmWrite(timerA, PWM_95, false);                             // Enable Timer alarm, set to diode test (95%)
             SetCurrent(ChargeCurrent);                                          // Enable PWM
             break;      
@@ -889,7 +943,7 @@ char IsCurrentAvailable(void) {
         _LOG_D("No current available MaxMains line %d. ActiveEVSE=%i, Baseload=%.1fA, MinCurrent=%iA, MaxMains=%iA.\n", __LINE__, ActiveEVSE, (float) Baseload/10, MinCurrent, MaxMains);
         return 0;                                                           // Not enough current available!, return with error
     }
-    if ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10)) {
+    if ((Mode != MODE_NORMAL || LoadBl != 0) && ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10))) { //ignore MaxCircuit in Mode == Normal && LoadBl == 0
         _LOG_D("No current available MaxCircuit line %d. ActiveEVSE=%i, Baseload_EV=%.1fA, MinCurrent=%iA, MaxCircuit=%iA.\n", __LINE__, ActiveEVSE, (float) Baseload_EV/10, MinCurrent, MaxCircuit);
         return 0;                                                           // Not enough current available!, return with error
     }
@@ -901,6 +955,17 @@ char IsCurrentAvailable(void) {
         _LOG_D("No current available MaxSumMains line %d. ActiveEVSE=%i, MinCurrent=%iA, Isum=%.1fA, MaxSumMains=%iA.\n", __LINE__, ActiveEVSE, MinCurrent,  (float)Isum/10, MaxSumMains);
         return 0;                                                           // Not enough current available!, return with error
     }
+
+// Use OCPP Smart Charging if Load Balancing is turned off
+#if ENABLE_OCPP
+    if (OcppMode &&                            // OCPP enabled
+            !LoadBl &&                         // Internal LB disabled
+            OcppCurrentLimit >= 0.f &&         // OCPP limit defined
+            OcppCurrentLimit < MinCurrent) {  // OCPP suspends charging
+        _LOG_D("OCPP Smart Charging suspends EVSE\n");
+        return 0;
+    }
+#endif //ENABLE_OCPP
 
     _LOG_D("Current available checkpoint D. ActiveEVSE increased by one=%i, TotalCurrent=%.1fA, StartCurrent=%iA, Isum=%.1fA, ImportCurrent=%iA.\n", ActiveEVSE, (float) TotalCurrent/10, StartCurrent, (float)Isum/10, ImportCurrent);
     return 1;
@@ -978,6 +1043,20 @@ void CalcBalancedCurrent(char mod) {
     else
         ChargeCurrent = MaxCurrent * 10;                                        // Instead use new variable ChargeCurrent.
 
+// Use OCPP Smart Charging if Load Balancing is turned off
+#if ENABLE_OCPP
+    if (OcppMode &&                      // OCPP enabled
+            !LoadBl &&                   // Internal LB disabled
+            OcppCurrentLimit >= 0.f) {   // OCPP limit defined
+
+        if (OcppCurrentLimit < MinCurrent) {
+            ChargeCurrent = 0;
+        } else {
+            ChargeCurrent = std::min(ChargeCurrent, (uint16_t) (10.f * OcppCurrentLimit));
+        }
+    }
+#endif //ENABLE_OCPP
+
     // Override current temporary if set
     if (OverrideCurrent)
         ChargeCurrent = OverrideCurrent;
@@ -1010,7 +1089,10 @@ void CalcBalancedCurrent(char mod) {
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
         if (ActiveEVSE && mod) {                                                // Only if we have active EVSE's and New EVSE charging
             // Set max combined charge current to MaxMains - Baseload, or MaxCircuit - Baseload_EV if that is less
-            IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_EV); //TODO: why are we checking MaxMains and MaxCircuit while we are in Normal mode?
+            if (LoadBl == 1)
+                IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_EV);
+            else
+                IsetBalanced = (MaxMains * 10) - Baseload;                      // ignore MaxCircuit in Normal Mode and LoadBl == 0
                                                                                               //TODO: capacity rate limiting here?
         }
     } //end MODE_NORMAL
@@ -1101,8 +1183,8 @@ void CalcBalancedCurrent(char mod) {
     // Reset flag that keeps track of new MainsMeter measurements
     phasesLastUpdateFlag = false;
 
-    // guard MaxCircuit in all modes; slave doesnt run CalcBalancedCurrent
-    if (IsetBalanced > (MaxCircuit * 10) - Baseload_EV)
+    // guard MaxCircuit in all modes, unless mode Normal and LoadBl == 0; slave doesnt run CalcBalancedCurrent
+    if ((Mode != MODE_NORMAL || LoadBl != 0) && IsetBalanced > (MaxCircuit * 10) - Baseload_EV)
         IsetBalanced = MaxCircuit * 10 - Baseload_EV; //limiting is per phase so no Nr_Of_Phases_Charging here!
 
     _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
@@ -1618,9 +1700,17 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_RFIDREADER:
             RFIDReader = val;
             break;
+#if ENABLE_OCPP
+        case MENU_OCPP:
+            OcppMode = val;
+            break;
+#endif //ENABLE_OCPP
         case MENU_WIFI:
             WIFImode = val;
             break;    
+        case MENU_AUTOUPDATE:
+            AutoUpdate = val;
+            break;
 
         // Status writeable
         case STATUS_STATE:
@@ -1737,8 +1827,14 @@ uint16_t getItemValue(uint8_t nav) {
             return EMConfig[EM_CUSTOM].EDivisor;
         case MENU_RFIDREADER:
             return RFIDReader;
+#if ENABLE_OCPP
+        case MENU_OCPP:
+            return OcppMode;
+#endif //ENABLE_OCPP
         case MENU_WIFI:
             return WIFImode;    
+        case MENU_AUTOUPDATE:
+            return AutoUpdate;
 
         // Status writeable
         case STATUS_STATE:
@@ -2085,11 +2181,12 @@ void EVSEStates(void * parameter) {
                 } else if (IsCurrentAvailable()) {                             
                     BalancedMax[0] = MaxCapacity * 10;
                     Balanced[0] = ChargeCurrent;                                // Set pilot duty cycle to ChargeCurrent (v2.15)
-                    if (Modem == EXPERIMENT && ModemStage == 0){
+#if MODEM
+                    if (ModemStage == 0)
                         setState(STATE_MODEM_REQUEST);
-                    }else{
+                    else
+#endif
                         setState(STATE_B);                                          // switch to State B
-                    }
                     ActivationMode = 30;                                        // Activation mode is triggered if state C is not entered in 30 seconds.
                     AccessTimer = 0;
                 } else if (Mode == MODE_SOLAR) {                                // Not enough power:
@@ -2305,6 +2402,9 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
         if (Lock) {                                                 // Cable lock enabled?
             // UnlockCable takes precedence over LockCable
             if ((RFIDReader == 2 && Access_bit == 0) ||             // One RFID card can Lock/Unlock the charging socket (like a public charging station)
+#if ENABLE_OCPP
+            (OcppMode &&!OcppForcesLock) ||
+#endif
                 State == STATE_A) {                                 // The charging socket is unlocked when unplugged from the EV
                 if (unlocktimer == 0) {                             // 600ms pulse
                     ACTUATOR_UNLOCK;
@@ -2319,7 +2419,11 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                 }
                 locktimer = 0;
             // Lock Cable    
-            } else if (State != STATE_A) {                          // Lock cable when connected to the EV
+            } else if (State != STATE_A                            // Lock cable when connected to the EV
+#if ENABLE_OCPP
+            || (OcppMode && OcppForcesLock)
+#endif
+            ) {
                 if (locktimer == 0) {                               // 600ms pulse
                     ACTUATOR_LOCK;
                 } else if (locktimer == 6) {
@@ -2692,7 +2796,7 @@ void SetupMQTTClient() {
         announce("Home Battery Current", "sensor");
     }
 
-    if (Modem) {
+#if MODEM
         //set the parameters for modem/SoC sensor entities:
         optional_payload = jsna("unit_of_measurement","%") + jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
         announce("EV Initial SoC", "sensor");
@@ -2711,7 +2815,7 @@ void SetupMQTTClient() {
         announce("EVCCID", "sensor");
         optional_payload = jsna("state_topic", String(MQTTprefix + "/RequiredEVCCID")) + jsna("command_topic", String(MQTTprefix + "/Set/RequiredEVCCID"));
         announce("Required EVCCID", "text");
-    }
+#endif
 
     if (EVMeter) {
         //set the parameters for and announce other sensor entities:
@@ -2730,6 +2834,10 @@ void SetupMQTTClient() {
     announce("State", "sensor");
     announce("RFID", "sensor");
     announce("RFIDLastRead", "sensor");
+#if ENABLE_OCPP
+    announce("OCPP", "sensor");
+    announce("OCPPConnection", "sensor");
+#endif //ENABLE_OCPP
 
     //set the parameters for and announce diagnostic sensor entities:
     optional_payload = jsna("entity_category","diagnostic");
@@ -2744,7 +2852,6 @@ void SetupMQTTClient() {
     announce("ESP Uptime", "sensor");
 
 #if MODEM
-    if (Modem) {
         optional_payload = jsna("unit_of_measurement","%") + jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
         announce("CP PWM", "sensor");
 
@@ -2752,7 +2859,6 @@ void SetupMQTTClient() {
         optional_payload += jsna("command_topic", String(MQTTprefix + "/Set/CPPWMOverride")) + jsna("min", "-1") + jsna("max", "100") + jsna("mode","slider");
         optional_payload += jsna("command_template", R"({{ (value | int * 1024 / 100) | round }})");
         announce("CP PWM Override", "number");
-    }
 #endif
     //set the parameters for and announce select entities, overriding automatic state_topic:
     optional_payload = jsna("state_topic", String(MQTTprefix + "/Mode")) + jsna("command_topic", String(MQTTprefix + "/Set/Mode"));
@@ -2798,7 +2904,6 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/WiFiBSSID", String(WiFi.BSSIDstr()), true, 0);
         MQTTclient.publish(MQTTprefix + "/WiFiRSSI", String(WiFi.RSSI()), false, 0);
 #if MODEM
-        if (Modem) {
             MQTTclient.publish(MQTTprefix + "/CPPWM", String(CurrentPWM), false, 0);
             MQTTclient.publish(MQTTprefix + "/CPPWMOverride", String(CPDutyOverride ? String(CurrentPWM) : "-1"), true, 0);
             MQTTclient.publish(MQTTprefix + "/EVInitialSoC", String(InitialSoC), true, 0);
@@ -2810,7 +2915,6 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/EVEnergyRequest", String(EnergyRequest), true, 0);
             MQTTclient.publish(MQTTprefix + "/EVCCID", String(EVCCID), true, 0);
             MQTTclient.publish(MQTTprefix + "/RequiredEVCCID", String(RequiredEVCCID), true, 0);
-        }
 #endif
         if (EVMeter) {
             MQTTclient.publish(MQTTprefix + "/EVChargePower", String(PowerMeasured), false, 0);
@@ -2819,6 +2923,10 @@ void mqttPublishData() {
         }
         if (homeBatteryLastUpdate)
             MQTTclient.publish(MQTTprefix + "/HomeBatteryCurrent", String(homeBatteryCurrent), false, 0);
+#if ENABLE_OCPP
+        MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
+        MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
+#endif //ENABLE_OCPP
 }
 #endif
 
@@ -3167,8 +3275,9 @@ ModbusMessage MBEVMeterResponse(ModbusMessage request) {
             EnergyEV = EV_import_active_energy - EV_export_active_energy;
             if (ResetKwh == 2) EnergyMeterStart = EnergyEV;                 // At powerup, set EnergyEV to kwh meter value
             EnergyCharged = EnergyEV - EnergyMeterStart;                    // Calculate Energy
-            if (Modem)
-                RecomputeSoC();
+#if MODEM
+            RecomputeSoC();
+#endif
         } else if (MB.Register == EMConfig[EVMeter].PRegister) {
             // Power measurement
             PowerMeasured = receivePowerMeasurement(MB.Data, EVMeter);
@@ -3441,8 +3550,9 @@ void MBhandleError(Error error, uint32_t token)
   function = (token >> 16);
   reg = token & 0xFFFF;
 
-  if (LoadBl == 1 && address>=2 && address <=8 && function == 4 && reg == 0) {  //master sends out messages to nodes 2-8, if no EVSE is connected with that address
+  if (LoadBl == 1 && ((address>=2 && address <=8 && function == 4 && reg == 0) || address == 9)) {  //master sends out messages to nodes 2-8, if no EVSE is connected with that address
                                                                                 //a timeout will be generated. This is legit!
+                                                                                //same goes for broadcast address 9
     _LOG_V("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
   }
   else {
@@ -3630,14 +3740,10 @@ void read_settings() {
             setenv("TZ",TZinfo.c_str(),1);
             tzset();
         }
+        AutoUpdate = preferences.getUChar("AutoUpdate", AUTOUPDATE);
 
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
-#if MODEM
-        Modem = EXPERIMENT;
-#else
-        Modem = NOTPRESENT;
-#endif
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
 
@@ -3648,6 +3754,10 @@ void read_settings() {
         MQTTHost = preferences.getString("MQTTHost", "");
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
 #endif
+
+#if ENABLE_OCPP
+        OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
+#endif //ENABLE_OCPP
 
         preferences.end();                                  
 
@@ -3709,6 +3819,7 @@ void write_settings(void) {
     preferences.putUShort("EnableC2", EnableC2);
     preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
     preferences.putUShort("maxTemp", maxTemp);
+    preferences.putUChar("AutoUpdate", AutoUpdate);
 
 #if MQTT
     preferences.putString("MQTTpassword", MQTTpassword);
@@ -3717,6 +3828,10 @@ void write_settings(void) {
     preferences.putString("MQTTHost", MQTTHost);
     preferences.putUShort("MQTTPort", MQTTPort);
 #endif
+
+#if ENABLE_OCPP
+    preferences.putUChar("OcppMode", OcppMode);
+#endif //ENABLE_OCPP
 
     preferences.end();
 
@@ -3738,7 +3853,7 @@ void write_settings(void) {
 
     ConfigChanged = 1;
 }
-/*
+
 //github.com L1
     const char* root_ca_github = R"ROOT_CA(
 -----BEGIN CERTIFICATE-----
@@ -3765,11 +3880,8 @@ CV4Ks2dH/hzg1cEo70qLRDEmBDeNiXQ2Lu+lIg+DdEmSx/cQwgwp+7e9un/jX9Wf
 8qn0dNW44bOwgeThpWOjzOoEeJBuv/c=
 -----END CERTIFICATE-----
 )ROOT_CA";
-*/
-HTTPClient _http;
-WiFiClientSecure _client;
 
-/*
+
 // get version nr. of latest release of off github
 // input:
 // owner_repo format: dingo35/SmartEVSE-3.5
@@ -3778,35 +3890,30 @@ WiFiClientSecure _client;
 // version -- null terminated string with latest version of this repo
 // downloadUrl -- global pointer to null terminated string with the url where this version can be downloaded
 bool getLatestVersion(String owner_repo, String asset_name, char *version) {
+    HTTPClient httpClient;
     String useURL = "https://api.github.com/repos/" + owner_repo + "/releases/latest";
-    _http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     const char* url = useURL.c_str();
     _LOG_A("Connecting to: %s.\n", url );
     if( String(url).startsWith("https") ) {
-        _client.setCACert(root_ca_github); // OR
-        //_client.setInsecure();
-        _http.begin( _client, url );
+        httpClient.begin(url, root_ca_github);
     } else {
-        _http.begin( url );
+        httpClient.begin(url);
     }
-    _http.addHeader("User-Agent", "SmartEVSE-v3");
-    _http.addHeader("Accept", "application/vnd.github+json");
-    _http.addHeader("X-GitHub-Api-Version", "2022-11-28" );
+    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
+    httpClient.addHeader("Accept", "application/vnd.github+json");
+    httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
     const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
-    _http.collectHeaders( get_headers, sizeof(get_headers)/sizeof(const char*) );
-    int httpCode = _http.GET();  //Make the request
+    httpClient.collectHeaders( get_headers, sizeof(get_headers)/sizeof(const char*) );
+    int httpCode = httpClient.GET();  //Make the request
 
     // only handle 200/301, fail on everything else
     if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
         // This error may be a false positive or a consequence of the network being disconnected.
         // Since the network is controlled from outside this class, only significant error messages are reported.
-        if( httpCode > 0 ) {
-            _LOG_A("Error on HTTP request (httpCode=%i)\n", httpCode);
-        } else {
-            _LOG_A("Unknown HTTP response");
-        }
-        _http.end();
+        _LOG_A("Error on HTTP request (httpCode=%i)\n", httpCode);
+        httpClient.end();
         return false;
     }
     // The filter: it contains "true" for each value we want to keep
@@ -3817,18 +3924,18 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
 
     // Deserialize the document
     DynamicJsonDocument doc2(1500);
-    DeserializationError error = deserializeJson(doc2, _http.getStream(), DeserializationOption::Filter(filter));
+    DeserializationError error = deserializeJson(doc2, httpClient.getStream(), DeserializationOption::Filter(filter));
 
     if (error) {
         _LOG_A("deserializeJson() failed: %s\n", error.c_str());
-        _http.end();  // We're done with HTTP - free the resources
+        httpClient.end();  // We're done with HTTP - free the resources
         return false;
     }
     const char* tag_name = doc2["tag_name"]; // "v3.6.1"
     if (!tag_name) {
         //no version found
         _LOG_A("ERROR: LatestVersion of repo %s not found.\n", owner_repo.c_str());
-        _http.end();  // We're done with HTTP - free the resources
+        httpClient.end();  // We're done with HTTP - free the resources
         return false;
     }
     else
@@ -3836,50 +3943,310 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
         strlcpy(version, tag_name, 32);
         //strlcpy(version, tag_name, sizeof(version));
     _LOG_V("Found latest version:%s.\n", version);
-    for (JsonObject asset : doc2["assets"].as<JsonArray>()) {
+
+    httpClient.end();  // We're done with HTTP - free the resources
+    return true;
+/*    for (JsonObject asset : doc2["assets"].as<JsonArray>()) {
         String name = asset["name"] | "";
         if (name == asset_name) {
             const char* asset_browser_download_url = asset["browser_download_url"];
             if (!asset_browser_download_url) {
                 // no download url found
                 _LOG_A("ERROR: Downloadurl of asset %s in repo %s not found.\n", asset_name.c_str(), owner_repo.c_str());
-                _http.end();  // We're done with HTTP - free the resources
+                httpClient.end();  // We're done with HTTP - free the resources
                 return false;
             } else {
                 asprintf(&downloadUrl, "%s", asset_browser_download_url);        //will be freed in FirmwareUpdate()
                 _LOG_V("Found asset: name=%s, url=%s.\n", name.c_str(), downloadUrl);
-                _http.end();  // We're done with HTTP - free the resources
+                httpClient.end();  // We're done with HTTP - free the resources
                 return true;
             }
         }
     }
     _LOG_A("ERROR: could not find asset %s in repo %s at version %s.\n", asset_name.c_str(), owner_repo.c_str(), version);
-    _http.end();  // We're done with HTTP - free the resources
+    httpClient.end();  // We're done with HTTP - free the resources
+    return false;*/
+}
+
+
+unsigned char *signature = NULL;
+#define SIGNATURE_LENGTH 512
+
+// SHA-Verify the OTA partition after it's been written
+// https://techtutorialsx.com/2018/05/10/esp32-arduino-mbed-tls-using-the-sha-256-algorithm/
+// https://github.com/ARMmbed/mbedtls/blob/development/programs/pkey/rsa_verify.c
+bool validate_sig( const esp_partition_t* partition, unsigned char *signature, int size )
+{
+    const char* rsa_key_pub = R"RSA_KEY_PUB(
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtjEWhkfKPAUrtX1GueYq
+JmDp4qSHBG6ndwikAHvteKgWQABDpwaemZdxh7xVCuEdjEkaecinNOZ0LpSCF3QO
+qflnXkvpYVxjdTpKBxo7vP5QEa3I6keJfwpoMzGuT8XOK7id6FHJhtYEXcaufALi
+mR/NXT11ikHLtluATymPdoSscMiwry0qX03yIek91lDypBNl5uvD2jxn9smlijfq
+9j0lwtpLBWJPU8vsU0uzuj7Qq5pWZFKsjiNWfbvNJXuLsupOazf5sh0yeQzL1CBL
+RUsBlYVoChTmSOyvi6kO5vW/6GLOafJF0FTdOQ+Gf3/IB6M1ErSxlqxQhHq0pb7Y
+INl7+aFCmlRjyLlMjb8xdtuedlZKv8mLd37AyPAihrq9gV74xq6c7w2y+h9213p8
+jgcmo/HvOlGaXEIOVCUu102teOckXjTni2yhEtFISCaWuaIdb5P9e0uBIy1e+Bi6
+/7A3aut5MQP07DO99BFETXyFF6EixhTF8fpwVZ5vXeIDvKKEDUGuzAziUEGIZpic
+UQ2fmTzIaTBbNlCMeTQFIpZCosM947aGKNBp672wdf996SRwg9E2VWzW2Z1UuwWV
+BPVQkHb1Hsy7C9fg5JcLKB9zEfyUH0Tm9Iur1vsuA5++JNl2+T55192wqyF0R9sb
+YtSTUJNSiSwqWt1m0FLOJD0CAwEAAQ==
+-----END PUBLIC KEY-----
+)RSA_KEY_PUB";
+
+    if( !partition ) {
+        _LOG_A( "Could not find update partition!.\n");
+        return false;
+    }
+    _LOG_D("Creating mbedtls context.\n");
+    mbedtls_pk_context pk;
+    mbedtls_md_context_t rsa;
+    mbedtls_pk_init( &pk );
+    _LOG_D("Parsing public key.\n");
+
+    int ret;
+    if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)rsa_key_pub, strlen(rsa_key_pub)+1 ) ) != 0 ) {
+        _LOG_A( "Parsing public key failed! mbedtls_pk_parse_public_key %d (%d bytes)\n%s", ret, strlen(rsa_key_pub)+1, rsa_key_pub);
+        return false;
+    }
+    if( !mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ) ) {
+        _LOG_A( "Public key is not an rsa key -0x%x", -ret );
+        return false;
+    }
+    _LOG_D("Initing mbedtls.\n");
+    const mbedtls_md_info_t *mdinfo = mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 );
+    mbedtls_md_init( &rsa );
+    mbedtls_md_setup( &rsa, mdinfo, 0 );
+    mbedtls_md_starts( &rsa );
+    int bytestoread = SPI_FLASH_SEC_SIZE;
+    int bytesread = 0;
+    uint8_t *_buffer = (uint8_t*)malloc(SPI_FLASH_SEC_SIZE);
+    if(!_buffer){
+        _LOG_A( "malloc failed.\n");
+        return false;
+    }
+    _LOG_D("Parsing content.\n");
+    _LOG_V( "Reading partition (%i sectors, sec_size: %i)", size, bytestoread );
+    while( bytestoread > 0 ) {
+        _LOG_V( "Left: %i (%i)               \r", size, bytestoread );
+
+        if( ESP.partitionRead( partition, bytesread, (uint32_t*)_buffer, bytestoread ) ) {
+            mbedtls_md_update( &rsa, (uint8_t*)_buffer, bytestoread );
+            bytesread = bytesread + bytestoread;
+            size = size - bytestoread;
+            if( size <= SPI_FLASH_SEC_SIZE ) {
+                bytestoread = size;
+            }
+        } else {
+            _LOG_A( "partitionRead failed!.\n");
+            return false;
+        }
+    }
+    free( _buffer );
+
+    unsigned char *hash = (unsigned char*)malloc( mdinfo->size );
+    if(!hash){
+        _LOG_A( "malloc failed.\n");
+        return false;
+    }
+    mbedtls_md_finish( &rsa, hash );
+    ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, mdinfo->size, (unsigned char*)signature, SIGNATURE_LENGTH );
+    free( hash );
+    mbedtls_md_free( &rsa );
+    mbedtls_pk_free( &pk );
+    if( ret == 0 ) {
+        return true;
+    }
+
+    // validation failed, overwrite the first few bytes so this partition won't boot!
+    log_w( "Validation failed, erasing the invalid partition.\n");
+    ESP.partitionEraseRange( partition, 0, ENCRYPTED_BLOCK_SIZE);
     return false;
 }
-*/
 
-// esp32fota esp32fota("<Type of Firmware for this device>", <this version>, <validate signature>, <allow insecure https>);
-esp32FOTA FOTA("esp32-fota-http", 1, false, true);
+
+bool forceUpdate(const char* firmwareURL, bool validate) {
+    HTTPClient httpClient;
+    //WiFiClientSecure _client;
+    int partition = U_FLASH;
+
+    httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    _LOG_A("Connecting to: %s.\n", firmwareURL );
+    if( String(firmwareURL).startsWith("https") ) {
+        //_client.setCACert(root_ca_github); // OR
+        //_client.setInsecure(); //not working for github
+        httpClient.begin(firmwareURL, root_ca_github);
+    } else {
+        httpClient.begin(firmwareURL);
+    }
+    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
+    httpClient.addHeader("Accept", "application/vnd.github+json");
+    httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
+    const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
+    httpClient.collectHeaders( get_headers, sizeof(get_headers)/sizeof(const char*) );
+
+    int updateSize = 0;
+    int httpCode = httpClient.GET();
+    String contentType;
+
+    if( httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY ) {
+        updateSize = httpClient.getSize();
+        contentType = httpClient.header( "Content-type" );
+        String acceptRange = httpClient.header( "Accept-Ranges" );
+        if( acceptRange == "bytes" ) {
+            _LOG_V("This server supports resume!\n");
+        } else {
+            _LOG_V("This server does not support resume!\n");
+        }
+    } else {
+        _LOG_A("ERROR: Server responded with HTTP Status %i.\n", httpCode );
+        return false;
+    }
+
+    _LOG_D("updateSize : %i, contentType: %s.\n", updateSize, contentType.c_str());
+    Stream * stream = httpClient.getStreamPtr();
+    if( updateSize<=0 || stream == nullptr ) {
+        _LOG_A("HTTP Error.\n");
+        return false;
+    }
+
+    // some network streams (e.g. Ethernet) can be laggy and need to 'breathe'
+    if( ! stream->available() ) {
+        uint32_t timeout = millis() + 10000;
+        while( ! stream->available() ) {
+            if( millis()>timeout ) {
+                _LOG_A("Stream timed out.\n");
+                return false;
+            }
+            vTaskDelay(1);
+        }
+    }
+
+    if( validate ) {
+        if( updateSize == UPDATE_SIZE_UNKNOWN || updateSize <= SIGNATURE_LENGTH ) {
+            _LOG_A("Malformed signature+fw combo.\n");
+            return false;
+        }
+        updateSize -= SIGNATURE_LENGTH;
+    }
+
+    if( !Update.begin(updateSize, partition) ) {
+        _LOG_A("ERROR Not enough space to begin OTA, partition size mismatch? Update failed!\n");
+        Update.abort();
+        return false;
+    }
+
+    Update.onProgress( [](uint32_t progress, uint32_t size) {
+      _LOG_V("Firmware update progress %i/%i.\n", progress, size);
+      //move this data to global var
+      downloadProgress = progress;
+      downloadSize = size;
+      //give background tasks some air
+      //vTaskDelay(100 / portTICK_PERIOD_MS);
+    });
+
+    // read signature
+    if( validate ) {
+        signature = (unsigned char *) malloc(SIGNATURE_LENGTH);                       //tried to free in in all exit scenarios, RISK of leakage!!!
+        stream->readBytes( signature, SIGNATURE_LENGTH );
+    }
+
+    _LOG_I("Begin %s OTA. This may take 2 - 5 mins to complete. Things might be quiet for a while.. Patience!\n", partition==U_FLASH?"Firmware":"Filesystem");
+
+    // Some activity may appear in the Serial monitor during the update (depends on Update.onProgress)
+    int written = Update.writeStream(*stream);                                 // although writeStream returns size_t, we don't expect >2Gb
+
+    if ( written == updateSize ) {
+        _LOG_D("Written : %d successfully", written);
+        updateSize = written; // flatten value to prevent overflow when checking signature
+    } else {
+        _LOG_A("Written only : %u/%u Premature end of stream?", written, updateSize);
+        Update.abort();
+        FREE(signature);
+        return false;
+    }
+
+    if (!Update.end()) {
+        _LOG_A("An Update Error Occurred. Error #: %d", Update.getError());
+        FREE(signature);
+        return false;
+    }
+
+    if( validate ) { // check signature
+        _LOG_I("Checking partition %d to validate", partition);
+
+        //getPartition( partition ); // updated partition => '_target_partition' pointer
+        const esp_partition_t* _target_partition = esp_ota_get_next_update_partition(NULL);
+
+        #define CHECK_SIG_ERROR_PARTITION_NOT_FOUND -1
+        #define CHECK_SIG_ERROR_VALIDATION_FAILED   -2
+
+        if( !_target_partition ) {
+            _LOG_A("Can't access partition #%d to check signature!", partition);
+            FREE(signature);
+            return false;
+        }
+
+        _LOG_D("Checking signature for partition %d...", partition);
+
+        const esp_partition_t* running_partition = esp_ota_get_running_partition();
+
+        if( partition == U_FLASH ) {
+            // /!\ An OTA partition is automatically set as bootable after being successfully
+            // flashed by the Update library.
+            // Since we want to validate before enabling the partition, we need to cancel that
+            // by temporarily reassigning the bootable flag to the running-partition instead
+            // of the next-partition.
+            esp_ota_set_boot_partition( running_partition );
+            // By doing so the ESP will NOT boot any unvalidated partition should a reset occur
+            // during signature validation (crash, oom, power failure).
+        }
+
+        if( !validate_sig( _target_partition, signature, updateSize ) ) {
+            FREE(signature);
+            // erase partition
+            esp_partition_erase_range( _target_partition, _target_partition->address, _target_partition->size );
+            _LOG_A("Signature check failed!.\n");
+            return false;
+        } else {
+            FREE(signature);
+            _LOG_D("Signature check successful!.\n");
+            if( partition == U_FLASH ) {
+                // Set updated partition as bootable now that it's been verified
+                esp_ota_set_boot_partition( _target_partition );
+            }
+        }
+    }
+    _LOG_D("OTA Update complete!.\n");
+    if (Update.isFinished()) {
+        _LOG_V("Update succesfully completed at %s partition\n", partition==U_SPIFFS ? "spiffs" : "firmware" );
+        return true;
+    } else {
+        _LOG_A("ERROR: Update not finished! Something went wrong!.\n");
+    }
+    return false;
+}
+
 
 // put firmware update in separate task so we can feed progress to the html page
 void FirmwareUpdate(void *parameter) {
-    _LOG_A("DINGO: url=%s.\n", downloadUrl);
-    if (FOTA.forceUpdate(downloadUrl, 1)) {
-        _LOG_A("Firmware update succesfull.\n");
+    //_LOG_A("DINGO: url=%s.\n", downloadUrl);
+    if (forceUpdate(downloadUrl, 1)) {
+        _LOG_A("Firmware update succesfull; rebooting as soon as no EV is connected.\n");
         downloadProgress = -1;
+        shouldReboot = true;
     } else {
-        _LOG_A("ERROR: Firmware update failed; rebooting.\n");
+        _LOG_A("ERROR: Firmware update failed.\n");
+        //_http.end();
         downloadProgress = -2;
-        delay(5000);
-        ESP.restart();
     }
     if (downloadUrl) free(downloadUrl);
-    vTaskDelete(NULL);                                                          //end this task so it will not take up resources
+    vTaskDelete(NULL);                                                        //end this task so it will not take up resources
 }
 
 void RunFirmwareUpdate(void) {
     _LOG_V("Starting firmware update from downloadUrl=%s.\n", downloadUrl);
+    downloadProgress = 0;                                                       // clear errors, if any
     xTaskCreate(
         FirmwareUpdate, // Function that should be called
         "FirmwareUpdate",// Name of the task (for debugging)
@@ -3890,27 +4257,6 @@ void RunFirmwareUpdate(void) {
     );
 }
 
-// Downloads firmware, flashes it, and reboot
-bool AutoUpdate(String owner, String repo, int debug) {
-    bool ret = true;
-    asprintf(&downloadUrl, "%s/%s_%s.%s", FW_DOWNLOAD_PATH, (owner == OWNER_FACT)? "fact":"comm", "firmware", debug ? "debug.signed.bin": "signed.bin"); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
-/*
-    if () { //github routine
-        // not expiring github auth for minimal rate limiting on github
-        char version[32] = "";
-        char asset_name[32] = "";
-        if (debug == 1)
-            strlcpy(asset_name, "firmware.debug.bin", sizeof(asset_name));
-        else
-            strlcpy(asset_name, "firmware.bin", sizeof(asset_name));
-        ret = getLatestVersion(owner + "/" + repo, asset_name, version);
-        }
-    }*/
-    if (ret) {
-        RunFirmwareUpdate();
-    }
-    return ret;
-}
 
 /* Takes TimeString in format
  * String = "2023-04-14T11:31"
@@ -3934,52 +4280,74 @@ int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime) {
     return 1;
 }
 
-// takes TZname (format: Europe/Berlin) , gets TZ_INFO (posix string, format: CET-1CEST,M3.5.0,M10.5.0/3) and sets and stores timezonestring accordingly
-void setTimeZone(char *tzname) {
+void setTimeZone(void) {
+    HTTPClient httpClient;
+    // lookup current timezone
+    httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    httpClient.begin("http://worldtimeapi.org/api/ip");
+    int httpCode = httpClient.GET();  //Make the request
 
-    struct mg_fs *fs = &mg_fs_packed;
-  //struct mg_str mg_file_read(struct mg_fs *fs, const char *path) {
-    void *fp;
-    size_t filelen, filepos = 0;
-    const char *path = "/data/zones.csv";
-    fs->st(path, &filelen, NULL);
-    if ((fp = fs->op(path, MG_FS_READ)) != NULL) {
-        bool found = false;
-        char line[80];
-        int pos = 0;
-        char c;
-        do {
-            pos = 0;
-            do {
-                fs->rd(fp, &c, 1);
-                if (filepos < filelen)
-                    line[pos]=c;
-                pos++;
-                filepos++;
-            } while (pos < sizeof(line) - 1 && c != '\n' && filepos < filelen);
-            //terminate with NULL character
-            line[pos]=0;
-            found = strstr(line, tzname);
-            if (found) {
-                char *pos = strstr(line, ",");
-                pos = strstr(pos, "\"");
-                char *tz_info = pos + 1;
-                pos = strstr(pos, "\"") - 1;
-                pos = NULL; //end string with null char
-                _LOG_A("Detected Timezone info: TZname = %s, tz_info=%s.\n", tzname, tz_info);
-                setenv("TZ",tz_info,1);
-                TZinfo = String(tz_info);
-                tzset();
-                if (preferences.begin("settings", false) ) {
-                    preferences.putString("TimezoneInfo", tz_info);
-                    preferences.end();
-                }
-                break;
-            }
-        } while (filepos < filelen && !found);
-        fs->cl(fp);
+    // only handle 200/301, fail on everything else
+    if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
+        _LOG_A("Error on HTTP request (httpCode=%i)\n", httpCode);
+        httpClient.end();
+        return;
     }
+
+    // The filter: it contains "true" for each value we want to keep
+    DynamicJsonDocument  filter(16);
+    filter["timezone"] = true;
+    DynamicJsonDocument doc2(80);
+    DeserializationError error = deserializeJson(doc2, httpClient.getStream(), DeserializationOption::Filter(filter));
+    httpClient.end();
+    if (error) {
+        _LOG_A("deserializeJson() failed: %s\n", error.c_str());
+        return;
+    }
+    String tzname = doc2["timezone"];
+    if (tzname == "") {
+        _LOG_A("Could not detect Timezone.\n");
+        return;
+    }
+    _LOG_A("Timezone detected: tz=%s.\n", tzname.c_str());
+
+    // takes TZname (format: Europe/Berlin) , gets TZ_INFO (posix string, format: CET-1CEST,M3.5.0,M10.5.0/3) and sets and stores timezonestring accordingly
+    //httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    WiFiClient * stream = httpClient.getStreamPtr();
+    String l;
+    char *URL;
+    asprintf(&URL, "%s/zones.csv", FW_DOWNLOAD_PATH); //will be freed
+    httpClient.begin(URL);
+    httpCode = httpClient.GET();  //Make the request
+
+    // only handle 200/301, fail on everything else
+    if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
+        _LOG_A("Error on HTTP request (httpCode=%i)\n", httpCode);
+        httpClient.end();
+        FREE(URL);
+        return;
+    }
+
+    stream = httpClient.getStreamPtr();
+    while(httpClient.connected() && stream->available()) {
+        l = stream->readStringUntil('\n');
+        if (l.indexOf(tzname) > 0) {
+            int from = l.indexOf("\",\"") + 3;
+            TZinfo = l.substring(from, l.length() - 1);
+            _LOG_A("Detected Timezone info: TZname = %s, tz_info=%s.\n", tzname.c_str(), TZinfo.c_str());
+            setenv("TZ",TZinfo.c_str(),1);
+            tzset();
+            if (preferences.begin("settings", false) ) {
+                preferences.putString("TimezoneInfo", TZinfo);
+                preferences.end();
+            }
+            break;
+        }
+    }
+    httpClient.end();
+    FREE(URL);
 }
+
 
 // wrapper so hasParam and getParam still work
 class webServerRequest {
@@ -4079,63 +4447,6 @@ static void timer_fn(void *arg) {
 }
 #endif
 
-//mongoose http_client for picking up the timezone
-//url to get current timezone in Europe/Berlin format:
-static const char *s_url = "http://worldtimeapi.org/api/ip";
-//urls for converting timezone to posix string:
-//static const char *s_url = "https://raw.githubusercontent.com/nayarsystems/posix_tz_db/master/zones.csv";
-static const char *s_post_data = NULL;      // POST data
-static const uint64_t s_timeout_ms = 1500;  // Connect timeout in milliseconds
-
-// Print HTTP response and signal that we're done
-static void fn_client(struct mg_connection *c, int ev, void *ev_data) {
-    if (ev == MG_EV_OPEN) {
-        // Connection created. Store connect expiration time in c->data
-        *(uint64_t *) c->data = mg_millis() + s_timeout_ms;
-    } else if (ev == MG_EV_POLL) {
-        if (mg_millis() > *(uint64_t *) c->data && (c->is_connecting || c->is_resolving)) {
-            mg_error(c, "Connect timeout");
-        }
-    } else if (ev == MG_EV_CONNECT) {
-        // Connected to server. Extract host name from URL
-        struct mg_str host = mg_url_host(s_url);
-
-        if (mg_url_is_ssl(s_url)) {
-            struct mg_tls_opts opts = {.ca = empty, .cert = empty, .key = empty, .name = mg_url_host(s_url)};
-            mg_tls_init(c, &opts);
-        }
-
-        // Send request
-        int content_length = s_post_data ? strlen(s_post_data) : 0;
-        mg_printf(c,
-                  "%s %s HTTP/1.0\r\n"
-                  "Host: %.*s\r\n"
-                  "Content-Type: octet-stream\r\n"
-                  "Content-Length: %d\r\n"
-                  "\r\n",
-                  s_post_data ? "POST" : "GET", mg_url_uri(s_url), (int) host.len,
-                  host.ptr, content_length);
-        mg_send(c, s_post_data, content_length);
-    } else if (ev == MG_EV_HTTP_MSG) {
-        // Response is received. Print it
-        struct mg_http_message *hm = (struct mg_http_message *) ev_data;
-        if (hm->message.len > 1) {
-            struct mg_str json = hm->body;
-            char *tz = mg_json_get_str(json, "$.timezone");
-            _LOG_A("Timezone detected: tz=%s.\n", tz);
-            setTimeZone(tz);
-        } else {
-            _LOG_A("Could not detect Timezone.\n");
-        }
-        c->is_draining = 1;        // Tell mongoose to close this connection
-        *(bool *) c->fn_data = true;  // Tell event loop to stop
-    } else if (ev == MG_EV_ERROR) {
-        *(bool *) c->fn_data = true;  // Error, tell event loop to stop
-    }
-}
-
-unsigned char *signature = NULL;
-#define SIGNATURE_LENGTH 512
 // Connection event handler function
 // indenting lower level two spaces to stay compatible with old StartWebServer
 // We use the same event handler function for HTTP and HTTPS connections
@@ -4149,8 +4460,16 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty};
     mg_tls_init(c, &opts);
-  }
-  if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
+  } else if (ev == MG_EV_CLOSE) {
+    if (c == HttpListener80) {
+        _LOG_A("Free HTTP port 80");
+        HttpListener80 = nullptr;
+    }
+    if (c == HttpListener443) {
+        _LOG_A("Free HTTP port 443");
+        HttpListener443 = nullptr;
+    }
+  } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
     webServerRequest* request = new webServerRequest();
     request->setMessage(hm);
@@ -4166,32 +4485,16 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
         ESP.restart();
     } else if (mg_http_match_uri(hm, "/autoupdate")) {
-        char url[40];
+        char owner[40];
         char buf[8];
         int debug;
-        mg_http_get_var(&hm->query, "url", url, sizeof(url));
+        mg_http_get_var(&hm->query, "owner", owner, sizeof(owner));
         mg_http_get_var(&hm->query, "debug", buf, sizeof(buf));
         debug = strtol(buf, NULL, 0);
-        if (!memcmp(url, "factory", sizeof("factory"))) {
-            if (AutoUpdate(OWNER_FACT, REPO_FACT, debug)) {
-                struct mg_http_serve_opts opts = {.root_dir = "/data", .ssi_pattern = NULL, .extra_headers = NULL, .mime_types = NULL, .page404 = NULL, .fs = &mg_fs_packed };
-                mg_http_serve_file(c, hm, "/data/update3.html", &opts);
-            } else
-                mg_http_reply(c, 400, "Content-Type: text/plain\r\n", "Autoupdate failed.");
-        } else if (!memcmp(url, "community", sizeof("community"))) {
-            if (AutoUpdate(OWNER_COMM, REPO_COMM, debug)) {
-                struct mg_http_serve_opts opts = {.root_dir = "/data", .ssi_pattern = NULL, .extra_headers = NULL, .mime_types = NULL, .page404 = NULL, .fs = &mg_fs_packed };
-                mg_http_serve_file(c, hm, "/data/update3.html", &opts);
-            } else
-                mg_http_reply(c, 400, "Content-Type: text/plain\r\n", "Autoupdate failed.");
-        } else
-            mg_http_reply(c, 400, "Content-Type: text/plain\r\n", "Autoupdate wrong parameter.");
-    } else if (mg_http_match_uri(hm, "/autoupdate_progress")) {
-/*        char *Str;
-        asprintf(&Str,"Autoupdating %i / %i.\n", downloadProgress, downloadSize);
-        mg_http_reply(c, 200, "Content-Type: text/plain\r\n", Str);
-        free(Str);
-*/
+        if (!memcmp(owner, OWNER_FACT, sizeof(OWNER_FACT)) || (!memcmp(owner, OWNER_COMM, sizeof(OWNER_COMM)))) {
+            asprintf(&downloadUrl, "%s/%s_firmware.%ssigned.bin", FW_DOWNLOAD_PATH, owner, debug ? "debug.": ""); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+            RunFirmwareUpdate();
+        }                                                                       // after the first call we just report progress
         DynamicJsonDocument doc(64); // https://arduinojson.org/v6/assistant/
         doc["progress"] = downloadProgress;
         doc["size"] = downloadSize;
@@ -4284,7 +4587,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
 
                     bool verification_result = false;
                     if(Update.end(true)) {
-                        verification_result = FOTA.validate_sig( target_partition, signature, size - SIGNATURE_LENGTH);
+                        verification_result = validate_sig( target_partition, signature, size - SIGNATURE_LENGTH);
                         FREE(signature);
                         if (verification_result) {
                             _LOG_A("Signature is valid!\n");
@@ -4295,17 +4598,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                             //which results in a "verify failed" message on the /update screen AFTER the reboot :-)
                         }
                     }
-_LOG_A("DINGO: boot partition=%s.\n", esp_ota_get_boot_partition()->label);
                     if (!verification_result) {
                         _LOG_A("Update failed!\n");
                         Update.printError(Serial);
                         //Update.abort(); //not sure this does anything in this stage
                         //Update.rollBack();
                         _LOG_V("Running off of partition %s, erasing partition %s.\n", running_partition->label, target_partition->label);
-_LOG_A("DINGO: checkpoint 1 boot partition=%s.\n", esp_ota_get_boot_partition()->label);
                         esp_partition_erase_range( target_partition, target_partition->address, target_partition->size );
                         esp_ota_set_boot_partition( running_partition );
-_LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()->label);
                         mg_http_reply(c, 400, "", "firmware.signed.bin update failed!");
                     }
                     FREE(signature);
@@ -4432,14 +4732,14 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
         doc["settings"]["solar_start_current"] = StartCurrent;
         doc["settings"]["solar_stop_time"] = StopTime;
         doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
-        doc["settings"]["modem"] = StrModem[Modem];
         doc["settings"]["mains_meter"] = EMConfig[MainsMeter].Desc;
         doc["settings"]["starttime"] = (DelayedStartTime.epoch2 ? DelayedStartTime.epoch2 + EPOCH2_OFFSET : 0);
         doc["settings"]["stoptime"] = (DelayedStopTime.epoch2 ? DelayedStopTime.epoch2 + EPOCH2_OFFSET : 0);
         doc["settings"]["repeat"] = DelayedRepeat;
 #if MODEM
-        if (Modem) {
             doc["settings"]["required_evccid"] = RequiredEVCCID;
+            doc["settings"]["modem"] = "Experiment";
+
             doc["ev_state"]["initial_soc"] = InitialSoC;
             doc["ev_state"]["remaining_soc"] = RemainingSoC;
             doc["ev_state"]["full_soc"] = FullSoC;
@@ -4448,7 +4748,6 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
             doc["ev_state"]["computed_soc"] = ComputedSoC;
             doc["ev_state"]["evccid"] = EVCCID;
             doc["ev_state"]["time_until_full"] = TimeUntilFull;
-        }
 #endif
 
 #if MQTT
@@ -4464,6 +4763,19 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
             doc["mqtt"]["status"] = "Disconnected";
         }
 #endif
+
+#if ENABLE_OCPP
+        doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
+        doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
+        doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
+        doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+
+        if (OcppWsClient && OcppWsClient->isConnected()) {
+            doc["ocpp"]["status"] = "Connected";
+        } else {
+            doc["ocpp"]["status"] = "Disconnected";
+        }
+#endif //ENABLE_OCPP
 
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
@@ -4619,11 +4931,6 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
         }
 
-        if(request->hasParam("modem")) {
-            Modem = (Modem_t) request->getParam("modem")->value().toInt();
-            doc["settings"]["modem"] = StrModem[Modem];
-        }
-
         if(request->hasParam("stop_timer")) {
             int stop_timer = request->getParam("stop_timer")->value().toInt();
 
@@ -4747,6 +5054,51 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
         }
 #endif
 
+#if ENABLE_OCPP
+        if(request->hasParam("ocpp_update")) {
+            if (request->getParam("ocpp_update")->value().toInt() == 1) {
+
+                if(request->hasParam("ocpp_mode")) {
+                    OcppMode = request->getParam("ocpp_mode")->value().toInt();
+                    doc["ocpp_mode"] = OcppMode;
+                }
+
+                if(request->hasParam("ocpp_backend_url")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setBackendUrl(request->getParam("ocpp_backend_url")->value().c_str());
+                        doc["ocpp_backend_url"] = OcppWsClient->getBackendUrl();
+                    } else {
+                        doc["ocpp_backend_url"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_cb_id")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setChargeBoxId(request->getParam("ocpp_cb_id")->value().c_str());
+                        doc["ocpp_cb_id"] = OcppWsClient->getChargeBoxId();
+                    } else {
+                        doc["ocpp_cb_id"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                if(request->hasParam("ocpp_auth_key")) {
+                    if (OcppWsClient) {
+                        OcppWsClient->setAuthKey(request->getParam("ocpp_auth_key")->value().c_str());
+                        doc["ocpp_auth_key"] = OcppWsClient->getAuthKey();
+                    } else {
+                        doc["ocpp_auth_key"] = "Can only update when OCPP enabled";
+                    }
+                }
+
+                // Apply changes in OcppWsClient
+                if (OcppWsClient) {
+                    OcppWsClient->reloadConfigs();
+                }
+                write_settings();
+            }
+        }
+#endif //ENABLE_OCPP
+
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
@@ -4816,8 +5168,9 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
                 EnergyEV = EV_import_active_energy - EV_export_active_energy;
                 if (ResetKwh == 2) EnergyMeterStart = EnergyEV;                 // At powerup, set EnergyEV to kwh meter value
                 EnergyCharged = EnergyEV - EnergyMeterStart;                    // Calculate Energy
-                if (Modem)
-                    RecomputeSoC();
+#if MODEM
+                RecomputeSoC();
+#endif
                 doc["ev_meter"]["import_active_power"] = PowerMeasured;
                 doc["ev_meter"]["import_active_energy"] = EV_import_active_energy;
                 doc["ev_meter"]["export_active_energy"] = EV_export_active_energy;
@@ -4949,29 +5302,39 @@ _LOG_A("DINGO: checkpoint 2 boot partition=%s.\n", esp_ota_get_boot_partition()-
 void onWifiEvent(WiFiEvent_t event) {
     switch (event) {
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            _LOG_A("Connected to AP: %s\nLocal IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-            break;
-        case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
-            _LOG_A("Connected or reconnected to WiFi\n");
-            delay(1000);
+#if LOG_LEVEL >= 1
+            _LOG_A("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+#else
+            Serial.printf("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+#endif            
             //load dhcp dns ip4 address into mongoose
             static char dns4url[]="udp://123.123.123.123:53";
             sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
             mgr.dns4.url = dns4url;
+            if (TZinfo == "") {
+                setTimeZone();
+            }
+
+            break;
+        case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            _LOG_A("Connected or reconnected to WiFi\n");
 
 #if MQTT
+            if (!MQTTtimer) {
+               MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
+            }
+
             mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
 #endif
             mg_log_set(MG_LL_NONE);
             //mg_log_set(MG_LL_VERBOSE);
 
-            if (TZinfo == "") {
-                bool done = false;              // Event handler flips it to true
-                mg_http_connect(&mgr, s_url, fn_client, &done);  // Create client connection
+            if (!HttpListener80) {
+                HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
             }
-            //end mongoose
-            mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
-            mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
+            if (!HttpListener443) {
+                HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
+            }
             _LOG_A("HTTP server started\n");
 
 #if DBG == 1
@@ -5007,50 +5370,6 @@ void timeSyncCallback(struct timeval *tv)
 void WiFiSetup(void) {
     mg_mgr_init(&mgr);  // Initialise event manager
 
-    const char* rsa_key_pub = mg_unpacked("/data/rsa_key.pub").ptr;
-    CryptoMemAsset  *MyRSAKey = new CryptoMemAsset("RSA Key", rsa_key_pub, strlen(rsa_key_pub)+1 );
-    auto cfg = FOTA.getConfig();
-    //cfg.name          = fota_name;
-    //cfg.manifest_url  = "https://api.github.com/repos/dingo35/SmartEVSE-3.5/releases/latest";
-    //cfg.sem           = SemverClass( 1, 0, 0 ); // major, minor, patch
-    //cfg.check_sig     = false; // verify signed firmware with rsa public key
-    cfg.check_sig     = true; // verify signed firmware with rsa public key
-    cfg.unsafe        = true; // disable certificate check when using TLS
-    //cfg.root_ca       = MyRootCA;
-    cfg.pub_key       = MyRSAKey;
-    //cfg.use_device_id = false;
-    FOTA.setConfig( cfg );
-    //FOTA.printConfig();
-
-    // callback function prevents serial comm error
-    FOTA.setProgressCb( [](size_t progress, size_t size) {
-      _LOG_V("Firmware update progress %i/%i.\n", progress, size);
-      //move this data to global var
-      downloadProgress = progress;
-      downloadSize = size;
-      //give background tasks some air
-      vTaskDelay(100 / portTICK_PERIOD_MS);
-    });
-
-    // we abuse the downloadProgress indicator for status info:
-    // downloadProgress = -1 : success
-    // downloadProgress = -2 : fail
-    FOTA.setUpdateFinishedCb( [](int partition, bool restart_after) {
-        _LOG_V("Update succesfully completed at %s partition\n", partition==U_SPIFFS ? "spiffs" : "firmware" );
-        downloadProgress = -1;
-    });
-
-    FOTA.setUpdateBeginFailCb( [](int partition) {
-        _LOG_A("ERROR: Update failed at %s partition\n", partition==U_SPIFFS ? "spiffs" : "firmware" );
-        downloadProgress = -2;
-    });
-
-    //FOTA.setExtraHTTPHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:21.0) Gecko/20100101 Firefox/21.0");
-    FOTA.setExtraHTTPHeader("User-Agent", "SmartEVSE-v3");
-    FOTA.setExtraHTTPHeader("Accept", "application/vnd.github+json");
-    FOTA.setExtraHTTPHeader("X-GitHub-Api-Version", "2022-11-28" );
-    //FOTA.setRootCA( MyRootCA );
-
     //wifiManager.setDebugOutput(true);
     wifiManager.setMinimumSignalQuality(-1);
     WiFi.setAutoReconnect(true);
@@ -5078,6 +5397,20 @@ void WiFiSetup(void) {
 void SetupPortalTask(void * parameter) {
     _LOG_A("Start Portal...\n");
     WiFi.disconnect(true);
+
+    // Close Mongoose HTTP Server
+    if (HttpListener80) {
+        HttpListener80->is_closing = 1;
+    }
+    if (HttpListener443) {
+        HttpListener443->is_closing = 1;
+    }
+
+    while (HttpListener80 || HttpListener443) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        _LOG_A("Waiting for Mongoose Server to terminate\n");
+    }
+
     wifiManager.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
     //wifiManager.setTitle(String title);
 
@@ -5089,7 +5422,6 @@ void SetupPortalTask(void * parameter) {
     wifiManager.setShowDnsFields(true);    // force show dns field always
 
     wifiManager.setConfigPortalTimeout(120);  // Portal will be available 2 minutes to connect to, then close. (if connected within this time, it will remain active)
-    mg_mgr_free(&mgr);
     delay(1000);
     wifiManager.startConfigPortal(APhostname.c_str(), APpassword.c_str());
     //_LOG_A("SetupPortalTask free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
@@ -5097,7 +5429,6 @@ void SetupPortalTask(void * parameter) {
 
     WIFImode = 1;
     //mongoose
-    mg_mgr_init(&mgr);  // Initialise event manager
     handleWIFImode();
     write_settings();
     LCDNav = 0;
@@ -5128,6 +5459,315 @@ void handleWIFImode() {
         WiFi.disconnect(true);
     }    
 }
+
+/*
+ * OCPP-related function definitions
+ */
+#if ENABLE_OCPP
+
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
+    if (!uuid || uuidLen >= sizeof(OcppRfidUuid)) {
+        _LOG_W("OCPP: invalid UUID\n");
+    }
+    memcpy(OcppRfidUuid, uuid, uuidLen);
+    OcppRfidUuidLen = uuidLen;
+    OcppLastRfidUpdate = millis();
+}
+
+void ocppInit() {
+
+    //load OCPP library modules: Mongoose WS adapter and Core OCPP library
+
+    auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
+            MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
+            );
+
+    OcppWsClient = new MicroOcpp::MOcppMongooseClient(
+            &mgr,
+            nullptr,    // OCPP backend URL (factory default)
+            nullptr,    // ChargeBoxId (factory default)
+            nullptr,    // WebSocket Basic Auth token (factory default)
+            nullptr,    // CA cert (cert string must outlive WS client)
+            filesystem);
+
+    mocpp_initialize(
+            *OcppWsClient, //WebSocket adapter for MicroOcpp
+            ChargerCredentials("SmartEVSE", "Stegen Electronics", VERSION, String(serialnr).c_str(), NULL, (char *) EMConfig[MainsMeter].Desc),
+            filesystem);
+
+    //setup OCPP hardware bindings
+
+    setEnergyMeterInput([] () { //Input of the electricity meter register in Wh
+        return EV_import_active_energy;
+    });
+
+    setPowerMeterInput([] () { //Input of the power meter reading in W
+        return PowerMeasured;
+    });
+
+    setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
+        return OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V;
+    });
+
+    setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
+        return OcppTrackCPvoltage >= PILOT_6V && OcppTrackCPvoltage <= PILOT_3V;
+    });
+
+    setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
+        return GetCurrent() > 0; //PWM is enabled
+    });
+
+    addMeterValueInput([] () {
+            return (float) (Irms_EV[0] + Irms_EV[1] + Irms_EV[2]);
+        },
+        "Current.Import",
+        "A");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[0];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L1");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[1];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L2");
+
+    addMeterValueInput([] () {
+            return (float) Irms_EV[2];
+        },
+        "Current.Import",
+        "A",
+        nullptr, // Location defaults to "Outlet"
+        "L3");
+
+    addMeterValueInput([] () {
+            return (float)GetCurrent() * 0.1f;
+        },
+        "Current.Offered",
+        "A");
+
+    addMeterValueInput([] () {
+            return (float)TempEVSE;
+        },
+        "Temperature",
+        "Celsius");
+
+#if MODEM
+        addMeterValueInput([] () {
+                return (float)ComputedSoC;
+            },
+            "SoC",
+            "Percent");
+#endif
+
+    addErrorCodeInput([] () {
+        return (ErrorFlags & TEMP_HIGH) ? "HighTemperature" : (const char*)nullptr;
+    });
+
+    addErrorCodeInput([] () {
+        return (ErrorFlags & RCM_TRIPPED) ? "GroundFailure" : (const char*)nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & CT_NOCOMM) {
+            MicroOcpp::ErrorData error = "PowerMeterFailure";
+            error.info = "Communication with mains meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & EV_NOCOMM) {
+            MicroOcpp::ErrorData error = "PowerMeterFailure";
+            error.info = "Communication with EV meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
+    // If SmartEVSE load balancer is turned off, then enable OCPP Smart Charging
+    // This means after toggling LB, OCPP must be disabled and enabled for changes to become effective
+    if (!LoadBl) {
+        setSmartChargingCurrentOutput([] (float currentLimit) {
+            OcppCurrentLimit = currentLimit; // Can be negative which means that no limit is defined
+
+            // Re-evaluate charge rate and apply
+            if (!LoadBl) { // Execute only if LB is still disabled
+
+                CalcBalancedCurrent(0);
+                if (IsCurrentAvailable()) {
+                    // OCPP is the exclusive LB, clear LESS_6A error if set
+                    ErrorFlags &= ~LESS_6A;
+                    ChargeDelay = 0;
+                }
+                if ((State == STATE_B || State == STATE_C) && !CPDutyOverride) {
+                    if (IsCurrentAvailable()) {
+                        SetCurrent(ChargeCurrent);
+                    } else {
+                        setStatePowerUnavailable();
+                    }
+                }
+            }
+        });
+    }
+
+    setOnUnlockConnectorInOut([] () -> UnlockConnectorResult {
+        // MO also stops transaction which should toggle OcppForcesLock false
+        OcppLockingTx.reset();
+        if (Lock == 0 || digitalRead(PIN_LOCK_IN) == lock2) {
+            // Success
+            return UnlockConnectorResult_Unlocked;
+        }
+
+        // No result yet, wait (MO eventually times out)
+        return UnlockConnectorResult_Pending;
+    });
+
+    setOccupiedInput([] () -> bool {
+        // Keep Finishing state while LockingTx effectively blocks new transactions
+        return OcppLockingTx != nullptr;
+    });
+
+    setStopTxReadyInput([] () {
+        // Stop value synchronization: block StopTransaction for 5 seconds to give the Modbus readings some time to come through
+        return millis() - OcppStopReadingSyncTime >= 5000;
+    });
+
+    OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
+
+    endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
+}
+
+void ocppDeinit() {
+
+    // Record stop value for transaction manually (normally MO would wait until `mocpp_loop()`, but that's too late here)
+    if (auto& tx = getTransaction()) {
+        if (tx->getMeterStop() < 0) {
+            // Stop value not defined yet
+            tx->setMeterStop(EV_import_active_energy); // Use same reading as in `setEnergyMeterInput()`
+            tx->setStopTimestamp(getOcppContext()->getModel().getClock().now());
+        }
+    }
+
+    endTransaction(nullptr, "Other"); // If a transaction is running, shut it down forcefully. The StopTx request will be sent when OCPP runs again.
+
+    OcppUnlockConnectorOnEVSideDisconnect.reset();
+    OcppLockingTx.reset();
+    OcppForcesLock = false;
+
+    if (OcppTrackPermitsCharge) {
+        _LOG_A("OCPP unset Access_bit\n");
+        setAccess(false);
+    }
+
+    OcppTrackPermitsCharge = false;
+    OcppTrackCPvoltage = PILOT_NOK;
+    OcppCurrentLimit = -1.f;
+
+    mocpp_deinitialize();
+
+    delete OcppWsClient;
+    OcppWsClient = nullptr;
+}
+
+void ocppLoop() {
+
+    // Update pilot tracking variable (last measured positive part)
+    auto pilot = Pilot();
+    if (pilot >= PILOT_12V && pilot <= PILOT_3V) {
+        OcppTrackCPvoltage = pilot;
+    }
+
+    mocpp_loop();
+
+    //handle RFID input
+
+    if (OcppTrackLastRfidUpdate != OcppLastRfidUpdate) {
+        // New RFID card swiped
+
+        char uuidHex [2 * sizeof(OcppRfidUuid) + 1];
+        uuidHex[0] = '\0';
+        for (size_t i = 0; i < OcppRfidUuidLen; i++) {
+            snprintf(uuidHex + 2*i, 3, "%02X", OcppRfidUuid[i]);
+        }
+
+        if (OcppLockingTx) {
+            // Connector is still locked by earlier transaction
+
+            if (!strcmp(uuidHex, OcppLockingTx->getIdTag())) {
+                // Connector can be unlocked again
+                OcppLockingTx.reset();
+                endTransaction(uuidHex, "Local");
+            } // else: Connector remains blocked for now
+        } else if (getTransaction()) {
+            //OCPP lib still has transaction (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
+            endTransaction(uuidHex, "Local");
+        } else {
+            //OCPP lib has no idTag --> swiped card is used for new transaction
+            OcppLockingTx = beginTransaction(uuidHex);
+        }
+    }
+    OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
+
+    // Set / unset Access_bit
+    // Allow to set Access_bit only once per OCPP transaction because other modules may override the Access_bit
+    if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
+        _LOG_A("OCPP set Access_bit\n");
+        setAccess(true);
+    } else if (Access_bit && !ocppPermitsCharge()) {
+        _LOG_A("OCPP unset Access_bit\n");
+        setAccess(false);
+    }
+    OcppTrackPermitsCharge = ocppPermitsCharge();
+
+    // Check if OCPP charge permission has been revoked by other module
+    if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
+            !Access_bit) { // Access_bit is not active anymore
+        endTransaction(nullptr, "Other");
+    }
+
+    // Stop value synchronization: block StopTransaction for a short period as long as charging is permitted
+    if (ocppPermitsCharge()) {
+        OcppStopReadingSyncTime = millis();
+    }
+
+    auto& transaction = getTransaction(); // Common tx which OCPP is currently processing (or nullptr if no tx is ongoing)
+
+    // Check if Locking Tx has been invalidated by something other than RFID swipe
+    if (OcppLockingTx) {
+        if (OcppUnlockConnectorOnEVSideDisconnect->getBool() && !OcppLockingTx->isActive()) {
+            // No LockingTx mode configured (still, keep LockingTx until end of transaction because the config could be changed in the middle of tx)
+            OcppLockingTx.reset();
+        } else if (transaction && transaction != OcppLockingTx) {
+            // Another Tx has already started
+            OcppLockingTx.reset();
+        } else if (digitalRead(PIN_LOCK_IN) == lock2 && !OcppLockingTx->isActive()) {
+            // Connector is has been unlocked and LockingTx has already run
+            OcppLockingTx.reset();
+        } // There may be further edge cases
+    }
+
+    OcppForcesLock = false;
+
+    if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
+            (OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V)) { // Connector plugged
+        OcppForcesLock = true;
+    }
+
+    if (OcppLockingTx && OcppLockingTx->getStartSync().isRequested()) { // LockingTx goes beyond tx completion
+        OcppForcesLock = true;
+    }
+
+}
+#endif //ENABLE_OCPP
 
 
 void setup() {
@@ -5169,7 +5809,7 @@ void setup() {
     // Uart 0 debug/program port
     Serial.begin(115200);
     while (!Serial);
-    _LOG_A("\nSmartEVSE v3 powerup\n");
+    _LOG_A("SmartEVSE v3 powerup\n");
 
     // configure SPI connection to LCD
     // only the SPI_SCK and SPI_MOSI pins are used
@@ -5248,11 +5888,11 @@ void setup() {
     //Check type of calibration value used to characterize ADC
     _LOG_A("Checking eFuse Vref settings: ");
     if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
-        _LOG_A("OK\n");
+        _LOG_A_NO_FUNC("OK\n");
     } else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
-        _LOG_A("Two Point\n");
+        _LOG_A_NO_FUNC("Two Point\n");
     } else {
-        _LOG_A("not programmed!!!\n");
+        _LOG_A_NO_FUNC("not programmed!!!\n");
     }
     
     // We might need some sort of authentication in the future.
@@ -5282,8 +5922,12 @@ void setup() {
     read_settings();                                                            // initialize with default data when starting for the first time
     validate_settings();
     ReadRFIDlist();                                                             // Read all stored RFID's from storage
-    _LOG_A("APpassword: %s\n",APpassword.c_str());
 
+#if LOG_LEVEL >= 1
+    _LOG_A("APpassword: %s\n",APpassword.c_str());
+#else
+    Serial.printf("APpassword: %s\n",APpassword.c_str());
+#endif
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
         EVSEStates,     // Function that should be called
@@ -5338,61 +5982,138 @@ void setup() {
 
     CP_ON;           // CP signal ACTIVE
 
+    firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
+    //firmwareUpdateTimer = random(FW_UPDATE_DELAY, 120); // DINGO TODO debug max 2 minutes
+}
 
+// returns true if current and latest version can be detected correctly and if the latest version is newer then current
+// this means that ANY home compiled version, which has version format "11:20:03@Jun 17 2024", will NEVER be automatically updated!!
+// same goes for current version with an -RC extension: this will NEVER be automatically updated!
+// same goes for latest version with an -RC extension: this will NEVER be automatically updated! This situation should never occur since
+// we only update from the "stable" repo !!
+bool fwNeedsUpdate(char * version) {
+    // version NEEDS to be in the format: vx.y.z[-RCa] where x, y, z, a are digits, multiple digits are allowed.
+    // valid versions are v3.6.10   v3.17.0-RC13
+    int latest_major, latest_minor, latest_patch, latest_rc, cur_major, cur_minor, cur_patch, cur_rc;
+    int hit = sscanf(version, "v%i.%i.%i-RC%i", &latest_major, &latest_minor, &latest_patch, &latest_rc);
+    _LOG_A("Firmware version detection hit=%i, LATEST version detected=v%i.%i.%i-RC%i.\n", hit, latest_major, latest_minor, latest_patch, latest_rc);
+    int hit2 = sscanf(VERSION, "v%i.%i.%i-RC%i", &cur_major, &cur_minor, &cur_patch, &cur_rc);
+    _LOG_A("Firmware version detection hit=%i, CURRENT version detected=v%i.%i.%i-RC%i.\n", hit2, cur_major, cur_minor, cur_patch, cur_rc);
+    if (hit != 3 || hit2 != 3)                                                  // we couldnt detect simple vx.y.z version nrs, either current or latest
+        return false;
+    if (cur_major > latest_major)
+        return false;
+    if (cur_major < latest_major)
+        return true;
+    if (cur_major == latest_major) {
+        if (cur_minor > latest_minor)
+            return false;
+        if (cur_minor < latest_minor)
+            return true;
+        if (cur_minor == latest_minor)
+            return (cur_patch < latest_patch);
+    }
+    return false;
 }
 
 void loop() {
-    //this loop is for non-time critical stuff that needs to run approx 1 / second
-    if (WiFi.isConnected())
-        mg_mgr_poll(&mgr, 1000);
-    else
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    getLocalTime(&timeinfo, 1000U);
-    if (!LocalTimeSet && WIFImode == 1) {
-        _LOG_A("Time not synced with NTP yet.\n");
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck >= 1000) {
+        lastCheck = millis();
+        //this block is for non-time critical stuff that needs to run approx 1 / second
+        getLocalTime(&timeinfo, 1000U);
+        if (!LocalTimeSet && WIFImode == 1) {
+            _LOG_A("Time not synced with NTP yet.\n");
+        }
+
+        // a reboot is requested, but we kindly wait until no EV connected
+        if (shouldReboot && State == STATE_A) {                                 //slaves in STATE_C continue charging when Master reboots
+            delay(5000);                                                        //give user some time to read any message on the webserver
+            ESP.restart();
+        }
+
+        // TODO move this to a once a minute loop?
+        if (DelayedStartTime.epoch2 && LocalTimeSet) {
+            // Compare the times
+            time_t now = time(nullptr);             //get current local time
+            DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            if (DelayedStartTime.diff > 0) {
+                if (Access_bit != 0 && (DelayedStopTime.epoch2 == 0 || DelayedStopTime.epoch2 > DelayedStartTime.epoch2))
+                    setAccess(0);                         //switch to OFF, we are Delayed Charging
+            }
+            else {
+                //starttime is in the past so we are NOT Delayed Charging, or we are Delayed Charging but the starttime has passed!
+                if (DelayedRepeat == 1)
+                    DelayedStartTime.epoch2 += 24 * 3600;                           //add 24 hours so we now have a new starttime
+                else
+                    DelayedStartTime.epoch2 = DELAYEDSTARTTIME;
+                setAccess(1);
+            }
+        }
+        //only update StopTime.diff if starttime has already passed
+        if (DelayedStopTime.epoch2 && LocalTimeSet) {
+            // Compare the times
+            time_t now = time(nullptr);             //get current local time
+            DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            if (DelayedStopTime.diff <= 0) {
+                //DelayedStopTime has passed
+                if (DelayedRepeat == 1)                                         //we are on a daily repetition schedule
+                    DelayedStopTime.epoch2 += 24 * 3600;                        //add 24 hours so we now have a new starttime
+                else
+                    DelayedStopTime.epoch2 = DELAYEDSTOPTIME;
+                setAccess(0);                         //switch to OFF
+            }
+        }
+
+        //_LOG_A("DINGO: firmwareUpdateTimer just before decrement=%i.\n", firmwareUpdateTimer);
+        if (AutoUpdate && !shouldReboot) {                                      // we don't want to autoupdate if we are on the verge of rebooting
+            firmwareUpdateTimer--;
+            char version[32];
+            if (firmwareUpdateTimer == FW_UPDATE_DELAY) {                       // we now have to check for a new version
+                //timer is not reset, proceeds to 65535 which is approx 18h from now
+                if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) {
+                    if (fwNeedsUpdate(version)) {
+                        _LOG_A("Firmware reports it needs updating, will update in %i seconds\n", FW_UPDATE_DELAY);
+                        asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+                    } else {
+                        _LOG_A("Firmware reports it needs NO update!\n");
+                        firmwareUpdateTimer = random(FW_UPDATE_DELAY + 36000, 0xffff);  // at least 10 hours in between checks
+                    }
+                }
+            } else if (firmwareUpdateTimer == 0) {                              // time to download & flash!
+                if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) { // recheck version info
+                    if (fwNeedsUpdate(version)) {
+                        _LOG_A("Firmware reports it needs updating, starting update NOW!\n");
+                        asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
+                        RunFirmwareUpdate();
+                    } else
+                        _LOG_A("Firmware changed its mind, NOW it reports it needs NO update!\n");
+                        firmwareUpdateTimer = random(FW_UPDATE_DELAY + 36000, 0xffff);  // at least 10 hours in between checks
+                }
+            }
+        } // AutoUpdate
+        /////end of non-time critical stuff
     }
 
-    if (shouldReboot) {
-        delay(1000);
-        ESP.restart();
+    mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
+
+    //OCPP lifecycle management
+#if ENABLE_OCPP
+    if (OcppMode && !getOcppContext()) {
+        ocppInit();
+    } else if (!OcppMode && getOcppContext()) {
+        ocppDeinit();
     }
+
+    if (OcppMode) {
+        ocppLoop();
+    }
+#endif //ENABLE_OCPP
 
 #ifndef DEBUG_DISABLED
     // Remote debug over WiFi
     Debug.handle();
 #endif
 
-    // TODO move this to a once a minute loop?
-    if (DelayedStartTime.epoch2 && LocalTimeSet) {
-        // Compare the times
-        time_t now = time(nullptr);             //get current local time
-        DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
-        if (DelayedStartTime.diff > 0) {
-            if (Access_bit != 0 && (DelayedStopTime.epoch2 == 0 || DelayedStopTime.epoch2 > DelayedStartTime.epoch2))
-                setAccess(0);                         //switch to OFF, we are Delayed Charging
-        }
-        else {
-            //starttime is in the past so we are NOT Delayed Charging, or we are Delayed Charging but the starttime has passed!
-            if (DelayedRepeat == 1)
-                DelayedStartTime.epoch2 += 24 * 3600;                           //add 24 hours so we now have a new starttime
-            else
-                DelayedStartTime.epoch2 = DELAYEDSTARTTIME;
-            setAccess(1);
-        }
-    }
-    //only update StopTime.diff if starttime has already passed
-    if (DelayedStopTime.epoch2 && LocalTimeSet) {
-        // Compare the times
-        time_t now = time(nullptr);             //get current local time
-        DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
-        if (DelayedStopTime.diff <= 0) {
-            //DelayedStopTime has passed
-            if (DelayedRepeat == 1)                                         //we are on a daily repetition schedule
-                DelayedStopTime.epoch2 += 24 * 3600;                        //add 24 hours so we now have a new starttime
-            else
-                DelayedStopTime.epoch2 = DELAYEDSTOPTIME;
-            setAccess(0);                         //switch to OFF
-        }
-    }
 }

@@ -60,6 +60,10 @@
 #define MQTT 1  // Uncomment or set to 0 to disable MQTT support in code
 #endif
 
+#ifndef ENABLE_OCPP
+#define ENABLE_OCPP 0
+#endif
+
 #ifndef MODEM
 //the wifi-debugger is available by telnetting to your SmartEVSE device
 #define MODEM 0  //0 = no modem 1 = modem
@@ -107,39 +111,46 @@
 extern RemoteDebug Debug;
 #endif
 
+#define EVSE_LOG_FORMAT(letter, format) "[%6u][" #letter "][%s:%u] %s(): " format , (uint32_t) (esp_timer_get_time() / 1000ULL), pathToFileName(__FILE__), __LINE__, __FUNCTION__
+
 #if DBG == 2
 #define DEBUG_DISABLED 1
-#define _LOG_W( ... ) log_w ( __VA_ARGS__ )
-#define _LOG_I( ... ) log_i ( __VA_ARGS__ )
-#define _LOG_D( ... ) log_d ( __VA_ARGS__ )
-#define _LOG_V( ... ) log_v ( __VA_ARGS__ )
-#define _LOG_A( ... ) log_n ( __VA_ARGS__ )
-#if LOG_LEVEL >= 1
-#define _LOG_W_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
-#else 
-#define _LOG_W_NO_FUNC( ... )
-#endif
-#if LOG_LEVEL >= 2
-#define _LOG_I_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
-#else 
-#define _LOG_I_NO_FUNC( ... )
-#endif
-#if LOG_LEVEL >= 3
-#define _LOG_D_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
-#else 
-#define _LOG_D_NO_FUNC( ... )
-#endif
-#if LOG_LEVEL >= 4
-#define _LOG_V_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
-#else 
-#define _LOG_V_NO_FUNC( ... )
-#endif
-#if LOG_LEVEL >= 5
+#if LOG_LEVEL >= 1  // Errors
+#define _LOG_A(fmt, ... ) Serial.printf(EVSE_LOG_FORMAT(E, fmt), ##__VA_ARGS__)
 #define _LOG_A_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
 #else
+#define _LOG_A( ... )
 #define _LOG_A_NO_FUNC( ... )
 #endif
+#if LOG_LEVEL >= 2  // Warnings
+#define _LOG_W(fmt, ... ) Serial.printf(EVSE_LOG_FORMAT(W, fmt), ##__VA_ARGS__)
+#define _LOG_W_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
+#else
+#define _LOG_W( ... ) 
+#define _LOG_W_NO_FUNC( ... )
 #endif
+#if LOG_LEVEL >= 3  // Info
+#define _LOG_I(fmt, ... ) Serial.printf(EVSE_LOG_FORMAT(I, fmt), ##__VA_ARGS__)
+#define _LOG_I_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
+#else
+#define _LOG_I( ... )
+#define _LOG_I_NO_FUNC( ... )
+#endif
+#if LOG_LEVEL >= 4  // Debug
+#define _LOG_D(fmt, ... ) Serial.printf(EVSE_LOG_FORMAT(D, fmt), ##__VA_ARGS__)
+#define _LOG_D_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
+#else
+#define _LOG_D( ... ) 
+#define _LOG_D_NO_FUNC( ... )
+#endif
+#if LOG_LEVEL >= 5  // Verbose
+#define _LOG_V(fmt, ... ) Serial.printf(EVSE_LOG_FORMAT(V, fmt), ##__VA_ARGS__)
+#define _LOG_V_NO_FUNC( ... ) Serial.printf ( __VA_ARGS__ )
+#else
+#define _LOG_V( ... ) 
+#define _LOG_V_NO_FUNC( ... )
+#endif
+#endif  // if DBG == 2
 
 // Pin definitions left side ESP32
 #define PIN_TEMP 36
@@ -237,8 +248,8 @@ extern RemoteDebug Debug;
 #define DELAYEDSTARTTIME 0                                                             // The default StartTime for delayed charged, 0 = not delaying
 #define DELAYEDSTOPTIME 0                                                       // The default StopTime for delayed charged, 0 = not stopping
 #define SOLARSTARTTIME 40                                                       // Seconds to keep chargecurrent at 6A
-#define PUBLIC_KEY "5c7a848c3445793002487608a65fa259cefb16790f7c2f4a1d10af702393f7db\0";
-
+#define OCPP_MODE 0
+#define AUTOUPDATE 0                                                            // default for Automatic Firmware Update: 0 = disabled, 1 = enabled
 
 // Mode settings
 #define MODE_NORMAL 0
@@ -393,12 +404,20 @@ extern RemoteDebug Debug;
 #define MENU_EMCUSTOM_EDIVISOR 32                                               // 0x0217: Divisor for Energy (kWh) of custom electric meter (10^x)
 #define MENU_EMCUSTOM_READMAX 33                                                // 0x0218: Maximum register read (ToDo)
 #define MENU_WIFI 34                                                            // 0x0219: WiFi mode
-#define MENU_C2 35
-#define MENU_MAX_TEMP 36
-#define MENU_SUMMAINS 37
-#define MENU_OFF 38                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 39                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 40
+#define MENU_AUTOUPDATE 35
+#define MENU_C2 36
+#define MENU_MAX_TEMP 37
+#define MENU_SUMMAINS 38
+#if ENABLE_OCPP == 0
+#define MENU_OFF 39                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 40                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 41
+#else
+#define MENU_OCPP 39                                                            // OCPP Disable / Enable / Further modes
+#define MENU_OFF 40                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 41                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 42
+#endif
 
 #define MENU_STATE 50
 
@@ -501,9 +520,7 @@ extern uint32_t serialnr;
 extern uint8_t MenuItems[MENU_EXIT];
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
-enum Modem_t { NOTPRESENT, EXPERIMENT };
 const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
-const static char StrModem[][12] = { "Not present", "Experiment" };
 enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
 extern Single_Phase_t Switching_To_Single_Phase;
 extern uint8_t Nr_Of_Phases_Charging;
@@ -556,9 +573,13 @@ const struct {
     {"ENE DIVI","Divisor for Energy (kWh) of custom electric meter",  0, 7, EMCUSTOM_EDIVISOR},
     {"READ MAX","Max register read at once of custom electric meter", 3, 255, 3},
     {"WIFI",    "Connect to WiFi access point",                       0, 2, WIFI_MODE},
+    {"AUTOUPDAT","Automatic Firmware Update",                         0, 1, AUTOUPDATE},
     {"CONTACT 2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
     {"SUM MAINS","Capacity Rate limit on sum of MAINS Current (A)",    10, 600, MAX_SUMMAINS},
+#if ENABLE_OCPP
+    {"OCPP",    "Select OCPP mode",                                   0, 1, OCPP_MODE},
+#endif
     {"", "Hold 2 sec to stop charging", 0, 0, 0},
     {"", "Hold 2 sec to start charging", 0, 0, 0},
 
@@ -609,5 +630,9 @@ uint16_t getItemValue(uint8_t nav);
 void ConfigureModbusMode(uint8_t newmode);
 
 void handleWIFImode(void);
+
+#if ENABLE_OCPP
+void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
+#endif //ENABLE_OCPP
 
 #endif
