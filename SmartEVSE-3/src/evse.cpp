@@ -1231,12 +1231,12 @@ void CalcBalancedCurrent(char mod) {
                                                                                 // TODO not sure if Nr_Of_Phases_Charging should be involved here
         RestOfIsetBalancedNotAllocatedYet = IsetBalanced;                       // convert to Amps
 
+           // not even enough power to go MinCurrent on all EVSEs on STATE_C
         if (NoCurrent) {                                                        // we do not have enough current to feed all ActiveEVSE's,
-        //if (NoCurrent && IsetBalanced >= MinCurrent * 10) {                     // we do not have enough current to feed all ActiveEVSE's,
                                                                                 // so we have to prioritize.
             int NrOfScheduledEVSES = 0;                                             // current priority: master = highest, then node1, then node2 etc.
             for (n = 0; n < NR_EVSES; n++) {
-                if (RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
+                if (BalancedState[n] == STATE_C && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
                     Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
                     NrOfScheduledEVSES++;
                     RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
@@ -1254,8 +1254,11 @@ void CalcBalancedCurrent(char mod) {
                     Balanced[n] += Average;
                 }
             }
+            if (Balanced[0] == 0)
+                Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
         }
        else {
+           // old distribution routine for all other situations
 
         // Calculate average current per EVSE
         n = 0;
@@ -1304,7 +1307,7 @@ void CalcBalancedCurrent(char mod) {
             n++;
         }
       } //else NoCurrent
-
+     } //else ActiveMax
     } else { // no ActiveEVSEs so reset all timers
         LOG_D("Checkpoint c: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
         SolarStopTimer = 0;
