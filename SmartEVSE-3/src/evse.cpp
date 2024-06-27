@@ -1226,9 +1226,18 @@ void CalcBalancedCurrent(char mod) {
         }
 
         // ############### we now distribute the calculated IsetBalanced over the EVSEs  #################
-
-        if (IsetBalanced > ActiveMax) IsetBalanced = ActiveMax;                 // limit to total maximum Amps (of all active EVSE's)
+           // enough power to go full throttle on all EVSEs on STATE_C
+        if (IsetBalanced > ActiveMax) {
+            IsetBalanced = ActiveMax;                                           // limit to total maximum Amps (of all active EVSE's)
                                                                                 // TODO not sure if Nr_Of_Phases_Charging should be involved here
+            // so we have the luxury of going full power! In a well designed configuration we will be here most of the time!
+            RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
+            for (n = 0; n < NR_EVSES; n++) {
+                if (BalancedState[n] == STATE_C) {
+                    Balanced[n] = BalancedMax[n];
+                }
+            }
+        } else { //ActiveMax
         RestOfIsetBalancedNotAllocatedYet = IsetBalanced;                       // convert to Amps
 
            // not even enough power to go MinCurrent on all EVSEs on STATE_C
