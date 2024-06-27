@@ -1024,7 +1024,7 @@ void Set_Nr_of_Phases_Charging(void) {
 // mod =1 we have a new EVSE requesting to start charging.
 // only runs on the Master or when loadbalancing Disabled
 void CalcBalancedCurrent(char mod) {
-    int Average, MaxBalanced, Idifference, Baseload_EV;
+    int Average, RestOfIsetBalancedNotAllocatedYet, Idifference, Baseload_EV;
     int ActiveEVSE = 0;
     signed int IsumImport;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
@@ -1229,12 +1229,38 @@ void CalcBalancedCurrent(char mod) {
 
         if (IsetBalanced > ActiveMax) IsetBalanced = ActiveMax;                 // limit to total maximum Amps (of all active EVSE's)
                                                                                 // TODO not sure if Nr_Of_Phases_Charging should be involved here
-        MaxBalanced = IsetBalanced;                                             // convert to Amps
+        RestOfIsetBalancedNotAllocatedYet = IsetBalanced;                       // convert to Amps
+
+        if (NoCurrent) {                                                        // we do not have enough current to feed all ActiveEVSE's,
+        //if (NoCurrent && IsetBalanced >= MinCurrent * 10) {                     // we do not have enough current to feed all ActiveEVSE's,
+                                                                                // so we have to prioritize.
+            int NrOfScheduledEVSES = 0;                                             // current priority: master = highest, then node1, then node2 etc.
+            for (n = 0; n < NR_EVSES; n++) {
+                if (RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
+                    Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
+                    NrOfScheduledEVSES++;
+                    RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
+                    NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
+                } else {                                                        // not enough current to give to an ActiveEVSE
+                    Balanced[n] = 0;                                            // this flags the EVSE that it is not supposed to charge
+                    break;
+                }
+            }
+            // now we have some EVSE's with a MinCurrent set, and the reset set at 0
+            // divide the remaining current over the ActiveEVSE's
+            if (NrOfScheduledEVSES) {                                           // prevent divide by zero
+                Average = RestOfIsetBalancedNotAllocatedYet / NrOfScheduledEVSES;
+                for (n = 0; n < NrOfScheduledEVSES; n++) {
+                    Balanced[n] += Average;
+                }
+            }
+        }
+       else {
 
         // Calculate average current per EVSE
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {
-            Average = MaxBalanced / ActiveEVSE;                                 // Average current for all active EVSE's
+            Average = RestOfIsetBalancedNotAllocatedYet / ActiveEVSE;                                 // Average current for all active EVSE's
 
             // Active EVSE, and current not yet calculated?
             if ((BalancedState[n] == STATE_C) && (!CurrentSet[n])) {            
@@ -1245,7 +1271,7 @@ void CalcBalancedCurrent(char mod) {
                     _LOG_V("[S]Node %u = %u.%u A", n, Balanced[n]/10, Balanced[n]%10);
                     CurrentSet[n] = 1;                                          // mark this EVSE as set.
                     ActiveEVSE--;                                               // decrease counter of active EVSE's
-                    MaxBalanced -= Balanced[n];                                 // Update total current to new (lower) value
+                    RestOfIsetBalancedNotAllocatedYet -= Balanced[n];                                 // Update total current to new (lower) value
                     IsetBalanced = TotalCurrent;
                     n = 0;                                                      // reset to recheck all EVSE's
                     continue;                                                   // ensure the loop restarts from the beginning
@@ -1256,7 +1282,7 @@ void CalcBalancedCurrent(char mod) {
                     _LOG_V("[L]Node %u = %u.%u A", n, Balanced[n]/10, Balanced[n]%10);
                     CurrentSet[n] = 1;                                          // mark this EVSE as set.
                     ActiveEVSE--;                                               // decrease counter of active EVSE's
-                    MaxBalanced -= Balanced[n];                                 // Update total current to new (lower) value
+                    RestOfIsetBalancedNotAllocatedYet -= Balanced[n];                                 // Update total current to new (lower) value
                     n = 0;                                                      // reset to recheck all EVSE's
                     continue;                                                   // ensure the loop restarts from the beginning
                 }
@@ -1264,21 +1290,20 @@ void CalcBalancedCurrent(char mod) {
             }
             n++;
         }
-
         // All EVSE's which had a Max current lower then the average are set.
         // Now calculate the current for the EVSE's which had a higher Max current
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {                                    // Check for EVSE's that are not set yet
             if ((BalancedState[n] == STATE_C) && (!CurrentSet[n])) {            // Active EVSE, and current not yet calculated?
-                Balanced[n] = MaxBalanced / ActiveEVSE;                         // Set current to Average
+                Balanced[n] = RestOfIsetBalancedNotAllocatedYet / ActiveEVSE;                         // Set current to Average
                 _LOG_V("[H]Node %u = %u.%u A.\n", n, Balanced[n]/10, Balanced[n]%10);
                 CurrentSet[n] = 1;                                              // mark this EVSE as set.
                 ActiveEVSE--;                                                   // decrease counter of active EVSE's
-                MaxBalanced -= Balanced[n];                                     // Update total current to new (lower) value
+                RestOfIsetBalancedNotAllocatedYet -= Balanced[n];                                     // Update total current to new (lower) value
             }                                                                   //TODO since the average has risen the other EVSE's should be checked for exceeding their MAX's too!
             n++;
         }
-
+      } //else NoCurrent
 
     } else { // no ActiveEVSEs so reset all timers
         LOG_D("Checkpoint c: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
@@ -3583,7 +3608,7 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
                 // 0x0020: Balance currents
                 if (MB.Register == 0x0020 && LoadBl > 1) {      // Message for Node(s)
                     Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
-                    if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
+                    if (Balanced[0] == 0) setStatePowerUnavailable();
                     else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
                     MainsMeterTimeout = COMM_TIMEOUT;                     // reset 10 second timeout
                     _LOG_V("Broadcast received, Node %.1f A, MainsMeter Irms ", (float) Balanced[0]/10);
