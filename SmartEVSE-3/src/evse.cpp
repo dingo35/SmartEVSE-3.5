@@ -1026,13 +1026,19 @@ int HandoutCurrent(int currentToHandout) {
     // divide the remaining current over the ActiveEVSE's
     int Candidates = 0;
     for (int n = 0; n < NR_EVSES; n++)
-        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0) // we only handout to candidate who already have MinCurrent or more
-            Candidates++;
+        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0) {// we only handout to candidate who already have MinCurrent or more
+            if ((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)) { // slave is running in solar mode in solarstarttime period, doesnt need handouts
+                 //IsetBalanced = TotalCurrent;  // TODO I don't understand this line
+                _LOG_V("[S]Node %u = %u.%u A", n, Balanced[n]/10, Balanced[n]%10);
+            } else {
+             Candidates++;
+            }
+        }
     if (!Candidates) return 0;                                                  // all candidates are satisfied
     int Average = currentToHandout / Candidates;
     if (Average < 1) return 0;                                                  // no current anymore to handout
     for (int n = 0; n < NR_EVSES; n++) {
-        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0) {
+        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0 && !(((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)))) {
             Balanced[n] += Average;
             if (Balanced[n] > BalancedMax[n]) {
                 currentToHandout -= (BalancedMax[n] - Balanced[n] + Average);
@@ -1253,40 +1259,27 @@ void CalcBalancedCurrent(char mod) {
         }
 
         // ############### we now distribute the calculated IsetBalanced over the EVSEs  #################
-        if (IsetBalanced > ActiveMax) {
-            // enough power to go full throttle on all EVSEs on STATE_C
-            IsetBalanced = ActiveMax;                                           // limit to total maximum Amps (of all active EVSE's)
-            // so we have the luxury of going full power! In a well designed configuration we will be here most of the time!
-            // dont even have to keep track of RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
-            for (n = 0; n < NR_EVSES; n++) {
-                if (BalancedState[n] == STATE_C) {
-                    Balanced[n] = BalancedMax[n];
-                }
+        if (IsetBalanced > ActiveMax)
+            IsetBalanced = ActiveMax;
+
+        RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
+        for (n = 0; n < NR_EVSES; n++) {
+            if (BalancedState[n] == STATE_C && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
+                Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
+                RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
+                NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
+            } else {                                                        // not enough current to give to an ActiveEVSE
+                Balanced[n] = 0;                                            // this flags the EVSE that it is not supposed to charge
+                break;
             }
-        } else {
-            // not full throttle, we have to handout ...
-            RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
-            for (n = 0; n < NR_EVSES; n++) {
-                if ((BalancedState[n] == STATE_C && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) || 
-                        ((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME))) { 
-                    if ((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)) {
-                         IsetBalanced = TotalCurrent;                           // TODO I don't understand this line; it 
-                        _LOG_V("[S]Node %u = %u.%u A", n, Balanced[n]/10, Balanced[n]%10);
-                    }
-                    Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
-                    RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
-                    NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
-                } else {                                                        // not enough current to give to an ActiveEVSE
-                    Balanced[n] = 0;                                            // this flags the EVSE that it is not supposed to charge
-                    break;
-                }
-            }
-            // now we have some EVSE's in State C with a MinCurrent set, and the rest set at 0
-            // divide the remaining current over the ActiveEVSE's
-            HandoutCurrent(RestOfIsetBalancedNotAllocatedYet);
-            if (Balanced[0] == 0)
-                Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
-        } //else ActiveMax
+        }
+        // now we have some EVSE's in State C with a MinCurrent set, and the rest set at 0
+        // divide the remaining current over the ActiveEVSE's
+        int rest = HandoutCurrent(RestOfIsetBalancedNotAllocatedYet);
+        if (rest)
+            _LOG_A("DINGO: did not handout %i dA of current!\n", rest);
+        if (Balanced[0] == 0)
+            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
     } else { // no ActiveEVSEs so reset all timers
         LOG_D("Checkpoint c: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
         SolarStopTimer = 0;
