@@ -1264,6 +1264,7 @@ void CalcBalancedCurrent(char mod) {
 
         RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
         for (n = 0; n < NR_EVSES; n++) {
+            //TODO if ((BalancedState[n] == STATE_C || BalancedState[n] == STATE_B1 || BalancedState[n] == STATE_C1) && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
             if (BalancedState[n] == STATE_C && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
                 Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
                 RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
