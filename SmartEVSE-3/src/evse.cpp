@@ -1253,23 +1253,32 @@ void CalcBalancedCurrent(char mod) {
 
         RestOfIsetBalancedNotAllocatedYet = IsetBalanced;
         for (n = 0; n < NR_EVSES; n++) {
-            //TODO if ((BalancedState[n] == STATE_C || BalancedState[n] == STATE_B1 || BalancedState[n] == STATE_C1) && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
             if (BalancedState[n] == STATE_C && RestOfIsetBalancedNotAllocatedYet > MinCurrent * 10) {
                 Balanced[n] = MinCurrent * 10;                              // Set to MinCurrent
                 RestOfIsetBalancedNotAllocatedYet -= Balanced[n];           // Update total current to new (lower) value
                 NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
             } else {                                                        // not enough current to give to an ActiveEVSE
                 Balanced[n] = 0;                                            // this flags the EVSE that it is not supposed to charge
-                break;
             }
         }
+
+        _LOG_V("Checkpoint 4a Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
+        if (LoadBl == 1) {
+            _LOG_D("Balance before handout: ");
+            for (n = 0; n < NR_EVSES; n++) {
+                _LOG_D_NO_FUNC("EVSE%u:%s(%.1fA) ", n, getStateName(BalancedState[n]), (float)Balanced[n]/10);
+            }
+            _LOG_D_NO_FUNC("\n");
+        }
+
         // now we have some EVSE's in State C with a MinCurrent set, and the rest set at 0
         // divide the remaining current over the ActiveEVSE's
         int rest = HandoutCurrent(RestOfIsetBalancedNotAllocatedYet);
-        if (rest)
+        if (rest) {
             _LOG_A("DINGO: did not handout %i dA of current!\n", rest);
-        if (Balanced[0] == 0)
-            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
+        }
+//        if (Balanced[0] == 0)
+//            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
     } else { // no ActiveEVSEs so reset all timers
         LOG_D("Checkpoint c: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
         SolarStopTimer = 0;
