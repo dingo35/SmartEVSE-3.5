@@ -319,6 +319,10 @@ MicroOcpp::MOcppMongooseClient *OcppWsClient;
 float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
 
 unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
+
+bool OcppDefinedTxNotification;
+MicroOcpp::TxNotification OcppTrackTxNotification;
+unsigned long OcppLastTxNotification;
 #endif //ENABLE_OCPP
 
 
@@ -5609,6 +5613,22 @@ void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
     OcppLastRfidUpdate = millis();
 }
 
+bool ocppIsConnectorPlugged() {
+    return OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V;
+}
+
+bool ocppHasTxNotification() {
+    return OcppDefinedTxNotification && millis() - OcppLastTxNotification <= 3000;
+}
+
+MicroOcpp::TxNotification ocppGetTxNotification() {
+    return OcppTrackTxNotification;
+}
+
+bool ocppLockingTxDefined() {
+    return OcppLockingTx != nullptr;
+}
+
 void ocppInit() {
 
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
@@ -5641,7 +5661,7 @@ void ocppInit() {
     });
 
     setConnectorPluggedInput([] () { //Input about if an EV is plugged to this EVSE
-        return OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V;
+        return ocppIsConnectorPlugged();
     });
 
     setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
@@ -5774,6 +5794,12 @@ void ocppInit() {
     setStopTxReadyInput([] () {
         // Stop value synchronization: block StopTransaction for 5 seconds to give the Modbus readings some time to come through
         return millis() - OcppStopReadingSyncTime >= 5000;
+    });
+
+    setTxNotificationOutput([] (MicroOcpp::Transaction*, MicroOcpp::TxNotification event) {
+        OcppDefinedTxNotification = true;
+        OcppTrackTxNotification = event;
+        OcppLastTxNotification = millis();
     });
 
     OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);

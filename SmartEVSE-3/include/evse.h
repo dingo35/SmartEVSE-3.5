@@ -64,6 +64,10 @@
 #define ENABLE_OCPP 0
 #endif
 
+#if ENABLE_OCPP
+#include <MicroOcpp/Model/ConnectorBase/Notification.h>
+#endif
+
 #ifndef MODEM
 //the wifi-debugger is available by telnetting to your SmartEVSE device
 #define MODEM 0  //0 = no modem 1 = modem
@@ -629,6 +633,12 @@ void handleWIFImode(void);
 
 #if ENABLE_OCPP
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
+bool ocppIsConnectorPlugged();
+
+bool ocppHasTxNotification();
+MicroOcpp::TxNotification ocppGetTxNotification();
+
+bool ocppLockingTxDefined();
 #endif //ENABLE_OCPP
 
 #endif
