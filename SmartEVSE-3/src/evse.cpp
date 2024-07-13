@@ -5907,6 +5907,9 @@ void ocppLoop() {
         if (OcppUnlockConnectorOnEVSideDisconnect->getBool() && !OcppLockingTx->isActive()) {
             // No LockingTx mode configured (still, keep LockingTx until end of transaction because the config could be changed in the middle of tx)
             OcppLockingTx.reset();
+        } else if (OcppLockingTx->isAborted()) {
+            // LockingTx hasn't successfully started
+            OcppLockingTx.reset();
         } else if (transaction && transaction != OcppLockingTx) {
             // Another Tx has already started
             OcppLockingTx.reset();
