@@ -454,6 +454,36 @@ void BlinkLed(void * parameter) {
                 BluePwm = 0;
             }
 
+#if ENABLE_OCPP
+        } else if (OcppMode && millis() - OcppLastRfidUpdate < 200) {
+            RedPwm = 128;
+            GreenPwm = 128;
+            BluePwm = 128;
+        } else if (OcppMode && millis() - OcppLastTxNotification < 1000 && OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized) {
+            RedPwm = 0;
+            GreenPwm = 255;
+            BluePwm = 0;
+        } else if (OcppMode && millis() - OcppLastTxNotification < 2000 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
+                                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
+                                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict)) {
+            RedPwm = 255;
+            GreenPwm = 0;
+            BluePwm = 0;
+        } else if (OcppMode && millis() - OcppLastTxNotification < 300 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
+                                                                           OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout)) {
+            RedPwm = 255;
+            GreenPwm = 0;
+            BluePwm = 0;
+        } else if (OcppMode && getChargePointStatus() == ChargePointStatus_Reserved) {
+            RedPwm = 196;
+            GreenPwm = 64;
+            BluePwm = 0;
+        } else if (OcppMode && (getChargePointStatus() == ChargePointStatus_Unavailable ||
+                                getChargePointStatus() == ChargePointStatus_Faulted)) {
+            RedPwm = 255;
+            GreenPwm = 0;
+            BluePwm = 0;
+#endif //ENABLE_OCPP
         } else if (Access_bit == 0 || State == STATE_MODEM_DENIED) {                                            // No Access, LEDs off
             RedPwm = 0;
             GreenPwm = 0;
