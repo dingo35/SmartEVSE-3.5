@@ -141,7 +141,7 @@ uint8_t MainsMeterAddress = MAINS_METER_ADDRESS;
 uint8_t Grid = GRID;                                                        // Type of Grid connected to Sensorbox (0:4Wire / 1:3Wire )
 uint8_t EVMeter = EV_METER;                                                 // Type of EV electric meter (0: Disabled / Constants EM_*)
 uint8_t EVMeterAddress = EV_METER_ADDRESS;
-uint8_t RFIDReader = RFID_READER;                                           // RFID Reader (0:Disabled / 1:Enabled / 2:Enable One / 3:Learn / 4:Delete / 5:Delete All)
+uint8_t RFIDReader = RFID_READER;                                           // RFID Reader (0:Disabled / 1:Enabled / 2:Enable One / 3:Learn / 4:Delete / 5:Delete All / 6: Remote via OCPP)
 #if FAKE_RFID
 uint8_t Show_RFID = 0;
 #endif
@@ -3009,7 +3009,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", String(OverrideCurrent), true, 0);
         MQTTclient.publish(MQTTprefix + "/Access", String(StrAccessBit[Access_bit]), true, 0);
         MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
-        if (RFIDReader) {
+        if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
             char buf[13];
             sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
@@ -4821,7 +4821,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         doc["evse"]["error"] = error;
         doc["evse"]["error_id"] = errorId;
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
-        if (RFIDReader) {
+        if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
             char buf[13];
             sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             doc["evse"]["rfid_lastread"] = buf;

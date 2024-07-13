@@ -800,7 +800,7 @@ const char * getMenuItemOption(uint8_t nav) {
     const static char StrGrid[2][10] = {"4Wire", "3Wire"};
     const static char StrEnabled[] = "Enabled";
     const static char StrExitMenu[] = "MENU";
-    const static char StrRFIDReader[6][10] = {"Disabled", "EnableAll", "EnableOne", "Learn", "Delete", "DeleteAll"};
+    const static char StrRFIDReader[7][10] = {"Disabled", "EnableAll", "EnableOne", "Learn", "Delete", "DeleteAll", "Rmt/OCPP"};
 #if ENABLE_OCPP
     const static char StrOcpp[2][10] = {"Disabled", "Enabled"};
 #endif
