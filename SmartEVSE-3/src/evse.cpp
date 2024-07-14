@@ -5238,8 +5238,8 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 // Apply changes in OcppWsClient
                 if (OcppWsClient) {
                     OcppWsClient->reloadConfigs();
-                    MicroOcpp::configuration_save();
                 }
+                MicroOcpp::configuration_save();
                 write_settings();
             }
         }
