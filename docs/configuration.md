@@ -97,10 +97,21 @@ RCMON   RCM14-03 Residual Current Monitor is plugged into connector P1
 
 RFID    use a RFID card reader to enable/disable access to the EVSE
         A maximum of 20 RFID cards can be stored.
-                <Disabled> / <Enabled> / <Learn> / <Delete> / <Delete All>
+  <Disabled>  RFID reader turned off
+  <EnableAll> Accept all learned cards for enabling/disabling the SmartEVSE
+  <EnableOne> Only allow a single (learned) card to be used for enabling/disabling the
+              SmartEVSE. In this mode the lock (if used) will lock the cable in the charging
+              socket, and the same card is used to unlock it again
+  <Learn>     Learn a new card and store it into the SmartEVSE. Make sure you stay in the
+              menu when learning cards. Present a card in front of the reader. "Card Stored"
+              will be shown on the LCD
+  <Delete>    Erase a previous learned card. Hold the card in front of the reader. "Card
+              Deleted" will be shown on the LCD once the card has been deleted
+  <DeleteAll> Erase all cards from the SmartEVSE. The cards will be erased once you exit
+              the menu of the SmartEVSE
   <Rmt/OCPP>  Authorize remotely over OCPP and bypass the SmartEVSE local RFID storage. For
               offline storage, use OCPP local lists. SmartEVSE sends RFID readings to the
-              OCPP server in this mode only.
+              OCPP server in this mode only
 
 WIFI          Enable wifi connection to your LAN
   <Disabled>  No wifi connection
