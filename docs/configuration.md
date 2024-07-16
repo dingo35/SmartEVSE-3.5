@@ -98,6 +98,9 @@ RCMON   RCM14-03 Residual Current Monitor is plugged into connector P1
 RFID    use a RFID card reader to enable/disable access to the EVSE
         A maximum of 20 RFID cards can be stored.
                 <Disabled> / <Enabled> / <Learn> / <Delete> / <Delete All>
+  <Rmt/OCPP>  Authorize remotely over OCPP and bypass the SmartEVSE local RFID storage. For
+              offline storage, use OCPP local lists. SmartEVSE sends RFID readings to the
+              OCPP server in this mode only.
 
 WIFI          Enable wifi connection to your LAN
   <Disabled>  No wifi connection
@@ -130,6 +133,15 @@ WIFI          Enable wifi connection to your LAN
               -wait for 120s ; then press enter on your serial terminal; you will be prompted for your WiFi
                network name and password.
   <Enabled>   Connect to your LAN via Wifi.
+
+OCPP          Enable OCPP
+              See the OCPP section in the SmartEVSE dashboard for setting up identifiers and configuring
+              the OCPP interface.
+  <Disabled>  No OCPP functionality including OCPP access control and load managment
+  <Enabled>   Connect to the OCPP server using the credentials set up in the SmartEVSE dashboard. To use
+              the RFID reader with OCPP, set the mode Rmt/OCPP in the RFID menu. Note that the other
+              RFID modes overrule the OCPP access control. OCPP SmartCharging requires the SmartEVSE
+              internal load balancing means to be turned off.
 
 AUTOUPDAT     (only appears when WIFI is Enabled):
               Automatic update of your firmware
