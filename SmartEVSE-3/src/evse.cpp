@@ -456,31 +456,37 @@ void BlinkLed(void * parameter) {
             }
 
 #if ENABLE_OCPP
-        } else if (OcppMode && millis() - OcppLastRfidUpdate < 200) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    millis() - OcppLastRfidUpdate < 200) {
             RedPwm = 128;
             GreenPwm = 128;
             BluePwm = 128;
-        } else if (OcppMode && millis() - OcppLastTxNotification < 1000 && OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    millis() - OcppLastTxNotification < 1000 && OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized) {
             RedPwm = 0;
             GreenPwm = 255;
             BluePwm = 0;
-        } else if (OcppMode && millis() - OcppLastTxNotification < 2000 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
-                                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
-                                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict)) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    millis() - OcppLastTxNotification < 2000 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
+                                                                 OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
+                                                                 OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict)) {
             RedPwm = 255;
             GreenPwm = 0;
             BluePwm = 0;
-        } else if (OcppMode && millis() - OcppLastTxNotification < 300 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
-                                                                           OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout)) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    millis() - OcppLastTxNotification < 300 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
+                                                                OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout)) {
             RedPwm = 255;
             GreenPwm = 0;
             BluePwm = 0;
-        } else if (OcppMode && getChargePointStatus() == ChargePointStatus_Reserved) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    getChargePointStatus() == ChargePointStatus_Reserved) {
             RedPwm = 196;
             GreenPwm = 64;
             BluePwm = 0;
-        } else if (OcppMode && (getChargePointStatus() == ChargePointStatus_Unavailable ||
-                                getChargePointStatus() == ChargePointStatus_Faulted)) {
+        } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
+                    (getChargePointStatus() == ChargePointStatus_Unavailable ||
+                     getChargePointStatus() == ChargePointStatus_Faulted)) {
             RedPwm = 255;
             GreenPwm = 0;
             BluePwm = 0;
@@ -5879,6 +5885,7 @@ void ocppDeinit() {
     }
 
     OcppTrackPermitsCharge = false;
+    OcppTrackAccessBit = false;
     OcppTrackCPvoltage = PILOT_NOK;
     OcppCurrentLimit = -1.f;
 
