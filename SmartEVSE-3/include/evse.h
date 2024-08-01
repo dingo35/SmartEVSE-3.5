@@ -407,11 +407,11 @@ extern RemoteDebug Debug;
 #define MENU_MAX_TEMP 37
 #define MENU_SUMMAINS 38
 #define MENU_SUMMAINSTIME 39
-#define MENU_OFF 40                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 41                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 42
+#define MENU_PRIO 40
+#define MENU_OFF 41                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 42                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 43
 
-#define MENU_STATE 50
 
 #define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
 #define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
@@ -501,6 +501,8 @@ const static char StrEnableC2[][12] = { "Not present", "Always Off", "Solar Off"
 enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
 extern Single_Phase_t Switching_To_Single_Phase;
 extern uint8_t Nr_Of_Phases_Charging;
+enum PrioStrat_t { NODENR, FIRSTCONN, LASTCONN };
+const static char StrPrioStrat[][11] = { "NodeNr", "First Conn", "Last Conn" };
 
 const struct {
     char LCD[10];
@@ -555,6 +557,7 @@ const struct {
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
     {"CAPACITY","Capacity Rate limit on sum of MAINS Current (A)",    0, 600, MAX_SUMMAINS},
     {"CAP STOP","Stop Capacity Rate limit charging after X minutes",    0, 60, MAX_SUMMAINSTIME},
+    {"PRIORITY", "Priority between nodes when sharing power",         NODENR, LASTCONN, NODENR},
     {"", "Hold 2 sec to stop charging", 0, 0, 0},
     {"", "Hold 2 sec to start charging", 0, 0, 0},
 

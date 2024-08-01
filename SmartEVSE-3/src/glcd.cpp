@@ -909,6 +909,8 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_MAX_TEMP:
             sprintf(Str, "%2u C", value);
             return Str;
+        case MENU_PRIO:
+            return StrPrioStrat[value];
         case MENU_C2:
             return StrEnableC2[value];
         case MENU_CONFIG:
@@ -1054,6 +1056,8 @@ uint8_t getMenuItems (void) {
         }
     }
     MenuItems[m++] = MENU_MAX;                                                  // Max Charge current (A)
+    if (LoadBl == 1)
+        MenuItems[m++] = MENU_PRIO;                                             // Priority strategy when handing out scarce current....
     if (LoadBl == 1 || (LoadBl == 0 && Mode != MODE_NORMAL && EVMeter.Type)) {  // ? Load balancing Master?
                                                                                 // Also, when not in Normal Mode and that EV meter is present, MaxCircuit will limit
                                                                                 // the total current (subpanel configuration)

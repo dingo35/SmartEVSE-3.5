@@ -37,6 +37,20 @@ PWR SHARE  ; formerly known as LOADBALANCING.
   <Master>	Set the first SmartEVSE to Master. Make sure there is only one Master.
   <Node1-7>	And the other SmartEVSE's to Node 1-7.
 
+PRIORITY (only appears when PWR SHARE set to <Master>)
+        Determines the priority when multiple EVSEs are asking for power and there is
+        not enough current to provide them all with MinCurrent.
+  <NodeNr>      Priority is given to already charging EV's, with highest priority to Master,
+                then to Node1, then to Node2 etc.
+  <FirstConn>   Priority is given to already charging EV's, with highest priority to the EV
+                that was first connected to its EVSE.
+                The thought is: "First come, first serve"
+  <LastConn>    Priority is given to already charging EV's, with highest priority to the EV
+                that was last connected to its EVSE.
+                The thought is: the EV that is connected the longest, has already the most
+                charge; a charge from 5% -> 15% is more valuable to that EV
+                than a charge from 80% -> 90% .
+
 MAINSMET Set type of MAINS meter (only appears in Smart or Solar mode):
   <Disabled>    No MAINS meter connected; only Normal mode possible
   <Sensorbox>   the Sensorbox will send measurement data to the SmartEVSE
