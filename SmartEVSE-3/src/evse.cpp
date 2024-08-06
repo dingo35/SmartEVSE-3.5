@@ -1328,7 +1328,7 @@ void CalcBalancedCurrent(char mod) {
         // divide the remaining current over the ActiveEVSE's
         int rest = HandoutCurrent(RestOfIsetBalancedNotAllocatedYet);
         if (rest) {
-            _LOG_A("DINGO: did not handout %i dA of current!\n", rest);
+            _LOG_A("WARNING: did not handout %i dA of current!\n", rest);
         }
 //        if (Balanced[0] == 0)
 //            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
