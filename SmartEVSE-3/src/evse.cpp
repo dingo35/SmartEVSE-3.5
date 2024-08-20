@@ -1226,7 +1226,6 @@ void CalcBalancedCurrent(char mod) {
 
             // ############### shortage of power  #################
 
-            IsetBalanced = ActiveEVSE * MinCurrent * 10;                        // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
             //so now we have a shortage of power
             if (Mode == MODE_SOLAR) {
                 // ----------- Check to see if we have to continue charging on solar power alone ----------
@@ -1254,10 +1253,13 @@ void CalcBalancedCurrent(char mod) {
             if (LimitedByMaxSumMains && MaxSumMainsTime) {
                 if (MaxSumMainsTimer == 0)                                      // has expired, so set timer
                     MaxSumMainsTimer = MaxSumMainsTime * 60;
+                IsetBalanced = ActiveEVSE * MinCurrent * 10;                    // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
             } else {
                 if (!(Mode == MODE_SOLAR && SolarStopTimer)) {                  // in that case the SolarStopTimer in Timer1s loop will take care of no power
                     NoCurrent++;                                                    // Flag NoCurrent left
                     _LOG_I("No Current!!\n");
+                } else {
+                    IsetBalanced = ActiveEVSE * MinCurrent * 10;                        // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
                 }
             }
         } else {                                                                // we have enough current
