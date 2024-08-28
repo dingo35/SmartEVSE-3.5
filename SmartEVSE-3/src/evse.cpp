@@ -3117,7 +3117,7 @@ void mqttPublishData() {
 #endif
         if (EVMeter.Type) {
             MQTTclient.publish(MQTTprefix + "/EVChargePower", EVMeter.PowerMeasured, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVMeterEnergyCharged", EVMeter.EnergyCharged, true, 0);
+            MQTTclient.publish(MQTTprefix + "/EVEnergyCharged", EVMeter.EnergyCharged, true, 0);
             MQTTclient.publish(MQTTprefix + "/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
         }
         if (homeBatteryLastUpdate)
