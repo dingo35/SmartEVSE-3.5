@@ -1066,6 +1066,25 @@ int HandoutCurrent(int currentToHandout) {
     return HandoutCurrent(currentToHandout);
 }
 
+// checks if current is exceeding hard boundaries
+// returns true if exceding
+bool HardBoundariesExceeded(int16_t IsetBalanced, int Baseload, int Baseload_EV) {
+    // check for HARD shortage of power
+    bool hardShortage = false;
+    // guard MaxMains
+    if (MainsMeter.Type && Mode != MODE_NORMAL)
+        if (IsetBalanced > (MaxMains * 10) - Baseload)
+            hardShortage = true;
+    // guard MaxCircuit
+    if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
+        && (IsetBalanced > (MaxCircuit * 10) - Baseload_EV))
+            hardShortage = true;
+    // guard GridRelay
+    if (GridRelayOpen && IsetBalanced > ((GridRelayMaxSumMains * 10) - Isum)/3) //assume the current should be available on all 3 phases
+            hardShortage = true;
+    return hardShortage;
+}
+
 
 // Calculates Balanced PWM current for each EVSE
 // mod =0 normal
@@ -1218,7 +1237,7 @@ void CalcBalancedCurrent(char mod) {
 
     int saveActiveEVSE = ActiveEVSE;                                            // TODO remove this when calcbalancedcurrent2 is approved
     if (ActiveEVSE && (phasesLastUpdateFlag || Mode == MODE_NORMAL)) {          // Only if we have active EVSE's and if we have new phase currents
-
+/*
         // ############### we now check shortage of power  #################
 
         if (IsetBalanced < (ActiveEVSE * MinCurrent * 10)) {
@@ -1226,39 +1245,8 @@ void CalcBalancedCurrent(char mod) {
             // ############### shortage of power  #################
 
             IsetBalanced = ActiveEVSE * MinCurrent * 10;                        // retain old software behaviour: set minimal "MinCurrent" charge per active EVSE
-            if (Mode == MODE_SOLAR) {
-                // ----------- Check to see if we have to continue charging on solar power alone ----------
-                if (ActiveEVSE && StopTime && (IsumImport > 0)) {
-                    //TODO maybe enable solar switching for loadbl = 1
-                    if (EnableC2 == AUTO && LoadBl == 0)
-                        Set_Nr_of_Phases_Charging();
-                    if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && LoadBl == 0) { // when loadbalancing is enabled we don't do forced single phase charging
-                        _LOG_A("Switching to single phase.\n");                 // because we wouldnt know which currents to make available to the nodes...
-                                                                                // since we don't know how many phases the nodes are using...
-                        //switching contactor2 off works ok for Skoda Enyaq but Hyundai Ioniq 5 goes into error, so we have to switch more elegantly
-                        if (State == STATE_C) setState(STATE_C1);               // tell EV to stop charging
-                        Switching_To_Single_Phase = GOING_TO_SWITCH;
-                    }
-                    else {
-                        if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
-                    }
-                } else {
-                    _LOG_D("Checkpoint a: Resetting SolarStopTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
-                    setSolarStopTimer(0);
-                }
-            }
-
-            // check for HARD shortage of power
-            // IsetBalanced is already set to the minimum needed power to charge all Nodes
-            bool hardShortage = false;
-            // guard MaxMains
-            if (MainsMeter.Type && Mode != MODE_NORMAL)
-                if (IsetBalanced > (MaxMains * 10) - Baseload)
-                    hardShortage = true;
-            // guard MaxCircuit
-            if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
-                && (IsetBalanced > (MaxCircuit * 10) - Baseload_EV))
-                    hardShortage = true;
+*/
+/*
             if (hardShortage && Switching_To_Single_Phase != GOING_TO_SWITCH) { // because switching to single phase might solve the shortage
                 // ############ HARD shortage of power
                 NoCurrent++;                                                    // Flag NoCurrent left
@@ -1279,7 +1267,9 @@ void CalcBalancedCurrent(char mod) {
             MaxSumMainsTimer = 0;
             NoCurrent = 0;
         }
-
+*/
+        // we have not checked for shortage of power, NoCurrent is not set/reset, IsetBalanced might be below MinCurrent,
+        // we don't know about hard/soft shortages, and the solar timer is not set yet.....
         // ############### we now distribute the calculated IsetBalanced over the EVSEs  #################
         if (IsetBalanced > ActiveMax)
             IsetBalanced = ActiveMax;
@@ -1327,11 +1317,47 @@ void CalcBalancedCurrent(char mod) {
             _LOG_A("DINGO: Prio %i = EVSE %i with BalancedConnected = %lu.\n", n, Priority[n], BalancedConnected[n]);
         _LOG_A("\n");*/
 
+        // first we allocate all charging EVSE's MinCurrent, if available...
+        // if it is not available, we set NO_SUN or LESS_6A
+        // TODO if solartimer is set, we should STILL allow solartimer running
+        // UNLESS HARD shortage!!
+        // since we only give out current that is available, there can only be a hard shortage when timers are running....
+        if (Mode == MODE_SOLAR) {
+            // ----------- Check to see if we have to continue charging on solar power alone ----------
+            if (StopTime && (IsumImport > 0)) {
+                //TODO maybe enable solar switching for loadbl = 1
+                if (EnableC2 == AUTO && LoadBl == 0)
+                    Set_Nr_of_Phases_Charging();
+                if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && LoadBl == 0) { // when loadbalancing is enabled we don't do forced single phase charging
+                    _LOG_A("Switching to single phase.\n");                 // because we wouldnt know which currents to make available to the nodes...
+                                                                            // since we don't know how many phases the nodes are using...
+                    //switching contactor2 off works ok for Skoda Enyaq but Hyundai Ioniq 5 goes into error, so we have to switch more elegantly
+                    if (State == STATE_C) setState(STATE_C1);               // tell EV to stop charging
+                    Switching_To_Single_Phase = GOING_TO_SWITCH;
+                }
+                else {
+                    if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                }
+            } else {
+                _LOG_D("Checkpoint a: Resetting SolarStopTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
+                setSolarStopTimer(0);
+            }
+        }
+        // check if we have to get the MaxSumMainsTimer running
+        if (LimitedByMaxSumMains && MaxSumMainsTime) {
+            if (MaxSumMainsTimer == 0)                                  // has expired, so set timer
+                MaxSumMainsTimer = MaxSumMainsTime * 60;
+        }
         for (n = 0; n < NR_EVSES; n++) {
-            if (BalancedState[Priority[n]] == STATE_C && RestOfIsetBalancedNotAllocatedYet >= MinCurrent * 10) {
+            if ((BalancedState[Priority[n]] == STATE_C && RestOfIsetBalancedNotAllocatedYet >= MinCurrent * 10) || // give out if available
+                (BalancedState[Priority[n]] == STATE_C && LimitedByMaxSumMains && MaxSumMainsTime && MaxSumMainsTimer &&
+                 !HardBoundariesExceeded(IsetBalanced - RestOfIsetBalancedNotAllocatedYet + (MinCurrent * 10), Baseload, Baseload_EV)) || // OR give out if MaxSumMainsTimer is running  AND we would not be exceeding hard boundaries
+                //(BalancedState[Priority[n]] == STATE_C && Mode == MODE_SOLAR && StopTime && IsumImport >0 &&
+                (BalancedState[Priority[n]] == STATE_C && SolarStopTimer &&
+                 !HardBoundariesExceeded(IsetBalanced - RestOfIsetBalancedNotAllocatedYet + (MinCurrent * 10), Baseload, Baseload_EV)) ) { // OR give out if SolarStopTimer is running  AND we would not be exceeding hard boundaries
                 Balanced[Priority[n]] = MinCurrent * 10;                              // Set to MinCurrent
                 RestOfIsetBalancedNotAllocatedYet -= Balanced[Priority[n]];           // Update total current to new (lower) value
-                NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
+                //NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
             } else {                                                        // not enough current to give to an ActiveEVSE
                 Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
                                                                             // and this also flags the EVSE that it is not supposed to charge:
