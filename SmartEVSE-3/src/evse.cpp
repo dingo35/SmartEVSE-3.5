@@ -1363,6 +1363,10 @@ void CalcBalancedCurrent(char mod) {
                                                                             // and this also flags the EVSE that it is not supposed to charge:
                 if (Mode == MODE_SOLAR) BalancedError[Priority[n]] |= NO_SUN;         // Solar mode: No Solar Power available
                 else BalancedError[Priority[n]] |= LESS_6A;                           // Normal or Smart Mode: Not enough current available
+                if (LoadBl < 2) {                                               // TODO make sure [0|1] = master values
+                    if (Mode == MODE_SOLAR) ErrorFlags |= NO_SUN;
+                    else ErrorFlags |= LESS_6A;
+                }
             }
         }
 
