@@ -255,6 +255,7 @@ int homeBatteryLastUpdate = 0; // Time in milliseconds
 char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
+uint Cheap_tariff_ahead = 0;                                               // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
 uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
@@ -454,11 +455,18 @@ void BlinkLed(void * parameter) {
             GreenPwm = 0;
             BluePwm = 0;
 #endif //ENABLE_OCPP
-        } else if (Access_bit == 0 || State == STATE_MODEM_DENIED) {                                            // No Access, LEDs off
-            RedPwm = 0;
-            GreenPwm = 0;
-            BluePwm = 0;
-            LedPwm = 0;                  
+        } else if (Access_bit == 0 || State == STATE_MODEM_DENIED) {
+            if (Cheap_tariff_ahead > time(NULL)) {                  // No access, indicates with BLUE that a cheap tariff is ahead (until current time exceeds set time)
+                RedPwm = 0;
+                GreenPwm = 0;
+                BluePwm = 255;
+                LedPwm = 128;
+            } else {                                                // No Access, LEDs off
+                RedPwm = 0;
+                GreenPwm = 0;
+                BluePwm = 0;
+                LedPwm = 0; 
+            }
         } else {                                                                // State A, B or C
     
             if (State == STATE_A) {
@@ -2832,6 +2840,8 @@ void mqtt_receive_callback(const String topic, const String payload) {
             preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
             preferences.end();
         }
+    } else if (topic == MQTTprefix + "/Set/CheapTariffIndicator") {
+        Cheap_tariff_ahead = payload.toInt();
     }
 
     // Make sure MQTT updates directly to prevent debounces
@@ -3068,6 +3078,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
         MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
 #endif //ENABLE_OCPP
+        MQTTclient.publish(MQTTprefix + "/CheapTariffIndicator", (Cheap_tariff_ahead>0) ? String(Cheap_tariff_ahead) : "Disabled", true, 0);
 }
 #endif
 
