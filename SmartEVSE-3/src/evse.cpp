@@ -4831,6 +4831,10 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         doc["backlight"]["timer"] = BacklightTimer;
         doc["backlight"]["status"] = backlight;
 
+        doc["color_off"]["R"] = ColorOff[0];
+        doc["color_off"]["G"] = ColorOff[1];
+        doc["color_off"]["B"] = ColorOff[2];
+
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
@@ -5158,6 +5162,30 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
       } else {
         mg_http_reply(c, 404, "", "Not Found\n");
       }
+    } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+        
+        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
+            int32_t R = request->getParam("R")->value().toInt();
+            int32_t G = request->getParam("G")->value().toInt();
+            int32_t B = request->getParam("B")->value().toInt();
+
+            // R,G,B is between 0..255
+            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+                ColorOff[0] = R;
+                ColorOff[1] = G;
+                ColorOff[2] = B;
+                doc["color_off"]["R"] = ColorOff[0];
+                doc["color_off"]["G"] = ColorOff[1];
+                doc["color_off"]["B"] = ColorOff[2];
+            }
+        }
+
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+
     } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
 
