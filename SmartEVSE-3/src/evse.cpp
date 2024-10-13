@@ -5848,14 +5848,22 @@ void ocppLoop() {
             // Access_bit has been set
             OcppTrackAccessBit = true;
             _LOG_A("OCPP detected Access_bit set\n");
-            char buf[13];
-            sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            char buf[15];
+            if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
+                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            } else {
+                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            }
             beginTransaction_authorized(buf);
         } else if (!Access_bit && (OcppTrackAccessBit || (getTransaction() && getTransaction()->isActive()))) {
             OcppTrackAccessBit = false;
             _LOG_A("OCPP detected Access_bit unset\n");
-            char buf[13];
-            sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            char buf[15];
+            if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
+                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            } else {
+                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            }
             endTransaction_authorized(buf);
         }
     }
