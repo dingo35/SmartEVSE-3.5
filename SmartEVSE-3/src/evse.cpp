@@ -416,7 +416,7 @@ void BlinkLed(void * parameter) {
                     RedPwm = 0;
                     GreenPwm = 0;
                     BluePwm = LedPwm;
-                } else if (Mode == MODE_SOLAR) {                                  // Orange
+                } else if (Mode == MODE_SOLAR) {                                // Orange
                     RedPwm = LedPwm;
                     GreenPwm = LedPwm * 2 / 3;
                     BluePwm = 0;
@@ -486,7 +486,7 @@ void BlinkLed(void * parameter) {
                 RedPwm = 0;
                 GreenPwm = 0;
                 BluePwm = LedPwm;            
-            } else if (Mode == MODE_SOLAR) {                                      // Orange/Yellow for Solar mode
+            } else if (Mode == MODE_SOLAR) {                                    // Orange/Yellow for Solar mode
                 RedPwm = LedPwm;
                 GreenPwm = LedPwm * 2 / 3;
                 BluePwm = 0;            
@@ -2769,6 +2769,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
             OverrideCurrent = 0;
             setMode(MODE_SMART);
         }
+    } else if (topic == MQTTprefix + "/Set/CustomButton") {
+        if (payload == "On") {
+            CustomButton = true;
+        } else {
+            CustomButton = false;
+        }
     } else if (topic == MQTTprefix + "/Set/CurrentOverride") {
         uint16_t RequestedCurrent = payload.toInt();
         if (RequestedCurrent == 0) {
@@ -3006,9 +3012,13 @@ void SetupMQTTClient() {
     announce("EV Plug State", "sensor");
     announce("Access", "sensor");
     announce("State", "sensor");
-    announce("Custom Button", "sensor");
     announce("RFID", "sensor");
     announce("RFIDLastRead", "sensor");
+    
+    optional_payload = jsna("state_topic", String(MQTTprefix + "/CustomButton")) + jsna("command_topic", String(MQTTprefix + "/Set/CustomButton"));
+    optional_payload += String(R"(, "options" : ["On", "Off"])");
+    announce("Custom Button", "select");
+
 #if ENABLE_OCPP
     announce("OCPP", "sensor");
     announce("OCPPConnection", "sensor");
@@ -4909,6 +4919,11 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         if(request->hasParam("disable_override_current")) {
             OverrideCurrent = 0;
             doc["disable_override_current"] = "OK";
+        }
+
+        if(request->hasParam("custombutton")) {
+            CustomButton = request->getParam("custombutton")->value().toInt() > 0;
+            doc["custombutton"] = CustomButton;
         }
 
         if(request->hasParam("mode")) {
