@@ -85,6 +85,7 @@ uint8_t GLCDbuf[512];                                                       // G
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
 uint8_t MenuItems[MENU_EXIT];
+extern void CheckSwitch(bool force = false);
 
 void st7565_command(unsigned char data) {
     _A0_0;
@@ -597,7 +598,10 @@ void GLCD(void) {
             
             BacklightTimer = BACKLIGHT;
             
-            GLCD_print_buf2(2, (const char *) "CHARGING");
+            if (GridRelayOpen)
+                GLCD_print_buf2(2, (const char *) "LIMITED");
+            else
+                GLCD_print_buf2(2, (const char *) "CHARGING");
             sprintf(Str, "%u.%uA",Balanced[0] / 10, Balanced[0] % 10);
             GLCD_print_buf2(4, Str);
         } else {                                                                // STATE A and STATE B
@@ -831,23 +835,29 @@ void GLCD(void) {
                     } else LCDText++;
                     // fall through
                 case 1:
+                    if (GridRelayOpen) {
+                        GLCD_print_buf2(5, (const char *) "LIMITED");
+                        break;
+                    } else LCDText++;
+                    // fall through
+                case 2:
                     GLCD_print_buf2(5, (const char *) "CHARGING");
                     break;
-                case 2:
+                case 3:
                     if (EVMeter.Type) {
                         sprintfl(Str, "%u.%01u kW", EVMeter.PowerMeasured, 3, 1);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
                     // fall through
-                case 3:
+                case 4:
                     if (EVMeter.Type) {
                         sprintfl(Str, "%u.%02u kWh", EVMeter.EnergyCharged, 3, 2);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
                     // fall through
-                case 4:
+                case 5:
                     sprintf(Str, "%u.%u A", Balanced[0] / 10, Balanced[0] % 10);
                     GLCD_print_buf2(5, Str);
                     break;
@@ -1163,11 +1173,15 @@ void GLCDMenu(uint8_t Buttons) {
                         } while (value > 0 && value < 10);
                         setItemValue(LCDNav, value);
                         break;
-                    case MENU_SWITCH:                                           // do not display the Sensorbox or unused slots here
+                    case MENU_SWITCH:
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         } while (LoadBl >=2 && value == 5);                     // do not allow GridRelay on Slave
                         setItemValue(LCDNav, value);
+                        if (value == 5)
+                            CheckSwitch(true);
+                        else
+                            GridRelayOpen = false;                              // so we don't have limiting current when not on GridRelay
                         break;
                     default:
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);

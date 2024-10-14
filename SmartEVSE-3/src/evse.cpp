@@ -256,7 +256,10 @@ char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
-uint8_t ColorOff[3]={0, 0, 0};
+uint8_t ColorOff[3] = {0, 0, 0};          // off
+uint8_t ColorNormal[3] = {0, 255, 0};   // Green
+uint8_t ColorSmart[3] = {0, 255, 0};    // Green
+uint8_t ColorSolar[3] = {255, 170, 0};    // Orange
 
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
@@ -411,14 +414,19 @@ void BlinkLed(void * parameter) {
                 if (LedCount > 230) LedPwm = WAITING_LED_BRIGHTNESS;            // LED 10% of time on, full brightness
                 else LedPwm = 0;
 
-                if (Mode == MODE_SOLAR) {                                       // Orange
-                    RedPwm = LedPwm;
-                    GreenPwm = LedPwm * 2 / 3;
-                } else {                                                        // Green
-                    RedPwm = 0;
-                    GreenPwm = LedPwm;
+                if (Mode == MODE_SOLAR) {                                       // Orange for Solar, unless configured otherwise
+                    RedPwm = LedPwm * ColorSolar[0] / 255;
+                    GreenPwm = LedPwm * ColorSolar[1] / 255;
+                    BluePwm = LedPwm * ColorSolar[2] / 255;
+                } else if (Mode == MODE_SMART) {                                // Green for Smart, unless configured otherwise
+                    RedPwm = LedPwm * ColorNormal[0] / 255;
+                    GreenPwm = LedPwm * ColorNormal[1] / 255;
+                    BluePwm = LedPwm * ColorNormal[2] / 255;
+                } else {                                                        // Green for Normal, unless configured otherwise
+                    RedPwm = LedPwm * ColorNormal[0] / 255;
+                    GreenPwm = LedPwm * ColorNormal[1] / 255;
+                    BluePwm = LedPwm * ColorNormal[2] / 255;
                 }    
-                BluePwm = 0;
             }
 
 #if ENABLE_OCPP
@@ -476,14 +484,19 @@ void BlinkLed(void * parameter) {
                 LedPwm = ease8InOutQuad(triwave8(LedCount));                    // pre calculate new LedPwm value
             }
 
-            if (Mode == MODE_SOLAR) {                                           // Orange/Yellow for Solar mode
-                RedPwm = LedPwm;
-                GreenPwm = LedPwm * 2 / 3;
-            } else {
-                RedPwm = 0;                                                     // Green for Normal/Smart mode
-                GreenPwm = LedPwm;
-            }
-            BluePwm = 0;            
+            if (Mode == MODE_SOLAR) {                                       // Orange for Solar, unless configured otherwise
+                RedPwm = LedPwm * ColorSolar[0] / 255;
+                GreenPwm = LedPwm * ColorSolar[1] / 255;
+                BluePwm = LedPwm * ColorSolar[2] / 255;
+            } else if (Mode == MODE_SMART) {                                // Green for Smart, unless configured otherwise
+                RedPwm = LedPwm * ColorNormal[0] / 255;
+                GreenPwm = LedPwm * ColorNormal[1] / 255;
+                BluePwm = LedPwm * ColorNormal[2] / 255;
+            } else {                                                        // Green for Normal, unless configured otherwise
+                RedPwm = LedPwm * ColorNormal[0] / 255;
+                GreenPwm = LedPwm * ColorNormal[1] / 255;
+                BluePwm = LedPwm * ColorNormal[2] / 255;
+            }    
 
         }
         ledcWrite(RED_CHANNEL, RedPwm);
@@ -955,10 +968,6 @@ char IsCurrentAvailable(void) {
         _LOG_D("No current available MaxSumMains line %d. ActiveEVSE=%i, MinCurrent=%iA, Isum=%.1fA, MaxSumMains=%iA.\n", __LINE__, ActiveEVSE, MinCurrent,  (float)Isum/10, MaxSumMains);
         return 0;                                                           // Not enough current available!, return with error
     }
-    if (GridRelayOpen && ((Phases * ActiveEVSE * MinCurrent * 10) + Isum > 3 * GridRelayMaxSumMains * 10)) { // the GridRelayMaxSumMains is allowed on all 3 phases
-        _LOG_D("No current available GridRelay line %d. ActiveEVSE=%i, MinCurrent=%iA, Isum=%.1fA, GridRelayMaxSumMains=%iA.\n", __LINE__, ActiveEVSE, MinCurrent,  (float)Isum/10, GridRelayMaxSumMains);
-        return 0;                                                           // Not enough current available!, return with error
-    }
 
 // Use OCPP Smart Charging if Load Balancing is turned off
 #if ENABLE_OCPP
@@ -977,7 +986,8 @@ char IsCurrentAvailable(void) {
 
 // Set global var Nr_Of_Phases_Charging
 // 0 = undetected, 1 - 3 nr of phases we are charging
-void Set_Nr_of_Phases_Charging(void) {
+// returns nr of phases we are charging, and 3 if undetected
+int Set_Nr_of_Phases_Charging(void) {
     uint32_t Max_Charging_Prob = 0;
     uint32_t Charging_Prob=0;                                        // Per phase, the probability that Charging is done at this phase
     Nr_Of_Phases_Charging = 0;
@@ -1029,6 +1039,9 @@ void Set_Nr_of_Phases_Charging(void) {
     }
 
     _LOG_A("Charging at %i phases.\n", Nr_Of_Phases_Charging);
+    if (Nr_Of_Phases_Charging == 0)
+        return 3;
+    return Nr_Of_Phases_Charging;
 }
 
 // Calculates Balanced PWM current for each EVSE
@@ -1174,9 +1187,9 @@ void CalcBalancedCurrent(char mod) {
     if ((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1)    // Conditions in which MaxCircuit has to be considered
         IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10) - Baseload_EV); //limiting is per phase so no Nr_Of_Phases_Charging here!
     // guard GridRelay
-    if (GridRelayOpen)
-        IsetBalanced = min((int) IsetBalanced, ((GridRelayMaxSumMains * 10) - Isum)/3); //assume the current should be available on all 3 phases
-
+    if (GridRelayOpen) {
+        IsetBalanced = min((int) IsetBalanced, (GridRelayMaxSumMains * 10)/Set_Nr_of_Phases_Charging()); //assume the current should be available on all 3 phases
+    }
     _LOG_V("Checkpoint 4 Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
 
     // ############### the rest of the work we only do if there are ActiveEVSEs #################
@@ -2024,11 +2037,17 @@ void CalcIsum(void) {
 
 // CheckSwitch (SW input)
 //
-void CheckSwitch(void)
+void CheckSwitch(bool force = false)
 {
-    static uint8_t RB2count = 0, RB2last = 1, RB2low = 0;
+    static uint8_t RB2count = 0, RB2last = 2, RB2low = 0;
     static unsigned long RB2Timer = 0;                                                 // 1500ms
 
+    if (force)                                                                  // force to read switch position
+        RB2last = 2;
+
+    if ((RB2last == 2) && (Switch == 1 || Switch == 3))                         // upon initialization we want the toggle switch to be read
+        RB2last = 1;                                                            // but not the push buttons, because this would toggle the state
+                                                                                // upon reboot
     // External switch changed state?
     if ( (digitalRead(PIN_SW_IN) != RB2last) || RB2low) {
         // make sure that noise on the input does not switch
@@ -2845,6 +2864,36 @@ void mqtt_receive_callback(const String topic, const String payload) {
             ColorOff[1] = G;
             ColorOff[2] = B;
         }
+    } else if (topic == MQTTprefix + "/Set/ColorNormal") {
+        int32_t R, G, B;
+        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+
+        // R,G,B is between 0..255
+        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+            ColorNormal[0] = R;
+            ColorNormal[1] = G;
+            ColorNormal[2] = B;
+        }
+    } else if (topic == MQTTprefix + "/Set/ColorSmart") {
+        int32_t R, G, B;
+        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+
+        // R,G,B is between 0..255
+        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+            ColorSmart[0] = R;
+            ColorSmart[1] = G;
+            ColorSmart[2] = B;
+        }
+    } else if (topic == MQTTprefix + "/Set/ColorSolar") {
+        int32_t R, G, B;
+        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+
+        // R,G,B is between 0..255
+        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+            ColorSolar[0] = R;
+            ColorSolar[1] = G;
+            ColorSolar[2] = B;
+        }
     }
 
     // Make sure MQTT updates directly to prevent debounces
@@ -3082,6 +3131,9 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
 #endif //ENABLE_OCPP
         MQTTclient.publish(MQTTprefix + "/LEDColorOff", String(ColorOff[0])+","+String(ColorOff[1])+","+String(ColorOff[2]), true, 0);
+        MQTTclient.publish(MQTTprefix + "/LEDColorNormal", String(ColorNormal[0])+","+String(ColorNormal[1])+","+String(ColorNormal[2]), true, 0);
+        MQTTclient.publish(MQTTprefix + "/LEDColorSmart", String(ColorSmart[0])+","+String(ColorSmart[1])+","+String(ColorSmart[2]), true, 0);
+        MQTTclient.publish(MQTTprefix + "/LEDColorSolar", String(ColorSolar[0])+","+String(ColorSolar[1])+","+String(ColorSolar[2]), true, 0);
 }
 #endif
 
@@ -4689,7 +4741,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(1600); // https://arduinojson.org/v6/assistant/
+        DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -4832,9 +4884,18 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         doc["backlight"]["timer"] = BacklightTimer;
         doc["backlight"]["status"] = backlight;
 
-        doc["color_off"]["R"] = ColorOff[0];
-        doc["color_off"]["G"] = ColorOff[1];
-        doc["color_off"]["B"] = ColorOff[2];
+        doc["color"]["off"]["R"] = ColorOff[0];
+        doc["color"]["off"]["G"] = ColorOff[1];
+        doc["color"]["off"]["B"] = ColorOff[2];
+        doc["color"]["normal"]["R"] = ColorNormal[0];
+        doc["color"]["normal"]["G"] = ColorNormal[1];
+        doc["color"]["normal"]["B"] = ColorNormal[2];
+        doc["color"]["smart"]["R"] = ColorSmart[0];
+        doc["color"]["smart"]["G"] = ColorSmart[1];
+        doc["color"]["smart"]["B"] = ColorSmart[2];
+        doc["color"]["solar"]["R"] = ColorSolar[0];
+        doc["color"]["solar"]["G"] = ColorSolar[1];
+        doc["color"]["solar"]["B"] = ColorSolar[2];
 
         String json;
         serializeJson(doc, json);
@@ -5176,12 +5237,80 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 ColorOff[0] = R;
                 ColorOff[1] = G;
                 ColorOff[2] = B;
-                doc["color_off"]["R"] = ColorOff[0];
-                doc["color_off"]["G"] = ColorOff[1];
-                doc["color_off"]["B"] = ColorOff[2];
+                doc["color"]["off"]["R"] = ColorOff[0];
+                doc["color"]["off"]["G"] = ColorOff[1];
+                doc["color"]["off"]["B"] = ColorOff[2];
             }
         }
 
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+
+    } else if (mg_http_match_uri(hm, "/color_normal") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+        
+        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
+            int32_t R = request->getParam("R")->value().toInt();
+            int32_t G = request->getParam("G")->value().toInt();
+            int32_t B = request->getParam("B")->value().toInt();
+
+            // R,G,B is between 0..255
+            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+                ColorNormal[0] = R;
+                ColorNormal[1] = G;
+                ColorNormal[2] = B;
+                doc["color"]["normal"]["R"] = ColorNormal[0];
+                doc["color"]["normal"]["G"] = ColorNormal[1];
+                doc["color"]["normal"]["B"] = ColorNormal[2];
+            }
+        }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+
+    } else if (mg_http_match_uri(hm, "/color_smart") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+        
+        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
+            int32_t R = request->getParam("R")->value().toInt();
+            int32_t G = request->getParam("G")->value().toInt();
+            int32_t B = request->getParam("B")->value().toInt();
+
+            // R,G,B is between 0..255
+            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+                ColorSmart[0] = R;
+                ColorSmart[1] = G;
+                ColorSmart[2] = B;
+                doc["color"]["smart"]["R"] = ColorSmart[0];
+                doc["color"]["smart"]["G"] = ColorSmart[1];
+                doc["color"]["smart"]["B"] = ColorSmart[2];
+            }
+        }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+
+    } else if (mg_http_match_uri(hm, "/color_solar") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+        
+        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
+            int32_t R = request->getParam("R")->value().toInt();
+            int32_t G = request->getParam("G")->value().toInt();
+            int32_t B = request->getParam("B")->value().toInt();
+
+            // R,G,B is between 0..255
+            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
+                ColorSolar[0] = R;
+                ColorSolar[1] = G;
+                ColorSolar[2] = B;
+                doc["color"]["solar"]["R"] = ColorSolar[0];
+                doc["color"]["solar"]["G"] = ColorSolar[1];
+                doc["color"]["solar"]["B"] = ColorSolar[2];
+            }
+        }
 
         String json;
         serializeJson(doc, json);
