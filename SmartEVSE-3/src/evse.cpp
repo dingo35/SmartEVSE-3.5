@@ -115,6 +115,7 @@ uint16_t GridRelayMaxSumMains = GRID_RELAY_MAX_SUMMAINS;                    // M
                                                                             // When the relay opens its contacts, power will be reduced to 4.2kW
                                                                             // The relay is only allowed on the Master
 bool GridRelayOpen = false;                                                 // The read status of the relay
+bool CustomButton = false;                                                  // The status of the custom button
 uint16_t MaxCurrent = MAX_CURRENT;                                          // Max Charge current (A)
 uint16_t MinCurrent = MIN_CURRENT;                                          // Minimal current the EV is happy with (A)
 uint8_t Mode = MODE;                                                        // EVSE mode (0:Normal / 1:Smart / 2:Solar)
@@ -411,14 +412,19 @@ void BlinkLed(void * parameter) {
                 if (LedCount > 230) LedPwm = WAITING_LED_BRIGHTNESS;            // LED 10% of time on, full brightness
                 else LedPwm = 0;
 
-                if (Mode == MODE_SOLAR) {                                       // Orange
+                if (CustomButton)  {                                            // blue
+                    RedPwm = 0;
+                    GreenPwm = 0;
+                    BluePwm = LedPwm;
+                } else if (Mode == MODE_SOLAR) {                                  // Orange
                     RedPwm = LedPwm;
                     GreenPwm = LedPwm * 2 / 3;
+                    BluePwm = 0;
                 } else {                                                        // Green
                     RedPwm = 0;
                     GreenPwm = LedPwm;
+                    BluePwm = 0;
                 }    
-                BluePwm = 0;
             }
 
 #if ENABLE_OCPP
@@ -476,14 +482,19 @@ void BlinkLed(void * parameter) {
                 LedPwm = ease8InOutQuad(triwave8(LedCount));                    // pre calculate new LedPwm value
             }
 
-            if (Mode == MODE_SOLAR) {                                           // Orange/Yellow for Solar mode
+            if (CustomButton) {                                                 // Blue for custom mode
+                RedPwm = 0;
+                GreenPwm = 0;
+                BluePwm = LedPwm;            
+            } else if (Mode == MODE_SOLAR) {                                      // Orange/Yellow for Solar mode
                 RedPwm = LedPwm;
                 GreenPwm = LedPwm * 2 / 3;
+                BluePwm = 0;            
             } else {
                 RedPwm = 0;                                                     // Green for Normal/Smart mode
                 GreenPwm = LedPwm;
+                BluePwm = 0;            
             }
-            BluePwm = 0;            
 
         }
         ledcWrite(RED_CHANNEL, RedPwm);
@@ -2065,6 +2076,11 @@ void CheckSwitch(void)
                     case 5: // Grid relay
                         GridRelayOpen = false;
                         break;
+                    case 6: // Custom button B
+                        break;
+                    case 7: // Custom button S
+                        CustomButton = true;
+                        break;                                                
                     default:
                         if (State == STATE_C) {                             // Menu option Access is set to Disabled
                             setState(STATE_C1);
@@ -2109,6 +2125,12 @@ void CheckSwitch(void)
                     case 5: // Grid relay
                         GridRelayOpen = true;
                         break;
+                    case 6: // Custom button B
+                        CustomButton = !CustomButton;
+                        break;
+                    case 7: // Custom button S
+                        CustomButton = false;
+                        break;                          
                     default:
                         break;
                 }
@@ -2984,6 +3006,7 @@ void SetupMQTTClient() {
     announce("EV Plug State", "sensor");
     announce("Access", "sensor");
     announce("State", "sensor");
+    announce("Custom Button", "sensor");
     announce("RFID", "sensor");
     announce("RFIDLastRead", "sensor");
 #if ENABLE_OCPP
@@ -3042,6 +3065,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", Access_bit == 0 ? "Off" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         MQTTclient.publish(MQTTprefix + "/MaxCurrent", MaxCurrent * 10, true, 0);
+        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
         MQTTclient.publish(MQTTprefix + "/Access", StrAccessBit[Access_bit], true, 0);
@@ -4721,6 +4745,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         doc["evse"]["mode"] = Mode;
         doc["evse"]["loadbl"] = LoadBl;
         doc["evse"]["pwm"] = CurrentPWM;
+        doc["evse"]["custombutton"] = CustomButton;
         doc["evse"]["solar_stop_timer"] = SolarStopTimer;
         doc["evse"]["state"] = evstate;
         doc["evse"]["state_id"] = State;
