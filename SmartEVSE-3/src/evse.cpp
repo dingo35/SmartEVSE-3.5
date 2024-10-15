@@ -5398,9 +5398,9 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 ColorCustom[0] = R;
                 ColorCustom[1] = G;
                 ColorCustom[2] = B;
-                doc["color"]["solar"]["R"] = ColorCustom[0];
-                doc["color"]["solar"]["G"] = ColorCustom[1];
-                doc["color"]["solar"]["B"] = ColorCustom[2];
+                doc["color"]["custom"]["R"] = ColorCustom[0];
+                doc["color"]["custom"]["G"] = ColorCustom[1];
+                doc["color"]["custom"]["B"] = ColorCustom[2];
             }
         }
 
