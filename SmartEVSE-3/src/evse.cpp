@@ -2100,6 +2100,7 @@ void CheckSwitch(bool force = false)
                         GridRelayOpen = false;
                         break;
                     case 6: // Custom button B
+                        CustomButton = !CustomButton;
                         break;
                     case 7: // Custom button S
                         CustomButton = true;
@@ -2149,7 +2150,6 @@ void CheckSwitch(bool force = false)
                         GridRelayOpen = true;
                         break;
                     case 6: // Custom button B
-                        CustomButton = !CustomButton;
                         break;
                     case 7: // Custom button S
                         CustomButton = false;
