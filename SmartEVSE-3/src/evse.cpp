@@ -494,7 +494,7 @@ void BlinkLed(void * parameter) {
                 RedPwm = LedPwm * ColorCustom[0] / 255;
                 GreenPwm = LedPwm * ColorCustom[1] / 255;
                 BluePwm = LedPwm * ColorCustom[2] / 255;
-            } if (Mode == MODE_SOLAR) {                                     // Orange for Solar, unless configured otherwise
+            } else if (Mode == MODE_SOLAR) {                                // Orange for Solar, unless configured otherwise
                 RedPwm = LedPwm * ColorSolar[0] / 255;
                 GreenPwm = LedPwm * ColorSolar[1] / 255;
                 BluePwm = LedPwm * ColorSolar[2] / 255;
