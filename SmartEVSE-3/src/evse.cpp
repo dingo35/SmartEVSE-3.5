@@ -471,6 +471,10 @@ void BlinkLed(void * parameter) {
             GreenPwm = 0;
             BluePwm = 0;
 #endif //ENABLE_OCPP
+        } else if (Access_bit == 0 && CustomButton) {
+            RedPwm = ColorCustom[0];
+            GreenPwm = ColorCustom[1];
+            BluePwm = ColorCustom[2];
         } else if (Access_bit == 0 || State == STATE_MODEM_DENIED) {
             RedPwm = ColorOff[0];
             GreenPwm = ColorOff[1];
@@ -2883,7 +2887,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorOff") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -2893,7 +2897,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorNormal") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -2903,7 +2907,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorSmart") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -2913,7 +2917,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorSolar") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -2923,7 +2927,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorCustom") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
