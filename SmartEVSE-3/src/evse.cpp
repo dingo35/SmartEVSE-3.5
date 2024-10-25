@@ -6203,7 +6203,7 @@ void setup() {
     xTaskCreate(
         BlinkLed,       // Function that should be called
         "BlinkLed",     // Name of the task (for debugging)
-        1024,           // Stack size (bytes)                              // printf needs atleast 1kb
+        2048,           // Stack size (bytes)                              // printf needs atleast 1kb
         NULL,           // Parameter to pass
         1,              // Task priority - low
         NULL            // Task handle
