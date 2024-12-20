@@ -260,11 +260,7 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
         for (x = 0; x < 3; x++) {
             Power[x] = decodeMeasurement(buf, x + offset, EMConfig[Type].PDivisor);
             PowerMeasured += Power[x];
-            if (Type != EM_EASTRON3P_INV) {
-                if (Power[x] < 0) var[x] = -var[x];
-            } else {
-                if (Power[x] > 0) var[x] = -var[x];
-            }
+            if (Power[x] < 0) var[x] = -var[x];
         }
     }
 
