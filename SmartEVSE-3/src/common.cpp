@@ -242,6 +242,9 @@ void setAccess(bool Access) {
 #else //v3 and v4
 void setAccess(bool Access) {
     Access_bit = Access;
+#if SMARTEVSE_VERSION == 4
+    Serial1.printf("Access:%u\n", Access_bit);
+#endif
     if (Access == 0) {
         //TODO:setStatePowerUnavailable() ?
         if (State == STATE_C) setState(STATE_C1);                               // Determine where to switch to.
