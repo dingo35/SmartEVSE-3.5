@@ -294,30 +294,6 @@ void setSolarStopTimer(uint16_t Timer) {
 }
 
 
-/**
- * Checks all parameters to determine whether
- * we are going to force single phase charging
- * Returns true if we are going to do single phase charging
- * Returns false if we are going to do (traditional) 3 phase charing
- * This is only relevant on a 3f mains and 3f car installation!
- * 1f car will always charge 1f undetermined by CONTACTOR2
- */
-uint8_t Force_Single_Phase_Charging() {                                         // abbreviated to FSPC
-    switch (EnableC2) {
-        case NOT_PRESENT:                                                       //no use trying to switch a contactor on that is not present
-        case ALWAYS_OFF:
-            return 1;
-        case SOLAR_OFF:
-            return (Mode == MODE_SOLAR);
-        case AUTO:
-        case ALWAYS_ON:
-            return 0;   //3f charging
-    }
-    //in case we don't know, stick to 3f charging
-    return 0;
-}
-
-
 // State is owned by the CH32
 // because it is highly subject to machine interaction
 // and also charging is supposed to function if ESP32 is hung/rebooted
