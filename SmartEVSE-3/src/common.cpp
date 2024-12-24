@@ -50,7 +50,7 @@ extern "C" {
 // gateway to the outside world
 EXT uint32_t elapsedmax, elapsedtime;
 EXT int8_t TempEVSE;
-EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, MaxSumMainsTimer, ChargeCurrent;
+EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent;
 EXT uint8_t RFID[8], Access_bit, Mode, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, RFIDReader, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState;
 EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
@@ -76,6 +76,8 @@ EXT void SetCurrent(uint16_t current);
 EXT uint8_t Force_Single_Phase_Charging();
 
 Single_Phase_t Switching_To_Single_Phase = FALSE;
+uint16_t MaxSumMainsTimer = 0;
+uint8_t LCDTimer = 0;
 
 //constructor
 Button::Button(void) {
@@ -275,6 +277,46 @@ void setAccess(bool Access) { //c
 #endif //MQTT
 }
 #endif //SMARTEVSE_VERSION
+
+
+/**
+ * Set the solar stop timer
+ *
+ * @param unsigned int Timer (seconds)
+ */
+void setSolarStopTimer(uint16_t Timer) {
+    if (SolarStopTimer == Timer)
+        return;                                                             // prevent unnecessary publishing of SolarStopTimer
+    SolarStopTimer = Timer;
+#if MQTT
+    MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+#endif
+}
+
+
+/**
+ * Checks all parameters to determine whether
+ * we are going to force single phase charging
+ * Returns true if we are going to do single phase charging
+ * Returns false if we are going to do (traditional) 3 phase charing
+ * This is only relevant on a 3f mains and 3f car installation!
+ * 1f car will always charge 1f undetermined by CONTACTOR2
+ */
+uint8_t Force_Single_Phase_Charging() {                                         // abbreviated to FSPC
+    switch (EnableC2) {
+        case NOT_PRESENT:                                                       //no use trying to switch a contactor on that is not present
+        case ALWAYS_OFF:
+            return 1;
+        case SOLAR_OFF:
+            return (Mode == MODE_SOLAR);
+        case AUTO:
+        case ALWAYS_ON:
+            return 0;   //3f charging
+    }
+    //in case we don't know, stick to 3f charging
+    return 0;
+}
+
 
 // State is owned by the CH32
 // because it is highly subject to machine interaction
