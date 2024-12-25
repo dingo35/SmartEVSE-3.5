@@ -45,7 +45,7 @@ extern "C" {
     #include "utils.h"
 }
 #endif
-
+EnableC2_t EnableC2 = NOT_PRESENT;
 
 // gateway to the outside world
 EXT uint32_t elapsedmax, elapsedtime;
@@ -292,7 +292,7 @@ void setSolarStopTimer(uint16_t Timer) {
 #endif
 }
 
-#if SMARTEVSE_VERSION != 4
+//TODO #if SMARTEVSE_VERSION != 4
 /**
  * Checks all parameters to determine whether
  * we are going to force single phase charging
@@ -315,7 +315,7 @@ uint8_t Force_Single_Phase_Charging() {                                         
     //in case we don't know, stick to 3f charging
     return 0;
 }
-#endif
+//#endif
 
 // State is owned by the CH32
 // because it is highly subject to machine interaction
