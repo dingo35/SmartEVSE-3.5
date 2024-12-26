@@ -11,7 +11,7 @@
 #include "common_c.h"
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3 //CH32 and v3
-#include "meter.h"
+//#include "meter.h"
 #endif
 
 //here should only be declarations for code that will not run on the CH32

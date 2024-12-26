@@ -47,13 +47,15 @@ extern "C" {
 #endif
 EnableC2_t EnableC2 = NOT_PRESENT;
 
+#include "meter.h"
+
 // gateway to the outside world
 // here declarations are placed for variables that are both used on CH32 as ESP32
 // (either temporarily while developing or definite)
 // and they are mainly used in the main.cpp/common.cpp code
 EXT uint32_t elapsedmax, elapsedtime;
 EXT int8_t TempEVSE;
-EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent;
+EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, MinCurrent, MaxCurrent, BalancedMax[NR_EVSES];
 EXT uint8_t RFID[8], Access_bit, Mode, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, RFIDReader, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot;
 EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
@@ -61,6 +63,7 @@ EXT hw_timer_t * timerA;
 #endif
 EXT struct Node_t Node[NR_EVSES];
 EXT uint8_t BalancedState[NR_EVSES];
+//EXT Meter EVMeter;
 
 //functions
 EXT void setup();
@@ -76,6 +79,8 @@ EXT uint8_t ProximityPin();
 EXT void PowerPanic(void);
 EXT const char * getStateName(uint8_t StateCode);
 EXT void SetCurrent(uint16_t current);
+EXT char IsCurrentAvailable(void);
+EXT void CalcBalancedCurrent(char mod);
 
 Single_Phase_t Switching_To_Single_Phase = FALSE;
 uint16_t MaxSumMainsTimer = 0;
