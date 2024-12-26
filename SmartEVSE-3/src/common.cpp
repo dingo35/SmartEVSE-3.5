@@ -47,7 +47,9 @@ extern "C" {
 #endif
 EnableC2_t EnableC2 = NOT_PRESENT;
 
+#ifdef SMARTEVSE_VERSION //v3 or v4
 #include "meter.h"
+#endif
 
 // gateway to the outside world
 // here declarations are placed for variables that are both used on CH32 as ESP32
