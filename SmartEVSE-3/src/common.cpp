@@ -603,8 +603,9 @@ void Timer10ms_singlerun(void) {
 
             if (State != STATE_A) setState(STATE_A);                        // reset state, incase we were stuck in STATE_COMM_B
             ChargeDelay = 0;                                                // Clear ChargeDelay when disconnected.
-
+#ifdef SMARTEVSE_VERSION //NOT CH32  TODO THIS HAS TO BE FIXED
             if (!EVMeter.ResetKwh) EVMeter.ResetKwh = 1;                    // when set, reset EV kWh meter on state B->C change.
+#endif
         } else if ( pilot == PILOT_9V && ErrorFlags == NO_ERROR
             && ChargeDelay == 0 && Access_bit && State != STATE_COMM_B
 #if MODEM
@@ -660,12 +661,13 @@ void Timer10ms_singlerun(void) {
         } else if (pilot == PILOT_6V && ++StateTimer > 50) {                // When switching from State B to C, make sure pilot is at 6V for at least 500ms
                                                                             // Fixes https://github.com/dingo35/SmartEVSE-3.5/issues/40
             if ((DiodeCheck == 1) && (ErrorFlags == NO_ERROR) && (ChargeDelay == 0)) {
+#ifdef SMARTEVSE_VERSION //NOT CH32  TODO THIS HAS TO BE FIXED
                 if (EVMeter.Type && EVMeter.ResetKwh) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
                     EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart; // Calculate Energy
                     EVMeter.ResetKwh = 0;                                   // clear flag, will be set when disconnected from EVSE (State A)
                 }
-
+#endif
                 // Load Balancing : Node
                 if (LoadBl > 1) {
                     if (State != STATE_COMM_C) setState(STATE_COMM_C);      // Send command to Master, followed by Charge Current
@@ -676,8 +678,9 @@ void Timer10ms_singlerun(void) {
                     if (IsCurrentAvailable()) {
 
                         Balanced[0] = 0;                                    // For correct baseload calculation set current to zero
+#ifdef SMARTEVSE_VERSION //NOT CH32  TODO THIS HAS TO BE FIXED
                         CalcBalancedCurrent(1);                             // Calculate charge current for all connected EVSE's
-
+#endif
                         DiodeCheck = 0;                                     // (local variable)
                         setState(STATE_C);                                  // switch to STATE_C
 #ifdef SMARTEVSE_VERSION //not on CH32
