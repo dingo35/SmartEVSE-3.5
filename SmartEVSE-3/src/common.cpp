@@ -541,6 +541,7 @@ uint8_t Pilot() {
 #ifndef SMARTEVSE_VERSION //CH32
 //NOTE that CH32 has a 10ms routine that has to be called every 10ms
 //and ESP32 has a 10ms routine that is called once and has a while loop with 10ms delay in it
+void Timer10ms_singlerun(void) {
     static uint8_t pilot, DiodeCheck = 0;
 
     BlinkLed();
