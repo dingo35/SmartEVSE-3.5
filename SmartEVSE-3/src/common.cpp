@@ -58,7 +58,7 @@ EnableC2_t EnableC2 = NOT_PRESENT;
 // and they are mainly used in the main.cpp/common.cpp code
 EXT uint32_t elapsedmax, elapsedtime;
 EXT int8_t TempEVSE;
-EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, MinCurrent, MaxCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], ADCsamples[25];
+EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, MinCurrent, MaxCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], ADCsamples[25], Balanced[NR_EVSES];
 EXT uint8_t RFID[8], Access_bit, Mode, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, RFIDReader, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot;
 EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
@@ -543,6 +543,7 @@ void Timer10ms_singlerun(void) {
 //NOTE that CH32 has a 10ms routine that has to be called every 10ms
 //and ESP32 has a 10ms routine that is called once and has a while loop with 10ms delay in it
     static uint8_t pilot, DiodeCheck = 0;
+    static uint16_t StateTimer = 0;                                                 // When switching from State B to C, make sure pilot is at 6v for 100ms
 
     BlinkLed();
 
@@ -581,143 +582,7 @@ void Timer10ms_singlerun(void) {
     // Check the external switch and RCM sensor
     ExtSwitch.CheckSwitch();
 
-#ifndef SMARTEVSE_VERSION //CH32
-
-
-    // sample the Pilot line
-    pilot = Pilot();
-
-    // ############### EVSE State A #################
-
-    if (State == STATE_A || State == STATE_COMM_B || State == STATE_B1)
-    {
-
-        // When the pilot line is disconnected, wait for PilotDisconnectTime, then reconnect
-        if (PilotDisconnected) {
-            if (PilotDisconnectTime == 0 && pilot == PILOT_NOK ) {          // Pilot should be ~ 0V when disconnected
-                PILOT_CONNECTED;
-                PilotDisconnected = 0;
-                printf("Pilot Connected\n");
-            }
-        } else if (pilot == PILOT_12V) {                                    // Check if we are disconnected, or forced to State A, but still connected to the EV
-
-            // If the RFID reader is set to EnableOne mode, and the Charging cable is disconnected
-            // We start a timer to re-lock the EVSE (and unlock the cable) after 60 seconds.
-            if (RFIDReader == 2 && AccessTimer == 0 && Access_bit == 1) AccessTimer = RFIDLOCKTIME;
-
-            if (State != STATE_A) setState(STATE_A);                        // reset state, in case we were stuck in STATE_COMM_B
-            ChargeDelay = 0;                                                // Clear ChargeDelay when disconnected.
-
-        } else if ( pilot == PILOT_9V && ErrorFlags == NO_ERROR
-            && ChargeDelay == 0 && Access_bit
-            && State != STATE_COMM_B) {                                     // switch to State B ?
-
-            DiodeCheck = 0;
-
-            MaxCapacity = ProximityPin();                                   // Sample Proximity Pin
-
-            printf("Cable limit: %uA\n", MaxCapacity);
-//            if (MaxCurrent > MaxCapacity) ChargeCurrent = MaxCapacity * 10; // Do not modify Max Cable Capacity or MaxCurrent (fix 2.05)
-//            else ChargeCurrent = MinCurrent * 10;                           // Instead use new variable ChargeCurrent
-
-            // Load Balancing : Node
-            setState(STATE_COMM_B);                                         // Node wants to switch to State B
-        }
-    }
-
-    // ########### EVSE State Comm B OK ##############
-
-    if (State == STATE_COMM_B_OK) {
-        setState(STATE_B);
-        ActivationMode = 30;                                                // Activation mode is triggered if state C is not entered in 30 seconds.
-        AccessTimer = 0;
-    }
-
-    // ############### EVSE State B #################
-
-    if ((State == STATE_B) || (State == STATE_COMM_C)) {
-
-        // PILOT 12V
-        if (pilot == PILOT_12V) {                                           // Disconnected?
-            setState(STATE_A);                                              // switch to STATE_A
-
-        // PILOT 6V
-        } else if (pilot == PILOT_6V) {
-
-            if ((DiodeCheck == 1) && (ErrorFlags == NO_ERROR) && (ChargeDelay == 0) && (State == STATE_B)) {
-                setState(STATE_COMM_C);                                     // Send request to Master
-            }
-
-        // PILOT_9V
-        } else if (pilot == PILOT_9V) {
-
-            if (ActivationMode == 0) {
-                setState(STATE_ACTSTART);
-                ActivationTimer = 3;
-                TIM1->CH1CVR = 0;                                           // CP PWM off, duty cycle 0%
-            }
-        // PILOT DIODE
-        } else if (pilot == PILOT_DIODE) {
-            DiodeCheck = 1;                                                 // Diode found, OK
-            printf("Diode OK\n");
-            TIM1->CH4CVR = PWM_5;                                           // start ADC sampling at 5%
-        }
-
-    }
-
-    // ############### EVSE State C1 #################
-
-    if (State == STATE_C1)
-    {
-        if (pilot == PILOT_12V)
-        {                                                                   // Disconnected or connected to EV without PWM
-            setState(STATE_A);                                              // switch to STATE_A
-        }
-        else if (pilot == PILOT_9V)
-        {
-            setState(STATE_B1);                                             // switch to State B1
-        }
-    }
-
-    // ########### EVSE ActivationMode End ############
-
-    if (State == STATE_ACTSTART && ActivationTimer == 0) {
-        setState(STATE_B);                                                  // Switch back to State B
-        ActivationMode = 255;                                               // Disable ActivationMode
-    }
-
-    // ########### EVSE State Comm C OK ##############
-
-    if (State == STATE_COMM_C_OK) {
-        DiodeCheck = 0;
-        setState(STATE_C);                                                  // switch to STATE_C
-     }
-
-    // ############### EVSE State C ##################
-
-    if (State == STATE_C) {
-
-        if (pilot == PILOT_12V) {                                           // Disconnected ?
-            setState(STATE_A);                                              // switch back to STATE_A
-
-        } else if (pilot == PILOT_9V) {
-            setState(STATE_B);                                              // switch back to STATE_B
-            DiodeCheck = 0;
-        }
-
-    } // end of State C code
-
-    // Clear communication error, if present
-    if ((ErrorFlags & CT_NOCOMM) && MainsMeterTimeout == 10) ErrorFlags &= ~CT_NOCOMM;
-
-
-
-}
-
-
-#else //v3 or v4
-
-#if SMARTEVSE_VERSION == 3 //v3
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3 //CH32 and v3
     // sample the Pilot line
     pilot = Pilot();
 
@@ -815,8 +680,9 @@ void Timer10ms_singlerun(void) {
 
                         DiodeCheck = 0;                                     // (local variable)
                         setState(STATE_C);                                  // switch to STATE_C
+#ifdef SMARTEVSE_VERSION //not on CH32
                         if (!LCDNav) GLCD();                                // Don't update the LCD if we are navigating the menu
-                                                                            // immediately update LCD (20ms)
+#endif                                                                      // immediately update LCD (20ms)
                     }
                     else if (Mode == MODE_SOLAR) {                          // Not enough power:
                         ErrorFlags |= NO_SUN;                               // Not enough solar power
@@ -851,12 +717,16 @@ void Timer10ms_singlerun(void) {
         if (pilot == PILOT_12V)
         {                                                                   // Disconnected or connected to EV without PWM
             setState(STATE_A);                                              // switch to STATE_A
+#ifdef SMARTEVSE_VERSION //not on CH32
             GLCD_init();                                                    // Re-init LCD
+#endif
         }
         else if (pilot == PILOT_9V)
         {
             setState(STATE_B1);                                             // switch to State B1
+#ifdef SMARTEVSE_VERSION //not on CH32
             GLCD_init();                                                    // Re-init LCD
+#endif
         }
     }
 
@@ -870,7 +740,9 @@ void Timer10ms_singlerun(void) {
         DiodeCheck = 0;
         setState(STATE_C);                                                  // switch to STATE_C
                                                                             // Don't update the LCD if we are navigating the menu
+#ifdef SMARTEVSE_VERSION //not on CH32
         if (!LCDNav) GLCD();                                                // immediately update LCD
+#endif
     }
 
     // ############### EVSE State C #################
@@ -879,25 +751,30 @@ void Timer10ms_singlerun(void) {
 
         if (pilot == PILOT_12V) {                                           // Disconnected ?
             setState(STATE_A);                                              // switch back to STATE_A
+#ifdef SMARTEVSE_VERSION //not on CH32
             GLCD_init();                                                    // Re-init LCD; necessary because switching contactors can cause LCD to mess up
-
+#endif
         } else if (pilot == PILOT_9V) {
             setState(STATE_B);                                              // switch back to STATE_B
             DiodeCheck = 0;
+#ifdef SMARTEVSE_VERSION //not on CH32
             GLCD_init();                                                    // Re-init LCD (200ms delay); necessary because switching contactors can cause LCD to mess up
-                                                                            // Mark EVSE as inactive (still State B)
+#endif                                                                            // Mark EVSE as inactive (still State B)
         } else if (pilot != PILOT_6V) {                                     // Pilot level at anything else is an error
             if (++StateTimer > 50) {                                        // make sure it's not a glitch, by delaying by 500mS (re-using StateTimer here)
                 StateTimer = 0;                                             // Reset StateTimer for use in State B
                 setState(STATE_B);
                 DiodeCheck = 0;
+#ifdef SMARTEVSE_VERSION //not on CH32
                 GLCD_init();                                                // Re-init LCD (200ms delay); necessary because switching contactors can cause LCD to mess up
+#endif
             }
 
         } else StateTimer = 0;
 
     } // end of State C code
-#else //v4
+#endif //v3
+#if SMARTEVSE_VERSION == 4 //v4
 
     if (Serial1.available()) {
         //Serial.printf("[<-] ");        // Data available from mainboard?
@@ -1011,10 +888,14 @@ void Timer10ms_singlerun(void) {
 
     if (CommTimeout) CommTimeout--;
 
-#endif //SMARTEVSE_VERSION
+#endif //SMARTEVSE_VERSION v4
+
+#ifndef SMARTEVSE_VERSION //CH32
+    // Clear communication error, if present
+    if ((ErrorFlags & CT_NOCOMM) && MainsMeterTimeout == 10) ErrorFlags &= ~CT_NOCOMM;
+#endif
 
 }
-#endif //SMARTEVSE_VERSION
 
 #ifdef SMARTEVSE_VERSION //v3 and v4
 void Timer10ms(void * parameter) {
