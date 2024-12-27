@@ -697,9 +697,11 @@ void Timer10ms_singlerun(void) {
             if (ActivationMode == 0) {
                 setState(STATE_ACTSTART);
                 ActivationTimer = 3;
-
+#ifdef SMARTEVSE_VERSION //v3 and v4
                 SetCPDuty(0);                                               // PWM off,  channel 0, duty cycle 0%
-                                                                            // Control pilot static -12V
+#else //CH32
+                TIM1->CH1CVR = 0;
+#endif
             }
         }
         if (pilot == PILOT_DIODE) {
