@@ -705,7 +705,11 @@ void Timer10ms_singlerun(void) {
         if (pilot == PILOT_DIODE) {
             DiodeCheck = 1;                                                 // Diode found, OK
             _LOG_A("Diode OK\n");
+#ifdef SMARTEVSE_VERSION //v3 and v4
             timerAlarmWrite(timerA, PWM_5, false);                          // Enable Timer alarm, set to start of CP signal (5%)
+#else //CH32
+            TIM1->CH1CVR = PWM_5;
+#endif
         }
 
     }
