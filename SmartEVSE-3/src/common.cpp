@@ -538,19 +538,51 @@ uint8_t Pilot() {
 #endif
 
 
+void Timer10ms_singlerun(void) {
 #ifndef SMARTEVSE_VERSION //CH32
 //NOTE that CH32 has a 10ms routine that has to be called every 10ms
 //and ESP32 has a 10ms routine that is called once and has a while loop with 10ms delay in it
-void Timer10ms_singlerun(void) {
     static uint8_t pilot, DiodeCheck = 0;
 
     BlinkLed();
 
+    //Check RS485 communication
+    if (ModbusRxLen) CheckRS485Comm();
+
+#else //v3 and v4
+// Task that handles EVSE State Changes
+// Reads buttons, and updates the LCD.
+    static uint16_t old_sec = 0;
+#if SMARTEVSE_VERSION == 3
+    static uint8_t DiodeCheck = 0;
+    static uint16_t StateTimer = 0;                                                 // When switching from State B to C, make sure pilot is at 6v for 100ms
+#else
+    static uint8_t RXbyte, idx = 0;
+    static char SerialBuf[256];
+    static uint8_t CommState = COMM_VER_REQ;
+    static uint8_t CommTimeout = 0;
+    static char *ret;
+#endif
+    getButtonState();
+
+    // When one or more button(s) are pressed, we call GLCDMenu
+    if (((ButtonState != 0x07) || (ButtonState != OldButtonState)) && !LCDlock) GLCDMenu(ButtonState);
+
+    // Update/Show Helpmenu
+    if (LCDNav > MENU_ENTER && LCDNav < MENU_EXIT && (ScrollTimer + 5000 < millis() ) && (!SubMenu)) GLCDHelp();
+
+    if (timeinfo.tm_sec != old_sec) {
+        old_sec = timeinfo.tm_sec;
+        GLCD();
+    }
+#endif
+
+//common code here
     // Check the external switch and RCM sensor
     ExtSwitch.CheckSwitch();
 
-    //Check RS485 communication
-    if (ModbusRxLen) CheckRS485Comm();
+#ifndef SMARTEVSE_VERSION //CH32
+
 
     // sample the Pilot line
     pilot = Pilot();
@@ -684,38 +716,8 @@ void Timer10ms_singlerun(void) {
 
 
 #else //v3 or v4
-// Task that handles EVSE State Changes
-// Reads buttons, and updates the LCD.
-void Timer10ms_singlerun(void) {
-    static uint16_t old_sec = 0;
-#if SMARTEVSE_VERSION == 3
-    static uint8_t DiodeCheck = 0;
-    static uint16_t StateTimer = 0;                                                 // When switching from State B to C, make sure pilot is at 6v for 100ms
-#else
-    static uint8_t RXbyte, idx = 0;
-    static char SerialBuf[256];
-    static uint8_t CommState = COMM_VER_REQ;
-    static uint8_t CommTimeout = 0;
-    static char *ret;
-#endif
 
-    getButtonState();
-
-    // When one or more button(s) are pressed, we call GLCDMenu
-    if (((ButtonState != 0x07) || (ButtonState != OldButtonState)) && !LCDlock) GLCDMenu(ButtonState);
-
-    // Update/Show Helpmenu
-    if (LCDNav > MENU_ENTER && LCDNav < MENU_EXIT && (ScrollTimer + 5000 < millis() ) && (!SubMenu)) GLCDHelp();
-
-    if (timeinfo.tm_sec != old_sec) {
-        old_sec = timeinfo.tm_sec;
-        GLCD();
-    }
-
-    // Check the external switch and RCM sensor
-    ExtSwitch.CheckSwitch();
-
-#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3 //v3 and CH32
+#if SMARTEVSE_VERSION == 3 //v3
     // sample the Pilot line
     pilot = Pilot();
 
@@ -895,8 +897,7 @@ void Timer10ms_singlerun(void) {
         } else StateTimer = 0;
 
     } // end of State C code
-#endif
-#if SMARTEVSE_VERSION == 4
+#else //v4
 
     if (Serial1.available()) {
         //Serial.printf("[<-] ");        // Data available from mainboard?
@@ -1013,7 +1014,9 @@ void Timer10ms_singlerun(void) {
 #endif //SMARTEVSE_VERSION
 
 }
+#endif //SMARTEVSE_VERSION
 
+#ifdef SMARTEVSE_VERSION //v3 and v4
 void Timer10ms(void * parameter) {
     // infinite loop
     while(1) {
