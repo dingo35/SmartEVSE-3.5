@@ -46,6 +46,7 @@ extern "C" {
 }
 #endif
 EnableC2_t EnableC2 = NOT_PRESENT;
+uint8_t pilot;
 
 #ifdef SMARTEVSE_VERSION //v3 or v4
 #include "meter.h"
@@ -484,7 +485,7 @@ uint8_t Pilot() {
 
     uint16_t sample, Min = 4095, Max = 0;
     uint8_t n, ret;
-    static uint8_t old_pilot;
+    static uint8_t old_pilot = 255;
 
     // calculate Min/Max of last 32 CP measurements (32 ms)
     for (n=0 ; n<NUM_ADC_SAMPLES ;n++) {
@@ -494,7 +495,7 @@ uint8_t Pilot() {
         if (sample > Max) Max = sample;                                   // store highest value
     }
 
-    //printf("min:%u max:%u\n",Min ,Max);
+    printf("MSG: min:%u max:%u\n",Min ,Max);
 
     // test Min/Max against fixed levels    (needs testing)
     ret = PILOT_NOK;                                                        // Pilot NOT ok
@@ -504,9 +505,10 @@ uint8_t Pilot() {
     if ((Min >= 2000) && (Max < 2400)) ret = PILOT_3V;                      // Pilot at 3V
     if ((Min > 100) && (Max < 350)) ret = PILOT_DIODE;                      // Diode Check OK
     if (ret != old_pilot) {
-        printf("Pilot=%u\n", ret); //d
+        //printf("Pilot:%u\n", ret); //d
         old_pilot = ret;
     }
+printf("MSG: DINGO pilot routine: Pilot=%u.\n", ret);
     return ret;
 }
 #else //v3 or v4
@@ -542,7 +544,7 @@ void Timer10ms_singlerun(void) {
 #ifndef SMARTEVSE_VERSION //CH32
 //NOTE that CH32 has a 10ms routine that has to be called every 10ms
 //and ESP32 has a 10ms routine that is called once and has a while loop with 10ms delay in it
-    static uint8_t pilot, DiodeCheck = 0;
+    static uint8_t DiodeCheck = 0;
     static uint16_t StateTimer = 0;                                                 // When switching from State B to C, make sure pilot is at 6v for 100ms
 
     BlinkLed();
