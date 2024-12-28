@@ -1310,10 +1310,11 @@ void setStatePowerUnavailable(void) {
  * @return uint8_t success
  */
 uint8_t setItemValue(uint8_t nav, uint16_t val) {
+#ifdef SMARTEVSE_VERSION //TODO THIS SHOULD BE FIXED
     if (nav < MENU_EXIT) {
         if (val < MenuStr[nav].Min || val > MenuStr[nav].Max) return 0;
     }
-
+#endif
     switch (nav) {
         case MENU_MAX_TEMP:
             maxTemp = val;
