@@ -48,9 +48,9 @@ extern "C" {
 EnableC2_t EnableC2 = NOT_PRESENT;
 uint8_t pilot;
 
-#ifdef SMARTEVSE_VERSION //v3 or v4
+//#ifdef SMARTEVSE_VERSION //v3 or v4
 #include "meter.h"
-#endif
+//#endif
 
 
 // gateway to the outside world
@@ -95,6 +95,8 @@ uint16_t MaxSumMainsTimer = 0;
 uint8_t LCDTimer = 0;
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
 uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
+Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
+Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
 
 //constructor
 Button::Button(void) {

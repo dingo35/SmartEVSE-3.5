@@ -199,9 +199,6 @@ uint8_t Show_RFID = 0;
 
 uint16_t maxTemp = MAX_TEMPERATURE;
 
-Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
-Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
-
 uint8_t State = STATE_A;
 uint8_t ErrorFlags = NO_ERROR;
 uint8_t NextState;
