@@ -29,6 +29,11 @@ class Button {
 };
 
 extern Button ExtSwitch;
+extern uint8_t SB2_WIFImode;
+extern uint8_t SubMenu;
+extern uint8_t LCDNav;
+extern uint8_t GridActive;
+extern uint8_t Grid;
 
 extern void getButtonState();
 extern void PowerPanicESP();
@@ -36,6 +41,7 @@ extern void PowerPanicESP();
 extern uint8_t LCDlock, MainVersion;
 enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
 extern void CalcBalancedCurrent(char mod);
+extern void write_settings(void);
 
 struct Sensorbox {
     uint8_t SoftwareVer;        // Sensorbox 2 software version
