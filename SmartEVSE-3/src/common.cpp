@@ -94,6 +94,7 @@ Single_Phase_t Switching_To_Single_Phase = FALSE;
 uint16_t MaxSumMainsTimer = 0;
 uint8_t LCDTimer = 0;
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
+uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
 
 //constructor
 Button::Button(void) {
