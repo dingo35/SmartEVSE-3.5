@@ -466,15 +466,6 @@ struct DelayedTimeStruct {
     int32_t diff;           // StartTime minus current time in seconds
 };
 
-struct Sensorbox {
-    uint8_t SoftwareVer;        // Sensorbox 2 software version
-    uint8_t WiFiConnected;      // 0:not connected / 1:connected to WiFi
-    uint8_t WiFiAPSTA;          // 0:no portal /  1: portal active
-    uint8_t WIFImode;           // 0:Wifi Off / 1:WiFi On / 2: Portal Start
-    uint8_t IP[4];
-    uint8_t APpassword[9];      // 8 characters + null termination
-};
-
 #define EPOCH2_OFFSET 1672531200
 
 extern struct DelayedTimeStruct DelayedStartTime;
