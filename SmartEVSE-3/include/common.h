@@ -33,5 +33,5 @@ extern void PowerPanicESP();
 
 extern uint8_t LCDlock, MainVersion;
 enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
-
+extern void CalcBalancedCurrent(char mod);
 #endif
