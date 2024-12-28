@@ -78,7 +78,6 @@ EXT float OcppCurrentLimit;
 
 //functions
 EXT void setup();
-//EXT void setAccess(uint8_t Access);
 EXT void setState(uint8_t NewState);
 EXT int8_t TemperatureSensor();
 EXT void CheckSerialComm(void);
@@ -273,14 +272,14 @@ Button ExtSwitch;
 // is allowed to change the value of Acces_bit on CH32
 // All other code has to use setAccess
 // so for v4 we need:
-// a. CH32 setAccess sends message to ESP32           in CH32 src/evse.c
-// b. ESP32 receiver that calls local setState        in ESP32 src/main.cpp
+// a. CH32 setAccess sends message to ESP32           in CH32 src/evse.c and/or in src/common.cpp (this file)
+// b. ESP32 receiver that calls local setAccess       in ESP32 src/main.cpp
 // c. ESP32 setAccess full functionality              in ESP32 src/common.cpp (this file)
 // d. ESP32 sends message to CH32                     in ESP32 src/common.cpp (this file)
 // e. CH32 receiver that sets local variable          in CH32 src/evse.c
 
-#ifdef SMARTEVSE_VERSION //v3 and v4
 void setAccess(bool Access) { //c
+#ifdef SMARTEVSE_VERSION //v3 and v4
     Access_bit = Access;
 #if SMARTEVSE_VERSION == 4
     Serial1.printf("Access:%u\n", Access_bit); //d
@@ -302,8 +301,10 @@ void setAccess(bool Access) { //c
     // Update MQTT faster
     lastMqttUpdate = 10;
 #endif //MQTT
-}
+#else //CH32
+    printf("Access:%1u.\n", Access); //a
 #endif //SMARTEVSE_VERSION
+}
 
 
 /**
@@ -1428,9 +1429,11 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case MENU_RFIDREADER:
             RFIDReader = val;
             break;
+#ifdef SMARTEVSE_VERSION //TODO THIS SHOULD BE FIXED
         case MENU_WIFI:
             WIFImode = val;
             break;
+#endif
         case MENU_AUTOUPDATE:
             AutoUpdate = val;
             break;
