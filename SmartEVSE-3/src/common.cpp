@@ -1205,9 +1205,10 @@ void Timer10ms_singlerun(void) {
                 setAccess(atoi(ret+strlen(token)));
             }
 
-            ret = strstr(SerialBuf, "version:");
+            strncpy(token, "version:", sizeof(token));
+            ret = strstr(SerialBuf, token);
             if (ret != NULL) {
-                MainVersion = atoi(ret+8);
+                MainVersion = atoi(ret+strlen(token));
                 Serial.printf("version %u received\n", MainVersion);
                 CommState = COMM_CONFIG_SET;
             }
@@ -1221,12 +1222,19 @@ void Timer10ms_singlerun(void) {
             strncpy(token, "Pilot:", sizeof(token));
             ret = strstr(SerialBuf, token);
             if (ret != NULL) {
-                pilot = atoi(ret+6); //e
+                pilot = atoi(ret+strlen(token)); //e
             }
 
-            ret = strstr(SerialBuf, "State:"); // current State (request) received from Wch
+            strncpy(token, "EnableC2:", sizeof(token));
+            ret = strstr(SerialBuf, token);
+            if (ret != NULL) {
+                EnableC2 = (EnableC2_t) atoi(ret+strlen(token)); //e
+            }
+
+            strncpy(token, "State:", sizeof(token));
+            ret = strstr(SerialBuf, token);
             if (ret != NULL ) {
-                State = atoi(ret+6); //e
+                State = atoi(ret+strlen(token)); //e
 /*
                 if (State == STATE_COMM_B) NewState = STATE_COMM_B_OK;
                 else if (State == STATE_COMM_C) NewState = STATE_COMM_C_OK;
@@ -1321,7 +1329,11 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             break;
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
+#ifdef SMARTEVSE_VERSION
             Serial1.printf("EnableC2:%u\n", EnableC2);
+#else
+            printf("EnableC2:%u\n", EnableC2);
+#endif
             break;
         case MENU_CONFIG:
             Config = val;
