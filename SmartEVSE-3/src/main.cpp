@@ -210,7 +210,6 @@ uint8_t NextState;
 uint16_t MaxCapacity;                                                       // Cable limit (A) (limited by the wire in the charge cable, set automatically, or manually if Config=Fixed Cable)
 uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
 uint16_t OverrideCurrent = 0;                                               // Temporary assigned current (Amps *10) (modbus)
-int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
 
 // Load Balance variables
 int16_t IsetBalanced = 0;                                                   // Max calculated current (Amps *10) available for all EVSE's
