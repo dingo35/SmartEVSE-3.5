@@ -102,6 +102,9 @@ Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
 bool phasesLastUpdateFlag = false;
 bool GridRelayOpen = false;                                                 // The read status of the relay
 uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging
+uint16_t maxTemp = MAX_TEMPERATURE;
+uint8_t AutoUpdate = AUTOUPDATE;                                            // Automatic Firmware Update (0:Disable / 1:Enable)
+uint8_t ConfigChanged = 0;
 
 //constructor
 Button::Button(void) {
@@ -1285,3 +1288,189 @@ void Timer10ms(void * parameter) {
     } // while(1) loop
 }
 #endif //SMARTEVSE_VERSION
+
+
+void setStatePowerUnavailable(void) {
+    if (State == STATE_A)
+       return;
+    //State changes between A,B,C,D are caused by EV or by the user
+    //State changes between x1 and x2 are created by the EVSE
+    //State changes between x1 and x2 indicate availability (x2) of unavailability (x1) of power supply to the EV
+    if (State == STATE_C) setState(STATE_C1);                       // If we are charging, tell EV to stop charging
+    else if (State != STATE_C1) setState(STATE_B1);                 // If we are not in State C1, switch to State B1
+}
+
+
+/**
+ * Check minimum and maximum of a value and set the variable
+ *
+ * @param uint8_t MENU_xxx
+ * @param uint16_t value
+ * @return uint8_t success
+ */
+uint8_t setItemValue(uint8_t nav, uint16_t val) {
+    if (nav < MENU_EXIT) {
+        if (val < MenuStr[nav].Min || val > MenuStr[nav].Max) return 0;
+    }
+
+    switch (nav) {
+        case MENU_MAX_TEMP:
+            maxTemp = val;
+            break;
+        case MENU_C2:
+            EnableC2 = (EnableC2_t) val;
+            Serial1.printf("EnableC2:%u\n", EnableC2);
+            break;
+        case MENU_CONFIG:
+            Config = val;
+            break;
+        case STATUS_MODE:
+            if (Mode != val)                                                    // this prevents slave from waking up from OFF mode when Masters'
+                                                                                // solarstoptimer starts to count
+                setMode(val);
+            break;
+        case MENU_MODE:
+            Mode = val;
+            break;
+        case MENU_START:
+            StartCurrent = val;
+            break;
+        case MENU_STOP:
+            StopTime = val;
+            break;
+        case MENU_IMPORT:
+            ImportCurrent = val;
+            break;
+        case MENU_LOADBL:
+#if SMARTEVSE_VERSION == 3
+            ConfigureModbusMode(val);
+#endif
+            LoadBl = val;
+            break;
+        case MENU_MAINS:
+            MaxMains = val;
+            break;
+        case MENU_SUMMAINS:
+            MaxSumMains = val;
+            break;
+        case MENU_SUMMAINSTIME:
+            MaxSumMainsTime = val;
+            break;
+        case MENU_MIN:
+            MinCurrent = val;
+            break;
+        case MENU_MAX:
+            MaxCurrent = val;
+            break;
+        case MENU_CIRCUIT:
+            MaxCircuit = val;
+            break;
+        case MENU_LOCK:
+            Lock = val;
+            break;
+        case MENU_SWITCH:
+            Switch = val;
+            break;
+        case MENU_RCMON:
+            RCmon = val;
+            break;
+        case MENU_GRID:
+            Grid = val;
+            break;
+        case MENU_SB2_WIFI:
+            SB2_WIFImode = val;
+            break;
+        case MENU_MAINSMETER:
+            MainsMeter.Type = val;
+            break;
+        case MENU_MAINSMETERADDRESS:
+            MainsMeter.Address = val;
+            break;
+        case MENU_EVMETER:
+            EVMeter.Type = val;
+            break;
+        case MENU_EVMETERADDRESS:
+            EVMeter.Address = val;
+            break;
+        case MENU_EMCUSTOM_ENDIANESS:
+            EMConfig[EM_CUSTOM].Endianness = val;
+            break;
+        case MENU_EMCUSTOM_DATATYPE:
+            EMConfig[EM_CUSTOM].DataType = (mb_datatype)val;
+            break;
+        case MENU_EMCUSTOM_FUNCTION:
+            EMConfig[EM_CUSTOM].Function = val;
+            break;
+        case MENU_EMCUSTOM_UREGISTER:
+            EMConfig[EM_CUSTOM].URegister = val;
+            break;
+        case MENU_EMCUSTOM_UDIVISOR:
+            EMConfig[EM_CUSTOM].UDivisor = val;
+            break;
+        case MENU_EMCUSTOM_IREGISTER:
+            EMConfig[EM_CUSTOM].IRegister = val;
+            break;
+        case MENU_EMCUSTOM_IDIVISOR:
+            EMConfig[EM_CUSTOM].IDivisor = val;
+            break;
+        case MENU_EMCUSTOM_PREGISTER:
+            EMConfig[EM_CUSTOM].PRegister = val;
+            break;
+        case MENU_EMCUSTOM_PDIVISOR:
+            EMConfig[EM_CUSTOM].PDivisor = val;
+            break;
+        case MENU_EMCUSTOM_EREGISTER:
+            EMConfig[EM_CUSTOM].ERegister = val;
+            break;
+        case MENU_EMCUSTOM_EDIVISOR:
+            EMConfig[EM_CUSTOM].EDivisor = val;
+            break;
+        case MENU_RFIDREADER:
+            RFIDReader = val;
+            break;
+        case MENU_WIFI:
+            WIFImode = val;
+            break;
+        case MENU_AUTOUPDATE:
+            AutoUpdate = val;
+            break;
+
+        // Status writeable
+        case STATUS_STATE:
+            if (val != State) setState(val);
+            break;
+        case STATUS_ERROR:
+            ErrorFlags = val;
+            if (ErrorFlags) {                                                   // Is there an actual Error? Maybe the error got cleared?
+                if (ErrorFlags & CT_NOCOMM) MainsMeter.Timeout = 0;             // clear MainsMeter.Timeout on a CT_NOCOMM error, so the error will be immediate.
+                setStatePowerUnavailable();
+                ChargeDelay = CHARGEDELAY;
+                _LOG_V("Error message received!\n");
+            } else {
+                _LOG_V("Errors Cleared received!\n");
+            }
+            break;
+        case STATUS_CURRENT:
+            OverrideCurrent = val;
+            if (LoadBl < 2) MainsMeter.Timeout = COMM_TIMEOUT;                  // reset timeout when register is written
+            break;
+        case STATUS_SOLAR_TIMER:
+            SolarStopTimer = val;
+            break;
+        case STATUS_ACCESS:
+            if (val == 0 || val == 1) {
+                setAccess(val);
+            }
+            break;
+        case STATUS_CONFIG_CHANGED:
+            ConfigChanged = val;
+            break;
+
+        default:
+            return 0;
+    }
+
+    return 1;
+}
+
+
