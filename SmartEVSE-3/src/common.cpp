@@ -1206,18 +1206,12 @@ static uint8_t PollEVNode = NR_EVSES, updated = 0;
     }
 #else //CH32
     static uint8_t locktimer = 0, unlocktimer = 0;
-    uint8_t lock1, lock2;
-
 
     //Check Serial communication with ESP32
     if (RxRdy1) CheckSerialComm();
 
     // Check if the cable lock is used
     if (Lock) {                                                 // Cable lock enabled?
-
-        if (Lock == 1) { lock1 = FUN_LOW; lock2 = FUN_HIGH; }           // Solenoid
-        else { lock1 = FUN_HIGH; lock2 = FUN_LOW; }                     // Motor
-
         // UnlockCable takes precedence over LockCable
         if (UnlockCable) {
             if (unlocktimer < 6) {                              // 600ms pulse
