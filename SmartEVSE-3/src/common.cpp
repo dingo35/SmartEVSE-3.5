@@ -1234,10 +1234,8 @@ uint8_t ow = 0, x;
         Broadcast = 1;                                                  // repeat every two seconds
     }
 
-#if SMARTEVSE_VERSION == 3
     // for Slave modbusrequest loop is never called, so we have to show debug info here...
     if (LoadBl > 1)
-#endif
         printStatus();  //for debug purposes
 
     //_LOG_A("Timer1S task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
