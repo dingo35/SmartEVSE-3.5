@@ -225,7 +225,7 @@ Node_t Node[NR_EVSES] = {                                                       
     {      0,       1,     0,       0,       0,      0,      0,      0,     0,    0 }            
 };
 
-uint8_t lock1 = 0, lock2 = 1;
+extern uint8_t lock1, lock2;
 uint16_t BacklightTimer = 0;                                                // Backlight timer (sec)
 uint8_t BacklightSet = 0;
 extern uint8_t LCDTimer;

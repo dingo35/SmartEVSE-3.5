@@ -77,6 +77,7 @@ EXT struct Node_t Node[NR_EVSES];
 EXT uint8_t BalancedState[NR_EVSES];
 #if ENABLE_OCPP
 EXT float OcppCurrentLimit;
+extern bool OcppForcesLock;
 #endif
 
 //functions
@@ -93,6 +94,16 @@ EXT const char * getStateName(uint8_t StateCode);
 EXT void SetCurrent(uint16_t current);
 EXT char IsCurrentAvailable(void);
 EXT int Set_Nr_of_Phases_Charging(void);
+extern void printStatus(void);
+extern void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export);
+extern void requestNodeConfig(uint8_t NodeNr);
+extern void requestPowerMeasurement(uint8_t Meter, uint8_t Address, uint16_t PRegister);
+extern void requestNodeStatus(uint8_t NodeNr);
+extern uint8_t processAllNodeStates(uint8_t NodeNr);
+extern void BroadcastCurrent(void);
+
+extern bool CPDutyOverride;
+extern uint8_t ModbusRequest;
 
 Single_Phase_t Switching_To_Single_Phase = FALSE;
 uint16_t MaxSumMainsTimer = 0;
@@ -108,6 +119,8 @@ uint16_t maxTemp = MAX_TEMPERATURE;
 uint8_t AutoUpdate = AUTOUPDATE;                                            // Automatic Firmware Update (0:Disable / 1:Enable)
 uint8_t ConfigChanged = 0;
 uint8_t SB2_WIFImode = SB2_WIFI_MODE;                                       // Sensorbox-2 WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
+uint8_t lock1 = 0, lock2 = 1;
+
 
 //constructor
 Button::Button(void) {
