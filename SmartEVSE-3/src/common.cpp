@@ -11,6 +11,7 @@
 #include "stdlib.h"
 #include "meter.h"
 #include "modbus.h"
+#include "memory.h"  //for memcpy
 
 #ifdef SMARTEVSE_VERSION //ESP32
 #define EXT extern
