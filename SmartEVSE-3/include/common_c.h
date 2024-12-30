@@ -49,6 +49,7 @@ struct EMstruct {
 #define EXTC extern "C"
 #else
 #define EXTC extern
+#define bool _Bool
 #endif
 
 #define NUM_ADC_SAMPLES 32
