@@ -65,11 +65,10 @@ uint8_t DelayedRepeat;                                                      // 0
 // and they are mainly used in the main.cpp/common.cpp code
 EXT uint32_t elapsedmax, elapsedtime;
 EXT int8_t TempEVSE;
-EXT int homeBatteryCurrent, phasesLastUpdate;
 EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, MinCurrent, MaxCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], ADCsamples[25], Balanced[NR_EVSES], MaxMains, MaxCircuit, OverrideCurrent, StartCurrent, StopTime, MaxSumMains, ImportCurrent, GridRelayMaxSumMains;
 EXT uint8_t RFID[8], Access_bit, Mode, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, RFIDReader, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent, MaxSumMainsTime;
 EXT int16_t IsetBalanced;
-EXT bool CustomButton, GridRelayOpen, phasesLastUpdateFlag;
+EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
 EXT hw_timer_t * timerA;
 esp_adc_cal_characteristics_t * adc_chars_CP;
@@ -117,6 +116,8 @@ int16_t Isum = 0;                                                           // S
 uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
+int homeBatteryCurrent = 0;
+int phasesLastUpdate = 0;
 bool phasesLastUpdateFlag = false;
 bool GridRelayOpen = false;                                                 // The read status of the relay
 uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging

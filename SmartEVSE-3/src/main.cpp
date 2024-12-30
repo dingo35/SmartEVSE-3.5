@@ -266,10 +266,10 @@ volatile uint16_t ADCsamples[25];                                           // d
 volatile uint8_t sampleidx = 0;
 char str[20];
 
-int phasesLastUpdate = 0;
+extern int phasesLastUpdate;
 extern bool phasesLastUpdateFlag;
 extern int16_t IrmsOriginal[3];
-int homeBatteryCurrent = 0;
+extern int homeBatteryCurrent;
 extern int homeBatteryLastUpdate;
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 extern uint8_t ColorOff[3] ;
