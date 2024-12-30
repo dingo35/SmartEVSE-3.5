@@ -1845,7 +1845,9 @@ static uint8_t PollEVNode = NR_EVSES, updated = 0;
                 if (LoadBl == 1 && !(ErrorFlags & CT_NOCOMM) ) BroadcastCurrent();               // When there is no Comm Error, Master sends current to all connected EVSE's
 
                 if ((State == STATE_B || State == STATE_C) && !CPDutyOverride) SetCurrent(Balanced[0]); // set PWM output for Master //mind you, the !CPDutyOverride was not checked in Smart/Solar mode, but I think this was a bug!
+#ifdef SMARTEVSE_VERSION //ESP32
                 printStatus();  //for debug purposes
+#endif
                 ModbusRequest = 0;
                 //_LOG_A("Timer100ms task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
                 break;
