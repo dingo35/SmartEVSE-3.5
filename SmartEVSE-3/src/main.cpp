@@ -268,9 +268,9 @@ char str[20];
 
 int phasesLastUpdate = 0;
 extern bool phasesLastUpdateFlag;
-int16_t IrmsOriginal[3]={0, 0, 0};
+extern int16_t IrmsOriginal[3];
 int homeBatteryCurrent = 0;
-int homeBatteryLastUpdate = 0; // Time in milliseconds
+extern int homeBatteryLastUpdate;
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 extern uint8_t ColorOff[3] ;
 extern uint8_t ColorNormal[3] ;
@@ -493,33 +493,6 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
     count = getErrorId(ErrorCode);
     if(count < 9) return StrErrorNameWeb[count];
     else return "Multiple Errors";
-}
-
-
-/**
- * Returns the known battery charge rate if the data is not too old.
- * Returns 0 if data is too old.
- * A positive number means charging, a negative number means discharging --> this means the inverse must be used for calculations
- * 
- * Example:
- * homeBatteryCharge == 1000 --> Battery is charging using Solar
- * P1 = -500 --> Solar injection to the net but nut sufficient for charging
- * 
- * If the P1 value is added with the inverse battery charge it will inform the EVSE logic there is enough Solar --> -500 + -1000 = -1500
- * 
- * Note: The user who is posting battery charge data should take this into account, meaning: if he wants a minimum home battery (dis)charge rate he should substract this from the value he is sending.
- */
-// 
-int getBatteryCurrent(void) {
-    int currentTime = time(NULL) - 60; // The data should not be older than 1 minute
-    
-    if (Mode == MODE_SOLAR && homeBatteryLastUpdate > (currentTime)) {
-        return homeBatteryCurrent;
-    } else {
-        homeBatteryCurrent = 0;
-        homeBatteryLastUpdate = 0;
-        return 0;
-    }
 }
 
 

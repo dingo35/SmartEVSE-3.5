@@ -136,8 +136,8 @@ bool CPDutyOverride = false;
 uint32_t CurrentPWM = 0;                                                    // Current PWM duty cycle value (0 - 1024)
 extern const char StrStateName[15][13] = {"A", "B", "C", "D", "COMM_B", "COMM_B_OK", "COMM_C", "COMM_C_OK", "Activate", "B1", "C1", "MODEM1", "MODEM2", "MODEM_OK", "MODEM_DENIED"}; //note that the extern is necessary here because the const will point the compiler to internal linkage; https://cplusplus.com/forum/general/81640/
 uint8_t ModbusRx[256];                          // Modbus Receive buffer
-
-
+int homeBatteryLastUpdate = 0; // Time in milliseconds
+int16_t IrmsOriginal[3]={0, 0, 0};
 
 //constructor
 Button::Button(void) {
@@ -3093,6 +3093,57 @@ uint16_t getItemValue(uint8_t nav) {
         default:
             return 0;
     }
+}
+
+
+/**
+ * Returns the known battery charge rate if the data is not too old.
+ * Returns 0 if data is too old.
+ * A positive number means charging, a negative number means discharging --> this means the inverse must be used for calculations
+ * 
+ * Example:
+ * homeBatteryCharge == 1000 --> Battery is charging using Solar
+ * P1 = -500 --> Solar injection to the net but nut sufficient for charging
+ * 
+ * If the P1 value is added with the inverse battery charge it will inform the EVSE logic there is enough Solar --> -500 + -1000 = -1500
+ * 
+ * Note: The user who is posting battery charge data should take this into account, meaning: if he wants a minimum home battery (dis)charge rate he should substract this from the value he is sending.
+ */
+// 
+int getBatteryCurrent(void) {
+    int currentTime = time(NULL) - 60; // The data should not be older than 1 minute
+    
+    if (Mode == MODE_SOLAR && homeBatteryLastUpdate > (currentTime)) {
+        return homeBatteryCurrent;
+    } else {
+        homeBatteryCurrent = 0;
+        homeBatteryLastUpdate = 0;
+        return 0;
+    }
+}
+
+
+void CalcIsum(void) {
+    phasesLastUpdate = time(NULL);
+    phasesLastUpdateFlag = true;                        // Set flag if a new Irms measurement is received.
+    int batteryPerPhase = getBatteryCurrent() / 3;
+    Isum = 0;
+#if FAKE_SUNNY_DAY
+    int32_t temp[3]={0, 0, 0};
+    temp[0] = INJECT_CURRENT_L1 * 10;                   //Irms is in units of 100mA
+    temp[1] = INJECT_CURRENT_L2 * 10;
+    temp[2] = INJECT_CURRENT_L3 * 10;
+#endif
+
+    for (int x = 0; x < 3; x++) {
+#if FAKE_SUNNY_DAY
+        MainsMeter.Irms[x] = MainsMeter.Irms[x] - temp[x];
+#endif
+        IrmsOriginal[x] = MainsMeter.Irms[x];
+        MainsMeter.Irms[x] -= batteryPerPhase;
+        Isum = Isum + MainsMeter.Irms[x];
+    }
+    MainsMeter.CalcImeasured();
 }
 
 
