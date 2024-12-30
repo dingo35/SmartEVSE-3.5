@@ -132,8 +132,7 @@ struct ModBus MB;          // Used by SmartEVSE fuctions
 
 extern unsigned char RFID[8];
 
-//extern const char StrStateName[15][13];
-extern char StrStateName[15][13];
+extern const char StrStateName[15][13];
 const char StrStateNameWeb[15][17] = {"Ready to Charge", "Connected to EV", "Charging", "D", "Request State B", "State B OK", "Request State C", "State C OK", "Activate", "Charging Stopped", "Stop Charging", "Modem Setup", "Modem Request", "Modem Done", "Modem Denied"};
 const char StrErrorNameWeb[9][20] = {"None", "No Power Available", "Communication Error", "Temperature High", "EV Meter Comm Error", "RCM Tripped", "Waiting for Solar", "Test IO", "Flash Error"};
 const char StrMode[3][8] = {"Normal", "Smart", "Solar"};
