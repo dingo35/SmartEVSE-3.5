@@ -2247,8 +2247,6 @@ static unsigned int LedPwm = 0;                                                /
 // ModbusRxLen contains length of data contained in array ModbusRx
 void CheckRS485Comm(void) //looks like MBHandleData
 {
-    uint8_t x;
-
     ModbusDecode(ModbusRx, ModbusRxLen);
 
     // Data received is a response to an earlier request from the master.
@@ -2259,49 +2257,8 @@ void CheckRS485Comm(void) //looks like MBHandleData
             case 0x04: // (Read input register)
                 if (MainsMeter.Type && MB.Address == MainsMeter.Address) {
                     MainsMeter.ResponseToMeasurement();
-                //if (MainsMeter.Type && MB.Address == MainsMeter.Address && MB.Register == EMConfig[MainsMeter.Type].IRegister) {
-                    // packet from Mains electric meter
-/*                    x = receiveCurrentMeasurement(MB.Data, MainsMeter.Type, MainsMeter.Irms);
-                    if (x && LoadBl <2) MainsMeterTimeout = 10;          // only reset timeout when data is ok, and Master/Disabled
-
-                    // Calculate Isum (for nodes and master)
-                    Isum = 0;
-                    for (x = 0; x < 3; x++) {
-#ifdef LOG_INFO_MODBUS
-                        printf("receiveCurrentMeasurement[%u]: %ld\n", x, Irms[x]);
-#endif
-                        // Calculate difference of Mains and PV electric meter
-                        Irms[x] = Irms[x] / 100;                        // reduce resolution of Irms to 100mA
-                        Isum += Irms[x];                                // Isum has a resolution of 100mA
-                    }
-*/
                 } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
                     EVMeter.ResponseToMeasurement();
-/*                    // Packet from EV electric meter
-                    if (MB.Register == EMConfig[EVMeter.Type].ERegister) {
-                        // Energy measurement
-                        EnergyEV = receiveEnergyMeasurement(MB.Data, EVMeter.Type);
-#ifdef LOG_INFO_MODBUS
-                        printf("receiveEnergyMeasurement: %ld\n", EnergyEV);
-#endif
-                        if (ResetKwh == 2) EnergyMeterStart = EnergyEV; // At powerup, set EnergyEV to kwh meter value
-                        EnergyCharged = EnergyEV - EnergyMeterStart;    // Calculate Energy
-                    } else if (MB.Register == EMConfig[EVMeter.Type].PRegister) {
-                        // Power measurement
-                        PowerMeasured = receivePowerMeasurement(MB.Data, EVMeter.Type);
-#ifdef LOG_INFO_MODBUS
-                        printf("receivePowerMeasurement: %ld\n",PowerMeasured);
-#endif
-                    } else if (MB.Register == EMConfig[EVMeter.Type].IRegister) {
-                        // Current measurement
-                        x = receiveCurrentMeasurement(MB.Data, EVMeter.Type, Irms_EV);
-                        
-                        //if (x) EVMeterTimeout = COMM_EVTIMEOUT;                 // TODO: only reset EVtimeout when data is ok
-                        for (x = 0; x < 3; x++) {
-                            // measured currents are in MILLI AMPERE
-                            Irms_EV[x] = Irms_EV[x] / 100;                      // Convert to AMPERE * 10
-                        }
-                    }*/
                 } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
                     // Packet from a Node EVSE, only for Master!
                     if (MB.Register == 0x0000) {
