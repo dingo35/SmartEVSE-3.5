@@ -171,7 +171,7 @@ int32_t EnergyRequest = -1;                                                 // R
 char EVCCID[32];                                                            // Car's EVCCID (EV Communication Controller Identifer)
 char RequiredEVCCID[32];                                                    // Required EVCCID before allowing charging
 
-bool CPDutyOverride = false;
+extern bool CPDutyOverride;
 uint8_t Lock = LOCK;                                                        // Cable lock (0:Disable / 1:Solenoid / 2:Motor)
 uint16_t MaxCircuit = MAX_CIRCUIT;                                          // Max current of the EVSE circuit (A)
 uint8_t Config = CONFIG;                                                    // Configuration (0:Socket / 1:Fixed Cable)
