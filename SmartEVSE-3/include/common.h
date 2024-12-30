@@ -49,8 +49,6 @@ enum Single_Phase_t { FALSE, GOING_TO_SWITCH, AFTER_SWITCH };
 extern void CalcBalancedCurrent(char mod);
 extern void write_settings(void);
 extern void setStatePowerUnavailable(void);
-extern void receiveNodeStatus(uint8_t *buf, uint8_t NodeNr);
-extern void receiveNodeConfig(uint8_t *buf, uint8_t NodeNr);
 
 struct Sensorbox {
     uint8_t SoftwareVer;        // Sensorbox 2 software version
