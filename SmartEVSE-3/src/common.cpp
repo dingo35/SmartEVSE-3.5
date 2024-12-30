@@ -91,7 +91,6 @@ EXT void setState(uint8_t NewState);
 EXT int8_t TemperatureSensor();
 EXT void CheckSerialComm(void);
 EXT uint8_t OneWireReadCardId();
-EXT void CheckRS485Comm(void);
 EXT uint8_t ProximityPin();
 EXT void PowerPanic(void);
 EXT const char * getStateName(uint8_t StateCode);
@@ -136,6 +135,9 @@ uint16_t BalancedError[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                // E
 bool CPDutyOverride = false;
 uint32_t CurrentPWM = 0;                                                    // Current PWM duty cycle value (0 - 1024)
 extern const char StrStateName[15][13] = {"A", "B", "C", "D", "COMM_B", "COMM_B_OK", "COMM_C", "COMM_C_OK", "Activate", "B1", "C1", "MODEM1", "MODEM2", "MODEM_OK", "MODEM_DENIED"}; //note that the extern is necessary here because the const will point the compiler to internal linkage; https://cplusplus.com/forum/general/81640/
+uint8_t ModbusRx[256];                          // Modbus Receive buffer
+
+
 
 //constructor
 Button::Button(void) {
@@ -2230,6 +2232,148 @@ static unsigned int LedPwm = 0;                                                /
 #endif
 }
 #endif
+
+
+// printf can be slow.
+// By measuring the time the 10ms loop actually takes to execute we found that:
+// it takes ~625uS to execute when using printf (and tx interrrupts)
+// ~151uS without printf (with tx interrupt)
+// and only ~26uS when using DMA
+// printf with Circular DMA buffer takes ~536uS
+// current version with snprintf takes ~296uS
+//
+// Called by 10ms loop when new modbus data is available
+// ModbusRxLen contains length of data contained in array ModbusRx
+void CheckRS485Comm(void) //looks like MBHandleData
+{
+    uint8_t x;
+
+    ModbusDecode(ModbusRx, ModbusRxLen);
+
+    // Data received is a response to an earlier request from the master.
+    if (MB.Type == MODBUS_RESPONSE) {
+        //printf("MSG: Modbus Response Address %u / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
+        switch (MB.Function) {
+            case 0x03: // (Read holding register)
+            case 0x04: // (Read input register)
+                if (MainsMeter.Type && MB.Address == MainsMeter.Address) {
+                    MainsMeter.ResponseToMeasurement();
+                //if (MainsMeter.Type && MB.Address == MainsMeter.Address && MB.Register == EMConfig[MainsMeter.Type].IRegister) {
+                    // packet from Mains electric meter
+/*                    x = receiveCurrentMeasurement(MB.Data, MainsMeter.Type, MainsMeter.Irms);
+                    if (x && LoadBl <2) MainsMeterTimeout = 10;          // only reset timeout when data is ok, and Master/Disabled
+
+                    // Calculate Isum (for nodes and master)
+                    Isum = 0;
+                    for (x = 0; x < 3; x++) {
+#ifdef LOG_INFO_MODBUS
+                        printf("receiveCurrentMeasurement[%u]: %ld\n", x, Irms[x]);
+#endif
+                        // Calculate difference of Mains and PV electric meter
+                        Irms[x] = Irms[x] / 100;                        // reduce resolution of Irms to 100mA
+                        Isum += Irms[x];                                // Isum has a resolution of 100mA
+                    }
+*/
+                } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
+                    EVMeter.ResponseToMeasurement();
+/*                    // Packet from EV electric meter
+                    if (MB.Register == EMConfig[EVMeter.Type].ERegister) {
+                        // Energy measurement
+                        EnergyEV = receiveEnergyMeasurement(MB.Data, EVMeter.Type);
+#ifdef LOG_INFO_MODBUS
+                        printf("receiveEnergyMeasurement: %ld\n", EnergyEV);
+#endif
+                        if (ResetKwh == 2) EnergyMeterStart = EnergyEV; // At powerup, set EnergyEV to kwh meter value
+                        EnergyCharged = EnergyEV - EnergyMeterStart;    // Calculate Energy
+                    } else if (MB.Register == EMConfig[EVMeter.Type].PRegister) {
+                        // Power measurement
+                        PowerMeasured = receivePowerMeasurement(MB.Data, EVMeter.Type);
+#ifdef LOG_INFO_MODBUS
+                        printf("receivePowerMeasurement: %ld\n",PowerMeasured);
+#endif
+                    } else if (MB.Register == EMConfig[EVMeter.Type].IRegister) {
+                        // Current measurement
+                        x = receiveCurrentMeasurement(MB.Data, EVMeter.Type, Irms_EV);
+                        
+                        //if (x) EVMeterTimeout = COMM_EVTIMEOUT;                 // TODO: only reset EVtimeout when data is ok
+                        for (x = 0; x < 3; x++) {
+                            // measured currents are in MILLI AMPERE
+                            Irms_EV[x] = Irms_EV[x] / 100;                      // Convert to AMPERE * 10
+                        }
+                    }*/
+                } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
+                    // Packet from a Node EVSE, only for Master!
+                    if (MB.Register == 0x0000) {
+                        // Node status
+                        receiveNodeStatus(MB.Data, MB.Address - 1u);
+                    }  else if (MB.Register == 0x0108) {
+                        // Node configuration
+                        receiveNodeConfig(MB.Data, MB.Address - 1u);
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    // Data received is a request from the master to a device on the bus.
+    } else if (MB.Type == MODBUS_REQUEST) {
+        //printf("Modbus Request Address %i / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
+
+        // Broadcast or addressed to this device
+        if (MB.Address == BROADCAST_ADR || (LoadBl > 0 && MB.Address == LoadBl)) {
+            switch (MB.Function) {
+                case 0x03: // (Read holding register)
+                case 0x04: // (Read input register)
+                    // Addressed to this device
+                    printf("read register(s) ");
+                    if (MB.Address != BROADCAST_ADR) {
+                        ReadItemValueResponse();
+                    }
+                    break;
+                case 0x06: // (Write single register)
+                    printf("write register ");
+                    WriteItemValueResponse();
+                    break;
+                case 0x10: // (Write multiple register))
+                    // 0x0020: Balance currents
+                    if (MB.Register == 0x0020 && LoadBl > 1) {      // Message for Node(s)
+                        Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
+                        if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
+                        else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
+#ifdef LOG_DEBUG_MODBUS
+                        printf("Broadcast received, Node %u.%1u A\n", Balanced[0]/10, Balanced[0]%10);
+#endif
+                        MainsMeterTimeout = 10;                                   // reset 10 second timeout
+                    } else {
+                        printf("write multiple registers ");
+                        WriteMultipleItemValueResponse();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+    } else if (MB.Type == MODBUS_EXCEPTION) {
+#ifdef LOG_DEBUG_MODBUS
+        printf("Modbus Address %02x exception %u received\n", MB.Address, MB.Exception);
+#endif
+#ifdef LOG_WARN_MODBUS
+    } else {
+        printf("\nCRC invalid\n");
+#endif
+    }
+
+
+
+
+//    char buf[256];
+//    for (uint8_t x=0; x<ModbusRxLen; x++) snprintf(buf+(x*3), 4, "%02X ", ModbusRx[x]);
+//    printf("MB:%s\n", buf);
+ 
+    ModbusRxLen = 0;
+
+}
+
 
 void Timer10ms_singlerun(void) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3   //CH32 and v3 ESP32

@@ -603,30 +603,6 @@ void DisconnectEvent(void){
     strncpy(EVCCID, "", sizeof(EVCCID));
 }
 
-void CalcIsum(void) {
-    phasesLastUpdate = time(NULL);
-    phasesLastUpdateFlag = true;                        // Set flag if a new Irms measurement is received.
-    int batteryPerPhase = getBatteryCurrent() / 3;
-    Isum = 0;
-#if FAKE_SUNNY_DAY
-    int32_t temp[3]={0, 0, 0};
-    temp[0] = INJECT_CURRENT_L1 * 10;                   //Irms is in units of 100mA
-    temp[1] = INJECT_CURRENT_L2 * 10;
-    temp[2] = INJECT_CURRENT_L3 * 10;
-#endif
-
-    for (int x = 0; x < 3; x++) {
-#if FAKE_SUNNY_DAY
-        MainsMeter.Irms[x] = MainsMeter.Irms[x] - temp[x];
-#endif
-        IrmsOriginal[x] = MainsMeter.Irms[x];
-        MainsMeter.Irms[x] -= batteryPerPhase;
-        Isum = Isum + MainsMeter.Irms[x];
-    }
-    MainsMeter.CalcImeasured();
-}
-
-
 #if SMARTEVSE_VERSION == 3
 void getButtonState() {
     // Sample the three < o > buttons.
