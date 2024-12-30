@@ -2274,7 +2274,7 @@ void CheckRS485Comm(void) //looks like MBHandleData
                 break;
         }
     // Data received is a request from the master to a device on the bus.
-    } else if (MB.Type == MODBUS_REQUEST) {
+    } else if (MB.Type == MODBUS_REQUEST) { //looks like MBBroadcast
         //printf("Modbus Request Address %i / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
 
         // Broadcast or addressed to this device
