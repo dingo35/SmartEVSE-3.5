@@ -1371,10 +1371,9 @@ uint8_t ow = 0, x;
 //
 void Timer100ms_singlerun(void) {
 static unsigned int locktimer = 0, unlocktimer = 0;
-#ifdef SMARTEVSE_VERSION //ESP32
 static unsigned int energytimer = 0;
 static uint8_t PollEVNode = NR_EVSES, updated = 0;
-#else //CH32
+#ifndef SMARTEVSE_VERSION //CH32
     //Check Serial communication with ESP32
     if (RxRdy1) CheckSerialComm();
 //make stuff compatible with CH32 terminology
@@ -1423,7 +1422,7 @@ static uint8_t PollEVNode = NR_EVSES, updated = 0;
         }
     }
 
-#ifdef SMARTEVSE_VERSION //ESP32 //TODO I think this loop should run on CH32?
+//#ifdef SMARTEVSE_VERSION //ESP32 //TODO I think this loop should run on CH32?
     // Every 2 seconds, request measurements from modbus meters
     if (ModbusRequest) {                                                    // Slaves all have ModbusRequest at 0 so they never enter here
         switch (ModbusRequest) {                                            // State
@@ -1574,7 +1573,9 @@ static uint8_t PollEVNode = NR_EVSES, updated = 0;
         } //switch
         if (ModbusRequest) ModbusRequest++;
     }
-#else //CH32
+//#endif
+
+#ifndef SMARTEVSE_VERSION //CH32
 //not sure this is necessary
 #undef digitalRead
 #undef PIN_LOCK_IN
