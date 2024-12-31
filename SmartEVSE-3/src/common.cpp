@@ -3053,7 +3053,7 @@ uint16_t getItemValue(uint8_t nav) {
     }
 }
 
-
+//#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3 //not on ESP32 v4
 /**
  * Returns the known battery charge rate if the data is not too old.
  * Returns 0 if data is too old.
@@ -3103,5 +3103,5 @@ void CalcIsum(void) {
     }
     MainsMeter.CalcImeasured();
 }
-
+//#endif
 
