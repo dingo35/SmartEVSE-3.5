@@ -5,7 +5,6 @@
  * #ifndef SMARTEVSE_VERSION   //CH32 code
  */
 
-#include "esp32.h"
 #include "main.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -15,6 +14,7 @@
 
 #ifdef SMARTEVSE_VERSION //ESP32
 #define EXT extern
+#include "esp32.h"
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <Preferences.h>
@@ -46,6 +46,7 @@ struct DelayedTimeStruct DelayedStartTime;
 struct DelayedTimeStruct DelayedStopTime;
 #else //CH32
 #define EXT extern "C"
+#include "ch32.h"
 extern "C" {
     #include "ch32v003fun.h"
     #include "utils.h"
