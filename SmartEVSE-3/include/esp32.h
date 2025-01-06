@@ -67,7 +67,7 @@
 #include <Arduino.h>
 #include "debug.h"
 #include "stdint.h"
-#include "common.h"
+#include "main.h"
 
 #if ENABLE_OCPP
 #include <MicroOcpp/Model/ConnectorBase/Notification.h>

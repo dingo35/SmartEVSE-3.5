@@ -5,8 +5,8 @@
  * #ifndef SMARTEVSE_VERSION   //CH32 code
  */
 
+#include "esp32.h"
 #include "main.h"
-#include "common.h"
 #include "stdio.h"
 #include "stdlib.h"
 #include "meter.h"

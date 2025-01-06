@@ -26,7 +26,7 @@
 
 #define __EVSE_METER
 
-#include "main.h"
+#include "esp32.h"
 
 
 extern struct EMstruct EMConfig[EM_CUSTOM + 1];
