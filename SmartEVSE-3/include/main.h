@@ -11,7 +11,7 @@
 #include "debug.h"
 #include "stdint.h"
 #include "time.h"
-#include "common_c.h"
+#include "main_c.h"
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION == 3 //CH32 and v3
 //#include "meter.h"
