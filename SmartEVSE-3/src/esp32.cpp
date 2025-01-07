@@ -50,8 +50,6 @@
 
 #define CIRCUIT_METER 0                                                         // Electric meter used for EVSE Circuit
 #define CIRCUIT_METER_ADDRESS 13
-#define INITIALIZED 0
-uint8_t Initialized = INITIALIZED;                                              // When first powered on, the settings need to be initialized.
 uint8_t CircuitMeter = CIRCUIT_METER;
 uint8_t CircuitMeterAddress = CIRCUIT_METER_ADDRESS;
 

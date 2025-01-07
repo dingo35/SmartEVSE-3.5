@@ -134,6 +134,7 @@
 
 #define OCPP_MODE 0
 #define LCD_LOCK 0                                                              // 0 = LCD buttons operational, 1 = LCD buttons disabled
+#define INITIALIZED 0
 
 // Mode settings
 #define MODE_NORMAL 0
