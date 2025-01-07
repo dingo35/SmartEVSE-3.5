@@ -259,16 +259,16 @@ unsigned long OcppLastTxNotification;
 // (either temporarily while developing or definite)
 // and they are mainly used in the main.cpp/common.cpp code
 EXT uint32_t elapsedmax, elapsedtime;
-EXT int8_t TempEVSE;
-EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], Balanced[NR_EVSES], MaxCircuit, OverrideCurrent, StartCurrent, StopTime, ImportCurrent, GridRelayMaxSumMains;
-EXT uint8_t RFID[8], Access_bit, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent;
-EXT int16_t IsetBalanced;
-EXT bool CustomButton, GridRelayOpen;
+//EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], Balanced[NR_EVSES], MaxCircuit, OverrideCurrent, StartCurrent, StopTime, ImportCurrent, GridRelayMaxSumMains;
+//EXT uint8_t RFID[8], Access_bit, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, C1Timer, UnlockCable, LockCable, MainsMeterTimeout, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent;
+EXT uint16_t MainsMeterTimeout;
+//EXT int16_t IsetBalanced;
+//EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
 EXT hw_timer_t * timerA;
 esp_adc_cal_characteristics_t * adc_chars_CP;
 #endif
-EXT uint8_t BalancedState[NR_EVSES];
+//EXT uint8_t BalancedState[NR_EVSES];
 #if ENABLE_OCPP
 #include <MicroOcpp.h>
 EXT float OcppCurrentLimit;
