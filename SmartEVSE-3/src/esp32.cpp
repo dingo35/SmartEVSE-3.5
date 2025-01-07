@@ -250,7 +250,7 @@ uint8_t TestState = 0;
 uint8_t ModbusRequest = 0;                                                  // Flag to request Modbus information
 extern uint8_t NodeNewMode;
 uint8_t Access_bit = 0;                                                     // 0:No Access 1:Access to SmartEVSE
-extern uint16_t CardOffset = CARD_OFFSET;                                          // RFID card used in Enable One mode
+extern uint16_t CardOffset;
 
 extern uint8_t ConfigChanged;
 uint8_t GridActive = 0;                                                     // When the CT's are used on Sensorbox2, it enables the GRID menu option.

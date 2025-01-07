@@ -143,7 +143,6 @@
 #define MODBUS_BAUDRATE 9600
 #define MODBUS_TIMEOUT 4
 #define ACK_TIMEOUT 1000                                                        // 1000ms timeout
-#define BROADCAST_ADR 0x09
 #define COMM_TIMEOUT 11                                                         // Timeout for MainsMeter
 #define COMM_EVTIMEOUT 8*NR_EVSES                                               // Timeout for EV Energy Meters
 

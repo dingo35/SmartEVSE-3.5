@@ -141,7 +141,7 @@ struct EMstruct {
 //#define STATE_F 12                  // -12V Fault condition
 
 #define NR_EVSES 8
-
+#define BROADCAST_ADR 0x09
 
 EXTC uint8_t Force_Single_Phase_Charging(void);
 EXTC uint16_t getItemValue(uint8_t nav);

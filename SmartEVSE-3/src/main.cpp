@@ -94,6 +94,11 @@ EXT uint8_t OneWireReadCardId();
 EXT uint8_t ProximityPin();
 EXT void PowerPanic(void);
 EXT int Set_Nr_of_Phases_Charging(void);
+EXT void PowerPanicCtrl(uint8_t enable);
+EXT void ModemPower(uint8_t enable);
+EXT uint16_t WchVersion;
+EXT uint8_t ReadESPdata(char *buf);
+
 extern void printStatus(void);
 extern void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export);
 extern void requestNodeConfig(uint8_t NodeNr);
@@ -141,6 +146,7 @@ extern const char StrEnableC2[5][12] = { "Not present", "Always Off", "Solar Off
 uint8_t ModbusRx[256];                          // Modbus Receive buffer
 int homeBatteryLastUpdate = 0; // Time in milliseconds
 int16_t IrmsOriginal[3]={0, 0, 0};
+uint16_t CardOffset = CARD_OFFSET;
 
 #ifndef SMARTEVSE_VERSION //CH32 version
 
@@ -172,7 +178,7 @@ ConfigItem configItems[] = {
     {"Lock:", {.u8 = &Lock}, UINT8},
     {"Mode:", {.u8 = &Mode}, UINT8}, //e
     {"Access:", {.u8 = &Access_bit}, UINT8}, //e
-    {"CardOffset:", {.u8 = &CardOffset}, UINT8},
+    {"CardOffset:", {.u16 = &CardOffset}, UINT16},
     {"LoadBl:", {.u8 = &LoadBl}, UINT8},
     {"MaxMains:", {.u16 = &MaxMains}, UINT16},
     {"MaxSumMains:", {.u16 = &MaxSumMains},  UINT16},
@@ -186,10 +192,10 @@ ConfigItem configItems[] = {
     {"ImportCurrent:", {.u16 = &ImportCurrent}, UINT16},
     {"Grid:", {.u8 = &Grid}, UINT8},
     {"RFIDReader:", {.u8 = &RFIDReader}, UINT8},
-    {"MainsMeterType:", {.u8 = &MainsMeterType}, UINT8},
-    {"MainsMAddress:", {.u8 = &MainsMeterAddress}, UINT8},
-    {"EVMeterType:", {.u8 = &EVMeterType}, UINT8},
-    {"EVMeterAddress:", {.u8 = &EVMeterAddress}, UINT8},
+    {"MainsMeterType:", {.u8 = &MainsMeter.Type}, UINT8},
+    {"MainsMAddress:", {.u8 = &MainsMeter.Address}, UINT8},
+    {"EVMeterType:", {.u8 = &EVMeter.Type}, UINT8},
+    {"EVMeterAddress:", {.u8 = &EVMeter.Address}, UINT8},
     {"EMEndianness:", {.u8 = &EMConfig[EM_CUSTOM].Endianness}, UINT8},
     {"EMIRegister:", {.u16 = &EMConfig[EM_CUSTOM].IRegister}, UINT16},
     {"EMIDivisor:", {.i8 = &EMConfig[EM_CUSTOM].IDivisor}, INT8},
@@ -212,7 +218,7 @@ ConfigItem configItems[] = {
     {"PwrPanic:", {.u8 = &PwrPanic}, UINT8},
     {"ModemPwr:", {.u8 = &ModemPwr}, UINT8},
 
-    {NULL, {NULL}, 0} // End of array
+//    {NULL, {NULL}, UINT8} // End of array
 };
 
 void CheckSerialComm(void) {
