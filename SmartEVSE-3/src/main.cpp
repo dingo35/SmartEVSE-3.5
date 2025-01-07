@@ -207,6 +207,7 @@ volatile uint16_t adcsample = 0;
 volatile uint16_t ADCsamples[25];                                           // declared volatile, as they are used in a ISR
 volatile uint8_t sampleidx = 0;
 char str[20];
+extern volatile uint16_t ADC_CP[NUM_ADC_SAMPLES];
 
 int phasesLastUpdate = 0;
 bool phasesLastUpdateFlag = false;
