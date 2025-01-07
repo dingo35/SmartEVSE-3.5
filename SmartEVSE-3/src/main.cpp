@@ -263,7 +263,6 @@ unsigned long OcppLastTxNotification;
 EXT uint32_t elapsedmax, elapsedtime;
 //EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], Balanced[NR_EVSES], MaxCircuit, OverrideCurrent, StartCurrent, StopTime, ImportCurrent, GridRelayMaxSumMains;
 //EXT uint8_t RFID[8], Access_bit, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, C1Timer, UnlockCable, LockCable, MainsMeterTimeout, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent;
-EXT uint16_t MainsMeterTimeout;
 //EXT int16_t IsetBalanced;
 //EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
@@ -2617,7 +2616,7 @@ void CheckRS485Comm(void) //looks like MBHandleData
 #ifdef LOG_DEBUG_MODBUS
                         printf("Broadcast received, Node %u.%1u A\n", Balanced[0]/10, Balanced[0]%10);
 #endif
-                        MainsMeterTimeout = 10;                                   // reset 10 second timeout
+                        MainsMeter.Timeout = 10;                                   // reset 10 second timeout
                     } else {
                         printf("write multiple registers ");
                         WriteMultipleItemValueResponse();
@@ -3018,7 +3017,7 @@ void Timer10ms_singlerun(void) {
 
 #ifndef SMARTEVSE_VERSION //CH32
     // Clear communication error, if present
-    if ((ErrorFlags & CT_NOCOMM) && MainsMeterTimeout == 10) ErrorFlags &= ~CT_NOCOMM;
+    if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout == 10) ErrorFlags &= ~CT_NOCOMM;
 #endif
 
 }
