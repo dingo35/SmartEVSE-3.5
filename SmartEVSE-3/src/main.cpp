@@ -58,7 +58,19 @@ uint8_t LoadBl = LOADBL;
 uint8_t NodeNewMode = 0;
 uint8_t DelayedRepeat;                                                      // 0 = no repeat, 1 = daily repeat
 
+uint8_t RFIDReader = RFID_READER;                                           // RFID Reader (0:Disabled / 1:Enabled / 2:Enable One / 3:Learn / 4:Delete / 5:Delete All / 6: Remote via OCPP)
 
+// The following data will be updated by eeprom/storage data at powerup:
+uint16_t MaxMains = MAX_MAINS;                                              // Max Mains Amps (hard limit, limited by the MAINS connection) (A)
+uint16_t MaxSumMains = MAX_SUMMAINS;                                        // Max Mains Amps summed over all 3 phases, limit used by EU capacity rate
+                                                                            // see https://github.com/serkri/SmartEVSE-3/issues/215
+                                                                            // 0 means disabled, allowed value 10 - 600 A
+uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging
+uint16_t MaxSumMainsTimer = 0;
+
+uint16_t MaxCurrent = MAX_CURRENT;                                          // Max Charge current (A)
+uint16_t MinCurrent = MIN_CURRENT;                                          // Minimal current the EV is happy with (A)
+uint8_t Mode = MODE;                                                        // EVSE mode (0:Normal / 1:Smart / 2:Solar)
 
 // gateway to the outside world
 // here declarations are placed for variables that are both used on CH32 as ESP32
@@ -66,8 +78,8 @@ uint8_t DelayedRepeat;                                                      // 0
 // and they are mainly used in the main.cpp/common.cpp code
 EXT uint32_t elapsedmax, elapsedtime;
 EXT int8_t TempEVSE;
-EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, MinCurrent, MaxCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], ADCsamples[25], Balanced[NR_EVSES], MaxMains, MaxCircuit, OverrideCurrent, StartCurrent, StopTime, MaxSumMains, ImportCurrent, GridRelayMaxSumMains;
-EXT uint8_t RFID[8], Access_bit, Mode, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, RFIDReader, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent, MaxSumMainsTime;
+EXT uint16_t SolarStopTimer, MaxCapacity, MainsCycleTime, ChargeCurrent, BalancedMax[NR_EVSES], ADC_CP[NUM_ADC_SAMPLES], ADCsamples[25], Balanced[NR_EVSES], MaxCircuit, OverrideCurrent, StartCurrent, StopTime, ImportCurrent, GridRelayMaxSumMains;
+EXT uint8_t RFID[8], Access_bit, Lock, ErrorFlags, ChargeDelay, State, LoadBl, PilotDisconnectTime, AccessTimer, ActivationMode, ActivationTimer, C1Timer, UnlockCable, LockCable, RxRdy1, MainsMeterTimeout, PilotDisconnected, ModbusRxLen, PowerPanicFlag, Switch, RCmon, TestState, Config, PwrPanic, ModemPwr, Initialized, pilot, NoCurrent;
 EXT int16_t IsetBalanced;
 EXT bool CustomButton, GridRelayOpen;
 #ifdef SMARTEVSE_VERSION //v3 and v4
@@ -115,7 +127,6 @@ extern unsigned char ease8InOutQuad(unsigned char i);
 extern unsigned char triwave8(unsigned char in);
 
 Single_Phase_t Switching_To_Single_Phase = FALSE;
-uint16_t MaxSumMainsTimer = 0;
 uint8_t LCDTimer = 0;
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
 uint8_t Nr_Of_Phases_Charging = 0;                                          // 0 = Undetected, 1,2,3 = nr of phases that was detected at the start of this charging session
@@ -125,7 +136,6 @@ int homeBatteryCurrent = 0;
 int phasesLastUpdate = 0;
 bool phasesLastUpdateFlag = false;
 bool GridRelayOpen = false;                                                 // The read status of the relay
-uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging
 uint16_t maxTemp = MAX_TEMPERATURE;
 uint8_t AutoUpdate = AUTOUPDATE;                                            // Automatic Firmware Update (0:Disable / 1:Enable)
 uint8_t ConfigChanged = 0;
