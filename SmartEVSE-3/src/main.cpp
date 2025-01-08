@@ -2975,7 +2975,7 @@ void Timer10ms_singlerun(void) {
                 TempEVSE = atoi(ret+strlen(token)); //e
             }
 
-            strncpy(token, "Irms", sizeof(token));
+            strncpy(token, "Irms:", sizeof(token));
             //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
             ret = strstr(SerialBuf, token);
             if (ret != NULL) {
