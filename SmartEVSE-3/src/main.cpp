@@ -2998,6 +2998,24 @@ void Timer10ms_singlerun(void) {
                     _LOG_A("Received corrupt Irms:, n=%d, message from WCH:%s.\n", n, SerialBuf);
             }
 
+            strncpy(token, "Power:", sizeof(token));
+            ret = strstr(SerialBuf, token);
+            if (ret != NULL) {
+                short unsigned int Address;
+                int16_t Power[3], PowerMeasured;
+                int n = sscanf(SerialBuf,"Power:%03hu,%hi,%hi,%hi,%hi", &Address, &Power[0], &Power[1], &Power[2], &PowerMeasured);
+                if (n == 5) {   //success
+                    if (Address == MainsMeter.Address) {
+                        for (int x = 0; x < 3; x++)
+                            MainsMeter.Power[x] = Power[x];
+                    } else if (Address == EVMeter.Address) {
+                        for (int x = 0; x < 3; x++)
+                            EVMeter.Power[x] = Power[x];
+                    }
+                } else
+                    _LOG_A("Received corrupt Power:, n=%d, message from WCH:%s.\n", n, SerialBuf);
+            }
+
             strncpy(token, "State:", sizeof(token));
             ret = strstr(SerialBuf, token);
             if (ret != NULL ) {

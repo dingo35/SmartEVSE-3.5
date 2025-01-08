@@ -267,6 +267,9 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
             PowerMeasured += Power[x];
             if (Power[x] < 0) var[x] = -var[x];
         }
+#ifndef SMARTEVSE_VERSION //CH32
+        printf("Power:%03u,%d,%d,%d,%d\n", Address, Power[0], Power[1], Power[2], PowerMeasured);
+#endif
     }
 
     // Convert Irms from mA to deciAmpère (A * 10)
