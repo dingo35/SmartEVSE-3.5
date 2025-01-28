@@ -2706,7 +2706,7 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                     ModbusRequest++;
                     // fall through
                 case 2:                                                         // Sensorbox or kWh meter that measures -all- currents
-                    if (MainsMeter.Type && MainsMeter.Type != EM_API) {         // we don't want modbus meter currents to conflict with EM_API currents
+                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) {         // we don't want modbus meter currents to conflict with EM_API currents
                         _LOG_D("ModbusRequest %u: Request MainsMeter Measurement\n", ModbusRequest);
                         requestCurrentMeasurement(MainsMeter.Type, MainsMeter.Address);
                         break;
@@ -2808,7 +2808,7 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                     // fall through
                 case 21:
                     // Request active energy if Mainsmeter is configured
-                    if (MainsMeter.Type && (MainsMeter.Type != EM_API) && (MainsMeter.Type != EM_SENSORBOX) ) { // EM_API and Sensorbox do not support energy postings
+                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX ) { // EM_API and Sensorbox do not support energy postings
                         energytimer++; //this ticks approx every second?!?
                         if (energytimer == 30) {
                             _LOG_D("ModbusRequest %u: Request MainsMeter Import Active Energy Measurement\n", ModbusRequest);
@@ -4026,6 +4026,18 @@ int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime) {
     return 1;
 }
 
+/**
+ * Set the MainsMeter current values (in units of 100mA) for all three phases and update the meter's calculations.
+ */
+void setMainsMeterCurrents(const int16_t l1a, const int16_t l2a, const int16_t l3a) {
+    MainsMeter.Irms[0] = l1a;
+    MainsMeter.Irms[1] = l2a;
+    MainsMeter.Irms[2] = l3a;
+    CalcIsum();
+    // Reset timer.
+    MainsMeter.Timeout = COMM_TIMEOUT;
+}
+
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
 
@@ -4195,6 +4207,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["mains_meter"]["import_active_energy"] = round((float)MainsMeter.Import_active_energy / 100)/10; //in kWh, precision 1 decimal
         doc["mains_meter"]["export_active_energy"] = round((float)MainsMeter.Export_active_energy / 100)/10; //in kWh, precision 1 decimal
+        if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
+            doc["mains_meter"]["host"] = (!cachedHomeWizardHost.isEmpty()) ? cachedHomeWizardHost : "Not found";
+        }
 
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
         doc["phase_currents"]["L1"] = MainsMeter.Irms[0];
@@ -4641,78 +4656,77 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
-    } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
+} else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+    DynamicJsonDocument doc(200);
 
-        if(request->hasParam("battery_current")) {
-            if (LoadBl < 2) {
-                homeBatteryCurrent = request->getParam("battery_current")->value().toInt();
-                homeBatteryLastUpdate = time(NULL);
-                doc["battery_current"] = homeBatteryCurrent;
-            } else
-                doc["battery_current"] = "not allowed on slave";
+    if (request->hasParam("battery_current")) {
+        if (LoadBl < 2) {
+            homeBatteryCurrent = request->getParam("battery_current")->value().toInt();
+            homeBatteryLastUpdate = time(NULL);
+            doc["battery_current"] = homeBatteryCurrent;
+        } else
+            doc["battery_current"] = "not allowed on slave";
+    }
+
+    if (MainsMeter.Type == EM_API
+        && request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
+        if (LoadBl > 1) {
+            doc["TOTAL"] = "not allowed on slave";
+        } else {
+            auto l1a = static_cast<int16_t>(request->getParam("L1")->value().toInt());
+            auto l2a = static_cast<int16_t>(request->getParam("L2")->value().toInt());
+            auto l3a = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+            setMainsMeterCurrents(l1a, l2a, l3a);
+
+            for (size_t x = 0; x < sizeof(IrmsOriginal); x++) {
+                const std::string key = "L" + std::to_string(x);
+                doc["original"][key] = IrmsOriginal[x];
+                doc[key] = MainsMeter.Irms[x];
+            }
+            doc["TOTAL"] = Isum;
+        }
+    }
+
+    String json;
+    serializeJson(doc, json);
+    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str()); // Yes. Respond JSON
+    return true;
+}
+
+if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+    DynamicJsonDocument doc(200);
+
+    if (EVMeter.Type == EM_API) {
+        if (request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
+            EVMeter.Irms[0] = static_cast<int16_t>(request->getParam("L1")->value().toInt());
+            EVMeter.Irms[1] = static_cast<int16_t>(request->getParam("L2")->value().toInt());
+            EVMeter.Irms[2] = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+            EVMeter.CalcImeasured();
+            EVMeter.Timeout = COMM_EVTIMEOUT;
+            for (int x = 0; x < 3; x++)
+                doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
+            doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
         }
 
-        if(MainsMeter.Type == EM_API) {
-            if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
-                if (LoadBl < 2) {
-                    MainsMeter.Irms[0] = request->getParam("L1")->value().toInt();
-                    MainsMeter.Irms[1] = request->getParam("L2")->value().toInt();
-                    MainsMeter.Irms[2] = request->getParam("L3")->value().toInt();
+        if (request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam(
+                "import_active_power")) {
+            EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
+            EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
 
-                    CalcIsum();
-                    for (int x = 0; x < 3; x++) {
-                        doc["original"]["L" + x] = IrmsOriginal[x];
-                        doc["L" + x] = MainsMeter.Irms[x];
-                    }
-                    doc["TOTAL"] = Isum;
-
-                    MainsMeter.Timeout = COMM_TIMEOUT;
-
-                } else
-                    doc["TOTAL"] = "not allowed on slave";
-            }
+            EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
+            EVMeter.UpdateEnergies();
+            doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured;
+            doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy;
+            doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy;
+            doc["ev_meter"]["total_kwh"] = EVMeter.Energy;
+            doc["ev_meter"]["charged_kwh"] = EVMeter.EnergyCharged;
         }
+    }
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
-        return true;
-    } else if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-
-        if(EVMeter.Type == EM_API) {
-            if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
-
-                EVMeter.Irms[0] = request->getParam("L1")->value().toInt();
-                EVMeter.Irms[1] = request->getParam("L2")->value().toInt();
-                EVMeter.Irms[2] = request->getParam("L3")->value().toInt();
-                EVMeter.CalcImeasured();
-                EVMeter.Timeout = COMM_EVTIMEOUT;
-                for (int x = 0; x < 3; x++)
-                    doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
-                doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
-            }
-
-            if(request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam("import_active_power")) {
-
-                EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
-                EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
-
-                EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
-                EVMeter.UpdateEnergies();
-                doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured;
-                doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy;
-                doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy;
-                doc["ev_meter"]["total_kwh"] = EVMeter.Energy;
-                doc["ev_meter"]["charged_kwh"] = EVMeter.EnergyCharged;
-            }
-        }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
-        return true;
+    String json;
+    serializeJson(doc, json);
+    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str()); // Yes. Respond JSON
+    return true;
 #if MODEM
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -4817,8 +4831,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
-  }
-  return false;
+}
+return false;
 }
 
 
@@ -5616,10 +5630,42 @@ bool fwNeedsUpdate(char * version) {
     return false;
 }
 
+/**
+ * Periodically retrieves current measurements from the HomeWizard P1 energy meter
+ * and updates the main meter's currents.
+ *
+ * This function checks if the main meter type is set to HomeWizard P1 (EM_HOMEWIZARD_P1)
+ * and ensures a delay of at least 5 seconds between consecutive data retrieval attempts.
+ */
+void homewizard_loop() {
+    static unsigned long lastCheck_homewizard = 0;
+
+    constexpr unsigned long interval = 5000; // 5 seconds
+    const unsigned long currentTime = millis();
+
+    if (MainsMeter.Type != EM_HOMEWIZARD_P1 || (currentTime - lastCheck_homewizard < interval)) {
+        return;
+    }
+
+    _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
+
+    lastCheck_homewizard = currentTime;
+
+    const auto currentsP1 = getMainsFromHWP1();
+
+    if (currentsP1.first) {
+        const auto l1a = static_cast<int16_t>(currentsP1.second[0] * 10);
+        const auto l2a = static_cast<int16_t>(currentsP1.second[1] * 10);
+        const auto l3a = static_cast<int16_t>(currentsP1.second[2] * 10);
+        setMainsMeterCurrents(l1a, l2a, l3a);
+    }
+}
 
 void loop() {
 
     network_loop();
+    homewizard_loop();
+
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
         lastCheck = millis();
@@ -5714,3 +5760,4 @@ void loop() {
 #endif //ENABLE_OCPP
 
 }
+

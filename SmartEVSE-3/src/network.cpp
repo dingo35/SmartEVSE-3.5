@@ -21,6 +21,12 @@ RemoteDebug Debug;
 #define SNTP_GET_SERVERS_FROM_DHCP 1
 #include <esp_sntp.h>
 
+// Helper macros to stringify the macro value
+#define STRINGIFY(x) #x
+#define TO_STRING(x) STRINGIFY(x)
+
+const char * USER_AGENT = "SmartEVSE-v" TO_STRING(SMARTEVSE_VERSION);
+
 struct tm timeinfo;
 bool LocalTimeSet = false;
 
@@ -296,7 +302,7 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
     } else {
         httpClient.begin(url);
     }
-    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
+    httpClient.addHeader("User-Agent", USER_AGENT);
     httpClient.addHeader("Accept", "application/vnd.github+json");
     httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
     const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
@@ -474,7 +480,7 @@ bool forceUpdate(const char* firmwareURL, bool validate) {
     } else {
         httpClient.begin(firmwareURL);
     }
-    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
+    httpClient.addHeader("User-Agent", USER_AGENT);
     httpClient.addHeader("Accept", "application/vnd.github+json");
     httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
     const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
@@ -749,6 +755,123 @@ void setTimeZone(void * parameter) {
     vTaskDelete(NULL);                                                          //end this task so it will not take up resources
 }
 
+// Static variable to cache the result
+static String cachedHomeWizardHost;
+
+/**
+ * @brief Discovers a HomeWizard P1 meter service on the local network.
+ *
+ * This function uses mDNS to search for services advertising "_hwenergy._tcp" on the local network.
+ *
+ * @return A string containing the hostname and port of the first matching HomeWizard P1 meter service
+ * or an empty string in case no HomeWizard P1 meter is found in the local network
+ */
+String discoverHWP1() {
+
+    // If there's a cached result, return it immediately
+    if (!cachedHomeWizardHost.isEmpty()) {
+        return cachedHomeWizardHost;
+    }
+
+    // Search for _hwenergy._tcp services.
+    // https://api-documentation.homewizard.com/docs/discovery/
+    const int n = MDNS.queryService("hwenergy", "tcp");
+    if (n < 0) {
+        _LOG_A("discoverHWP1(): MDNS query failed.\n");
+        return "";
+    }
+    if (n == 0) {
+        _LOG_A("discoverHWP1():No MDNS services found.\n");
+        return "";
+    }
+    for (int i = 0; i < n; i++) {
+        String hostname = MDNS.hostname(i);
+        if (hostname.startsWith("p1meter-")) {
+            const uint16_t port = MDNS.port(i);
+            _LOG_A("discoverHWP1():Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(), MDNS.IP(i).toString().c_str(), port);
+
+            // Return first match.
+            // Cache the result before returning it
+            cachedHomeWizardHost = hostname + ".local" + (port != 80 ? (":" + String(port)) : "");
+            return cachedHomeWizardHost;
+        }
+    }
+    _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
+    return "";
+}
+
+/**
+ * @brief Retrieves active current values from a HomeWizard P1 meter API.
+ *
+ * This function sends an HTTP GET request to the specified URL to fetch the active current data
+ * in JSON format, parses the JSON response, and retrieves specific fields for current.
+ *
+ * @return A pair containing:
+ *     - A boolean flag indicating success or failure
+ *     - An array of 3 values representing the active current in amps for L1, L2, and L3
+ */
+std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHWP1() {
+
+    _LOG_A("getMainsFromHWP1(): invocation\n");
+    const String hostname = discoverHWP1();
+    if (hostname == "") {
+        return {false, {0, 0, 0}};
+    }
+
+    const String url = "http://" + hostname + "/api/v1/data";
+    _LOG_A("getMainsFromHWP1(): connect to URL %s\n", url.c_str());
+
+    HTTPClient httpClient;
+    httpClient.begin(url);
+
+    // Add headers
+    httpClient.addHeader("User-Agent", USER_AGENT);
+    httpClient.addHeader("Accept", "application/json");
+    httpClient.setTimeout(4000);
+
+    // Handle HTTP errors or timeout.
+    const int httpCode = httpClient.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        _LOG_A("getMainsFromHWP1(): Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url);
+        httpClient.end(); // Always cleanup
+        return {false, {0, 0, 0}};
+    }
+
+    // Get the response stream
+    WiFiClient *stream = httpClient.getStreamPtr();
+
+    // Create a filter to parse only specific fields
+    StaticJsonDocument<96> filter;
+    filter["active_current_l1_a"] = true;
+    filter["active_current_l2_a"] = true;
+    filter["active_current_l3_a"] = true;
+
+    // Create a filtered JSON document to hold the parsed data.
+    DynamicJsonDocument doc(256);
+    const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
+    httpClient.end();
+
+    // Handle JSON parsing errors.
+    if (error) {
+        _LOG_A("getMainsFromHWP1(): JSON deserialization failed: %s\n", error.c_str());
+        return {false, {0, 0, 0}};
+    }
+
+    // Extract specific fields.
+    if (doc.containsKey("active_current_l1_a") &&
+        doc.containsKey("active_current_l2_a") &&
+        doc.containsKey("active_current_l3_a")) {
+        const int8_t activeCurrentL1A = doc["active_current_l1_a"];
+        const int8_t activeCurrentL1B = doc["active_current_l2_a"];
+        const int8_t activeCurrentL1C = doc["active_current_l3_a"];
+        return {true, {activeCurrentL1A, activeCurrentL1B, activeCurrentL1C}};
+    }
+
+    // Fields not found.
+    _LOG_A("getMainsFromHWP1(): JSON fields 'active_current_l[1..3]_a' not found\n");
+    return {false, {0, 0, 0}};
+}
+
 
 void webServerRequest::setMessage(struct mg_http_message *hm) {
     hm_internal = hm;
@@ -866,7 +989,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
             if (preferences.begin("nvs.net80211", false) ) {      // WiFi settings used by ESP
               preferences.clear();
-              preferences.end();       
+              preferences.end();
             }
             shouldReboot = true;
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
@@ -975,7 +1098,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         const esp_partition_t* running_partition = esp_ota_get_running_partition();
                         _LOG_V("Running off of partition %s, trying to update partition %s.\n", running_partition->label, target_partition->label);
                         esp_ota_set_boot_partition( running_partition );            // make sure we have not switched boot partitions
-    
+
                         bool verification_result = false;
                         if(Update.end(true)) {
                             verification_result = validate_sig( target_partition, signature, size - SIGNATURE_LENGTH);
@@ -1129,7 +1252,7 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             _LOG_A("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 #else
             Serial.printf("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-#endif            
+#endif
             //load dhcp dns ip4 address into mongoose
             static char dns4url[]="udp://123.123.123.123:53";
             sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
@@ -1243,7 +1366,7 @@ void SetupPortalTask(void * parameter) {
     //Init WiFi as Station, start SmartConfig
     WiFi.mode(WIFI_AP_STA);
     WiFi.beginSmartConfig(SC_TYPE_ESPTOUCH_V2, SmartConfigKey);
- 
+
     //Wait for SmartConfig packet from mobile.
     _LOG_V("Waiting for SmartConfig.\n");
 #ifdef SENSORBOX_VERSION
@@ -1261,7 +1384,7 @@ void SetupPortalTask(void * parameter) {
         delay(100);
     }                       // loop until connected or Wifi setup menu is exited.
     delay(2000);            // give smartConfig time to send provision status back to the users phone.
-        
+
     if (WiFi.status() == WL_CONNECTED) {
         _LOG_V("\nWiFi Connected, IP Address:%s.\n", WiFi.localIP().toString().c_str());
         WIFImode = 1;                                                           // we are already connected so don't call handleWIFImode
@@ -1307,15 +1430,15 @@ void handleWIFImode(void *s) {
         _LOG_A("Starting WiFi..\n");
         WiFi.mode(WIFI_STA);
         WiFi.begin();
-    }    
+    }
 
     if (WIFImode == 0 && WiFi.getMode() != WIFI_OFF) {
         _LOG_A("Stopping WiFi..\n");
         WiFi.disconnect(true);
-    }    
+    }
 }
 
-// Setup Wifi 
+// Setup Wifi
 void WiFiSetup(void) {
     // We might need some sort of authentication in the future.
     // SmartEVSE v3 have programmed ECDSA-256 keys stored in nvs
