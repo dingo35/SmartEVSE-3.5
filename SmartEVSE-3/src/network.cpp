@@ -755,8 +755,12 @@ void setTimeZone(void * parameter) {
     vTaskDelete(NULL);                                                          //end this task so it will not take up resources
 }
 
-// Static variable to cache the result
+// Static variable to cache the result.
 static String cachedHomeWizardHost;
+
+String getCachedHomeWizardHost() {
+    return cachedHomeWizardHost;
+}
 
 /**
  * @brief Discovers a HomeWizard P1 meter service on the local network.
