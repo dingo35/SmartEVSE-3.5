@@ -771,25 +771,24 @@ String discoverHomeWizardP1() {
     const int n = MDNS.queryService("hwenergy", "tcp");
     if (n < 0) {
         _LOG_A("discoverHWP1(): MDNS query failed.\n");
-        return "";
-    }
-    if (n == 0) {
-        _LOG_A("discoverHWP1():No MDNS services found.\n");
-        return "";
-    }
-    for (int i = 0; i < n; i++) {
-        String hostname = MDNS.hostname(i);
-        if (hostname.startsWith("p1meter-")) {
-            const uint16_t port = MDNS.port(i);
-            _LOG_A("discoverHWP1():Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(), MDNS.IP(i).toString().c_str(), port);
+    } else if (n == 0) {
+        _LOG_A("discoverHWP1(): No MDNS services found.\n");
+    } else {
+        for (int i = 0; i < n; i++) {
+            String hostname = MDNS.hostname(i);
+            if (hostname.startsWith("p1meter-")) {
+                const uint16_t port = MDNS.port(i);
+                _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(),
+                       MDNS.IP(i).toString().c_str(), port);
 
-            // Return first match.
-            // Cache the result before returning it
-            homeWizardHost = hostname + ".local" + (port != 80 ? (":" + String(port)) : "");
-            return homeWizardHost;
+                // Return first match.
+                // Cache the result before returning it
+                homeWizardHost = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
+                return homeWizardHost;
+            }
         }
+        _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
     }
-    _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
     return "";
 }
 
