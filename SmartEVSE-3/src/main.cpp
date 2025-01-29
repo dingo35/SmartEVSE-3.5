@@ -4673,9 +4673,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if (LoadBl > 1) {
                 doc["TOTAL"] = "not allowed on slave";
             } else {
-                auto L1 = static_cast<int16_t>(request->getParam("L1")->value().toInt());
-                auto L2 = static_cast<int16_t>(request->getParam("L2")->value().toInt());
-                auto L3 = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+                auto L1 = request->getParam("L1")->value().toInt();
+                auto L2 = request->getParam("L2")->value().toInt();
+                auto L3 = request->getParam("L3")->value().toInt();
                 setMainsMeterCurrents(L1, L2, L3);
 
                 for (int x = 0; x < 3; x++) {
@@ -4696,9 +4696,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(EVMeter.Type == EM_API) {
             if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
 
-                EVMeter.Irms[0] = static_cast<int16_t>(request->getParam("L1")->value().toInt());
-                EVMeter.Irms[1] = static_cast<int16_t>(request->getParam("L2")->value().toInt());
-                EVMeter.Irms[2] = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+                EVMeter.Irms[0] = request->getParam("L1")->value().toInt();
+                EVMeter.Irms[1] = request->getParam("L2")->value().toInt();
+                EVMeter.Irms[2] = request->getParam("L3")->value().toInt();
                 EVMeter.CalcImeasured();
                 EVMeter.Timeout = COMM_EVTIMEOUT;
                 for (int x = 0; x < 3; x++)
@@ -5649,9 +5649,9 @@ void homewizard_loop() {
 
     const auto currents = getMainsFromHomwWizardP1();
     if (currents.first) {
-        const auto L1 = static_cast<int16_t>(currents.second[0] * 10);
-        const auto L2 = static_cast<int16_t>(currents.second[1] * 10);
-        const auto L3 = static_cast<int16_t>(currents.second[2] * 10);
+        const auto L1 = currents.second[0] * 10;
+        const auto L2 = currents.second[1] * 10;
+        const auto L3 = currents.second[2] * 10;
         setMainsMeterCurrents(L1, L2, L3);
     }
 }
