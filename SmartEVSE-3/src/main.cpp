@@ -5633,8 +5633,7 @@ bool fwNeedsUpdate(char * version) {
  * Periodically retrieves current measurements from the HomeWizard P1 energy meter
  * and updates the main meter's currents.
  *
- * This function checks if the main meter type is set to HomeWizard P1 (EM_HOMEWIZARD_P1)
- * and ensures a delay of at least 5 seconds between consecutive data retrieval attempts.
+ * This function ensures a delay of at least 5 seconds between consecutive data retrieval attempts.
  */
 void homewizard_loop() {
     static unsigned long lastCheck_homewizard = 0;
@@ -5642,20 +5641,18 @@ void homewizard_loop() {
     constexpr unsigned long interval = 5000; // 5 seconds
     const unsigned long currentTime = millis();
 
-    if (MainsMeter.Type != EM_HOMEWIZARD_P1 || (currentTime - lastCheck_homewizard < interval)) {
+    if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
 
     _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
-
     lastCheck_homewizard = currentTime;
 
-    const auto currentsP1 = getMainsFromHomwWizardP1();
-
-    if (currentsP1.first) {
-        const auto L1 = static_cast<int16_t>(currentsP1.second[0] * 10);
-        const auto L2 = static_cast<int16_t>(currentsP1.second[1] * 10);
-        const auto L3 = static_cast<int16_t>(currentsP1.second[2] * 10);
+    const auto currents = getMainsFromHomwWizardP1();
+    if (currents.first) {
+        const auto L1 = static_cast<int16_t>(currents.second[0] * 10);
+        const auto L2 = static_cast<int16_t>(currents.second[1] * 10);
+        const auto L3 = static_cast<int16_t>(currents.second[2] * 10);
         setMainsMeterCurrents(L1, L2, L3);
     }
 }
@@ -5663,7 +5660,9 @@ void homewizard_loop() {
 void loop() {
 
     network_loop();
-    homewizard_loop();
+    if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
+        homewizard_loop();
+    }
 
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
