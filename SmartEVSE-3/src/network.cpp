@@ -21,12 +21,6 @@ RemoteDebug Debug;
 #define SNTP_GET_SERVERS_FROM_DHCP 1
 #include <esp_sntp.h>
 
-// Helper macros to stringify the macro value
-#define STRINGIFY(x) #x
-#define TO_STRING(x) STRINGIFY(x)
-
-const char * USER_AGENT = "SmartEVSE-v" TO_STRING(SMARTEVSE_VERSION);
-
 struct tm timeinfo;
 bool LocalTimeSet = false;
 
@@ -302,7 +296,7 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
     } else {
         httpClient.begin(url);
     }
-    httpClient.addHeader("User-Agent", USER_AGENT);
+    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
     httpClient.addHeader("Accept", "application/vnd.github+json");
     httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
     const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
@@ -480,7 +474,7 @@ bool forceUpdate(const char* firmwareURL, bool validate) {
     } else {
         httpClient.begin(firmwareURL);
     }
-    httpClient.addHeader("User-Agent", USER_AGENT);
+    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
     httpClient.addHeader("Accept", "application/vnd.github+json");
     httpClient.addHeader("X-GitHub-Api-Version", "2022-11-28" );
     const char* get_headers[] = { "Content-Length", "Content-type", "Accept-Ranges" };
@@ -824,7 +818,7 @@ std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHomwWizardP1() {
     httpClient.begin(url);
 
     // Add headers
-    httpClient.addHeader("User-Agent", USER_AGENT);
+    httpClient.addHeader("User-Agent", "SmartEVSE-v3");
     httpClient.addHeader("Accept", "application/json");
     httpClient.setTimeout(4000);
 
