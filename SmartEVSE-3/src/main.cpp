@@ -2706,7 +2706,7 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                     ModbusRequest++;
                     // fall through
                 case 2:                                                         // Sensorbox or kWh meter that measures -all- currents
-                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) {         // we don't want modbus meter currents to conflict with EM_API currents
+                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) {         // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
                         _LOG_D("ModbusRequest %u: Request MainsMeter Measurement\n", ModbusRequest);
                         requestCurrentMeasurement(MainsMeter.Type, MainsMeter.Address);
                         break;
@@ -2808,7 +2808,7 @@ uint8_t PollEVNode = NR_EVSES, updated = 0;
                     // fall through
                 case 21:
                     // Request active energy if Mainsmeter is configured
-                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX ) { // EM_API and Sensorbox do not support energy postings
+                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX ) { // EM_API, EM_HOMEWIZARD_P1 and Sensorbox do not support energy postings
                         energytimer++; //this ticks approx every second?!?
                         if (energytimer == 30) {
                             _LOG_D("ModbusRequest %u: Request MainsMeter Import Active Energy Measurement\n", ModbusRequest);
@@ -4668,7 +4668,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["battery_current"] = "not allowed on slave";
         }
 
-        if (MainsMeter.Type == EM_API
+        if(MainsMeter.Type == EM_API
             && request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
             if (LoadBl > 1) {
                 doc["TOTAL"] = "not allowed on slave";
@@ -4678,10 +4678,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 auto L3 = static_cast<int16_t>(request->getParam("L3")->value().toInt());
                 setMainsMeterCurrents(L1, L2, L3);
 
-                for (size_t x = 0; x < sizeof(IrmsOriginal); x++) {
-                    const std::string key = "L" + std::to_string(x);
-                    doc["original"][key] = IrmsOriginal[x];
-                    doc[key] = MainsMeter.Irms[x];
+                for (int x = 0; x < 3; x++) {
+                    doc["original"]["L" + x] = IrmsOriginal[x];
+                    doc["L" + x] = MainsMeter.Irms[x];
                 }
                 doc["TOTAL"] = Isum;
             }
@@ -4694,8 +4693,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     } else if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
 
-        if (EVMeter.Type == EM_API) {
-            if (request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
+        if(EVMeter.Type == EM_API) {
+            if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
 
                 EVMeter.Irms[0] = static_cast<int16_t>(request->getParam("L1")->value().toInt());
                 EVMeter.Irms[1] = static_cast<int16_t>(request->getParam("L2")->value().toInt());

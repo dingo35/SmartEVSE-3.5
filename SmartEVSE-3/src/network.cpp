@@ -981,7 +981,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
             if (preferences.begin("nvs.net80211", false) ) {      // WiFi settings used by ESP
               preferences.clear();
-              preferences.end();
+              preferences.end();       
             }
             shouldReboot = true;
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
@@ -1090,7 +1090,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         const esp_partition_t* running_partition = esp_ota_get_running_partition();
                         _LOG_V("Running off of partition %s, trying to update partition %s.\n", running_partition->label, target_partition->label);
                         esp_ota_set_boot_partition( running_partition );            // make sure we have not switched boot partitions
-
+    
                         bool verification_result = false;
                         if(Update.end(true)) {
                             verification_result = validate_sig( target_partition, signature, size - SIGNATURE_LENGTH);
@@ -1244,7 +1244,7 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             _LOG_A("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 #else
             Serial.printf("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-#endif
+#endif            
             //load dhcp dns ip4 address into mongoose
             static char dns4url[]="udp://123.123.123.123:53";
             sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
@@ -1358,7 +1358,7 @@ void SetupPortalTask(void * parameter) {
     //Init WiFi as Station, start SmartConfig
     WiFi.mode(WIFI_AP_STA);
     WiFi.beginSmartConfig(SC_TYPE_ESPTOUCH_V2, SmartConfigKey);
-
+ 
     //Wait for SmartConfig packet from mobile.
     _LOG_V("Waiting for SmartConfig.\n");
 #ifdef SENSORBOX_VERSION
@@ -1376,7 +1376,7 @@ void SetupPortalTask(void * parameter) {
         delay(100);
     }                       // loop until connected or Wifi setup menu is exited.
     delay(2000);            // give smartConfig time to send provision status back to the users phone.
-
+        
     if (WiFi.status() == WL_CONNECTED) {
         _LOG_V("\nWiFi Connected, IP Address:%s.\n", WiFi.localIP().toString().c_str());
         WIFImode = 1;                                                           // we are already connected so don't call handleWIFImode
@@ -1422,15 +1422,15 @@ void handleWIFImode(void *s) {
         _LOG_A("Starting WiFi..\n");
         WiFi.mode(WIFI_STA);
         WiFi.begin();
-    }
+    }    
 
     if (WIFImode == 0 && WiFi.getMode() != WIFI_OFF) {
         _LOG_A("Stopping WiFi..\n");
         WiFi.disconnect(true);
-    }
+    }    
 }
 
-// Setup Wifi
+// Setup Wifi 
 void WiFiSetup(void) {
     // We might need some sort of authentication in the future.
     // SmartEVSE v3 have programmed ECDSA-256 keys stored in nvs
