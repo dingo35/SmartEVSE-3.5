@@ -4657,77 +4657,78 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
-} else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-    DynamicJsonDocument doc(200);
+    } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
 
-    if (request->hasParam("battery_current")) {
-        if (LoadBl < 2) {
-            homeBatteryCurrent = request->getParam("battery_current")->value().toInt();
-            homeBatteryLastUpdate = time(NULL);
-            doc["battery_current"] = homeBatteryCurrent;
-        } else
-            doc["battery_current"] = "not allowed on slave";
-    }
+        if(request->hasParam("battery_current")) {
+            if (LoadBl < 2) {
+                homeBatteryCurrent = request->getParam("battery_current")->value().toInt();
+                homeBatteryLastUpdate = time(NULL);
+                doc["battery_current"] = homeBatteryCurrent;
+            } else
+                doc["battery_current"] = "not allowed on slave";
+        }
 
-    if (MainsMeter.Type == EM_API
-        && request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
-        if (LoadBl > 1) {
-            doc["TOTAL"] = "not allowed on slave";
-        } else {
-            auto l1a = static_cast<int16_t>(request->getParam("L1")->value().toInt());
-            auto l2a = static_cast<int16_t>(request->getParam("L2")->value().toInt());
-            auto l3a = static_cast<int16_t>(request->getParam("L3")->value().toInt());
-            setMainsMeterCurrents(l1a, l2a, l3a);
+        if (MainsMeter.Type == EM_API
+            && request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
+            if (LoadBl > 1) {
+                doc["TOTAL"] = "not allowed on slave";
+            } else {
+                auto l1a = static_cast<int16_t>(request->getParam("L1")->value().toInt());
+                auto l2a = static_cast<int16_t>(request->getParam("L2")->value().toInt());
+                auto l3a = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+                setMainsMeterCurrents(l1a, l2a, l3a);
 
-            for (size_t x = 0; x < sizeof(IrmsOriginal); x++) {
-                const std::string key = "L" + std::to_string(x);
-                doc["original"][key] = IrmsOriginal[x];
-                doc[key] = MainsMeter.Irms[x];
+                for (size_t x = 0; x < sizeof(IrmsOriginal); x++) {
+                    const std::string key = "L" + std::to_string(x);
+                    doc["original"][key] = IrmsOriginal[x];
+                    doc[key] = MainsMeter.Irms[x];
+                }
+                doc["TOTAL"] = Isum;
             }
-            doc["TOTAL"] = Isum;
         }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        return true;
     }
 
-    String json;
-    serializeJson(doc, json);
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str()); // Yes. Respond JSON
-    return true;
-}
+    if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
 
-if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-    DynamicJsonDocument doc(200);
+        if (EVMeter.Type == EM_API) {
+            if (request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
 
-    if (EVMeter.Type == EM_API) {
-        if (request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
-            EVMeter.Irms[0] = static_cast<int16_t>(request->getParam("L1")->value().toInt());
-            EVMeter.Irms[1] = static_cast<int16_t>(request->getParam("L2")->value().toInt());
-            EVMeter.Irms[2] = static_cast<int16_t>(request->getParam("L3")->value().toInt());
-            EVMeter.CalcImeasured();
-            EVMeter.Timeout = COMM_EVTIMEOUT;
-            for (int x = 0; x < 3; x++)
-                doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
-            doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
+                EVMeter.Irms[0] = static_cast<int16_t>(request->getParam("L1")->value().toInt());
+                EVMeter.Irms[1] = static_cast<int16_t>(request->getParam("L2")->value().toInt());
+                EVMeter.Irms[2] = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+                EVMeter.CalcImeasured();
+                EVMeter.Timeout = COMM_EVTIMEOUT;
+                for (int x = 0; x < 3; x++)
+                    doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
+                doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
+            }
+
+            if(request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam("import_active_power")) {
+
+                EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
+                EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
+
+                EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
+                EVMeter.UpdateEnergies();
+                doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured;
+                doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy;
+                doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy;
+                doc["ev_meter"]["total_kwh"] = EVMeter.Energy;
+                doc["ev_meter"]["charged_kwh"] = EVMeter.EnergyCharged;
+            }
         }
 
-        if (request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam(
-                "import_active_power")) {
-            EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
-            EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
-
-            EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
-            EVMeter.UpdateEnergies();
-            doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured;
-            doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy;
-            doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy;
-            doc["ev_meter"]["total_kwh"] = EVMeter.Energy;
-            doc["ev_meter"]["charged_kwh"] = EVMeter.EnergyCharged;
-        }
-    }
-
-    String json;
-    serializeJson(doc, json);
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str()); // Yes. Respond JSON
-    return true;
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        return true;
 #if MODEM
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -4832,8 +4833,8 @@ if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->me
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
-}
-return false;
+  }
+  return false;
 }
 
 
@@ -5761,4 +5762,3 @@ void loop() {
 #endif //ENABLE_OCPP
 
 }
-
