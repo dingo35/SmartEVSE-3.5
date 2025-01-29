@@ -755,12 +755,7 @@ void setTimeZone(void * parameter) {
     vTaskDelete(NULL);                                                          //end this task so it will not take up resources
 }
 
-// Static variable to cache the result.
-static String cachedHomeWizardHost;
-
-String getCachedHomeWizardHost() {
-    return cachedHomeWizardHost;
-}
+static String homeWizardHost;
 
 /**
  * @brief Discovers a HomeWizard P1 meter service on the local network.
@@ -770,11 +765,11 @@ String getCachedHomeWizardHost() {
  * @return A string containing the hostname and port of the first matching HomeWizard P1 meter service
  * or an empty string in case no HomeWizard P1 meter is found in the local network
  */
-String discoverHWP1() {
+String discoverHomeWizardP1() {
 
     // If there's a cached result, return it immediately
-    if (!cachedHomeWizardHost.isEmpty()) {
-        return cachedHomeWizardHost;
+    if (!homeWizardHost.isEmpty()) {
+        return homeWizardHost;
     }
 
     // Search for _hwenergy._tcp services.
@@ -796,8 +791,8 @@ String discoverHWP1() {
 
             // Return first match.
             // Cache the result before returning it
-            cachedHomeWizardHost = hostname + ".local" + (port != 80 ? (":" + String(port)) : "");
-            return cachedHomeWizardHost;
+            homeWizardHost = hostname + ".local" + (port != 80 ? (":" + String(port)) : "");
+            return homeWizardHost;
         }
     }
     _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
@@ -814,10 +809,10 @@ String discoverHWP1() {
  *     - A boolean flag indicating success or failure
  *     - An array of 3 values representing the active current in amps for L1, L2, and L3
  */
-std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHWP1() {
+std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHomwWizardP1() {
 
     _LOG_A("getMainsFromHWP1(): invocation\n");
-    const String hostname = discoverHWP1();
+    const String hostname = discoverHomeWizardP1();
     if (hostname == "") {
         return {false, {0, 0, 0}};
     }

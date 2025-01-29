@@ -4208,8 +4208,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["mains_meter"]["import_active_energy"] = round((float)MainsMeter.Import_active_energy / 100)/10; //in kWh, precision 1 decimal
         doc["mains_meter"]["export_active_energy"] = round((float)MainsMeter.Export_active_energy / 100)/10; //in kWh, precision 1 decimal
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
-            auto host = getCachedHomeWizardHost();
-            doc["mains_meter"]["host"] = (!host.isEmpty()) ? host : "HomeWizard P1 Not Found";
+            doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
         }
 
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
@@ -5653,7 +5652,7 @@ void homewizard_loop() {
 
     lastCheck_homewizard = currentTime;
 
-    const auto currentsP1 = getMainsFromHWP1();
+    const auto currentsP1 = getMainsFromHomwWizardP1();
 
     if (currentsP1.first) {
         const auto L1 = static_cast<int16_t>(currentsP1.second[0] * 10);
