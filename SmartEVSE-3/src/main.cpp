@@ -4029,10 +4029,10 @@ int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime) {
 /**
  * Set the MainsMeter current values (in units of 100mA) for all three phases and update the meter's calculations.
  */
-void setMainsMeterCurrents(const int16_t l1a, const int16_t l2a, const int16_t l3a) {
-    MainsMeter.Irms[0] = l1a;
-    MainsMeter.Irms[1] = l2a;
-    MainsMeter.Irms[2] = l3a;
+void setMainsMeterCurrents(const int16_t L1, const int16_t L2, const int16_t L3) {
+    MainsMeter.Irms[0] = L1;
+    MainsMeter.Irms[1] = L2;
+    MainsMeter.Irms[2] = L3;
     CalcIsum();
     // Reset timer.
     MainsMeter.Timeout = COMM_TIMEOUT;
@@ -4674,10 +4674,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if (LoadBl > 1) {
                 doc["TOTAL"] = "not allowed on slave";
             } else {
-                auto l1a = static_cast<int16_t>(request->getParam("L1")->value().toInt());
-                auto l2a = static_cast<int16_t>(request->getParam("L2")->value().toInt());
-                auto l3a = static_cast<int16_t>(request->getParam("L3")->value().toInt());
-                setMainsMeterCurrents(l1a, l2a, l3a);
+                auto L1 = static_cast<int16_t>(request->getParam("L1")->value().toInt());
+                auto L2 = static_cast<int16_t>(request->getParam("L2")->value().toInt());
+                auto L3 = static_cast<int16_t>(request->getParam("L3")->value().toInt());
+                setMainsMeterCurrents(L1, L2, L3);
 
                 for (size_t x = 0; x < sizeof(IrmsOriginal); x++) {
                     const std::string key = "L" + std::to_string(x);
@@ -5656,10 +5656,10 @@ void homewizard_loop() {
     const auto currentsP1 = getMainsFromHWP1();
 
     if (currentsP1.first) {
-        const auto l1a = static_cast<int16_t>(currentsP1.second[0] * 10);
-        const auto l2a = static_cast<int16_t>(currentsP1.second[1] * 10);
-        const auto l3a = static_cast<int16_t>(currentsP1.second[2] * 10);
-        setMainsMeterCurrents(l1a, l2a, l3a);
+        const auto L1 = static_cast<int16_t>(currentsP1.second[0] * 10);
+        const auto L2 = static_cast<int16_t>(currentsP1.second[1] * 10);
+        const auto L3 = static_cast<int16_t>(currentsP1.second[2] * 10);
+        setMainsMeterCurrents(L1, L2, L3);
     }
 }
 

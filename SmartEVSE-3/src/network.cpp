@@ -865,10 +865,10 @@ std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHWP1() {
     if (doc.containsKey("active_current_l1_a") &&
         doc.containsKey("active_current_l2_a") &&
         doc.containsKey("active_current_l3_a")) {
-        const int8_t activeCurrentL1A = doc["active_current_l1_a"];
-        const int8_t activeCurrentL1B = doc["active_current_l2_a"];
-        const int8_t activeCurrentL1C = doc["active_current_l3_a"];
-        return {true, {activeCurrentL1A, activeCurrentL1B, activeCurrentL1C}};
+        const int8_t L1 = doc["active_current_l1_a"];
+        const int8_t L2 = doc["active_current_l2_a"];
+        const int8_t L3 = doc["active_current_l3_a"];
+        return {true, {L1, L2, L3}};
     }
 
     // Fields not found.
