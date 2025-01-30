@@ -664,12 +664,8 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
         // MainsMeter can measure -200A to +200A per phase
         if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-            if (LoadBl < 2)
-                MainsMeter.Timeout = COMM_TIMEOUT;
-            MainsMeter.Irms[0] = L1;
-            MainsMeter.Irms[1] = L2;
-            MainsMeter.Irms[2] = L3;
-            CalcIsum();
+            // TODO: Verify if this is correct. Ensure the currents are set for master and slaves and reset only in the case of the master.
+            setMainsMeterCurrents(L1, L2, L3, LoadBl < 2 /* Reset timer in case of master only. */);
         }
     } else if (topic == MQTTprefix + "/Set/EVMeter") {
         if (EVMeter.Type != EM_API)
@@ -1381,7 +1377,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["mains_meter"]["import_active_energy"] = round((float)MainsMeter.Import_active_energy / 100)/10; //in kWh, precision 1 decimal
         doc["mains_meter"]["export_active_energy"] = round((float)MainsMeter.Export_active_energy / 100)/10; //in kWh, precision 1 decimal
-
+        if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
+            doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
+        }
+          
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
         doc["phase_currents"]["L1"] = MainsMeter.Irms[0];
         doc["phase_currents"]["L2"] = MainsMeter.Irms[1];
@@ -1842,18 +1841,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(MainsMeter.Type == EM_API) {
             if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
                 if (LoadBl < 2) {
-                    MainsMeter.Irms[0] = request->getParam("L1")->value().toInt();
-                    MainsMeter.Irms[1] = request->getParam("L2")->value().toInt();
-                    MainsMeter.Irms[2] = request->getParam("L3")->value().toInt();
-
-                    CalcIsum();
-                    for (int x = 0; x < 3; x++) {
-                        doc["original"]["L" + x] = IrmsOriginal[x];
-                        doc["L" + x] = MainsMeter.Irms[x];
+                    const int16_t L1 = request->getParam("L1")->value().toInt();
+                    const int16_t L2 = request->getParam("L2")->value().toInt();
+                    const int16_t L3 = request->getParam("L3")->value().toInt();
+                    setMainsMeterCurrents(L1, L2, L3, true /* reset timeout. */);
+                    
+                    for (int x = 0; x < 3; ++x) {
+                        std::string key = "L" + std::to_string(x);
+                        doc["original"][key] = IrmsOriginal[x];
+                        doc[key] = MainsMeter.Irms[x];
                     }
                     doc["TOTAL"] = Isum;
-
-                    MainsMeter.Timeout = COMM_TIMEOUT;
 
                 } else
                     doc["TOTAL"] = "not allowed on slave";
@@ -2809,10 +2807,41 @@ bool fwNeedsUpdate(char * version) {
     return false;
 }
 
+/**
+  * Periodically retrieves current measurements from the HomeWizard P1 energy meter
+  * and updates the main meter's currents.
+  *
+  * This function ensures a delay of at least 5 seconds between consecutive data retrieval attempts.
+  */
+void homewizard_loop() {
+    static unsigned long lastCheck_homewizard = 0;
+
+    constexpr unsigned long interval = 5000; // 5 seconds
+    const unsigned long currentTime = millis();
+
+    if (currentTime - lastCheck_homewizard < interval) {
+        return;
+    }
+
+    _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
+    lastCheck_homewizard = currentTime;
+
+    const auto currents = getMainsFromHomeWizardP1();
+    if (currents.first) {
+        const int16_t L1 = currents.second[0] * 10;
+        const int16_t L2 = currents.second[1] * 10;
+        const int16_t L3 = currents.second[2] * 10;
+        setMainsMeterCurrents(L1, L2, L3, true);
+    }
+}
 
 void loop() {
 
     network_loop();
+    if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
+        homewizard_loop();
+    }
+    
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
         lastCheck = millis();

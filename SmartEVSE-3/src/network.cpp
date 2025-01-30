@@ -751,7 +751,7 @@ void setTimeZone(void * parameter) {
     vTaskDelete(NULL);                                                          //end this task so it will not take up resources
 }
 
-static String homeWizardHost;
+String homeWizardHost;
 
 /**
  * @brief Discovers a HomeWizard P1 meter service on the local network.
@@ -765,6 +765,7 @@ String discoverHomeWizardP1() {
 
     // If there's a cached result, return it immediately
     if (!homeWizardHost.isEmpty()) {
+        _LOG_A("discoverHWP1(): Using cached host '%s'.\n", homeWizardHost);
         return homeWizardHost;
     }
 
@@ -804,7 +805,7 @@ String discoverHomeWizardP1() {
  *     - A boolean flag indicating success or failure
  *     - An array of 3 values representing the active current in amps for L1, L2, and L3
  */
-std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHomwWizardP1() {
+std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHomeWizardP1() {
 
     _LOG_A("getMainsFromHWP1(): invocation\n");
     const String hostname = discoverHomeWizardP1();
