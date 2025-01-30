@@ -765,7 +765,7 @@ String discoverHomeWizardP1() {
 
     // If there's a cached result, return it immediately
     if (!homeWizardHost.isEmpty()) {
-        _LOG_A("discoverHWP1(): Using cached host '%s'.\n", homeWizardHost);
+        _LOG_A("discoverHWP1(): Using cached host '%s'.\n", homeWizardHost.c_str());
         return homeWizardHost;
     }
 
@@ -822,6 +822,7 @@ std::pair<bool, std::array<std::int8_t, 3> > getMainsFromHomeWizardP1() {
     // Add headers
     httpClient.addHeader("User-Agent", "SmartEVSE-v3");
     httpClient.addHeader("Accept", "application/json");
+    // The HTTPClient library already sets Connection: keep-alive by default.
     httpClient.setTimeout(4000);
 
     // Handle HTTP errors or timeout.
