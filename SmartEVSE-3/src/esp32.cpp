@@ -2844,7 +2844,7 @@ void homewizard_loop() {
 void loop() {
 
     network_loop();
-    if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
+    if (MainsMeter.Type == EM_HOMEWIZARD_P1 && LoadBl < 2) {
         homewizard_loop();
     }
     
