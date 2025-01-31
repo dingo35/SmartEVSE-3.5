@@ -664,8 +664,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
         // MainsMeter can measure -200A to +200A per phase
         if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-            // TODO: Verify if this is correct. Ensure the currents are set for master and slaves and reset only in the case of the master.
-            setMainsMeterCurrents(L1, L2, L3, LoadBl < 2 /* Reset timer in case of master only. */);
+            if (LoadBl < 2)
+                MainsMeter.Timeout = COMM_TIMEOUT;
+            MainsMeter.Irms[0] = L1;
+            MainsMeter.Irms[1] = L2;
+            MainsMeter.Irms[2] = L3;
+            CalcIsum();
         }
     } else if (topic == MQTTprefix + "/Set/EVMeter") {
         if (EVMeter.Type != EM_API)
@@ -1841,17 +1845,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(MainsMeter.Type == EM_API) {
             if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
                 if (LoadBl < 2) {
-                    const int16_t L1 = request->getParam("L1")->value().toInt();
-                    const int16_t L2 = request->getParam("L2")->value().toInt();
-                    const int16_t L3 = request->getParam("L3")->value().toInt();
-                    setMainsMeterCurrents(L1, L2, L3, true /* reset timeout. */);
-                    
-                    for (int x = 0; x < 3; ++x) {
-                        std::string key = "L" + std::to_string(x);
-                        doc["original"][key] = IrmsOriginal[x];
-                        doc[key] = MainsMeter.Irms[x];
+                    MainsMeter.Irms[0] = request->getParam("L1")->value().toInt();
+                    MainsMeter.Irms[1] = request->getParam("L2")->value().toInt();
+                    MainsMeter.Irms[2] = request->getParam("L3")->value().toInt();
+
+                    CalcIsum();
+                    for (int x = 0; x < 3; x++) {
+                        doc["original"]["L" + x] = IrmsOriginal[x];
+                        doc["L" + x] = MainsMeter.Irms[x];
                     }
                     doc["TOTAL"] = Isum;
+
+                    MainsMeter.Timeout = COMM_TIMEOUT;
 
                 } else
                     doc["TOTAL"] = "not allowed on slave";
@@ -2828,10 +2833,11 @@ void homewizard_loop() {
 
     const auto currents = getMainsFromHomeWizardP1();
     if (currents.first) {
-        const int16_t L1 = currents.second[0] * 10;
-        const int16_t L2 = currents.second[1] * 10;
-        const int16_t L3 = currents.second[2] * 10;
-        setMainsMeterCurrents(L1, L2, L3, true);
+        MainsMeter.Irms[0] = currents.second[0] * 10;
+        MainsMeter.Irms[1] = currents.second[1] * 10;
+        MainsMeter.Irms[2] = currents.second[2] * 10;
+        CalcIsum();
+        MainsMeter.Timeout = COMM_TIMEOUT;
     }
 }
 

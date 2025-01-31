@@ -280,7 +280,6 @@ EXT void ModemPower(uint8_t enable);
 EXT uint16_t WchVersion;
 EXT uint8_t ReadESPdata(char *buf);
 
-extern void setMainsMeterCurrents(int16_t L1, int16_t L2, int16_t L3, bool resetTimer);
 extern void printStatus(void);
 extern void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export);
 extern void requestNodeConfig(uint8_t NodeNr);
@@ -770,24 +769,6 @@ void setState(uint8_t NewState) { //c
 #endif //SMARTEVSE_VERSION
 }
 
-/**
-  * Set the mains meter currents for all three phases, update the meter's calculations
-  * and optionally reset the communication timeout.
-  * 
- * @param L1 Current for phase L1 in 100mA resolution.
- * @param L2 Current for phase L2 in 100mA resolution.
- * @param L3 Current for phase L3 in 100mA resolution.
- * @param resetTimer Boolean flag to reset the communication timeout if set to true.
- */
-void setMainsMeterCurrents(const int16_t L1, const int16_t L2, const int16_t L3, const bool resetTimer) {
-    MainsMeter.Irms[0] = L1;
-    MainsMeter.Irms[1] = L2;
-    MainsMeter.Irms[2] = L3;
-    CalcIsum();
-    if (resetTimer) {
-        MainsMeter.Timeout = COMM_TIMEOUT;
-    }
-}
 
 // the Access_bit is owned by the ESP32
 // because it is highly subject to human interaction
