@@ -556,7 +556,8 @@ void GLCD(void) {
                 GLCD_print_buf2(2, (const char *) "EV METER");
             } else {
                 GLCD_print_buf2(0, (const char *) "ERROR NO");
-                GLCD_print_buf2(2, (const char *) "SERIAL COM");
+                GLCD_print_buf2(2, (const char *) (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD_P1
+                    ? "MAINSMETER": "SERIAL COM"));
             }            
             GLCD_print_buf2(4, (const char *) "CHECK CFG");
             GLCD_print_buf2(6, (const char *) "OR WIRING");
