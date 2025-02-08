@@ -1903,6 +1903,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
+
+    } else if (mg_http_match_uri(hm, "/lcd.bmp")) {
+
+        // Serve the LCD as BMP image.
+        std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+        mg_printf(c, "HTTP/1.1 200 OK\r\n");
+        mg_printf(c, "Content-Type: image/bmp\r\n");
+        mg_printf(c, "Content-Length: %d\r\n\r\n", bmpImage.size());
+        mg_send(c, bmpImage.data(), bmpImage.size()); 
+        c->is_draining = 1;
+        return true;
+    
 #if MODEM
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -2007,39 +2019,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
-  } else if (mg_http_match_uri(hm, "/lcd")) {
-
-      constexpr int BUF_LENGTH = sizeof(GLCDbuf2);
-      
-      String hexEncoded;
-      hexEncoded.reserve(BUF_LENGTH * 2 + BUF_LENGTH - 1);  // Pre-allocate memory
-
-      hexEncoded = "[";
-      for (size_t i = 0; i < BUF_LENGTH; i++) {
-          if (i > 0) hexEncoded += ",";  // Add a comma separator
-          hexEncoded += "0x" + String(GLCDbuf2[i], HEX);
-      }
-      hexEncoded += "]";
-
-      DynamicJsonDocument doc(1024);
-      doc["BUF_LENGTH"] = BUF_LENGTH;
-      doc["lcd"] = hexEncoded.c_str();
-      String json;
-      serializeJson(doc, json);
-      mg_http_reply(c, 200, "Content-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
-      return true;
-  } else if (mg_http_match_uri(hm, "/bmp")) {
-
-      std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-
-      mg_printf(c, "HTTP/1.1 200 OK\r\n");
-      mg_printf(c, "Content-Type: image/bmp\r\n");
-      mg_printf(c, "Content-Length: %d\r\n\r\n", bmpImage.size());
-      mg_send(c, bmpImage.data(), bmpImage.size()); 
-      c->is_draining = 1;
-      return true;
-  }
-    
+    }    
   return false;
 }
 

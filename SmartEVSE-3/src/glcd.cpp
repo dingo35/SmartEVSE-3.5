@@ -1477,8 +1477,8 @@ std::vector<uint8_t> createBMPHeader(const int width, const int height) {
         2, 0, 0, 0,                   // Number of colors in the palette (black & white)
         0, 0, 0, 0,                   // Important colors
         // Write color palette (black & white)
-        0xFF, 0xFF, 0xFF, 0x00,       // Black (1)
-        0x00, 0x00, 0x00, 0x00,       // White (0)
+        0xFF, 0xFF, 0xFF, 0x00,       // White (0)
+        0x00, 0x00, 0xFF, 0x00,       // Red (1)
     };
     return headerVector;
 }
