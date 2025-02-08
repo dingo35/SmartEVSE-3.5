@@ -1445,4 +1445,102 @@ void GLCD_init(void) {
     glcd_clrln(7, 0x00);
 #endif
 }
+
+/**
+ * Write header for BMP 1-bit image.
+ *
+ * @param width Width of the BMP image in pixels
+ * @param height Height of the BMP image in pixels
+ */
+std::vector<uint8_t> createBMPHeader(const int width, const int height) {
+    uint32_t rowSize = (width + 31) / 32 * 4;  // Each row must be a multiple of 4 bytes
+    uint32_t fileSize = 54 + (rowSize * height);
+
+    std::vector<uint8_t> headerVector = {
+        'B', 'M',                     // 'BM' Signature
+        fileSize & 0xFF,              // Byte 1 (Least Significant Byte)
+        (fileSize >> 8) & 0xFF,       // Byte 2
+        (fileSize >> 16) & 0xFF,      // Byte 3
+        (fileSize >> 24) & 0xFF,      // Byte 4 (Most Significant Byte)
+        0x00, 0x00, 0x00, 0x00,       // Reserved
+        0x3E, 0x00, 0x00, 0x00,       // Data offset - Header (14) + DIB (40) + Palette (8) 
+
+        40, 0, 0, 0,                  // DIB header size 
+        width, 0, 0, 0,               // Width
+        height, 0, 0, 0,              // Height
+        1, 0,                         // Planes
+        1, 0,                         // Bits per pixel (1-bit monochrome)
+        0, 0, 0, 0,                   // No compression
+        0, 0, 0, 0,                   // Image size (can be 0 for uncompressed)
+        0, 0, 0, 0,                   // X pixels per meter (unused)
+        0, 0, 0, 0,                   // Y pixels per meter (unused)
+        2, 0, 0, 0,                   // Number of colors in the palette (black & white)
+        0, 0, 0, 0,                   // Important colors
+        // Write color palette (black & white)
+        0xFF, 0xFF, 0xFF, 0x00,       // Black (1)
+        0x00, 0x00, 0x00, 0x00,       // White (0)
+    };
+    return headerVector;
+}
+
+/**
+ * Transposes a 8x8 bit matrix stored in a byte array.
+ *
+ * This function takes an 8-byte input, where each byte represents a row of 8 bits,
+ * and transposes it so that each output byte represents a column of 8 bits.
+ * This operation is commonly used for graphical displays that store pixel data
+ * in a column-major format.
+ *
+ * @param[in] input  An array of 8 bytes, where each byte represents a row of 8 bits.
+ * @param[out] output An array of 8 bytes, where each byte represents a transposed column of 8 bits.
+ *
+ */
+void transpose8x8(const std::array<uint8_t, 8>& input, std::array<uint8_t, 8>& output) {
+    for (int bitPos = 0; bitPos < 8; ++bitPos) {
+        uint8_t newByte = 0;
+        for (int i = 0; i < 8; ++i) {
+            newByte |= (input[i] >> 7 - bitPos & 0x01) << 7 - i;
+        }
+        output[bitPos] = newByte;
+    }
+}
+
+/**
+ * Processes GLCD buffer data and converts it into a BMP-formatted image.
+ *
+ * This function takes a graphical LCD (GLCD) buffer, processes it by transposing
+ * 8x8 pixel blocks, and formats the output as a BMP image. The function reads
+ * the buffer in chunks of 128 bytes, rearranges the bits for correct rendering,
+ * and appends the processed data to a BMP header.
+ *
+ * @return A vector of `uint8_t` containing the BMP-formatted image data.
+ */
+std::vector<uint8_t> createImageFromGLCDBuffer() {
+    constexpr int CHUNK_SIZE = 128;
+    std::vector<uint8_t> imageData = createBMPHeader(128, 64);
+
+    for (size_t i = sizeof(GLCDbuf2); i > 0; i -= CHUNK_SIZE) {
+        size_t start = (i >= CHUNK_SIZE) ? i - CHUNK_SIZE : 0;
+        std::vector<uint8_t> chunk(GLCDbuf2 + start, GLCDbuf2 + i);
+        std::vector<uint8_t> processed(128, 0);
+
+        // Process the 128-byte chunk in groups of 8
+        for (int byteIndex = 0; byteIndex < 128; byteIndex += 8) {
+            std::array<uint8_t, 8> input{}, output{};
+            std::copy(chunk.begin() + byteIndex, chunk.begin() + byteIndex + 8, input.begin());
+
+            transpose8x8(input, output);
+
+            // Distribute transposed bytes into the processed buffer
+            const int newByteIndex = byteIndex / 8;
+            for (int j = 0; j < 8; ++j) {
+                processed[newByteIndex + j * 16] = output[j];
+            }
+        }
+
+        imageData.insert(imageData.end(), processed.begin(), processed.end());
+    }
+    return imageData;
+}
+
 #endif

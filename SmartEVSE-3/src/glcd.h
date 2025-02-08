@@ -21,6 +21,7 @@
 ; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ; THE SOFTWARE.
 */
+#include <vector>
 
 #ifndef __GLCD_H
 #define __GLCD_H
@@ -38,7 +39,8 @@ extern void GLCDMenu(unsigned char Buttons);
 extern void GLCD_init(void);
 extern bool GridRelayOpen;
 extern uint8_t GLCDbuf[512]; 
-extern uint8_t GLCDbuf2[1024]; 
+extern uint8_t GLCDbuf2[1024];
+extern std::vector<uint8_t> createImageFromGLCDBuffer();
 
 #if SMARTEVSE_VERSION >= 40
 #include <SPI.h>
