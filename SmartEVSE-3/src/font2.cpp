@@ -1,4 +1,4 @@
-#include "glcd.h"
+// #include "glcd.h"
 
 #ifdef GLCD_HIRES_FONT
 

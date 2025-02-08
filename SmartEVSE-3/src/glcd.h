@@ -37,6 +37,8 @@ extern void GLCD(void);
 extern void GLCDMenu(unsigned char Buttons);
 extern void GLCD_init(void);
 extern bool GridRelayOpen;
+extern uint8_t GLCDbuf[512]; 
+extern uint8_t GLCDbuf2[1024]; 
 
 #if SMARTEVSE_VERSION >= 40
 #include <SPI.h>
@@ -45,3 +47,4 @@ extern SPIClass LCD_SPI2;
 #endif
 
 #endif // #ifndef __GLCD_H
+

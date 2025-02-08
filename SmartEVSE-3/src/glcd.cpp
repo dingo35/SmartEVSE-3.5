@@ -81,7 +81,8 @@ uint8_t LCDpos = 0;
 bool LCDToggle = false;                                                         // Toggle display between two values
 unsigned char LCDText = 0;                                                      // Cycle through text messages
 unsigned int GLCDx, GLCDy;
-uint8_t GLCDbuf[512];                                                       // GLCD buffer (half of the display)
+uint8_t GLCDbuf[];                                                       // GLCD buffer (half of the display)
+uint8_t GLCDbuf2[];
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
 uint8_t MenuItems[MENU_EXIT];
@@ -89,6 +90,7 @@ extern void CheckSwitch(bool force = false);
 extern void handleWIFImode(void *s  = &Serial);
 extern char SmartConfigKey[16];
 extern Button ExtSwitch;
+unsigned char activeRow;
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
@@ -127,10 +129,12 @@ void st7565_data_buf(unsigned char *data, unsigned char len) {
 }
 #endif //SMARTEVSE_VERSION
 
+
 void goto_row(unsigned char y) {
     unsigned char pattern;
     pattern = 0xB0 | (y & 0xBF);                                                // put row address on data port set command
     st7565_command(pattern);
+    activeRow = y;
 }
 //--------------------
 
@@ -153,7 +157,10 @@ void glcd_clrln(unsigned char ln, unsigned char data) {
     goto_xy(0, ln);
     for (i = 0; i < 128; i++) {
         st7565_data(data);                                                      // put data on data port
+        // Also update buffer copy
+        GLCDbuf2[i +(activeRow * 128)] = data;
     }
+    
 }
 
 /*
@@ -186,7 +193,13 @@ void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
 
     do {
         goto_xy(0, RowAdr + y);
-        for (i = 0; i < 128; i++) st7565_data(GLCDbuf[x++]);                    // put data on data port
+        // Sends one chunk of 8 pixels height and 128 pixels wide.
+        for (i = 0; i < 128; i++) {
+            uint8_t data = GLCDbuf[x++];
+            st7565_data(data);                    // put data on data port
+            // Also update buffer copy
+            GLCDbuf2[i +(activeRow * 128)] = data;
+        }
     } while (++y < Rows);
 }
 #else
