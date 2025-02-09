@@ -281,6 +281,7 @@ extern uint16_t Balanced[NR_EVSES];                                             
 extern uint8_t LCDTimer;
 extern uint16_t BacklightTimer;                                                 // remaining seconds the LCD backlight is active
 extern uint8_t ButtonState;                                                     // Holds latest push Buttons state (LSB 2:0)
+extern uint8_t ButtonStateOverride;                                             // Override the state via API
 extern uint8_t OldButtonState;                                                  // Holds previous push Buttons state (LSB 2:0)
 extern uint8_t LCDNav;
 extern uint8_t SubMenu;

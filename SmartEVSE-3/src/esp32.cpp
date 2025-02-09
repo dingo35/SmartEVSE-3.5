@@ -225,6 +225,7 @@ extern uint8_t LCDTimer;
 extern uint8_t AccessTimer;
 extern int8_t TempEVSE;
 extern uint8_t ButtonState;
+extern uint8_t ButtonStateOverride;
 extern uint8_t OldButtonState;
 extern uint8_t LCDNav;
 extern uint8_t SubMenu;
@@ -577,12 +578,16 @@ void getButtonState() {
     pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
     pinMode(PIN_LCD_SDO_B3, INPUT);
     pinMode(PIN_LCD_A0_B2, INPUT);
-    // sample buttons                                       < o >
-    if (digitalRead(PIN_LCD_SDO_B3)) ButtonState = 4;       // > (right)
-    else ButtonState = 0;
-    if (digitalRead(PIN_LCD_A0_B2)) ButtonState |= 2;       // o (middle)
-    if (digitalRead(PIN_IO0_B1)) ButtonState |= 1;          // < (left)
 
+    if (ButtonStateOverride != 7) {
+        ButtonState = ButtonStateOverride;
+    } else {
+        // sample buttons                                             < o >
+        if (digitalRead(PIN_LCD_SDO_B3)) ButtonState = 4;       // > (right)
+        else ButtonState = 0;
+        if (digitalRead(PIN_LCD_A0_B2)) ButtonState |= 2;       // o (middle)
+        if (digitalRead(PIN_IO0_B1)) ButtonState |= 1;          // < (left)
+    }
     pinMode(PIN_LCD_SDO_B3, OUTPUT);
     pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
     pinMode(PIN_LCD_A0_B2, OUTPUT);
@@ -1905,14 +1910,41 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/lcd.bmp")) {
+        if (!memcmp("POST", hm->method.buf, hm->method.len)) {
 
-        // Serve the LCD as BMP image.
-        std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-        mg_printf(c, "HTTP/1.1 200 OK\r\n");
-        mg_printf(c, "Content-Type: image/bmp\r\n");
-        mg_printf(c, "Content-Length: %d\r\n\r\n", bmpImage.size());
-        mg_send(c, bmpImage.data(), bmpImage.size()); 
-        c->is_draining = 1;
+            _LOG_A("==== /lcd.bmp POST request\n\r");
+            
+            // "left", "middle", "right".
+            const String button = request->getParam("button")->value();
+            const boolean buttonPressed = request->getParam("state")->value() == "1";
+
+            _LOG_A("==== POST lcd.bmp, button: '%s'\n\r", button ? button.c_str() : "null");
+            _LOG_A("==== POST lcd.bmp, state: '%b'\n\r", buttonPressed);
+            
+            if (button == "right") buttonPressed ? ButtonStateOverride &= 0xFB : ButtonStateOverride |= 4; // > (right)
+            if (button == "middle") buttonPressed ? ButtonStateOverride &= 0xFD : ButtonStateOverride |= 2;
+            // o (middle)
+            if (button == "left") buttonPressed ? ButtonStateOverride &= 0xFE : ButtonStateOverride |= 1; // < (left)
+
+            _LOG_A("==== POST lcd.bmp, ButtonStateOverride: '0x%02X'\n\r", ButtonStateOverride);
+
+            DynamicJsonDocument doc(200);
+            doc["button"]["right"] = (ButtonStateOverride & 4) ? "-" : "pushed";
+            doc["button"]["middle"] = (ButtonStateOverride & 2) ? "-" : "pushed";
+            doc["button"]["left"] = (ButtonStateOverride & 1) ? "-" : "pushed";
+            String json;
+            serializeJson(doc, json);
+            mg_http_reply(c, 200, "Content-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n", "%s\r\n", json.c_str()); 
+
+        } else {
+            // Serve the LCD as BMP image.
+            std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+            mg_printf(c, "HTTP/1.1 200 OK\r\n");
+            mg_printf(c, "Content-Type: image/bmp\r\n");
+            mg_printf(c, "Content-Length: %d\r\n\r\n", bmpImage.size());
+            mg_send(c, bmpImage.data(), bmpImage.size()); 
+            c->is_draining = 1;
+        }
         return true;
     
 #if MODEM
