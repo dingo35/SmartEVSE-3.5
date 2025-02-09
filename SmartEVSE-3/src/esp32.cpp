@@ -1,3 +1,4 @@
+#include <unordered_map>
 #ifdef SMARTEVSE_VERSION //ESP32
 
 #include <ArduinoJson.h>
@@ -1909,33 +1910,43 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
 
-    } else if (mg_http_match_uri(hm, "/lcd.bmp")) {
-        if (!memcmp("POST", hm->method.buf, hm->method.len)) {
+    } else if (mg_http_match_uri(hm, "/lcd")) {
+        if (strncmp("POST", hm->method.buf, hm->method.len) == 0) {
+            const char *btnName = request->getParam("button")->value().c_str();
+            const bool btnDown = (request->getParam("state")->value() == "1");
 
-            // "left", "middle", "right".
-            const String button = request->getParam("button")->value();
-            const boolean buttonPressed = request->getParam("state")->value() == "1";
-            if (button == "right") buttonPressed ? ButtonStateOverride &= 0xFB : ButtonStateOverride |= 4; // > (right)
-            if (button == "middle") buttonPressed ? ButtonStateOverride &= 0xFD : ButtonStateOverride |= 2;
-            // o (middle)
-            if (button == "left") buttonPressed ? ButtonStateOverride &= 0xFE : ButtonStateOverride |= 1; // < (left)
-            if (button == "all") buttonPressed ? ButtonStateOverride = 0 : ButtonStateOverride = 0x07;
+            // Button state bitmasks.
+            static constexpr std::unordered_map<std::string, uint8_t> btnMasks = {
+                {"right", 0b100},
+                {"middle", 0b010},
+                {"left", 0b001},
+                {"all", 0b111}
+            };
 
+            auto it = btnMasks.find(btnName);
+            if (it != btnMasks.end()) {
+                // Clear bits if button is pressed, set bits if up.
+                uint8_t mask = it->second;
+                btnDown ? ButtonStateOverride &= ~mask : ButtonStateOverride |= mask;
+            }
+
+            // Create JSON response
             DynamicJsonDocument doc(200);
-            doc["button"]["right"] = (ButtonStateOverride & 4) ? "-" : "pushed";
-            doc["button"]["middle"] = (ButtonStateOverride & 2) ? "-" : "pushed";
-            doc["button"]["left"] = (ButtonStateOverride & 1) ? "-" : "pushed";
+            doc["button"]["right"] = ButtonStateOverride & 4 ? "up" : "down";
+            doc["button"]["middle"] = ButtonStateOverride & 2 ? "up" : "down";
+            doc["button"]["left"] = ButtonStateOverride & 1 ? "up" : "down";
+
+            // Serialize and send response
             String json;
             serializeJson(doc, json);
-            mg_http_reply(c, 200, "Content-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n", "%s\r\n", json.c_str()); 
-
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         } else {
             // Serve the LCD as BMP image.
-            std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-            mg_printf(c, "HTTP/1.1 200 OK\r\n");
-            mg_printf(c, "Content-Type: image/bmp\r\n");
-            mg_printf(c, "Content-Length: %d\r\n\r\n", bmpImage.size());
-            mg_send(c, bmpImage.data(), bmpImage.size()); 
+            const auto &bmpImage = createImageFromGLCDBuffer(); // Use const ref to avoid unnecessary copy
+            mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: image/bmp\r\n"
+                      "Content-Length: %d\r\n\r\n", static_cast<int>(bmpImage.size()));
+            mg_send(c, bmpImage.data(), bmpImage.size());
             c->is_draining = 1;
         }
         return true;

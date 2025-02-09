@@ -476,11 +476,11 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="https://github.com/SmartEVSE/SmartEVSE-3/raw/master/pictures/SmartEVSEv3.png" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="/lcd.bmp" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen" src="/lcd" width="256" height="128" alt=""/>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
-                                              <button type="button" data-name="middle">middle</button>
-                                              <button type="button" data-name="right">right</button>
+                                              <button type="button" data-name="middle">Middle</button>
+                                              <button type="button" data-name="right">Right</button>
                                           </div>
                                       </div>
 <script>
@@ -496,7 +496,7 @@
         }
 
         function sendButtonState(btnName, stateDownOrUp) {
-            $.post(`/lcd.bmp?button=${btnName}&state=${stateDownOrUp ? '1' : '0'}`, () => {
+            $.post(`/lcd?button=${btnName}&state=${stateDownOrUp ? '1' : '0'}`, () => {
                 if (stateDownOrUp) refreshLCD();
             });
         }
