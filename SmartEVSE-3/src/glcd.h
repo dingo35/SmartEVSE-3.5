@@ -49,4 +49,3 @@ extern SPIClass LCD_SPI2;
 #endif
 
 #endif // #ifndef __GLCD_H
-

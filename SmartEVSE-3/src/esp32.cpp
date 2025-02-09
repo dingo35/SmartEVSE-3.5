@@ -580,15 +580,12 @@ void getButtonState() {
     pinMode(PIN_LCD_SDO_B3, INPUT);
     pinMode(PIN_LCD_A0_B2, INPUT);
 
-    if (ButtonStateOverride != 7) {
-        ButtonState = ButtonStateOverride;
-    } else {
-        // sample buttons                                             < o >
-        if (digitalRead(PIN_LCD_SDO_B3)) ButtonState = 4;       // > (right)
-        else ButtonState = 0;
-        if (digitalRead(PIN_LCD_A0_B2)) ButtonState |= 2;       // o (middle)
-        if (digitalRead(PIN_IO0_B1)) ButtonState |= 1;          // < (left)
-    }
+    // sample buttons                                                         < o >
+    ButtonState = (ButtonStateOverride != 7) ? ButtonStateOverride
+                      : (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |            // > (right)
+                        (digitalRead(PIN_LCD_A0_B2) ? 2 : 0) |             // o (middle)
+                        (digitalRead(PIN_IO0_B1) ? 1 : 0);                 // < (left)
+    
     pinMode(PIN_LCD_SDO_B3, OUTPUT);
     pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
     pinMode(PIN_LCD_A0_B2, OUTPUT);
@@ -1423,7 +1420,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         return true;
       } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {                     // if POST
         if(request->hasParam("mqtt_update")) {
@@ -1916,7 +1913,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             const bool btnDown = (request->getParam("state")->value() == "1");
 
             // Button state bitmasks.
-            static constexpr std::unordered_map<std::string, uint8_t> btnMasks = {
+            static const std::unordered_map<std::string, char> btnMasks = {
                 {"right", 0b100},
                 {"middle", 0b010},
                 {"left", 0b001},
@@ -1926,7 +1923,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             auto it = btnMasks.find(btnName);
             if (it != btnMasks.end()) {
                 // Clear bits if button is pressed, set bits if up.
-                uint8_t mask = it->second;
+                char mask = it->second;
                 btnDown ? ButtonStateOverride &= ~mask : ButtonStateOverride |= mask;
             }
 
@@ -2055,9 +2052,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
-    }    
+  }
   return false;
 }
+
 
 /*
  * OCPP-related function definitions
