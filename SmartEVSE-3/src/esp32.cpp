@@ -1912,21 +1912,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     } else if (mg_http_match_uri(hm, "/lcd.bmp")) {
         if (!memcmp("POST", hm->method.buf, hm->method.len)) {
 
-            _LOG_A("==== /lcd.bmp POST request\n\r");
-            
             // "left", "middle", "right".
             const String button = request->getParam("button")->value();
             const boolean buttonPressed = request->getParam("state")->value() == "1";
-
-            _LOG_A("==== POST lcd.bmp, button: '%s'\n\r", button ? button.c_str() : "null");
-            _LOG_A("==== POST lcd.bmp, state: '%b'\n\r", buttonPressed);
-            
             if (button == "right") buttonPressed ? ButtonStateOverride &= 0xFB : ButtonStateOverride |= 4; // > (right)
             if (button == "middle") buttonPressed ? ButtonStateOverride &= 0xFD : ButtonStateOverride |= 2;
             // o (middle)
             if (button == "left") buttonPressed ? ButtonStateOverride &= 0xFE : ButtonStateOverride |= 1; // < (left)
-
-            _LOG_A("==== POST lcd.bmp, ButtonStateOverride: '0x%02X'\n\r", ButtonStateOverride);
+            if (button == "all") buttonPressed ? ButtonStateOverride = 0 : ButtonStateOverride = 0x07;
 
             DynamicJsonDocument doc(200);
             doc["button"]["right"] = (ButtonStateOverride & 4) ? "-" : "pushed";

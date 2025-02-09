@@ -474,76 +474,41 @@
                           <div class="card border-left-primary shadow h-100 py-2">
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
-                                      <style>
-                                          .lcd {
-                                              position: relative;
-                                              padding: 0;
-                                              zoom: .75;
-                                          }
-                                          .lcd .lcd-screen {
-                                              position: absolute;
-                                              box-sizing: content-box;
-                                              top: 156px;
-                                              left: 60px;
-                                              background-color: #FDFDFD;
-                                              image-rendering: pixelated;
-                                              padding: 20px 6px;
-                                              filter:hue-rotate(250deg) brightness(95%);
-                                          }
-                                          .lcd-buttons {
-                                              position: absolute;
-                                              top: 379px;
-                                              left: 20px;
-                                              width: 350px;
-                                              display: flex;
-                                          }
-                                          .lcd-buttons button {
-                                              flex: 1 0 0;
-                                              opacity: 1;
-                                              margin: 0;
-                                              padding: 15px;
-                                              border: 0;
-                                              box-shadow: none;
-                                          }
-                                          #lcd-left, #lcd-middle, #lcd-right {
-                                              background-color: transparent;
-                                              color: transparent;
-                                              text-shadow: none;
-                                              border-radius: 50px;
-                                          }
-                                          .lcd-buttons button:hover {
-                                              outline: 2px dotted black;
-                                          }
-                                      </style>
-                                      <div class="lcd">
+                                      <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="https://github.com/SmartEVSE/SmartEVSE-3/raw/master/pictures/SmartEVSEv3.png" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" id="lcd-screen" src="http://192.168.1.172/lcd.bmp" width="256" height="128" alt=""/>
-                                          <div class="lcd-buttons" id="lcd-buttons">
-                                              <button type="button" id="lcd-left">Left</button>
-                                              <button type="button" id="lcd-middle">middle</button>
-                                              <button type="button" id="lcd-right">right</button>
+                                          <img class="lcd-screen" src="/lcd.bmp" width="256" height="128" alt=""/>
+                                          <div class="lcd-buttons">
+                                              <button type="button" data-name="left">Left</button>
+                                              <button type="button" data-name="middle">middle</button>
+                                              <button type="button" data-name="right">right</button>
                                           </div>
                                       </div>
-                                      <script>
-                                          const LCD_SCREEN = document.getElementById('lcd-screen');
-                                          const LCD_BUTTONS = document.getElementById('lcd-buttons');
-                                          // Refresh the LCD screen every second.
-                                          setInterval(() => {
-                                              LCD_SCREEN && (LCD_SCREEN.src = LCD_SCREEN.src.split('?')[0] + '?t=' + new Date().getTime());
-                                          }, 1000);
-                                          // Listen for the left, middle and right device button.
-                                          LCD_BUTTONS.addEventListener('mousedown', (event) => {
-                                              const buttonName = event.target.id.replace('lcd-', '');
-                                              $.post("http://192.168.1.172/lcd.bmp?button=" + buttonName + "&state=1");
-                                              console.log('==== button: ' + buttonName + '=on');
-                                          });
-                                          LCD_BUTTONS.addEventListener('mouseup', (event) => {
-                                              const buttonName = event.target.id.replace('lcd-', '');
-                                              $.post("http://192.168.1.172/lcd.bmp?button=" + buttonName + "&state=0");
-                                              console.log('==== button: ' + buttonName + '=off');
-                                          });
-                                      </script>
-                                  
+<script>
+    (() => {
+        const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
+        const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
+
+        // Refresh the LCD screen every second.
+        setInterval(refreshLCD, 1000);
+
+        function refreshLCD() {
+            LCD_SCREEN.src = LCD_SCREEN.src.split('?')[0] + '?t=' + Date.now();
+        }
+
+        function sendButtonState(btnName, stateDownOrUp) {
+            $.post(`/lcd.bmp?button=${btnName}&state=${stateDownOrUp ? '1' : '0'}`, () => {
+                if (stateDownOrUp) refreshLCD();
+            });
+        }
+
+        ['mousedown', 'mouseup', 'mouseleave'].forEach(eventName => {
+            LCD_BUTTONS.addEventListener(eventName, event => {
+                const btnName = event.target.dataset.name || 'all';
+                sendButtonState(btnName, event.type === 'mousedown');
+            });
+        });
+    })();
+</script>
                                   </div>
                               </div>
                           </div>
