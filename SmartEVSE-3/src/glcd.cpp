@@ -151,13 +151,12 @@ void goto_xy(unsigned char x, unsigned char y) {
     goto_row(y);
 }
 
-void glcd_clrln(unsigned char ln, unsigned char data) {
-    unsigned char i;
+void glcd_clrln(const unsigned char ln, const unsigned char data) {
     goto_xy(0, ln);
-    for (i = 0; i < 128; i++) {
+    for (unsigned char i = 0; i < 128; i++) {
         st7565_data(data);                                                      // put data on data port
-        // Also update buffer that mirrors the LCD.
-        GLCDbuf2[i +(activeRow * 128)] = data;
+        // Also update the buffer that mirrors the LCD.
+        GLCDbuf2[i + activeRow * 128] = data;
     }
 }
 
@@ -185,18 +184,20 @@ void GLCD_buffer_clr(void) {
 }
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-void GLCD_sendbuf(const unsigned char RowAdr, unsigned char Rows) {
+void GLCD_sendbuf(const unsigned char RowAdr, const unsigned char Rows) {
+    unsigned char y = 0;
     unsigned int x = 0;
-    for (uint8_t y = 0; y < Rows; ++y) {
+
+    do {
         goto_xy(0, RowAdr + y);
-    
-        const uint16_t rowOffset = y * 128;
-        for (uint8_t i = 0; i < 128; ++i) {
+        // Sends one chunk of 8 pixels height and 128 pixels wide.
+        for (unsigned char i = 0; i < 128; i++) {
             const uint8_t data = GLCDbuf[x++];
-            st7565_data(data);                                                  // put data on data port
-            GLCDbuf2[rowOffset + i] = data;
+            st7565_data(data);                    // put data on data port
+            // Also update buffer copy
+            GLCDbuf2[i + activeRow * 128] = data;
         }
-    }
+    } while (++y < Rows);
 }
 #else
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {

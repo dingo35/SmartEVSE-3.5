@@ -1909,21 +1909,21 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
     } else if (mg_http_match_uri(hm, "/lcd")) {
         if (strncmp("POST", hm->method.buf, hm->method.len) == 0) {
-            const char *btnName = request->getParam("button")->value().c_str();
-            const bool btnDown = (request->getParam("state")->value() == "1");
+            const String btnName = request->getParam("button")->value();
+            const bool btnDown = request->getParam("state")->value() == "1";
 
             // Button state bitmasks.
-            static const std::unordered_map<std::string, char> btnMasks = {
+            static const std::unordered_map<std::string, uint8_t> btnMasks = {
                 {"right", 0b100},
                 {"middle", 0b010},
                 {"left", 0b001},
                 {"all", 0b111}
             };
 
-            auto it = btnMasks.find(btnName);
+            auto it = btnMasks.find(btnName.c_str());
             if (it != btnMasks.end()) {
                 // Clear bits if button is pressed, set bits if up.
-                char mask = it->second;
+                const uint8_t mask = it->second;
                 btnDown ? ButtonStateOverride &= ~mask : ButtonStateOverride |= mask;
             }
 
