@@ -1455,16 +1455,16 @@ std::vector<uint8_t> createBMPHeader(const int width, const int height) {
 
     std::vector<uint8_t> headerVector = {
         'B', 'M',                     // 'BM' Signature
-        fileSize & 0xFF,              // Byte 1 (Least Significant Byte)
-        fileSize >> 8 & 0xFF,         // Byte 2
-        fileSize >> 16 & 0xFF,        // Byte 3
-        fileSize >> 24 & 0xFF,        // Byte 4 (Most Significant Byte)
+        static_cast<uint8_t>(fileSize & 0xFF),      // Byte 1 (Least Significant Byte)
+        static_cast<uint8_t>(fileSize >> 8 & 0xFF), // Byte 2
+        0x00,                         // Byte 3
+        0x00,                         // Byte 4 (Most Significant Byte)
         0x00, 0x00, 0x00, 0x00,       // Reserved
         0x3E, 0x00, 0x00, 0x00,       // Data offset - Header (14) + DIB (40) + Palette (8) 
 
         40, 0, 0, 0,                  // DIB header size 
-        width, 0, 0, 0,               // Width
-        height, 0, 0, 0,              // Height
+        static_cast<uint8_t>(width), 0, 0, 0,       // Width (max 255)
+        static_cast<uint8_t>(height), 0, 0, 0,      // Height (max 255)
         1, 0,                         // Planes
         1, 0,                         // Bits per pixel (1-bit monochrome)
         0, 0, 0, 0,                   // No compression
@@ -1497,7 +1497,7 @@ void transpose8x8(const std::array<uint8_t, 8>& input, std::array<uint8_t, 8>& o
     for (int bitPos = 0; bitPos < 8; ++bitPos) {
         uint8_t newByte = 0;
         for (int i = 0; i < 8; ++i) {
-            newByte |= (input[i] >> 7 - bitPos & 0x01) << 7 - i;
+            newByte |= (input[i] >> (7 - bitPos) & 0x01) << (7 - i);
         }
         output[bitPos] = newByte;
     }
