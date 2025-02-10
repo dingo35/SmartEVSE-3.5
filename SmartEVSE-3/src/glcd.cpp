@@ -194,8 +194,7 @@ void GLCD_sendbuf(const unsigned char RowAdr, const unsigned char Rows) {
         for (unsigned char i = 0; i < 128; i++) {
             const uint8_t data = GLCDbuf[x++];
             st7565_data(data);                    // put data on data port
-            // Also update buffer copy
-            GLCDbuf2[i + activeRow * 128] = data;
+            GLCDbuf2[i + activeRow * 128] = data; // Also update buffer copy
         }
     } while (++y < Rows);
 }
