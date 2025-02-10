@@ -93,86 +93,10 @@
 #endif
 
 
-#define PILOT_CONNECTED funDigitalWrite(CPOFF, FUN_LOW);
-#define PILOT_DISCONNECTED funDigitalWrite(CPOFF, FUN_HIGH);
-
-#define CONTACTOR1_ON funDigitalWrite(SSR1, FUN_HIGH);
-#define CONTACTOR1_OFF funDigitalWrite(SSR1, FUN_LOW);
-
-#define CONTACTOR2_ON funDigitalWrite(SSR2, FUN_HIGH);
-#define CONTACTOR2_OFF funDigitalWrite(SSR2, FUN_LOW);
-
-#define ACTUATOR_LOCK { funDigitalWrite(ACTB, FUN_HIGH); funDigitalWrite(ACTA, FUN_LOW); }
-#define ACTUATOR_UNLOCK { funDigitalWrite(ACTB, FUN_LOW); funDigitalWrite(ACTA, FUN_HIGH); }
-#define ACTUATOR_OFF { funDigitalWrite(ACTB, FUN_HIGH); funDigitalWrite(ACTA, FUN_HIGH); }
-
 #define true 1
 #define false 0
 
 #define INITIALIZED 0
-
-
-
-// Error flags
-#define NO_ERROR 0
-#define LESS_6A 1
-#define CT_NOCOMM 2
-#define TEMP_HIGH 4
-#define EV_NOCOMM 8
-#define RCM_TRIPPED 16                                                          // RCM tripped. >6mA DC residual current detected.
-#define NO_SUN 32
-#define Test_IO 64
-#define BL_FLASH 128
-
-#define STATE_A_LED_BRIGHTNESS 40
-#define STATE_B_LED_BRIGHTNESS 255
-#define ERROR_LED_BRIGHTNESS 255
-#define WAITING_LED_BRIGHTNESS 255
-#define LCD_BRIGHTNESS 255
-
-#define PWM_5       50              // PWM 5%
-#define PWM_96      960             // PWM 96%
-
-
-// Modbus
-#define MODBUS_INVALID 0
-#define MODBUS_OK 1
-#define MODBUS_REQUEST 2
-#define MODBUS_RESPONSE 3
-#define MODBUS_EXCEPTION 4
-
-#define MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS 0x02
-#define MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE 0x03
-
-#define MODBUS_EVSE_STATUS_START 0x0000
-#define MODBUS_EVSE_STATUS_COUNT 12
-#define MODBUS_EVSE_CONFIG_START 0x0100
-#define MODBUS_EVSE_CONFIG_COUNT 10
-#define MODBUS_SYS_CONFIG_START  0x0200
-#define MODBUS_SYS_CONFIG_COUNT  26
-
-#define MODBUS_MAX_REGISTER_READ MODBUS_SYS_CONFIG_COUNT
-#define MODBUS_BUFFER_SIZE MODBUS_MAX_REGISTER_READ * 2 + 10
-
-// EVSE Status Modbus Registers
-#define STATUS_STATE 64                                                         // 0x0000: State
-#define STATUS_ERROR 65                                                         // 0x0001: Error
-#define STATUS_CURRENT 66                                                       // 0x0002: Charging current (A * 10)
-#define STATUS_MODE 67                                                          // 0x0003: EVSE Mode
-#define STATUS_SOLAR_TIMER 68                                                   // 0x0004: Solar Timer
-#define STATUS_ACCESS 69                                                        // 0x0005: Access bit
-#define STATUS_CONFIG_CHANGED 70                                                // 0x0006: Configuration changed
-#define STATUS_MAX 71                                                           // 0x0007: Maximum charging current (RO)
-#define STATUS_PHASE_COUNT 72                                                   // 0x0008: Number of used phases (RO) (ToDo)
-#define STATUS_REAL_CURRENT 73                                                  // 0x0009: Real charging current (RO) (ToDo)
-#define STATUS_TEMP 74                                                          // 0x000A: Temperature (RO)
-#define STATUS_SERIAL 75                                                        // 0x000B: Serial number (RO)
-
-
-#define ENDIANESS_LBF_LWF 0
-#define ENDIANESS_LBF_HWF 1
-#define ENDIANESS_HBF_LWF 2
-#define ENDIANESS_HBF_HWF 3
 
 void delayMicroseconds(uint32_t us);
 uint32_t millis();

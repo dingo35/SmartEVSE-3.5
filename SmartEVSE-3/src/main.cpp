@@ -59,7 +59,10 @@ struct DelayedTimeStruct DelayedStopTime;
 #include "utils.h"
 extern "C" {
     #include "ch32v003fun.h"
+    void RCmonCtrl(uint8_t enable);
+    void delay(uint32_t ms);
 }
+extern void CheckRS485Comm(void);
 #endif
 
 // Global data
@@ -67,20 +70,25 @@ extern "C" {
 //CALL_ON_RECEIVE(setStatePowerUnavailable) setStatePowerUnavailable() when setStatePowerUnavailable is received
 #define CALL_ON_RECEIVE(X) \
     ret = strstr(SerialBuf, #X);\
-    if (ret) \
-        X();
+    if (ret) {\
+/*        _LOG_A("DEBUG: calling %s().\n", #X); */ \
+        X();\
+    }
 
 //CALL_ON_RECEIVE_PARAM(State, setState) calls setState(param) when State:param is received
 #define CALL_ON_RECEIVE_PARAM(X,Y) \
     ret = strstr(SerialBuf, #X);\
-    if (ret) \
-        Y(atoi(ret+strlen(#X)));
-
+    if (ret) {\
+/*        _LOG_A("DEBUG: calling %s(%u).\n", #X, atoi(ret+strlen(#X))); */ \
+        Y(atoi(ret+strlen(#X)));\
+    }
 //SET_ON_RECEIVE(Pilot:, pilot) sets pilot=parm when Pilot:param is received
 #define SET_ON_RECEIVE(X,Y) \
     ret = strstr(SerialBuf, #X);\
-    if (ret) \
-        Y = atoi(ret+strlen(#X));
+    if (ret) {\
+/*        _LOG_A("DEBUG: setting %s to %u.\n", #Y, atoi(ret+strlen(#X))); */ \
+        Y = atoi(ret+strlen(#X));\
+    }
 
 
 uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
@@ -104,16 +112,6 @@ uint16_t MaxCurrent = MAX_CURRENT;                                          // M
 uint16_t MinCurrent = MIN_CURRENT;                                          // Minimal current the EV is happy with (A)
 uint8_t Mode = MODE;                                                        // EVSE mode (0:Normal / 1:Smart / 2:Solar)
 uint32_t CurrentPWM = 0;                                                    // Current PWM duty cycle value (0 - 1024)
-int8_t InitialSoC = -1;                                                     // State of charge of car
-int8_t FullSoC = -1;                                                        // SoC car considers itself fully charged
-int8_t ComputedSoC = -1;                                                    // Estimated SoC, based on charged kWh
-int8_t RemainingSoC = -1;                                                   // Remaining SoC, based on ComputedSoC
-int32_t TimeUntilFull = -1;                                                 // Remaining time until car reaches FullSoC, in seconds
-int32_t EnergyCapacity = -1;                                                // Car's total battery capacity
-int32_t EnergyRequest = -1;                                                 // Requested amount of energy by car
-char EVCCID[32];                                                            // Car's EVCCID (EV Communication Controller Identifer)
-char RequiredEVCCID[32];                                                    // Required EVCCID before allowing charging
-
 bool CPDutyOverride = false;
 uint8_t Lock = LOCK;                                                        // Cable lock (0:Disable / 1:Solenoid / 2:Motor)
 uint16_t MaxCircuit = MAX_CIRCUIT;                                          // Max current of the EVSE circuit (A)
@@ -146,7 +144,7 @@ uint8_t Nr_Of_Phases_Charging = 0;                                          // 0
 Single_Phase_t Switching_To_Single_Phase = FALSE;
 
 uint8_t State = STATE_A;
-uint8_t ErrorFlags = NO_ERROR;
+ErrorFl_t Error2;
 uint8_t NextState;
 uint8_t pilot;
 uint8_t prev_pilot;
@@ -289,7 +287,9 @@ extern uint8_t processAllNodeStates(uint8_t NodeNr);
 extern void BroadcastCurrent(void);
 extern void CheckRFID(void);
 extern void mqttPublishData();
-
+extern void DisconnectEvent(void);
+extern char EVCCID[32];
+extern char RequiredEVCCID[32];
 extern bool CPDutyOverride;
 extern uint8_t ModbusRequest;
 extern unsigned char ease8InOutQuad(unsigned char i);
@@ -316,6 +316,21 @@ Button::Button(void) {
     CheckSwitch(true);
 }
 
+
+//since in v4 ESP32 only a copy of ErrorFlags is available, we need to have functions so v4 ESP32 can set CH32 ErrorFlags
+void setErrorFlags(uint8_t flags) {
+    ErrorFlags |= flags;
+#if SMARTEVSE_VERSION >= 40 //v4 ESP32
+    Serial1.printf("setErrorFlags:%u\n", flags);
+#endif
+}
+
+void clearErrorFlags(uint8_t flags) {
+    ErrorFlags &= ~flags;
+#if SMARTEVSE_VERSION >= 40 //v4 ESP32
+    Serial1.printf("clearErrorFlags:%u\n", flags);
+#endif
+}
 
 #ifndef SMARTEVSE_VERSION //CH32 version
 void Button::HandleSwitch(void) {
@@ -379,11 +394,6 @@ void Button::HandleSwitch(void) {
                     } else if (Mode == MODE_SOLAR) {
                         setMode(MODE_SMART);
                     }
-                    //TODO isnt all this stuff done in setMode?
-                    ErrorFlags &= ~(NO_SUN | LESS_6A);                   // Clear All errors
-                    ChargeDelay = 0;                                // Clear any Chargedelay
-                    setSolarStopTimer(0);                           // Also make sure the SolarTimer is disabled.
-                    MaxSumMainsTimer = 0;
                     LCDTimer = 0;
                 }
                 break;
@@ -445,20 +455,6 @@ void Button::CheckSwitch(bool force) {
         }
     }
 #endif
-#ifdef SMARTEVSE_VERSION //both v3 and v4
-    // TODO This piece of code doesnt really belong in CheckSwitch but should be called every 10ms
-    // Residual current monitor active, and DC current > 6mA ?
-    // FIXME should be running on CH32 or v3 ESP32
-    if (RCmon == 1 && digitalRead(PIN_RCM_FAULT) == HIGH) {
-        delay(1);
-        // check again, to prevent voltage spikes from tripping the RCM detection
-        if (digitalRead(PIN_RCM_FAULT) == HIGH) {
-            if (State) setState(STATE_B1);
-            ErrorFlags = RCM_TRIPPED;
-            LCDTimer = 0;                                                   // display the correct error message on the LCD
-        }
-    }
-#endif
 }
 
 Button ExtSwitch;
@@ -503,8 +499,8 @@ void setMode(uint8_t NewMode) {
     lastMqttUpdate = 10;
 #endif
 
-    if (NewMode == MODE_SMART) {
-        ErrorFlags &= ~(NO_SUN | LESS_6A);                                      // Clear All errors
+    if (NewMode == MODE_SMART || NewMode == MODE_SOLAR) {                       // the smart-solar button used to clear all those flags toggling between those modes
+        clearErrorFlags(NO_SUN | LESS_6A);                                      // Clear All errors
         setSolarStopTimer(0);                                                   // Also make sure the SolarTimer is disabled.
         MaxSumMainsTimer = 0;
     }
@@ -1460,7 +1456,7 @@ uint8_t ow = 0, x;
 #endif
         if (SolarStopTimer == 0) {
             if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
-            ErrorFlags |= NO_SUN;                                       // Set error: NO_SUN
+            setErrorFlags(NO_SUN);                                      // Set error: NO_SUN
         }
     }
 
@@ -1471,7 +1467,7 @@ uint8_t ow = 0, x;
         MaxSumMainsTimer--;                                             // Decrease MaxSumMains counter every second.
         if (MaxSumMainsTimer == 0) {
             if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
-            ErrorFlags |= LESS_6A;                                      // Set error: LESS_6A
+            setErrorFlags(LESS_6A);                                     // Set error: LESS_6A
         }
     }
 
@@ -1592,7 +1588,8 @@ uint8_t ow = 0, x;
  //   printf("10ms loop:%lu uS systick:%lu millis:%lu\n", elapsedmax/12, (uint32_t)SysTick->CNT, millis());
     // this section sends outcomes of functions and variables to ESP32 to fill Shadow variables
     // FIXME this section preferably should be empty
-    printf("IsCurrentAv:%u", IsCurrentAvailable());
+    printf("IsCurrentAvailable:%u", IsCurrentAvailable());
+    printf("ErrorFlags:%u", ErrorFlags);
     elapsedmax = 0;
 #endif
 }
@@ -2082,6 +2079,9 @@ void CheckSerialComm(void) {
     CALL_ON_RECEIVE_PARAM(SetCurrent:, SetCurrent)
     CALL_ON_RECEIVE_PARAM(CalcBalancedCurrent:, CalcBalancedCurrent)
     CALL_ON_RECEIVE(setStatePowerUnavailable)
+    CALL_ON_RECEIVE_PARAM(setErrorFlags:, setErrorFlags)
+    CALL_ON_RECEIVE_PARAM(clearErrorFlags:, clearErrorFlags)
+
     // We received configuration settings from the ESP.
     // Scan for all variables, and update values
     for (ConfigItem* item = configItems; item->keyword != NULL; item++) { //e
@@ -2128,8 +2128,11 @@ void CheckSerialComm(void) {
 //
 void Timer100ms_singlerun(void) {
 static unsigned int locktimer = 0, unlocktimer = 0;
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
 static unsigned int energytimer = 0;
 static uint8_t PollEVNode = NR_EVSES, updated = 0;
+#endif
+
 #ifndef SMARTEVSE_VERSION //CH32
     //Check Serial communication with ESP32
     if (RxRdy1) CheckSerialComm();
@@ -2559,362 +2562,6 @@ static unsigned int LedPwm = 0;                                                /
 #endif
 
 
-#if !defined(SMARTEVSE_VERSION) || (SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40) //CH32 and v3 ESP32
-void HandleModbusRequest(void) {
-        // Broadcast or addressed to this device
-        switch (MB.Function) {
-            // FC 03 and 04 are not possible with broadcast messages.
-            case 0x03: // (Read holding register)
-            case 0x04: // (Read input register)
-                // Addressed to this device
-                _LOG_V("read register(s) ");
-                if (MB.Address != BROADCAST_ADR) {
-                    ReadItemValueResponse();
-                }
-                break;
-            case 0x06: // (Write single register)
-                WriteItemValueResponse();
-                break;
-            case 0x10: // (Write multiple register))
-                // 0x0020: Balance currents
-                if (MB.Register == 0x0020 && LoadBl > 1) {      // Message for Node(s)
-                    Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
-                    if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
-                    else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
-                    MainsMeter.Timeout = COMM_TIMEOUT;                          // reset 10 second timeout
-                    _LOG_V("Broadcast received, Node %.1f A, MainsMeter Irms ", (float) Balanced[0]/10);
-
-                    //now decode registers 0x0028-0x002A
-                    if (MB.DataLength >= 16+6) {
-                        Isum = 0;
-                        for (int i=0; i<3; i++ ) {
-                            int16_t combined = (MB.Data[(i * 2) + 16] <<8) + MB.Data[(i * 2) + 17]; 
-                            Isum = Isum + combined;
-                            MainsMeter.Irms[i] = combined;
-                            _LOG_V_NO_FUNC("L%i=%.1fA,", i+1, (float)MainsMeter.Irms[i]/10);
-                        }
-                        _LOG_V_NO_FUNC("\n");
-                    }
-                } else {
-
-                    WriteMultipleItemValueResponse();
-                    _LOG_V("Other Broadcast received\n");
-                }
-                break;
-            default:
-                break;
-        }
-}
-#endif
-
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-// Request handler for modbus messages addressed to -this- Node/Slave EVSE.
-// Sends response back to Master
-//
-ModbusMessage MBNodeRequest(ModbusMessage request) {
-    ModbusMessage response;     // response message to be sent back
-    uint8_t ItemID;
-    uint8_t i, OK = 0;
-    uint16_t value, values[MODBUS_MAX_REGISTER_READ];
-    
-    // Check if the call is for our current ServerID, or maybe for an old ServerID?
-    if (LoadBl != request.getServerID()) return NIL_RESPONSE;
-    
-
-    ModbusDecode( (uint8_t*)request.data(), request.size());
-    ItemID = mapModbusRegister2ItemID();
-
-    switch (MB.Function) {
-        case 0x03: // (Read holding register)
-        case 0x04: // (Read input register)
-            //     ReadItemValueResponse();
-            if (ItemID) {
-                response.add(MB.Address, MB.Function, (uint8_t)(MB.RegisterCount * 2));
-
-                _LOG_D("Node answering NodeStatus request");
-                for (i = 0; i < MB.RegisterCount; i++) {
-                    values[i] = getItemValue(ItemID + i);
-                    response.add(values[i]);
-                    _LOG_V_NO_FUNC(" value[%u]=%u", i, values[i]);
-                }
-                _LOG_D_NO_FUNC("\n");
-                //ModbusReadInputResponse(MB.Address, MB.Function, values, MB.RegisterCount);
-            } else {
-                response.setError(MB.Address, MB.Function, ILLEGAL_DATA_ADDRESS);
-            }
-            break;
-        case 0x06: // (Write single register)
-            //WriteItemValueResponse();
-            if (ItemID) {
-                OK = setItemValue(ItemID, MB.Value);
-            }
-
-            if (OK && ItemID < STATUS_STATE) write_settings();
-
-            if (MB.Address != BROADCAST_ADR || LoadBl == 0) {
-                if (!ItemID) {
-                    response.setError(MB.Address, MB.Function, ILLEGAL_DATA_ADDRESS);
-                } else if (!OK) {
-                    response.setError(MB.Address, MB.Function, ILLEGAL_DATA_VALUE);
-                } else {
-                    return ECHO_RESPONSE;
-                }
-            }
-            break;
-        case 0x10: // (Write multiple register))
-            //      WriteMultipleItemValueResponse();
-            if (ItemID) {
-                for (i = 0; i < MB.RegisterCount; i++) {
-                    value = (MB.Data[i * 2] <<8) | MB.Data[(i * 2) + 1];
-                    OK += setItemValue(ItemID + i, value);
-                }
-            }
-
-            if (OK && ItemID < STATUS_STATE) write_settings();
-
-            if (MB.Address != BROADCAST_ADR || LoadBl == 0) {
-                if (!ItemID) {
-                    response.setError(MB.Address, MB.Function, ILLEGAL_DATA_ADDRESS);
-                } else if (!OK) {
-                    response.setError(MB.Address, MB.Function, ILLEGAL_DATA_VALUE);
-                } else  {
-                    response.add(MB.Address, MB.Function, (uint16_t)MB.Register, (uint16_t)OK);
-                }
-            }
-            break;
-        default:
-            break;
-    }
-
-  return response;
-}
-
-
-// Monitor EV Meter responses, and update Enery and Power and Current measurements
-// Both the Master and Nodes will receive their own EV meter measurements here.
-// Does not send any data back.
-//
-ModbusMessage MBEVMeterResponse(ModbusMessage request) {
-    ModbusDecode( (uint8_t*)request.data(), request.size());
-    EVMeter.ResponseToMeasurement();
-    // As this is a response to an earlier request, do not send response.
-    
-    return NIL_RESPONSE;              
-}
-
-
-// The Node/Server receives a broadcast message from the Master
-// Does not send any data back.
-ModbusMessage MBbroadcast(ModbusMessage request) {
-    ModbusDecode( (uint8_t*)request.data(), request.size());
-    if (MB.Type == MODBUS_REQUEST) {
-        HandleModbusRequest();
-    }
-
-    // As it is a broadcast message, do not send response.
-    return NIL_RESPONSE;              
-}
-
-
-// Data handler for Master
-// Responses from Slaves/Nodes are handled here
-void MBhandleData(ModbusMessage msg, uint32_t token) 
-{
-    uint8_t Address = msg.getServerID();    // returns Server ID or 0 if MM_data is shorter than 3
-    if (Address == MainsMeter.Address) {
-        //_LOG_A("MainsMeter data\n");
-        ModbusDecode( (uint8_t*)msg.data(), msg.size());
-        MainsMeter.ResponseToMeasurement();
-    } else if (Address == EVMeter.Address) {
-        //_LOG_A("EV Meter data\n");
-        MBEVMeterResponse(msg);
-    // Only responses to FC 03/04 are handled here. FC 06/10 response is only a acknowledge.
-    } else {
-        //_LOG_V("Received Packet with ServerID=%i, FunctionID=%i, token=%08x.\n", msg.getServerID(), msg.getFunctionCode(), token);
-        ModbusDecode( (uint8_t*)msg.data(), msg.size());
-        // ModbusDecode does NOT always decodes the register correctly.
-        // This bug manifested itself as the <Mode=186 bug>:
-
-        // (Timer100ms)(C1) ModbusRequest 4: Request Configuration Node 1
-        // (D) (ModbusSend8)(C1) Sent packet address: 02, function: 04, reg: 0108, data: 0002.
-        // (D) (ModbusDecode)(C0) Received packet (7 bytes) 02 04 04 00 00 00 0c
-        // (V) (ModbusDecode)(C0)  valid Modbus packet: Address 02 Function 04 Register 0000 Response
-        // (D) (receiveNodeStatus)(C0) ReceivedNode[1]Status State:0 Error:12, BalancedMax:2530, Mode:186, ConfigChanged:253.
-
-        // The response is the response for a request of node config 0x0108, but is interpreted as a request for node status 0x0000
-        //
-        // Using a global variable struct ModBus MB is not a good idea, but localizing it does not
-        // solve the problem.
-
-        // Luckily we have coded the register in the token we sent....
-        // token: first byte address, second byte function, third and fourth reg
-        uint8_t token_function = (token & 0x00FF0000) >> 16;
-        uint8_t token_address = token >> 24;
-        if (token_address != MB.Address) {
-            _LOG_A("ERROR: Address=%u, MB.Address=%u, token_address=%u.\n", Address, MB.Address, token_address);
-        }    
-        if (token_function != MB.Function) {
-            _LOG_A("ERROR: MB.Function=%u, token_function=%u.\n", MB.Function, token_function);
-        }    
-        uint16_t reg = (token & 0x0000FFFF);
-        MB.Register = reg;
-
-        if (MB.Address > 1 && MB.Address <= NR_EVSES && (MB.Function == 03 || MB.Function == 04)) {
-        
-            // Packet from Node EVSE
-            if (MB.Register == 0x0000) {
-                // Node status
-            //    _LOG_A("Node Status received\n");
-                receiveNodeStatus(MB.Data, MB.Address - 1u);
-            }  else if (MB.Register == 0x0108) {
-                // Node EV meter settings
-            //    _LOG_A("Node EV Meter settings received\n");
-                receiveNodeConfig(MB.Data, MB.Address - 1u);
-            }
-        }
-    }
-
-}
-
-
-void MBhandleError(Error error, uint32_t token) 
-{
-  // ModbusError wraps the error code and provides a readable error message for it
-  ModbusError me(error);
-  uint8_t address, function;
-  uint16_t reg;
-  address = token >> 24;
-  function = (token >> 16);
-  reg = token & 0xFFFF;
-
-  if (LoadBl == 1 && ((address>=2 && address <=8 && function == 4 && reg == 0) || address == 9)) {  //master sends out messages to nodes 2-8, if no EVSE is connected with that address
-                                                                                //a timeout will be generated. This is legit!
-                                                                                //same goes for broadcast address 9
-    _LOG_V("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
-  }
-  else {
-    _LOG_A("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
-  }
-}
-
-
-void ConfigureModbusMode(uint8_t newmode) {
-
-    _LOG_A("changing LoadBl from %u to %u\n",LoadBl, newmode);
-    
-    if ((LoadBl < 2 && newmode > 1) || (LoadBl > 1 && newmode < 2) || (newmode == 255) ) {
-        
-        if (newmode != 255 ) LoadBl = newmode;
-
-        // Setup Modbus workers for Node
-        if (LoadBl > 1 ) {
-            
-            _LOG_A("Setup MBserver/Node workers, end Master/Client\n");
-            // Stop Master background task (if active)
-            if (newmode != 255 ) MBclient.end();    
-            _LOG_A("ConfigureModbusMode1 task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
-
-            // Register worker. at serverID 'LoadBl', all function codes
-            MBserver.registerWorker(LoadBl, ANY_FUNCTION_CODE, &MBNodeRequest);      
-            // Also add handler for all broadcast messages from Master.
-            MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
-
-            if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
-
-            // Start ModbusRTU Node background task
-            MBserver.begin(Serial1);
-
-        } else if (LoadBl < 2 ) {
-            // Setup Modbus workers as Master 
-            // Stop Node background task (if active)
-            _LOG_A("Setup Modbus as Master/Client, stop Server/Node handler\n");
-
-            if (newmode != 255) MBserver.end();
-            _LOG_A("ConfigureModbusMode2 task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
-
-            MBclient.setTimeout(85);                        // Set modbus timeout to 85ms. 15ms lower then modbusRequestloop time of 100ms.
-            MBclient.onDataHandler(&MBhandleData);
-            MBclient.onErrorHandler(&MBhandleError);
-            // Start ModbusRTU Master background task
-            MBclient.begin(Serial1, 1);                                         //pinning it to core1 reduces modbus problems
-        } 
-    } else if (newmode > 1) {
-        // Register worker. at serverID 'LoadBl', all function codes
-        _LOG_A("Registering new LoadBl worker at id %u\n", newmode);
-        LoadBl = newmode;
-        MBserver.registerWorker(newmode, ANY_FUNCTION_CODE, &MBNodeRequest);   
-    }
-    
-}
-
-#endif
-
-
-#ifndef SMARTEVSE_VERSION //CH32
-// printf can be slow.
-// By measuring the time the 10ms loop actually takes to execute we found that:
-// it takes ~625uS to execute when using printf (and tx interrrupts)
-// ~151uS without printf (with tx interrupt)
-// and only ~26uS when using DMA
-// printf with Circular DMA buffer takes ~536uS
-// current version with snprintf takes ~296uS
-//
-// Called by 10ms loop when new modbus data is available
-// ModbusRxLen contains length of data contained in array ModbusRx
-void CheckRS485Comm(void) { //looks like MBhandleData
-    ModbusDecode(ModbusRx, ModbusRxLen);
-
-    // Data received is a response to an earlier request from the master.
-    if (MB.Type == MODBUS_RESPONSE) {
-        //printf("MSG: Modbus Response Address %u / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
-        switch (MB.Function) {
-            case 0x03: // (Read holding register)
-            case 0x04: // (Read input register)
-                if (MainsMeter.Type && MB.Address == MainsMeter.Address) {
-                    MainsMeter.ResponseToMeasurement();
-                } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
-                    EVMeter.ResponseToMeasurement();
-                } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
-                    // Packet from a Node EVSE, only for Master!
-                    if (MB.Register == 0x0000) {
-                        // Node status
-                        receiveNodeStatus(MB.Data, MB.Address - 1u);
-                    }  else if (MB.Register == 0x0108) {
-                        // Node configuration
-                        receiveNodeConfig(MB.Data, MB.Address - 1u);
-                    }
-                }
-                break;
-            default:
-                break;
-        }
-    // Data received is a request from the master to a device on the bus.
-    } else if (MB.Type == MODBUS_REQUEST) { //looks like MBBroadcast
-        //printf("Modbus Request Address %u / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
-
-        // Broadcast or addressed to this device
-        if (MB.Address == BROADCAST_ADR || (LoadBl > 0 && MB.Address == LoadBl)) {
-            HandleModbusRequest();
-        }
-    } else if (MB.Type == MODBUS_EXCEPTION) {
-        _LOG_D("Modbus Address %02x exception %u received\n", MB.Address, MB.Exception);
-    } else {
-        _LOG_D("\nCRC invalid\n");
-    }
-
-
-
-
-//    char buf[256];
-//    for (uint8_t x=0; x<ModbusRxLen; x++) snprintf(buf+(x*3), 4, "%02X ", ModbusRx[x]);
-//    printf("MB:%s\n", buf);
- 
-    ModbusRxLen = 0;
-
-}
-
-#endif
-
 void Timer10ms_singlerun(void) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
     static uint8_t DiodeCheck = 0;
@@ -3145,6 +2792,18 @@ void Timer10ms_singlerun(void) {
         } else StateTimer = 0;
 
     } // end of State C code
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3 ESP32 only, v4 has this in CH32 evse.c interrupt routine
+    // Residual current monitor active, and DC current > 6mA ?
+    if (RCmon == 1 && digitalRead(PIN_RCM_FAULT) == HIGH) {
+        delay(1);
+        // check again, to prevent voltage spikes from tripping the RCM detection
+        if (digitalRead(PIN_RCM_FAULT) == HIGH) {
+            if (State) setState(STATE_B1);
+            ErrorFlags = RCM_TRIPPED;
+            LCDTimer = 0;                                                   // display the correct error message on the LCD
+        }
+    }
+#endif //v3
 #endif //v3 and CH32
 #if SMARTEVSE_VERSION >= 40 //v4
     //ESP32 receives info from CH32
@@ -3156,8 +2815,8 @@ void Timer10ms_singlerun(void) {
             SerialBuf[idx] = RXbyte;
             idx++;
         }
-        SerialBuf[idx] = '\0'; //null terminate
-        _LOG_D("[<-] %s.\n", SerialBuf);
+        //SerialBuf[idx] = '\0'; //null terminate
+        _LOG_D("[(%u)<-] %.*s.\n", idx, idx, SerialBuf);
     }
     // process data from mainboard
     if (idx > 5) {
@@ -3189,10 +2848,13 @@ void Timer10ms_singlerun(void) {
             CALL_ON_RECEIVE_PARAM(Access:, setAccess)
             CALL_ON_RECEIVE_PARAM(Mode:, setMode)
             CALL_ON_RECEIVE(write_settings)
+            //these variables are owned by CH32 and copies are sent to ESP32:
             SET_ON_RECEIVE(Pilot:, pilot)
             SET_ON_RECEIVE(Temp:, TempEVSE)
             SET_ON_RECEIVE(State:, State)
             SET_ON_RECEIVE(Balanced0:, Balanced[0])
+            SET_ON_RECEIVE(IsCurrentAvailable:, Shadow_IsCurrentAvailable)
+            SET_ON_RECEIVE(ErrorFlags:, ErrorFlags)
 
             strncpy(token, "version:", sizeof(token));
             ret = strstr(SerialBuf, token);
@@ -3435,6 +3097,9 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             break;
         case MENU_RCMON:
             RCmon = val;
+#if !defined(SMARTEVSE_VERSION) //CH32
+            RCmonCtrl(RCmon);
+#endif
             break;
         case MENU_GRID:
             Grid = val;
@@ -3504,7 +3169,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             if (val != State) setState(val);
             break;
         case STATUS_ERROR:
-            ErrorFlags = val;
+            setErrorFlags(val);
             if (ErrorFlags) {                                                   // Is there an actual Error? Maybe the error got cleared?
                 if (ErrorFlags & CT_NOCOMM) MainsMeter.Timeout = 0;             // clear MainsMeter.Timeout on a CT_NOCOMM error, so the error will be immediate.
                 setStatePowerUnavailable();

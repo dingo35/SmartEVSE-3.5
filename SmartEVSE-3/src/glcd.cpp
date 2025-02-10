@@ -1300,7 +1300,7 @@ void GLCDMenu(uint8_t Buttons) {
             if (LCDNav == MENU_EXIT) {                                          // Exit Main Menu
                 LCDNav = 0;
                 SubMenu = 0;
-                ErrorFlags = NO_ERROR;                                          // Clear All Errors when exiting the Main Menu
+                clearErrorFlags(!(NO_ERROR));                                           // Clear All Errors when exiting the Main Menu
                 TestState = 0;                                                  // Clear TestState
                 ChargeDelay = 0;                                                // Clear ChargeDelay
                 setSolarStopTimer(0);                                           // Disable Solar Timer

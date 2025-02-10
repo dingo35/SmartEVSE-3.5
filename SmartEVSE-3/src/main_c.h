@@ -29,6 +29,12 @@
 
 #define NOSTATE 255
 
+#define PWM_5 50                                                                // 5% of PWM
+#define PWM_95 950                                                              // 95% of PWM
+#define PWM_96 960                                                              // PWM 96%
+#define PWM_100 1000                                                            // 100% of PWM
+
+
 extern uint8_t LoadBl;
 extern void SetCurrent(uint16_t current);
 
@@ -39,5 +45,37 @@ extern uint8_t PwrPanic;
 extern uint8_t ModemPwr;
 extern volatile uint8_t RxRdy1;
 extern volatile uint8_t ModbusRxLen;
+
+//#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //CH32 and v3
+// Error flags are base in CH32 or v3 ESP32
+#define NO_ERROR 0
+#define LESS_6A 1
+#define CT_NOCOMM 2
+#define TEMP_HIGH 4
+#define EV_NOCOMM 8
+#define RCM_TRIPPED 16                                                          // RCM tripped. >6mA DC residual current detected.
+#define NO_SUN 32
+#define Test_IO 64
+#define BL_FLASH 128
+
+typedef union {
+    uint8_t Flags; //TODO initialize to NO_ERROR
+    struct {
+         unsigned int less_6A : 1;
+         unsigned int CT_nocomm : 1;
+         unsigned int temp_high : 1;
+         unsigned int EV_nocomm : 1;
+         unsigned int RCM_tripped : 1;
+         unsigned int no_sun : 1;
+         unsigned int test_io : 1;
+         unsigned int bl_flash : 1;
+    };
+} ErrorFl_t;
+
+extern ErrorFl_t Error2;
+#define ErrorFlags Error2.Flags
+extern void setErrorFlags(uint8_t flags);
+extern void clearErrorFlags(uint8_t flags);
+//#endif
 
 #endif
