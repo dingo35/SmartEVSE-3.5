@@ -556,9 +556,9 @@ void getButtonState() {
     // As the buttons are shared with the SPI lines going to the LCD,
     // we have to make sure that this does not interfere by write actions to the LCD.
     // Therefore updating the LCD is also done in this task.
-/*    if (ButtonStateOverride != 7)
+    if (ButtonStateOverride != 7)
         ButtonState = ButtonStateOverride;
-    else {*/
+    else {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
         pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
         pinMode(PIN_LCD_SDO_B3, INPUT);
@@ -578,7 +578,7 @@ void getButtonState() {
                       (digitalRead(BUTTON1)        ? 1 : 0);   // < (left)
 #endif
         pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
-//    }
+    }
 }
 
 
