@@ -475,7 +475,7 @@
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
-                                          <img class="lcd-device" src="https://github.com/SmartEVSE/SmartEVSE-3/raw/master/pictures/SmartEVSEv3.png" width="401" height="600" alt=""/>
+                                          <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
                                           <img class="lcd-screen" src="/lcd" width="256" height="128" alt=""/>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
@@ -492,19 +492,22 @@
         setInterval(refreshLCD, 1000);
 
         function refreshLCD() {
-            LCD_SCREEN.src = LCD_SCREEN.src.split('?')[0] + '?t=' + Date.now();
+            LCD_SCREEN.src = `${LCD_SCREEN.src.split('?')[0]}?t=${Date.now()}`;
         }
 
-        function sendButtonState(btnName, stateDownOrUp) {
-            $.post(`/lcd?button=${btnName}&state=${stateDownOrUp ? '1' : '0'}`, () => {
-                if (stateDownOrUp) refreshLCD();
-            });
+        function sendButtonState(btnName, stateDown) {
+            if (btnName) {
+                $.post(`/lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`,
+                    // Immediate LCD screen refresh in case of button down.     
+                    stateDown && refreshLCD);
+            }
         }
 
-        ['mousedown', 'mouseup', 'mouseleave'].forEach(eventName => {
+        ['mousedown', 'mouseup'].forEach(eventName => {
             LCD_BUTTONS.addEventListener(eventName, event => {
-                const btnName = event.target.dataset.name || 'all';
-                sendButtonState(btnName, event.type === 'mousedown');
+                const btnName = event.target.dataset.name;
+                const stateDown = event.type === 'mousedown';
+                sendButtonState(btnName, stateDown);
             });
         });
     })();

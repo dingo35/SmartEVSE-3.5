@@ -216,8 +216,9 @@ extern uint8_t BacklightSet;
 extern uint8_t AccessTimer;
 extern int8_t TempEVSE;
 extern uint8_t ButtonState;
-extern uint8_t ButtonStateOverride;
 extern uint8_t OldButtonState;
+extern uint8_t ButtonStateOverride;
+extern uint32_t LastBtnOverrideTime;
 extern uint8_t ChargeDelay;
 extern uint8_t C1Timer;
 extern uint8_t ModemStage;
@@ -556,7 +557,7 @@ void getButtonState() {
     // As the buttons are shared with the SPI lines going to the LCD,
     // we have to make sure that this does not interfere by write actions to the LCD.
     // Therefore updating the LCD is also done in this task.
-    if (ButtonStateOverride != 7)
+    if (ButtonStateOverride != 7 && millis() - LastBtnOverrideTime < 4000)
         ButtonState = ButtonStateOverride;
     else {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
@@ -1893,16 +1894,21 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             static const std::unordered_map<std::string, uint8_t> btnMasks = {
                 {"right", 0b100},
                 {"middle", 0b010},
-                {"left", 0b001},
-                {"all", 0b111}
+                {"left", 0b001}
             };
 
             auto it = btnMasks.find(btnName.c_str());
             if (it != btnMasks.end()) {
                 // Clear bits if button is pressed, set bits if up.
                 const uint8_t mask = it->second;
-                btnDown ? ButtonStateOverride &= ~mask : ButtonStateOverride |= mask;
-            }
+                if (btnDown) {
+                    ButtonStateOverride = 7 & ~mask;
+                } else {
+                    ButtonStateOverride = 7 | mask;
+                }
+                // Prevent stuck button in case we forget to reset to a 'down' button state. 
+                LastBtnOverrideTime = millis();
+            } 
 
             // Create JSON response
             DynamicJsonDocument doc(200);

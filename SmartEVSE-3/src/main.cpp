@@ -183,6 +183,7 @@ int8_t TempEVSE = 0;                                                        // T
 uint8_t ButtonState = 0x0f;                                                 // Holds latest push Buttons state (LSB 3:0)
 uint8_t OldButtonState = 0x0f;                                              // Holds previous push Buttons state (LSB 3:0)
 uint8_t ButtonStateOverride = 0x07;                                         // Possibility to override the buttons via API
+uint32_t LastBtnOverrideTime = 0;                                           // Avoid UI buttons getting stuck
 uint8_t LCDNav = 0;
 uint8_t SubMenu = 0;
 uint32_t ScrollTimer = 0;
