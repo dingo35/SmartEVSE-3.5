@@ -38,8 +38,6 @@ extern void GLCD(void);
 extern void GLCDMenu(unsigned char Buttons);
 extern void GLCD_init(void);
 extern bool GridRelayOpen;
-extern uint8_t GLCDbuf[512]; 
-extern uint8_t GLCDbuf2[1024];
 extern std::vector<uint8_t> createImageFromGLCDBuffer();
 
 #if SMARTEVSE_VERSION >= 40

@@ -81,8 +81,8 @@ uint8_t LCDpos = 0;
 bool LCDToggle = false;                                                         // Toggle display between two values
 unsigned char LCDText = 0;                                                      // Cycle through text messages
 unsigned int GLCDx, GLCDy;
-uint8_t GLCDbuf[512];                                                              // GLCD buffer (half of the display)
-uint8_t GLCDbuf2[1024];                                                             // Buffer that mirrors the complete LCD.    
+uint8_t GLCDbuf[512];                                                           // GLCD buffer (half of the display)
+uint8_t GLCDbuf2[1024];                                                         // Buffer that mirrors the complete LCD.    
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
 uint8_t MenuItems[MENU_EXIT];
