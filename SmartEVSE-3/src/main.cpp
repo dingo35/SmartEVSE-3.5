@@ -71,27 +71,29 @@ extern void CheckRS485Comm(void);
 #define CALL_ON_RECEIVE(X) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        _LOG_A("DEBUG: calling %s().\n", #X); */ \
+/*        printf("DEBUG CALL_ON_RECEIVE: calling %s().\n", #X); */ \
         X();\
     }
 
-//CALL_ON_RECEIVE_PARAM(State, setState) calls setState(param) when State:param is received
+//CALL_ON_RECEIVE_PARAM(State@, setState) calls setState(param) when State:param is received
 #define CALL_ON_RECEIVE_PARAM(X,Y) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        _LOG_A("DEBUG: calling %s(%u).\n", #X, atoi(ret+strlen(#X))); */ \
+/*        printf("DEBUG CALL_ON_RECEIVE_PARAM: calling %s(%u).\n", #X, atoi(ret+strlen(#X))); */ \
         Y(atoi(ret+strlen(#X)));\
     }
-//SET_ON_RECEIVE(Pilot:, pilot) sets pilot=parm when Pilot:param is received
+//SET_ON_RECEIVE(Pilot@, pilot) sets pilot=parm when Pilot:param is received
 #define SET_ON_RECEIVE(X,Y) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        _LOG_A("DEBUG: setting %s to %u.\n", #Y, atoi(ret+strlen(#X))); */ \
+/*        printf("DEBUG SET_ON_RECEIVE: setting %s to %u.\n", #Y, atoi(ret+strlen(#X))); */ \
         Y = atoi(ret+strlen(#X));\
     }
 
 
+#ifndef SMARTEVSE_VERSION //CH32 version
 uint8_t Initialized = INITIALIZED;                                          // When first powered on, the settings need to be initialized.
+#endif
 // The following data will be updated by eeprom/storage data at powerup:
 uint16_t MaxMains = MAX_MAINS;                                              // Max Mains Amps (hard limit, limited by the MAINS connection) (A)
 uint16_t MaxSumMains = MAX_SUMMAINS;                                        // Max Mains Amps summed over all 3 phases, limit used by EU capacity rate
@@ -236,7 +238,6 @@ uint16_t firmwareUpdateTimer = 0;                                               
                                                                                 // 0 < timer < FW_UPDATE_DELAY means we are in countdown for an actual update
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
-
 #if ENABLE_OCPP
 uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
 
@@ -277,7 +278,6 @@ uint8_t OneWireReadCardId();
 EXT uint8_t ProximityPin();
 EXT void PowerPanicCtrl(uint8_t enable);
 EXT void ModemPower(uint8_t enable);
-EXT uint16_t WchVersion;
 EXT uint8_t ReadESPdata(char *buf);
 
 extern void printStatus(void);
@@ -323,20 +323,20 @@ Button::Button(void) {
 void setErrorFlags(uint8_t flags) {
     ErrorFlags |= flags;
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
-    Serial1.printf("setErrorFlags:%u\n", flags);
+    Serial1.printf("setErrorFlags@%u\n", flags);
 #endif
 }
 
 void clearErrorFlags(uint8_t flags) {
     ErrorFlags &= ~flags;
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
-    Serial1.printf("clearErrorFlags:%u\n", flags);
+    Serial1.printf("clearErrorFlags@%u\n", flags);
 #endif
 }
 
 #ifndef SMARTEVSE_VERSION //CH32 version
 void Button::HandleSwitch(void) {
-    printf("ExtSwitch:%1u.\n", Pressed);
+    printf("ExtSwitch@%1u.\n", Pressed);
 }
 #else //v3 and v4
 void Button::HandleSwitch(void) {
@@ -381,7 +381,7 @@ void Button::HandleSwitch(void) {
             ErrorFlags &= ~RCM_TRIPPED;
         }
         // Also light up the LCD backlight
-        // BacklightTimer = BACKLIGHT;                                 // Backlight ON
+        BacklightTimer = BACKLIGHT;                                 // Backlight ON
 
     } else {
         // Switch input released
@@ -461,6 +461,25 @@ void Button::CheckSwitch(bool force) {
 
 Button ExtSwitch;
 
+//similar to setAccess; OverrideCurrent owned by ESP32
+void setOverrideCurrent(uint16_t Current) { //c
+#ifdef SMARTEVSE_VERSION //v3 and v4
+    OverrideCurrent = Current;
+#if SMARTEVSE_VERSION >= 40
+    Serial1.printf("OverrideCurrent@%u\n", OverrideCurrent); //d
+#endif
+
+    //write_settings TODO doesnt include OverrideCurrent
+#if MQTT
+    // Update MQTT faster
+    lastMqttUpdate = 10;
+#endif //MQTT
+#else //CH32
+    printf("OverrideCurrent@%u.\n", OverrideCurrent); //a
+#endif //SMARTEVSE_VERSION
+}
+
+
 /**
  * Set EVSE mode
  * 
@@ -469,7 +488,8 @@ Button ExtSwitch;
 void setMode(uint8_t NewMode) {
 #ifdef SMARTEVSE_VERSION //v3 and v4
 #if SMARTEVSE_VERSION >= 40
-    Serial1.printf("Mode:%u\n", Mode); //d
+    Serial1.printf("Mode@%u\n", NewMode); //d
+    _LOG_V("[->] Mode:%u\n", NewMode);
 #endif
     // If mainsmeter disabled we can only run in Normal Mode
     if (!MainsMeter.Type && NewMode != MODE_NORMAL)
@@ -479,7 +499,7 @@ void setMode(uint8_t NewMode) {
     setAccess(!DelayedStartTime.epoch2); //if DelayedStartTime not zero then we are Delayed Charging
     if (NewMode == MODE_SOLAR) {
         // Reset OverrideCurrent if mode is SOLAR
-        OverrideCurrent = 0;
+        setOverrideCurrent(0);
     }
 
     // when switching modes, we just keep charging at the phases we were charging at;
@@ -523,7 +543,8 @@ void setMode(uint8_t NewMode) {
         preferences.end();
     }
 #else //CH32
-    printf("Mode:%1u.\n", Mode); //a
+    printf("Mode@%1u.\n", NewMode); //a
+    _LOG_V("[<-] Mode:%u\n", NewMode);
 #endif //SMARTEVSE_VERSION
 }
 
@@ -571,7 +592,7 @@ uint8_t Force_Single_Phase_Charging() {                                         
 // Value in range 0 (0% duty) to 1024 (100% duty) for ESP32, 1000 (100% duty) for CH32
 void SetCPDuty(uint32_t DutyCycle){
 #if SMARTEVSE_VERSION >= 40 //ESP32
-    Serial1.printf("SetCPDuty:%u\n", DutyCycle);
+    Serial1.printf("SetCPDuty@%u\n", DutyCycle);
 #else
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3 ESP32
     ledcWrite(CP_CHANNEL, DutyCycle);                                       // update PWM signal
@@ -588,7 +609,7 @@ void SetCPDuty(uint32_t DutyCycle){
 // Current in Amps * 10 (160 = 16A)
 void SetCurrent(uint16_t current) {
 #if SMARTEVSE_VERSION >= 40 //ESP32
-    Serial1.printf("SetCurrent:%u\n", current);
+    Serial1.printf("SetCurrent@%u\n", current);
 #else
     uint32_t DutyCycle;
 
@@ -630,10 +651,10 @@ void setStatePowerUnavailable(void) {
 // is allowed to change the value of State on CH32
 // All other code has to use setState
 // so for v4 we need:
-// a. ESP32 setState sends message to CH32              in ESP32 src/common.cpp (this file)
+// a. ESP32 setState sends message to CH32              in ESP32 src/main.cpp (this file)
 // b. CH32 receiver that calls local setState           in CH32 src/evse.c
-// c. CH32 setState full functionality                  in ESP32 src/common.cpp (this file) to be copied to CH32
-// d. CH32 sends message to ESP32                       in ESP32 src/common.cpp (this file) to be copied to CH32
+// c. CH32 setState full functionality                  in ESP32 src/main.cpp (this file) to be copied to CH32
+// d. CH32 sends message to ESP32                       in ESP32 src/main.cpp (this file) to be copied to CH32
 // e. ESP32 receiver that sets local variable           in ESP32 src/main.cpp
 
 
@@ -644,10 +665,10 @@ void setState(uint8_t NewState) { //c
         snprintf(Str, sizeof(Str), "%02d:%02d:%02d STATE %s -> %s\n",timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, StrStateName[State], StrStateName[NewState] );
         _LOG_A("%s",Str);
 #if SMARTEVSE_VERSION >= 40
-        Serial1.printf("State:%u\n", NewState); //a
+        Serial1.printf("State@%u\n", NewState); //a
 #endif
 #else //CH32
-        printf("State:%1u.\n", NewState); //d
+        printf("State@%1u.\n", NewState); //d
 #endif
     }
 
@@ -762,7 +783,7 @@ void setState(uint8_t NewState) { //c
     lastMqttUpdate = 10;
 #endif
 
-    // BacklightTimer = BACKLIGHT;                                                 // Backlight ON
+    BacklightTimer = BACKLIGHT;                                                 // Backlight ON
 
 #endif //SMARTEVSE_VERSION
 }
@@ -779,10 +800,10 @@ void setState(uint8_t NewState) { //c
 // is allowed to change the value of Acces_bit on CH32
 // All other code has to use setAccess
 // so for v4 we need:
-// a. CH32 setAccess sends message to ESP32           in CH32 src/evse.c and/or in src/common.cpp (this file)
+// a. CH32 setAccess sends message to ESP32           in CH32 src/evse.c and/or in src/main.cpp (this file)
 // b. ESP32 receiver that calls local setAccess       in ESP32 src/main.cpp
-// c. ESP32 setAccess full functionality              in ESP32 src/common.cpp (this file)
-// d. ESP32 sends message to CH32                     in ESP32 src/common.cpp (this file)
+// c. ESP32 setAccess full functionality              in ESP32 src/main.cpp (this file)
+// d. ESP32 sends message to CH32                     in ESP32 src/main.cpp (this file)
 // e. CH32 receiver that sets local variable          in CH32 src/evse.c
 
 // same for Mode/setMode
@@ -791,7 +812,7 @@ void setAccess(bool Access) { //c
 #ifdef SMARTEVSE_VERSION //v3 and v4
     Access_bit = Access;
 #if SMARTEVSE_VERSION >= 40
-    Serial1.printf("Access:%u\n", Access_bit); //d
+    Serial1.printf("Access@%u\n", Access_bit); //d
 #endif
     if (Access == 0) {
         //TODO:setStatePowerUnavailable() ?
@@ -811,7 +832,7 @@ void setAccess(bool Access) { //c
     lastMqttUpdate = 10;
 #endif //MQTT
 #else //CH32
-    printf("Access:%1u.\n", Access); //a
+    printf("Access@%1u.\n", Access); //a
 #endif //SMARTEVSE_VERSION
 }
 
@@ -908,7 +929,7 @@ uint8_t Pilot() {
     if ((Min >= 2000) && (Max < 2400)) ret = PILOT_3V;                      // Pilot at 3V
     if ((Min > 100) && (Max < 350)) ret = PILOT_DIODE;                      // Diode Check OK
     if (ret != old_pilot) {
-        printf("Pilot:%u\n", ret); //d
+        printf("Pilot@%u\n", ret); //d
         old_pilot = ret;
     }
     return ret;
@@ -1320,10 +1341,11 @@ void CalcBalancedCurrent(char mod) {
         _LOG_D_NO_FUNC("\n");
     }
 #ifndef SMARTEVSE_VERSION //CH32 only
-    printf("Balanced0:%u\n", Balanced[0]);
+    printf("Balanced0@%u\n", Balanced[0]);
+    printf("ChargeCurrent@%u\n", ChargeCurrent);
 #endif
 #else
-    printf("CalcBalancedCurrent:%i\n", mod);
+    printf("CalcBalancedCurrent@%i\n", mod);
 #endif
 } //CalcBalancedCurrent
 
@@ -1331,7 +1353,6 @@ void CalcBalancedCurrent(char mod) {
 void Timer1S_singlerun(void) {
 static uint8_t Broadcast = 1;
 #ifdef SMARTEVSE_VERSION //ESP32
-
 static uint8_t x;
 
     if (BacklightTimer) BacklightTimer--;                               // Decrease backlight counter every second.
@@ -1513,7 +1534,7 @@ uint8_t ow = 0, x;
             if (MainsMeter.Timeout) MainsMeter.Timeout--;
         }
     } else
-        MainsMeter.Timeout = COMM_TIMEOUT;
+        MainsMeter.setTimeout(COMM_TIMEOUT);
 
     if (EVMeter.Type) {
         if ( EVMeter.Timeout == 0 && !(ErrorFlags & EV_NOCOMM) && Mode != MODE_NORMAL) {
@@ -1524,7 +1545,7 @@ uint8_t ow = 0, x;
             if (EVMeter.Timeout) EVMeter.Timeout--;
         }
     } else
-        EVMeter.Timeout = COMM_EVTIMEOUT;
+        EVMeter.setTimeout(COMM_EVTIMEOUT);
     
     // Clear communication error, if present
     if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout) ErrorFlags &= ~CT_NOCOMM;
@@ -1578,7 +1599,7 @@ uint8_t ow = 0, x;
     // Wait till configuration is received 
     // change LoadBl to something else
     if (LoadBl) {
-        printf("Pilot:%u,State:%u,ChargeDelay:%u,Error:%u,Temp:%d,Lock:%u,Mode:%u,Access:%u ", Pilot(), State, ChargeDelay, ErrorFlags, TempEVSE, Lock, Mode, Access_bit);
+        printf("Pilot@%u,State@%u,ChargeDelay@%u,Error@%u,Temp@%d,Lock@%u,Mode@%u,Access@%u ", Pilot(), State, ChargeDelay, ErrorFlags, TempEVSE, Lock, Mode, Access_bit);
         if (ow == 1) {
             printf(",RFID:");
             for (x=1 ; x<7 ; x++) printf("%02x",RFID[x]);
@@ -1590,8 +1611,8 @@ uint8_t ow = 0, x;
  //   printf("10ms loop:%lu uS systick:%lu millis:%lu\n", elapsedmax/12, (uint32_t)SysTick->CNT, millis());
     // this section sends outcomes of functions and variables to ESP32 to fill Shadow variables
     // FIXME this section preferably should be empty
-    printf("IsCurrentAvailable:%u", IsCurrentAvailable());
-    printf("ErrorFlags:%u", ErrorFlags);
+    printf("IsCurrentAvailable@%u", IsCurrentAvailable());
+    printf("ErrorFlags@%u", ErrorFlags);
     elapsedmax = 0;
 #endif
 }
@@ -1989,77 +2010,6 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
 
 
 #ifndef SMARTEVSE_VERSION //CH32 version
-// Used for reading configuration data from ESP
-typedef enum {
-    UINT8,
-    INT8,
-    UINT16
-} ValueType;
-
-// Used for reading configuration data from ESP
-typedef union {
-    uint8_t* u8;
-    int8_t* i8;
-    uint16_t* u16;
-} ValuePtr;
-
-// Used for reading configuration data from ESP
-typedef struct {
-    const char* keyword;
-    ValuePtr valuePtr;
-    ValueType type;
-} ConfigItem;
-
-
-// Configuration items array
-ConfigItem configItems[] = {
-    {"Config:",{.u8 = &Config}, UINT8},
-    {"Lock:", {.u8 = &Lock}, UINT8},
-    {"Mode:", {.u8 = &Mode}, UINT8}, //e
-    {"Access:", {.u8 = &Access_bit}, UINT8}, //e
-    {"CardOffset:", {.u16 = &CardOffset}, UINT16},
-    {"LoadBl:", {.u8 = &LoadBl}, UINT8},
-    {"MaxMains:", {.u16 = &MaxMains}, UINT16},
-    {"MaxSumMains:", {.u16 = &MaxSumMains},  UINT16},
-    {"MaxCurrent:", {.u16 = &MaxCurrent}, UINT16},
-    {"MinCurrent:", {.u16 = &MinCurrent}, UINT16},
-    {"MaxCircuit:", {.u16 = &MaxCircuit}, UINT16},
-    {"Switch:", {.u8 = &Switch}, UINT8},
-    {"RCmon:", {.u8 = &RCmon}, UINT8},
-    {"StartCurrent:", {.u16 = &StartCurrent}, UINT16},
-    {"StopTime:", {.u16 = &StopTime}, UINT16},
-    {"ImportCurrent:", {.u16 = &ImportCurrent}, UINT16},
-    {"Grid:", {.u8 = &Grid}, UINT8},
-    {"RFIDReader:", {.u8 = &RFIDReader}, UINT8},
-    {"MainsMeterType:", {.u8 = &MainsMeter.Type}, UINT8},
-    {"MainsMAddress:", {.u8 = &MainsMeter.Address}, UINT8},
-    {"EVMeterType:", {.u8 = &EVMeter.Type}, UINT8},
-    {"EVMeterAddress:", {.u8 = &EVMeter.Address}, UINT8},
-    {"EMEndianness:", {.u8 = &EMConfig[EM_CUSTOM].Endianness}, UINT8},
-    {"EMIRegister:", {.u16 = &EMConfig[EM_CUSTOM].IRegister}, UINT16},
-    {"EMIDivisor:", {.i8 = &EMConfig[EM_CUSTOM].IDivisor}, INT8},
-    {"EMURegister:", {.u16 = &EMConfig[EM_CUSTOM].URegister}, UINT16},
-    {"EMUDivisor:", {.i8 = &EMConfig[EM_CUSTOM].UDivisor}, INT8},
-    {"EMPRegister:", {.u16 = &EMConfig[EM_CUSTOM].PRegister}, UINT16},
-    {"EMPDivisor:", {.i8 = &EMConfig[EM_CUSTOM].PDivisor}, INT8},
-    {"EMERegister:", {.u16 = &EMConfig[EM_CUSTOM].ERegister}, UINT16},
-    {"EMEDivisor:", {.i8 = &EMConfig[EM_CUSTOM].EDivisor}, INT8},
-    {"EMDataType:", {.u8 = (uint8_t*)&EMConfig[EM_CUSTOM].DataType}, UINT8},
-    {"EMFunction:", {.u8 = &EMConfig[EM_CUSTOM].Function}, UINT8},
-    {"Initialized:", {.u8 = &Initialized}, UINT8},
-    {"EnableC2:", {.u8 = (uint8_t*)&EnableC2}, UINT8},
-    {"maxTemp:", {.u16 = &maxTemp}, UINT16},
-
-    // the following variables are not configuration registers
-
-//    {"State:", {.u8 = &State}, UINT8},
-    {"ChargeCurrent:", {.u16 = &ChargeCurrent}, UINT16},
-    {"PwrPanic:", {.u8 = &PwrPanic}, UINT8},
-    {"ModemPwr:", {.u8 = &ModemPwr}, UINT8},
-
-//    {NULL, {NULL}, UINT8} // End of array
-};
-
 
 // CH32 receives info from ESP32
 void CheckSerialComm(void) {
@@ -2069,43 +2019,76 @@ void CheckSerialComm(void) {
 
     len = ReadESPdata(SerialBuf);
     RxRdy1 = 0;
-
+#ifndef WCH_VERSION
+#define WCH_VERSION 0 //if WCH_VERSION not defined compile time, 0 means this firmware will be overwritten by any other version; it will be re-flashed every boot
+//if you compile with
+//    PLATFORMIO_BUILD_FLAGS='-DWCH_VERSION='"`date +%s`" pio run -e v4 -t upload
+//the current time (in epoch) is compiled via WCH_VERSION in the CH32 firmware
+//which will prevent it to be reflashed every reboot
+#endif
     // Is it a request?
     char token[64];
     strncpy(token, "version?", sizeof(token));
     ret = strstr(SerialBuf, token);
-    if (ret != NULL) printf("version:%04u\n", WchVersion);          // Send WCH software version
+    if (ret != NULL) printf("version@%lu\n", (unsigned long) WCH_VERSION);          // Send WCH software version
 
-    CALL_ON_RECEIVE_PARAM(State:, setState)
-    CALL_ON_RECEIVE_PARAM(SetCPDuty:, SetCPDuty)
-    CALL_ON_RECEIVE_PARAM(SetCurrent:, SetCurrent)
-    CALL_ON_RECEIVE_PARAM(CalcBalancedCurrent:, CalcBalancedCurrent)
+    CALL_ON_RECEIVE_PARAM(State@, setState)
+    CALL_ON_RECEIVE_PARAM(SetCPDuty@, SetCPDuty)
+    CALL_ON_RECEIVE_PARAM(SetCurrent@, SetCurrent)
+    CALL_ON_RECEIVE_PARAM(CalcBalancedCurrent@, CalcBalancedCurrent)
     CALL_ON_RECEIVE(setStatePowerUnavailable)
-    CALL_ON_RECEIVE_PARAM(setErrorFlags:, setErrorFlags)
-    CALL_ON_RECEIVE_PARAM(clearErrorFlags:, clearErrorFlags)
+    CALL_ON_RECEIVE_PARAM(setErrorFlags@, setErrorFlags)
+    CALL_ON_RECEIVE_PARAM(clearErrorFlags@, clearErrorFlags)
+    // these veriables are owned by ESP32 and copies are kept in CH32:
+// Configuration items array
+//ConfigItem configItems[] = {
+    SET_ON_RECEIVE(Config@, Config)
+    SET_ON_RECEIVE(Lock@, Lock)
+    SET_ON_RECEIVE(Mode@, Mode)
+    SET_ON_RECEIVE(Access@, Access_bit)
+    SET_ON_RECEIVE(OverrideCurrent@, OverrideCurrent)
+    SET_ON_RECEIVE(CardOffset@, CardOffset)
+    SET_ON_RECEIVE(LoadBl@, LoadBl)
+    SET_ON_RECEIVE(MaxMains@, MaxMains)
+    SET_ON_RECEIVE(MaxSumMains@, MaxSumMains)
+    SET_ON_RECEIVE(MaxCurrent@, MaxCurrent)
+    SET_ON_RECEIVE(MinCurrent@, MinCurrent)
+    SET_ON_RECEIVE(MaxCircuit@, MaxCircuit)
+    SET_ON_RECEIVE(Switch@, Switch)
+    SET_ON_RECEIVE(RCmon@, RCmon)
+    SET_ON_RECEIVE(StartCurrent@, StartCurrent)
+    SET_ON_RECEIVE(StopTime@, StopTime)
+    SET_ON_RECEIVE(ImportCurrent@, ImportCurrent)
+    SET_ON_RECEIVE(Grid@, Grid)
+    SET_ON_RECEIVE(RFIDReader@, RFIDReader)
+    SET_ON_RECEIVE(MainsMeterType@, MainsMeter.Type)
+    SET_ON_RECEIVE(MainsMAddress@, MainsMeter.Address)
+    SET_ON_RECEIVE(EVMeterType@, EVMeter.Type)
+    SET_ON_RECEIVE(EVMeterAddress@, EVMeter.Address)
+    SET_ON_RECEIVE(EMEndianness@, EMConfig[EM_CUSTOM].Endianness)
+    SET_ON_RECEIVE(EMIRegister@, EMConfig[EM_CUSTOM].IRegister)
+    SET_ON_RECEIVE(EMIDivisor@, EMConfig[EM_CUSTOM].IDivisor)
+    SET_ON_RECEIVE(EMURegister@, EMConfig[EM_CUSTOM].URegister)
+    SET_ON_RECEIVE(EMUDivisor@, EMConfig[EM_CUSTOM].UDivisor)
+    SET_ON_RECEIVE(EMPRegister@, EMConfig[EM_CUSTOM].PRegister)
+    SET_ON_RECEIVE(EMPDivisor@, EMConfig[EM_CUSTOM].PDivisor)
+    SET_ON_RECEIVE(EMERegister@, EMConfig[EM_CUSTOM].ERegister)
+    SET_ON_RECEIVE(EMEDivisor@, EMConfig[EM_CUSTOM].EDivisor)
+    uint8_t tmp;
+    SET_ON_RECEIVE(EMDataType@, tmp); EMConfig[EM_CUSTOM].DataType = (mb_datatype) tmp;
+    SET_ON_RECEIVE(EMFunction@, EMConfig[EM_CUSTOM].Function)
+    SET_ON_RECEIVE(EnableC2@, tmp); EnableC2 = (EnableC2_t) tmp;
+    SET_ON_RECEIVE(maxTemp@, maxTemp)
+    SET_ON_RECEIVE(PwrPanic@, PwrPanic)
+    SET_ON_RECEIVE(ModemPwr@, ModemPwr)
+    SET_ON_RECEIVE(MainsMeterTimeout@, MainsMeter.Timeout)
+    SET_ON_RECEIVE(EVMeterTimeout@, EVMeter.Timeout)
 
-    // We received configuration settings from the ESP.
-    // Scan for all variables, and update values
-    for (ConfigItem* item = configItems; item->keyword != NULL; item++) { //e
-        const char* found = strstr(SerialBuf, item->keyword);
-        if (found) {
-            const char* valueStr = found + strlen(item->keyword);
-            switch (item->type) {
-                case UINT8:
-                    *(item->valuePtr.u8) = (uint8_t)atoi(valueStr);
-                    break;
-                case INT8:
-                    *(item->valuePtr.i8) = (int8_t)atoi(valueStr);
-                    break;
-                case UINT16:
-                    *(item->valuePtr.u16) = (uint16_t)atoi(valueStr);
-                    break;
-            }
-        }
-    }
-
+    SET_ON_RECEIVE(Initialized@, Initialized)
     // Wait till initialized is set by ESP
-    if (Initialized) printf("Config:OK\n");
+    strncpy(token, "Initialized@", sizeof(token));
+    ret = strstr(SerialBuf, token);
+    if (ret != NULL && Initialized) printf("Config@OK\n"); //only print this on reception of string
 
     // Enable/disable modem power
     ModemPower(ModemPwr);
@@ -2114,7 +2097,7 @@ void CheckSerialComm(void) {
     PowerPanicCtrl(PwrPanic);
 
     //if (LoadBl) {
-    //    printf("Config:OK %u,Lock:%u,Mode:%u,Current:%u,Switch:%u,RCmon:%u,PwrPanic:%u,RFID:%u\n", Config, Lock, Mode, ChargeCurrent, Switch, RCmon, PwrPanic, RFIDReader);
+    //    printf("Config@OK %u,Lock@%u,Mode@%u,Current@%u,Switch@%u,RCmon@%u,PwrPanic@%u,RFID@%u\n", Config, Lock, Mode, ChargeCurrent, Switch, RCmon, PwrPanic, RFIDReader);
 //        ConfigChanged = 1;
     //}
 
@@ -2353,30 +2336,9 @@ static uint8_t PollEVNode = NR_EVSES, updated = 0;
 //
 // Task is called every 10ms
 void BlinkLed_singlerun(void) {
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-static uint8_t LcdPwm = 0;
 static uint8_t RedPwm = 0, GreenPwm = 0, BluePwm = 0;
 static uint8_t LedCount = 0;                                                   // Raw Counter before being converted to PWM value
 static unsigned int LedPwm = 0;                                                // PWM value 0-255
-
-    // Backlight LCD
-    if (BacklightTimer > 1 && BacklightSet != 1) {                      // Enable LCD backlight at max brightness
-                                                                        // start only when fully off(0) or when we are dimming the backlight(2)
-        LcdPwm = LCD_BRIGHTNESS;
-        ledcWrite(LCD_CHANNEL, LcdPwm);
-        BacklightSet = 1;                                               // 1: we have set the backlight to max brightness
-    } 
-    
-    if (BacklightTimer == 1 && LcdPwm >= 3) {                           // Last second of Backlight
-        LcdPwm -= 3;
-        ledcWrite(LCD_CHANNEL, ease8InOutQuad(LcdPwm));                 // fade out
-        BacklightSet = 2;                                               // 2: we are dimming the backlight
-    }
-                                                                        // Note: could be simplified by removing following code if LCD_BRIGHTNESS is multiple of 3                                                               
-    if (BacklightTimer == 0 && BacklightSet) {                          // End of LCD backlight
-        ledcWrite(LCD_CHANNEL, 0);                                      // switch off LED PWM
-        BacklightSet = 0;                                               // 0: backlight fully off
-    }
 
     // RGB LED
     if (ErrorFlags || ChargeDelay) {
@@ -2490,71 +2452,16 @@ static unsigned int LedPwm = 0;                                                /
         }    
 
     }
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     ledcWrite(RED_CHANNEL, RedPwm);
     ledcWrite(GREEN_CHANNEL, GreenPwm);
     ledcWrite(BLUE_CHANNEL, BluePwm);
 
 #else // CH32
-    static uint8_t RedPwm = 0, GreenPwm = 0, BluePwm = 0;
-    static uint8_t LedCount = 0;                                            // Raw Counter before being converted to PWM value
-    static uint16_t LedPwm = 0;                                             // PWM value 0-255
-
-
-    // RGB LED
-    if (ErrorFlags || ChargeDelay) {
-
-        if (ErrorFlags & (RCM_TRIPPED | CT_NOCOMM | EV_NOCOMM) ) {
-            LedCount += 20;                                                 // Very rapid flashing, RCD tripped or no Serial Communication.
-            if (LedCount > 128) LedPwm = ERROR_LED_BRIGHTNESS;              // Red LED 50% of time on, full brightness
-            else LedPwm = 0;
-            RedPwm = LedPwm;
-            GreenPwm = 0;
-            BluePwm = 0;
-        } else {                                                            // Waiting for Solar power or not enough current to start charging
-            LedCount += 2;                                                  // Slow blinking.
-            if (LedCount > 230) LedPwm = WAITING_LED_BRIGHTNESS;            // LED 10% of time on, full brightness
-            else LedPwm = 0;
-
-            if (Mode == MODE_SOLAR) {                                       // Orange
-                RedPwm = LedPwm;
-                GreenPwm = LedPwm * 2 / 3;
-            } else {                                                        // Green
-                RedPwm = 0;
-                GreenPwm = LedPwm;
-            }
-            BluePwm = 0;
-        }
-
-    } else if (Access_bit == 0 || State == STATE_MODEM_DENIED) {            // No Access, LEDs off
-        RedPwm = 0;
-        GreenPwm = 0;
-        BluePwm = 0;
-        LedPwm = 0;
-    } else {                                                                // State A, B or C
-
-        if (State == STATE_A) {
-            LedPwm = STATE_A_LED_BRIGHTNESS;                                // STATE A, LED on (dimmed)
-
-        } else if (State == STATE_B || State == STATE_B1 || State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT) {
-            LedPwm = STATE_B_LED_BRIGHTNESS;                                // STATE B, LED on (full brightness)
-            LedCount = 128;                                                 // When switching to STATE C, start at full brightness
-
-        } else if (State == STATE_C) {
-            if (Mode == MODE_SOLAR) LedCount ++;                            // Slower fading (Solar mode)
-            else LedCount += 2;                                             // Faster fading (Smart mode)
-            LedPwm = ease8InOutQuad(triwave8(LedCount));                    // pre calculate new LedPwm value
-        }
-
-        if (Mode == MODE_SOLAR) {                                           // Orange/Yellow for Solar mode
-            RedPwm = LedPwm;
-            GreenPwm = LedPwm * 2 / 3;
-        } else {
-            RedPwm = 0;                                                     // Green for Normal/Smart mode
-            GreenPwm = LedPwm;
-        }
-        BluePwm = 0;
-
-    }
+    // somehow the CH32 chokes on 255 values
+    if (RedPwm > 254) RedPwm = 254;
+    if (GreenPwm > 254) GreenPwm = 254;
+    if (BluePwm > 254) BluePwm = 254;
 
     TIM3->CH1CVR = RedPwm;
     TIM3->CH2CVR = GreenPwm;
@@ -2581,6 +2488,27 @@ void Timer10ms_singlerun(void) {
     //Check RS485 communication
     if (ModbusRxLen) CheckRS485Comm();
 #else //v3 and v4
+    static uint8_t LcdPwm = 0;
+
+    // Backlight LCD
+    if (BacklightTimer > 1 && BacklightSet != 1) {                      // Enable LCD backlight at max brightness
+                                                                        // start only when fully off(0) or when we are dimming the backlight(2)
+        LcdPwm = LCD_BRIGHTNESS;
+        ledcWrite(LCD_CHANNEL, LcdPwm);
+        BacklightSet = 1;                                               // 1: we have set the backlight to max brightness
+    }
+
+    if (BacklightTimer == 1 && LcdPwm >= 3) {                           // Last second of Backlight
+        LcdPwm -= 3;
+        ledcWrite(LCD_CHANNEL, ease8InOutQuad(LcdPwm));                 // fade out
+        BacklightSet = 2;                                               // 2: we are dimming the backlight
+    }
+                                                                        // Note: could be simplified by removing following code if LCD_BRIGHTNESS is multiple of 3
+    if (BacklightTimer == 0 && BacklightSet) {                          // End of LCD backlight
+        ledcWrite(LCD_CHANNEL, 0);                                      // switch off LED PWM
+        BacklightSet = 0;                                               // 0: backlight fully off
+    }
+
 // Task that handles EVSE State Changes
 // Reads buttons, and updates the LCD.
     static uint16_t old_sec = 0;
@@ -2631,7 +2559,7 @@ void Timer10ms_singlerun(void) {
         {                                                                    // Allow to switch to state C directly if STATE_A_TO_C is set to PILOT_6V (see EVSE.h)
             DiodeCheck = 0;
 
-            ProximityPin();                                                 // Sample Proximity Pin
+            MaxCapacity = ProximityPin();                                   // Sample Proximity Pin
 
             _LOG_I("Cable limit: %uA  Max: %uA\n", MaxCapacity, MaxCurrent);
             if (MaxCurrent > MaxCapacity) ChargeCurrent = MaxCapacity * 10; // Do not modify Max Cable Capacity or MaxCurrent (fix 2.05)
@@ -2825,138 +2753,128 @@ void Timer10ms_singlerun(void) {
         if (memcmp(SerialBuf, "!Panic", 6) == 0) PowerPanicESP();
 
         char token[64];
-
-        strncpy(token, "MSG:", sizeof(token));                              // if a command starts with MSG: the rest of the line is no longer parsed
+        strncpy(token, "ExtSwitch@", sizeof(token));
         ret = strstr(SerialBuf, token);
-        if (ret == NULL) {
-/*                ret = strstr(SerialBuf, "Pilot:");
-            //  [<-] Pilot:6,State:0,ChargeDelay:0,Error:0,Temp:34,Lock:0,Mode:0,Access:1
-            if (ret != NULL) {
-                int hit = sscanf(SerialBuf, "Pilot:%u,State:%u,ChargeDelay:%u,Error:%u,Temp:%u,Lock:%u,Mode:%u, Access:%u", &pilot, &State, &ChargeDelay, &ErrorFlags, &TempEVSE, &Lock, &Mode, &Access_bit);
-                if (hit != 8) {
-                    _LOG_A("ERROR parsing line from WCH, hit=%u, line=%s.\n", hit, SerialBuf);
-                } else {
-                    _LOG_A("DINGO: pilot=%u, State=%u, ChargeDelay=%u, ErrorFlags = %u, TempEVSE=%u, Lock=%u, Mode=%u, Access_bit=%u.\n", pilot, State,ChargeDelay, ErrorFlags, TempEVSE, Lock, Mode, Access_bit);
-                }
-            }*/
-
-            strncpy(token, "ExtSwitch:", sizeof(token));
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL) {
-                ExtSwitch.Pressed = atoi(ret+strlen(token));
+        if (ret != NULL) {
+            ExtSwitch.Pressed = atoi(ret+strlen(token));
+            if (ExtSwitch.Pressed)
                 ExtSwitch.TimeOfPress = millis();
-                ExtSwitch.HandleSwitch();
-            }
-            CALL_ON_RECEIVE_PARAM(Access:, setAccess)
-            CALL_ON_RECEIVE_PARAM(Mode:, setMode)
-            CALL_ON_RECEIVE(write_settings)
-            //these variables are owned by CH32 and copies are sent to ESP32:
-            SET_ON_RECEIVE(Pilot:, pilot)
-            SET_ON_RECEIVE(Temp:, TempEVSE)
-            SET_ON_RECEIVE(State:, State)
-            SET_ON_RECEIVE(Balanced0:, Balanced[0])
-            SET_ON_RECEIVE(IsCurrentAvailable:, Shadow_IsCurrentAvailable)
-            SET_ON_RECEIVE(ErrorFlags:, ErrorFlags)
+            ExtSwitch.HandleSwitch();
+        }
+        CALL_ON_RECEIVE_PARAM(Access@, setAccess)
+        CALL_ON_RECEIVE_PARAM(OverrideCurrent@, setOverrideCurrent)
+        CALL_ON_RECEIVE_PARAM(Mode@, setMode)
+        CALL_ON_RECEIVE(write_settings)
+        //these variables are owned by CH32 and copies are sent to ESP32:
+        SET_ON_RECEIVE(Pilot@, pilot)
+        SET_ON_RECEIVE(Temp@, TempEVSE)
+        SET_ON_RECEIVE(State@, State)
+        SET_ON_RECEIVE(Balanced0@, Balanced[0])
+        SET_ON_RECEIVE(ChargeCurrent@, ChargeCurrent)
+        SET_ON_RECEIVE(IsCurrentAvailable@, Shadow_IsCurrentAvailable)
+        SET_ON_RECEIVE(ErrorFlags@, ErrorFlags)
 
-            strncpy(token, "version:", sizeof(token));
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL) {
-                MainVersion = atoi(ret+strlen(token));
-                Serial.printf("version %u received\n", MainVersion);
-                CommState = COMM_CONFIG_SET;
-            }
+        strncpy(token, "version@", sizeof(token));
+        ret = strstr(SerialBuf, token);
+        if (ret != NULL) {
+            unsigned long WCHRunningVersion = atoi(ret+strlen(token));
+            _LOG_V("version %lu received\n", WCHRunningVersion);
+            CommState = COMM_CONFIG_SET;
+        }
 
-            ret = strstr(SerialBuf, "Config:OK");
-            if (ret != NULL) {
-                Serial.printf("Config set\n");
-                CommState = COMM_STATUS_REQ;
-            }
+        ret = strstr(SerialBuf, "Config@OK");
+        if (ret != NULL) {
+            _LOG_V("Config set\n");
+            CommState = COMM_STATUS_REQ;
+        }
 
-            strncpy(token, "EnableC2:", sizeof(token));
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL) {
-                EnableC2 = (EnableC2_t) atoi(ret+strlen(token)); //e
-            }
+        strncpy(token, "EnableC2@", sizeof(token));
+        ret = strstr(SerialBuf, token);
+        if (ret != NULL) {
+            EnableC2 = (EnableC2_t) atoi(ret+strlen(token)); //e
+        }
 
-            strncpy(token, "Irms:", sizeof(token));
-            //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL) {
-                short unsigned int Address;
-                int16_t Irms[3];
-                int n = sscanf(SerialBuf,"Irms:%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
-                if (n == 4) {   //success
-                    if (Address == MainsMeter.Address) {
-                        for (int x = 0; x < 3; x++)
-                            MainsMeter.Irms[x] = Irms[x];
-                        MainsMeter.Timeout = COMM_TIMEOUT;
-                        CalcIsum();
-                    } else if (Address == EVMeter.Address) {
-                        for (int x = 0; x < 3; x++)
-                            EVMeter.Irms[x] = Irms[x];
-                        EVMeter.Timeout = COMM_EVTIMEOUT;
-                        EVMeter.CalcImeasured();
-                    }
-                } else
-                    _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
-            }
-
-            strncpy(token, "PowerMeasured:", sizeof(token));
-            //printf("PowerMeasured:%03u,%d\n", Address, PowerMeasured);
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL) {
-                short unsigned int Address;
-                int16_t PowerMeasured;
-                int n = sscanf(SerialBuf,"PowerMeasured:%03hu,%hi", &Address, &PowerMeasured);
-                if (n == 2) {   //success
-                    if (Address == MainsMeter.Address) {
-                        MainsMeter.PowerMeasured = PowerMeasured;
-                    } else if (Address == EVMeter.Address) {
-                        EVMeter.PowerMeasured = PowerMeasured;
-                    }
-                } else
-                    _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
-            }
-
-/*
-            strncpy(token, "State:", sizeof(token));
-            ret = strstr(SerialBuf, token);
-            if (ret != NULL ) {
-                State = atoi(ret+strlen(token)); //e
-                if (State == STATE_COMM_B) NewState = STATE_COMM_B_OK;
-                else if (State == STATE_COMM_C) NewState = STATE_COMM_C_OK;
-
-                if (NewState) {    // only send confirmation when state needs to change.
-                    Serial1.printf("WchState:%u\n",NewState );        // send confirmation back to WCH
-                    Serial.printf("[->] WchState:%u\n",NewState );    // send confirmation back to WCH
-                    NewState = 0;
+        strncpy(token, "Irms@", sizeof(token));
+        //Irms@011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
+        ret = strstr(SerialBuf, token);
+        if (ret != NULL) {
+            short unsigned int Address;
+            int16_t Irms[3];
+            int n = sscanf(SerialBuf,"Irms@%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
+            if (n == 4) {   //success
+                if (Address == MainsMeter.Address) {
+                    for (int x = 0; x < 3; x++)
+                        MainsMeter.Irms[x] = Irms[x];
+                    MainsMeter.setTimeout(COMM_TIMEOUT);
+                    CalcIsum();
+                } else if (Address == EVMeter.Address) {
+                    for (int x = 0; x < 3; x++)
+                        EVMeter.Irms[x] = Irms[x];
+                    EVMeter.setTimeout(COMM_EVTIMEOUT);
+                    EVMeter.CalcImeasured();
                 }
-            }*/
+            } else
+                _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
+        }
+
+        strncpy(token, "PowerMeasured@", sizeof(token));
+        //printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
+        ret = strstr(SerialBuf, token);
+        if (ret != NULL) {
+            short unsigned int Address;
+            int16_t PowerMeasured;
+            int n = sscanf(SerialBuf,"PowerMeasured@%03hu,%hi", &Address, &PowerMeasured);
+            if (n == 2) {   //success
+                if (Address == MainsMeter.Address) {
+                    MainsMeter.PowerMeasured = PowerMeasured;
+                } else if (Address == EVMeter.Address) {
+                    EVMeter.PowerMeasured = PowerMeasured;
+                }
+            } else
+                _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
         }
         memset(SerialBuf,0,idx);        // Clear buffer
         idx = 0;
     }
-
     if (CommTimeout == 0) {
         switch (CommState) {
 
             case COMM_VER_REQ:
                 CommTimeout = 10;
                 Serial1.print("version?\n");            // send command to WCH ic
-                Serial.print("[->] version?\n");        // send command to WCH ic
+                _LOG_V("[->] version?\n");        // send command to WCH ic
                 break;
 
             case COMM_CONFIG_SET:                       // Set mainboard configuration
                 CommTimeout = 10;
-                // send configuration to WCH IC
-                Serial1.printf("Config:%u,Lock:%u,Mode:%u,CardOffset:%u,LoadBl:%u,MaxMains:%u,MaxSumMains:%u, MaxCurrent:%u, MinCurrent:%u, MaxCircuit:%u, Switch:%u, RCmon:%u, StartCurrent:%u\n", Config, Lock, Mode, CardOffset, LoadBl, MaxMains, MaxSumMains, MaxCurrent, MinCurrent, MaxCircuit, Switch, RCmon, StartCurrent);
-                delay(1000);
-                Serial1.printf("StopTime:%u, ImportCurrent:%u, Grid:%u, RFIDReader:%u, MainsMeterType:%u, MainsMAddress:%u, EVMeterType:%u, EVMeterAddress:%u, Initialized:%u, EnableC2:%u, maxTemp:%u, PwrPanic:%u, ModemPwr:%u\n", StopTime, ImportCurrent, Grid, RFIDReader, MainsMeter.Type, MainsMeter.Address, EVMeter.Type, EVMeter.Address, Initialized, EnableC2, maxTemp, PwrPanic, ModemPwr);
-                //Serial1.printf("Config:%u,Lock:%u,Mode:%u,CardOffset:%u,LoadBl:%u,MaxMains:%u,MaxSumMains:%u, MaxCurrent:%u, MinCurrent:%u, MaxCircuit:%u, Switch:%u, RCmon:%u, StartCurrent:%u, StopTime:%u, ImportCurrent:%u, Grid:%u, RFIDReader:%u, MainsMeterType:%u, MainsMAddress:%u, EVMeterType:%u, EVMeterAddress:%u, Initialized:%u, EnableC2:%u, maxTemp:%u, PwrPanic:%u, ModemPwr:%u\n", Config, Lock, Mode, CardOffset, LoadBl, MaxMains, MaxSumMains, MaxCurrent, MinCurrent, MaxCircuit, Switch, RCmon, StartCurrent, StopTime, ImportCurrent, Grid, RFIDReader, MainsMeter.Type, MainsMeter.Address, EVMeter.Type, EVMeter.Address, Initialized, EnableC2, maxTemp, PwrPanic, ModemPwr);
 
-//TODO ChargeCurrent?
-//FIXME  EMEndianness:%u, EMIRegister:%u, EMIDivisor:%u, EMURegister:%u, EMUDivisor:%u, EMPRegister:%u, EMPDivisor:%u, EMERegister:%u, EMEDivisor:%u, EMDataType:%u, EMFunction:%u,
-//  EMEndianness, EMIRegister, EMIDivisor, EMURegister, EMUDivisor, EMPRegister, EMPDivisor, EMERegister, EMEDivisor, EMDataType, EMFunction,
+                // send configuration to WCH IC
+                Serial1.printf("Access@%u\n", Access_bit);
+                Serial1.printf("MainsMeterType@%u\n", MainsMeter.Type);
+                Serial1.printf("MainsMAddress@%u\n", MainsMeter.Address);
+                Serial1.printf("EVMeterType@%u\n", EVMeter.Type);
+                Serial1.printf("EVMeterAddress@%u\n", EVMeter.Address);
+                SEND_TO_CH32(CardOffset)
+                SEND_TO_CH32(EnableC2)
+                SEND_TO_CH32(Grid)
+                SEND_TO_CH32(ImportCurrent)
+                SEND_TO_CH32(LoadBl)
+                SEND_TO_CH32(Lock)
+                SEND_TO_CH32(MaxCircuit)
+                SEND_TO_CH32(MaxCurrent)
+                SEND_TO_CH32(MaxMains)
+                SEND_TO_CH32(MaxSumMains)
+                SEND_TO_CH32(maxTemp)
+                SEND_TO_CH32(MinCurrent)
+                SEND_TO_CH32(Mode)
+                SEND_TO_CH32(ModemPwr)
+                SEND_TO_CH32(PwrPanic)
+                SEND_TO_CH32(RCmon)
+                SEND_TO_CH32(RFIDReader)
+                SEND_TO_CH32(StartCurrent)
+                SEND_TO_CH32(StopTime)
+                SEND_TO_CH32(Switch)
+                Serial1.printf("Initialized@1\n");      // this finalizes the Config setup phase
                 break;
 
             case COMM_STATUS_REQ:                       // Ready to receive status from mainboard
@@ -3036,36 +2954,57 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
     }
 #endif
     switch (nav) {
-        case MENU_MAX_TEMP:
-            maxTemp = val;
+#define SETITEM(M, V) \
+        case M: \
+            V = val; \
+            SEND_TO_CH32(V) \
             break;
+        SETITEM(MENU_MAX_TEMP, maxTemp)
+        SETITEM(MENU_CONFIG, Config)
+        SETITEM(MENU_MODE, Mode)
+        SETITEM(MENU_START, StartCurrent)
+        SETITEM(MENU_STOP, StopTime)
+        SETITEM(MENU_IMPORT, ImportCurrent)
+        SETITEM(MENU_MAINS, MaxMains)
+        SETITEM(MENU_SUMMAINS, MaxSumMains)
+        SETITEM(MENU_SUMMAINSTIME, MaxSumMainsTime)
+        SETITEM(MENU_MIN, MinCurrent)
+        SETITEM(MENU_MAX, MaxCurrent)
+        SETITEM(MENU_CIRCUIT, MaxCircuit)
+        SETITEM(MENU_LOCK, Lock)
+        SETITEM(MENU_SWITCH, Switch)
+        SETITEM(MENU_GRID, Grid)
+        SETITEM(MENU_SB2_WIFI, SB2_WIFImode)
+        SETITEM(MENU_MAINSMETER, MainsMeter.Type)
+        SETITEM(MENU_MAINSMETERADDRESS, MainsMeter.Address)
+        SETITEM(MENU_EVMETER, EVMeter.Type)
+        SETITEM(MENU_EVMETERADDRESS, EVMeter.Address)
+        SETITEM(MENU_EMCUSTOM_ENDIANESS, EMConfig[EM_CUSTOM].Endianness)
+        SETITEM(MENU_EMCUSTOM_FUNCTION, EMConfig[EM_CUSTOM].Function)
+        SETITEM(MENU_EMCUSTOM_UREGISTER, EMConfig[EM_CUSTOM].URegister)
+        SETITEM(MENU_EMCUSTOM_UDIVISOR, EMConfig[EM_CUSTOM].UDivisor)
+        SETITEM(MENU_EMCUSTOM_IREGISTER, EMConfig[EM_CUSTOM].IRegister)
+        SETITEM(MENU_EMCUSTOM_IDIVISOR, EMConfig[EM_CUSTOM].IDivisor)
+        SETITEM(MENU_EMCUSTOM_PREGISTER, EMConfig[EM_CUSTOM].PRegister)
+        SETITEM(MENU_EMCUSTOM_PDIVISOR, EMConfig[EM_CUSTOM].PDivisor)
+        SETITEM(MENU_EMCUSTOM_EREGISTER, EMConfig[EM_CUSTOM].ERegister)
+        SETITEM(MENU_EMCUSTOM_EDIVISOR, EMConfig[EM_CUSTOM].EDivisor)
+        SETITEM(MENU_RFIDREADER, RFIDReader)
+        SETITEM(MENU_AUTOUPDATE, AutoUpdate)
+        SETITEM(STATUS_SOLAR_TIMER, SolarStopTimer)
+        SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
 #ifdef SMARTEVSE_VERSION
-            Serial1.printf("EnableC2:%u\n", EnableC2);
+            Serial1.printf("EnableC2@%u\n", EnableC2);
 #else
-            printf("EnableC2:%u\n", EnableC2);
+            printf("EnableC2@%u\n", EnableC2);
 #endif
-            break;
-        case MENU_CONFIG:
-            Config = val;
             break;
         case STATUS_MODE:
             if (Mode != val)                                                    // this prevents slave from waking up from OFF mode when Masters'
                                                                                 // solarstoptimer starts to count
                 setMode(val);
-            break;
-        case MENU_MODE:
-            Mode = val;
-            break;
-        case MENU_START:
-            StartCurrent = val;
-            break;
-        case MENU_STOP:
-            StopTime = val;
-            break;
-        case MENU_IMPORT:
-            ImportCurrent = val;
             break;
         case MENU_LOADBL:
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
@@ -3073,99 +3012,20 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
 #endif
             LoadBl = val;
             break;
-        case MENU_MAINS:
-            MaxMains = val;
-            break;
-        case MENU_SUMMAINS:
-            MaxSumMains = val;
-            break;
-        case MENU_SUMMAINSTIME:
-            MaxSumMainsTime = val;
-            break;
-        case MENU_MIN:
-            MinCurrent = val;
-            break;
-        case MENU_MAX:
-            MaxCurrent = val;
-            break;
-        case MENU_CIRCUIT:
-            MaxCircuit = val;
-            break;
-        case MENU_LOCK:
-            Lock = val;
-            break;
-        case MENU_SWITCH:
-            Switch = val;
-            break;
         case MENU_RCMON:
             RCmon = val;
 #if !defined(SMARTEVSE_VERSION) //CH32
             RCmonCtrl(RCmon);
 #endif
             break;
-        case MENU_GRID:
-            Grid = val;
-            break;
-        case MENU_SB2_WIFI:
-            SB2_WIFImode = val;
-            break;
-        case MENU_MAINSMETER:
-            MainsMeter.Type = val;
-            break;
-        case MENU_MAINSMETERADDRESS:
-            MainsMeter.Address = val;
-            break;
-        case MENU_EVMETER:
-            EVMeter.Type = val;
-            break;
-        case MENU_EVMETERADDRESS:
-            EVMeter.Address = val;
-            break;
-        case MENU_EMCUSTOM_ENDIANESS:
-            EMConfig[EM_CUSTOM].Endianness = val;
-            break;
         case MENU_EMCUSTOM_DATATYPE:
             EMConfig[EM_CUSTOM].DataType = (mb_datatype)val;
             break;
-        case MENU_EMCUSTOM_FUNCTION:
-            EMConfig[EM_CUSTOM].Function = val;
-            break;
-        case MENU_EMCUSTOM_UREGISTER:
-            EMConfig[EM_CUSTOM].URegister = val;
-            break;
-        case MENU_EMCUSTOM_UDIVISOR:
-            EMConfig[EM_CUSTOM].UDivisor = val;
-            break;
-        case MENU_EMCUSTOM_IREGISTER:
-            EMConfig[EM_CUSTOM].IRegister = val;
-            break;
-        case MENU_EMCUSTOM_IDIVISOR:
-            EMConfig[EM_CUSTOM].IDivisor = val;
-            break;
-        case MENU_EMCUSTOM_PREGISTER:
-            EMConfig[EM_CUSTOM].PRegister = val;
-            break;
-        case MENU_EMCUSTOM_PDIVISOR:
-            EMConfig[EM_CUSTOM].PDivisor = val;
-            break;
-        case MENU_EMCUSTOM_EREGISTER:
-            EMConfig[EM_CUSTOM].ERegister = val;
-            break;
-        case MENU_EMCUSTOM_EDIVISOR:
-            EMConfig[EM_CUSTOM].EDivisor = val;
-            break;
-        case MENU_RFIDREADER:
-            RFIDReader = val;
-            break;
-#ifdef SMARTEVSE_VERSION //TODO THIS SHOULD BE FIXED
+#ifdef SMARTEVSE_VERSION
         case MENU_WIFI:
             WIFImode = val;
             break;
 #endif
-        case MENU_AUTOUPDATE:
-            AutoUpdate = val;
-            break;
-
         // Status writeable
         case STATUS_STATE:
             if (val != State) setState(val);
@@ -3182,19 +3042,13 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             }
             break;
         case STATUS_CURRENT:
-            OverrideCurrent = val;
-            if (LoadBl < 2) MainsMeter.Timeout = COMM_TIMEOUT;                  // reset timeout when register is written
-            break;
-        case STATUS_SOLAR_TIMER:
-            SolarStopTimer = val;
+            setOverrideCurrent(val);
+            if (LoadBl < 2) MainsMeter.setTimeout(COMM_TIMEOUT);                // reset timeout when register is written
             break;
         case STATUS_ACCESS:
             if (val == 0 || val == 1) {
                 setAccess(val);
             }
-            break;
-        case STATUS_CONFIG_CHANGED:
-            ConfigChanged = val;
             break;
 
         default:

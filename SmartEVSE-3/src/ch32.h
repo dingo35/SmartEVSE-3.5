@@ -33,8 +33,6 @@
 #define LOG_MODBUS LOG_WARN                                                    // Default: LOG_WARN
 
 
-#define WCH_VERSION 1               // software version (this software)
-
 // GPIO PortA
 #define PP_IN       PA0      // Proximity pilot input
 #define CP_IN       PA1      // Control pilot input
@@ -96,7 +94,6 @@
 #define true 1
 #define false 0
 
-#define INITIALIZED 0
 
 void delayMicroseconds(uint32_t us);
 uint32_t millis();

@@ -116,7 +116,7 @@ void ModbusSend(uint8_t address, uint8_t function, uint8_t byte, uint16_t *value
     Tbuffer[n++] = ((uint8_t)(cs));
     Tbuffer[n++] = ((uint8_t)(cs>>8));
 
-    printf("Sending response to master (len=%u) ", n);
+    printf(" address: 0x%02x, function: 0x%02x, len=%u.\n", address, function, n);
     for (i = 0; i < n; i++) printf("%02x ", Tbuffer[i]);
     printf("\n");
 
@@ -676,7 +676,7 @@ void HandleModbusRequest(void) {
                     Balanced[0] = (MB.Data[(LoadBl - 1) * 2] <<8) | MB.Data[(LoadBl - 1) * 2 + 1];
                     if (Balanced[0] == 0 && State == STATE_C) setState(STATE_C1);               // tell EV to stop charging if charge current is zero
                     else if ((State == STATE_B) || (State == STATE_C)) SetCurrent(Balanced[0]); // Set charge current, and PWM output
-                    MainsMeter.Timeout = COMM_TIMEOUT;                          // reset 10 second timeout
+                    MainsMeter.setTimeout(COMM_TIMEOUT);                          // reset 10 second timeout
                     _LOG_V("Broadcast received, Node %.1f A, MainsMeter Irms ", (float) Balanced[0]/10);
 
                     //now decode registers 0x0028-0x002A
@@ -689,7 +689,7 @@ void HandleModbusRequest(void) {
                             _LOG_V_NO_FUNC("L%i=%.1fA,", i+1, (float)MainsMeter.Irms[i]/10);
                         }
 #ifndef SMARTEVSE_VERSION //CH32
-                        printf("Irms:%03u,%d,%d,%d\n", MainsMeter.Address, MainsMeter.Irms[0], MainsMeter.Irms[1], MainsMeter.Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has MainsMeter.Irms[0] 312 dA, MainsMeter.Irms[1] of 123 dA, MainsMeter.Irms[2] of 124 dA.
+                        printf("Irms@%03u,%d,%d,%d\n", MainsMeter.Address, MainsMeter.Irms[0], MainsMeter.Irms[1], MainsMeter.Irms[2]); //Irms@011,312,123,124 means: the meter on address 11(dec) has MainsMeter.Irms[0] 312 dA, MainsMeter.Irms[1] of 123 dA, MainsMeter.Irms[2] of 124 dA.
 #endif
                         _LOG_V_NO_FUNC("\n");
                     }
@@ -779,8 +779,9 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
 void MBhandleData(ModbusMessage msg, uint32_t token)
 {
     ModbusDecode( (uint8_t*)msg.data(), msg.size());
-    if (MB.Function > 4)
+    if (MB.Function > 4) {
         _LOG_A("WARNING: response NOT HANDLED: address: %02x, function: %02x, reg: %04x.\n", MB.Address, MB.Function, MB.Register);
+    }
     HandleModbusResponse(); //now responses from functions other then 3 or 4 are not handled?!?
 }
 

@@ -52,11 +52,6 @@
 #include "Melopero_RV3028.h"
 #include "qca.h"
 
-#define CIRCUIT_METER 0                                                         // Electric meter used for EVSE Circuit
-#define CIRCUIT_METER_ADDRESS 13
-uint8_t CircuitMeter = CIRCUIT_METER;
-uint8_t CircuitMeterAddress = CIRCUIT_METER_ADDRESS;
-
 SPIClass QCA_SPI1(FSPI);  // The ESP32-S3 has two usable SPI busses FSPI and HSPI
 SPIClass LCD_SPI2(HSPI);
 
@@ -84,9 +79,6 @@ uint8_t RTCBackupSource = BATTERY;
 uint8_t PwrPanic = 1;           // enabled
 uint8_t CommState = COMM_OFF;
 uint8_t ModemPwr = 1;           // Enable the power to the Modem
-
-uint8_t MainVersion = 0;        // Mainboard software version
-
 
 // Power Panic handler
 // Shut down ESP to conserve the power we have left. RTC will automatically store powerdown timestamp
@@ -144,7 +136,6 @@ extern void setStatePowerUnavailable(void);
 extern char IsCurrentAvailable(void);
 extern unsigned char RFID[8];
 extern uint8_t pilot;
-extern uint8_t Initialized;
 
 extern const char StrStateName[15][13];
 const char StrStateNameWeb[15][17] = {"Ready to Charge", "Connected to EV", "Charging", "D", "Request State B", "State B OK", "Request State C", "State C OK", "Activate", "Charging Stopped", "Stop Charging", "Modem Setup", "Modem Request", "Modem Done", "Modem Denied"};
@@ -405,8 +396,9 @@ int8_t TemperatureSensor() {
 
 // Sample the Proximity Pin, and determine the maximum current the cable can handle.
 //
-void ProximityPin() {
+uint8_t ProximityPin() {
     uint32_t sample, voltage;
+    uint8_t MaxCap = 13;                                               // No resistor, Max cable current = 13A
 
     RTC_ENTER_CRITICAL();
     // Sample Proximity Pilot (PP)
@@ -423,12 +415,12 @@ void ProximityPin() {
         _LOG_A("PP pin: %u (%u mV) (warning: fixed cable configured so PP probably disconnected, making this reading void)\n", sample, voltage);
     }
 
-    MaxCapacity = 13;                                                       // No resistor, Max cable current = 13A
-    if ((voltage > 1200) && (voltage < 1400)) MaxCapacity = 16;             // Max cable current = 16A	680R -> should be around 1.3V
-    if ((voltage > 500) && (voltage < 700)) MaxCapacity = 32;               // Max cable current = 32A	220R -> should be around 0.6V
-    if ((voltage > 200) && (voltage < 400)) MaxCapacity = 63;               // Max cable current = 63A	100R -> should be around 0.3V
+    if ((voltage > 1200) && (voltage < 1400)) MaxCap = 16;             // Max cable current = 16A	680R -> should be around 1.3V
+    if ((voltage > 500) && (voltage < 700)) MaxCap = 32;               // Max cable current = 32A	220R -> should be around 0.6V
+    if ((voltage > 200) && (voltage < 400)) MaxCap = 63;               // Max cable current = 63A	100R -> should be around 0.3V
 
-    if (Config) MaxCapacity = MaxCurrent;                                   // Override with MaxCurrent when Fixed Cable is used.
+    if (Config) MaxCap = MaxCurrent;                                   // Override with MaxCurrent when Fixed Cable is used.
+    return MaxCap;
 }
 #endif
 #ifndef SMARTEVSE_VERSION //CH32
@@ -594,10 +586,10 @@ void mqtt_receive_callback(const String topic, const String payload) {
         } else if (payload == "Normal") {
             setMode(MODE_NORMAL);
         } else if (payload == "Solar") {
-            OverrideCurrent = 0;
+            setOverrideCurrent(0);
             setMode(MODE_SOLAR);
         } else if (payload == "Smart") {
-            OverrideCurrent = 0;
+            setOverrideCurrent(0);
             setMode(MODE_SMART);
         }
     } else if (topic == MQTTprefix + "/Set/CustomButton") {
@@ -609,10 +601,10 @@ void mqtt_receive_callback(const String topic, const String payload) {
     } else if (topic == MQTTprefix + "/Set/CurrentOverride") {
         uint16_t RequestedCurrent = payload.toInt();
         if (RequestedCurrent == 0) {
-            OverrideCurrent = 0;
+            setOverrideCurrent(0);
         } else if (LoadBl < 2 && (Mode == MODE_NORMAL || Mode == MODE_SMART)) { // OverrideCurrent not possible on Slave
             if (RequestedCurrent >= (MinCurrent * 10) && RequestedCurrent <= (MaxCurrent * 10)) {
-                OverrideCurrent = RequestedCurrent;
+                setOverrideCurrent(RequestedCurrent);
             }
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
@@ -647,7 +639,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         // MainsMeter can measure -200A to +200A per phase
         if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
             if (LoadBl < 2)
-                MainsMeter.Timeout = COMM_TIMEOUT;
+                MainsMeter.setTimeout(COMM_TIMEOUT);
             MainsMeter.Irms[0] = L1;
             MainsMeter.Irms[1] = L2;
             MainsMeter.Irms[2] = L3;
@@ -1016,8 +1008,8 @@ void validate_settings(void) {
         if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
     }
 #endif
-    MainsMeter.Timeout = COMM_TIMEOUT;
-    EVMeter.Timeout = COMM_TIMEOUT;                                             // Short Delay, to clear the error message for ~10 seconds.
+    MainsMeter.setTimeout(COMM_TIMEOUT);
+    EVMeter.setTimeout(COMM_TIMEOUT);                                             // Short Delay, to clear the error message for ~10 seconds.
 
 }
 
@@ -1140,7 +1132,7 @@ void write_settings(void) {
     preferences.putUChar("EMFunction", EMConfig[EM_CUSTOM].Function);
     preferences.putUChar("WIFImode", WIFImode);
     preferences.putUShort("EnableC2", EnableC2);
-    Serial1.printf("EnableC2:%u\n", EnableC2); //TODO do a full ConfigItems write
+    Serial1.printf("EnableC2@%u\n", EnableC2); //TODO do a full ConfigItems write
     preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
     preferences.putUShort("maxTemp", maxTemp);
     preferences.putUChar("AutoUpdate", AutoUpdate);
@@ -1446,7 +1438,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
 
         if(request->hasParam("disable_override_current")) {
-            OverrideCurrent = 0;
+            setOverrideCurrent(0);
             doc["disable_override_current"] = "OK";
         }
 
@@ -1556,7 +1548,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if(request->hasParam("override_current")) {
                 int current = request->getParam("override_current")->value().toInt();
                 if (LoadBl < 2 && (current == 0 || (current >= ( MinCurrent * 10 ) && current <= ( MaxCurrent * 10 )))) { //OverrideCurrent not possible on Slave
-                    OverrideCurrent = current;
+                    setOverrideCurrent(current);
                     doc["override_current"] = OverrideCurrent;
                 } else {
                     doc["override_current"] = "Value not allowed!";
@@ -1838,7 +1830,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     }
                     doc["TOTAL"] = Isum;
 
-                    MainsMeter.Timeout = COMM_TIMEOUT;
+                    MainsMeter.setTimeout(COMM_TIMEOUT);
 
                 } else
                     doc["TOTAL"] = "not allowed on slave";
@@ -2017,21 +2009,27 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     } else if (mg_http_match_uri(hm, "/automated_testing") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         if(request->hasParam("current_max")) {
             MaxCurrent = strtol(request->getParam("current_max")->value().c_str(),NULL,0);
+            SEND_TO_CH32(MaxCurrent)
         }
         if(request->hasParam("current_main")) {
             MaxMains = strtol(request->getParam("current_main")->value().c_str(),NULL,0);
+            SEND_TO_CH32(MaxMains)
         }
         if(request->hasParam("current_max_circuit")) {
             MaxCircuit = strtol(request->getParam("current_max_circuit")->value().c_str(),NULL,0);
+            SEND_TO_CH32(MaxCircuit)
         }
         if(request->hasParam("mainsmeter")) {
             MainsMeter.Type = strtol(request->getParam("mainsmeter")->value().c_str(),NULL,0);
+            Serial1.printf("MainsMeterType@%u\n", MainsMeter.Type);
         }
         if(request->hasParam("evmeter")) {
             EVMeter.Type = strtol(request->getParam("evmeter")->value().c_str(),NULL,0);
+            Serial1.printf("EVMeterType@%u\n", EVMeter.Type);
         }
         if(request->hasParam("config")) {
             Config = strtol(request->getParam("config")->value().c_str(),NULL,0);
+            SEND_TO_CH32(Config)
             setState(STATE_A);                                                  // so the new value will actually be read
         }
         if(request->hasParam("loadbl")) {
@@ -2040,6 +2038,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             ConfigureModbusMode(LBL);
 #endif
             LoadBl = LBL;
+            SEND_TO_CH32(LoadBl)
         }
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
@@ -2412,6 +2411,23 @@ void ocppLoop() {
 #endif //ENABLE_OCPP
 
 
+#if SMARTEVSE_VERSION >=40
+void WCHUPDATE(unsigned long RunningVersion) {
+        // we reset before flashing because when the WCH chip is sending messages (by printf) the programming can fail
+        _LOG_D("reset WCH ic\n");
+        WchReset();
+        if (WchFirmwareUpdate(RunningVersion)) {
+            _LOG_A("Firmware update failed.\n");
+        } else _LOG_D("WCH programming done\n");
+
+        Serial1.begin(FUNCONF_UART_PRINTF_BAUD, SERIAL_8N1, USART_RX, USART_TX, false);       // Serial connection to main board microcontroller
+        // should not be needed to reset the WCH ic at powerup/reset on the production version.
+        _LOG_D("reset WCH ic\n");
+        WchReset();
+}
+#endif
+
+
 void setup() {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
@@ -2539,7 +2555,7 @@ void setup() {
     }
     
 
-#else //SMARTEVSE_VERSION
+#else //SMARTEVSE_VERSION v4
     uint8_t writeValue;
     uint8_t readValue;
     uint16_t reg16;
@@ -2704,23 +2720,6 @@ void setup() {
 
     }
 
-#if NO_FLASH_CH32_ON_BOOT != 1
-    // we reset before flashing because when the WCH chip is sending messages (by printf) the programming can fail
-    _LOG_D("reset WCH ic\n");
-    WchReset();
-    if (WchFirmwareUpdate()) {
-        _LOG_A("Firmware update failed.\n");
-    } else _LOG_D("WCH programming done\n");
-
-    Serial1.begin(FUNCONF_UART_PRINTF_BAUD, SERIAL_8N1, USART_RX, USART_TX, false);       // Serial connection to main board microcontroller
-    // should not be needed to reset the WCH ic at powerup/reset on the production version.
-    _LOG_D("reset WCH ic\n");
-    WchReset();
-#endif
-
-    // After powerup request WCH version (version?)
-    // then send Configuration to WCH
-
     Config = 0;         // Configuration (0:Socket / 1:Fixed Cable)
     Mode = 1;           // EVSE mode (0:Normal / 1:Smart / 2:Solar)
     Lock = 1;           // Cable lock (0:Disable / 1:Solenoid / 2:Motor)
@@ -2730,7 +2729,6 @@ void setup() {
     PwrPanic = 0;       // Enable PowerPanic feature
     LoadBl = 3;         // Set to Node 2
     ModemPwr = 1;       // Modem Power ON
-    Initialized = 1;    // Set Initialized to 1
 
 
 #endif //SMARTEVSE_VERSION
@@ -2748,6 +2746,57 @@ void setup() {
         LCDlock = !LCDlock;
         write_settings();
     }
+
+    BacklightTimer = BACKLIGHT;
+    GLCD_init();
+
+#if SMARTEVSE_VERSION >=40 //v4
+    // After powerup request WCH version (version?)
+    // then send Configuration to WCH
+    static unsigned long FlashTimeout = millis();
+    uint8_t RXbyte, idx = 0;
+    static char *ret;
+    static char SerialBuf[256];
+    bool gotVersion = false;
+    do {
+        Serial1.print("version?\n");            // send command to WCH ic
+        _LOG_V("[->] version?\n");
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+
+        //ESP32 receives info from CH32; we need to do this outside of the ESP32 10ms routines because
+        //the timer routines disturb the WCH flashing process
+        if (Serial1.available()) {
+            while (Serial1.available()) {
+                RXbyte = Serial1.read();
+                SerialBuf[idx] = RXbyte;
+                idx++;
+            }
+            _LOG_D("[(%u)<-] %.*s.\n", idx, idx, SerialBuf);
+        }
+
+        // process data from mainboard
+        if (idx > 5) {
+            char token[64];
+            strncpy(token, "version@", sizeof(token));
+            ret = strstr(SerialBuf, token);
+            if (ret != NULL) {
+                unsigned long WCHRunningVersion = atoi(ret+strlen(token));
+                _LOG_V("version %lu received\n", WCHRunningVersion);
+                WCHUPDATE(WCHRunningVersion);
+                gotVersion = true;
+            }
+            memset(SerialBuf,0,idx);                                       // Clear buffer
+            idx = 0;
+        }
+
+    } while (!gotVersion && millis() - FlashTimeout < 10000);              //only try for 10s, then release so ESP32 can boot and OTA updates are possible
+    memset(SerialBuf, 0, sizeof(SerialBuf));                               // clear SerialBuffer
+
+    if (!gotVersion) {                                                     // we timed out
+        WCHUPDATE(0);
+    }
+#endif
 
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
@@ -2806,14 +2855,13 @@ void setup() {
 
     WiFiSetup();
 
+
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     // Set eModbus LogLevel to 1, to suppress possible E5 errors
     MBUlogLvl = LOG_LEVEL_CRITICAL;
     ConfigureModbusMode(255);
 #endif
 
-    BacklightTimer = BACKLIGHT;
-    GLCD_init();
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     CP_ON;           // CP signal ACTIVE
@@ -2878,7 +2926,7 @@ void homewizard_loop() {
         MainsMeter.Irms[1] = currents.second[1] * 10;
         MainsMeter.Irms[2] = currents.second[2] * 10;
         CalcIsum();
-        MainsMeter.Timeout = COMM_TIMEOUT;
+        MainsMeter.setTimeout(COMM_TIMEOUT);
     }
 }
 

@@ -31,7 +31,6 @@
 extern uint8_t State;
 uint8_t PwrPanic = 0;                                                       // Power Panic feature
 uint8_t ModemPwr = 0;                                                       // Enable power to the Modem
-uint16_t WchVersion = WCH_VERSION;
 
 uint8_t LockCable = 0;
 uint8_t RFID[8] = {0, 0, 0, 0, 0, 0, 0, 0};                                 // Last RFID reading. First byte is always 01, last byte is CRC
@@ -605,7 +604,7 @@ int8_t TemperatureSensor() {
     // Subtract 500mV offset, and finally divide by 100 to convert to C.
     Temperature = (int16_t)((TempAvg *8)- 5000)/100;
     if (Temperature != Old_Temperature) {
-        printf("Temp:%u\n", Temperature); //send data to ESP32
+        printf("Temp@%u\n", Temperature); //send data to ESP32
         Old_Temperature = Temperature;
     }
     return Temperature;

@@ -269,7 +269,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
             if (Power[x] < 0) var[x] = -var[x];
         }
 #ifndef SMARTEVSE_VERSION //CH32
-        printf("PowerMeasured:%03u,%d\n", Address, PowerMeasured);
+        printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
 #endif
     }
 
@@ -278,7 +278,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
         Irms[x] = (var[x] / 100);            // Convert to AMPERE * 10
     }
 #ifndef SMARTEVSE_VERSION //CH32
-    printf("Irms:%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
+    printf("Irms@%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
 #endif
     // all OK
     return 1;
@@ -356,25 +356,36 @@ void Meter::UpdateEnergies() {
 #endif
 }
 
+void Meter::setTimeout(uint8_t NewTimeout) {
+    Timeout = NewTimeout;
+#if SMARTEVSE_VERSION >= 40 //v4 ESP32
+    if (Address == MainsMeter.Address) {
+        Serial1.printf("MainsMeterTimeout@%u\n", NewTimeout);
+    } else if (Address == EVMeter.Address) {
+        Serial1.printf("EVMeterTimeout@%u\n", NewTimeout);
+    }
+#endif
+}
+
 // Calls appropriate measurement from response
 void Meter::ResponseToMeasurement(ModBus MB) {
     if (MB.Type == MODBUS_RESPONSE) {
         if (MB.Register == EMConfig[Type].IRegister) {
             if (Address == MainsMeter.Address) {
                 if (receiveCurrentMeasurement(MB)) {
-                    Timeout = COMM_TIMEOUT;
+                    setTimeout(COMM_TIMEOUT);
                 }
                 CalcIsum();
             } else if (Address == EVMeter.Address) {
                 if (receiveCurrentMeasurement(MB)) {
-                    Timeout = COMM_EVTIMEOUT;
+                    setTimeout(COMM_EVTIMEOUT);
                 }
                 CalcImeasured();
             }
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
 #ifndef SMARTEVSE_VERSION //CH32
-            printf("PowerMeasured:%03u,%d\n", Address, PowerMeasured);
+            printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
 #endif
         } else if (MB.Register == EMConfig[Type].ERegister) {
             //import active energy

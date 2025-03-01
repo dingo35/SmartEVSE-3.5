@@ -81,8 +81,8 @@ uint8_t LCDpos = 0;
 bool LCDToggle = false;                                                         // Toggle display between two values
 unsigned char LCDText = 0;                                                      // Cycle through text messages
 unsigned int GLCDx, GLCDy;
-uint8_t GLCDbuf[];                                                              // GLCD buffer (half of the display)
-uint8_t GLCDbuf2[];                                                             // Buffer that mirrors the complete LCD.    
+uint8_t GLCDbuf[512];                                                              // GLCD buffer (half of the display)
+uint8_t GLCDbuf2[1024];                                                             // Buffer that mirrors the complete LCD.    
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
 uint8_t MenuItems[MENU_EXIT];
@@ -151,9 +151,10 @@ void goto_xy(unsigned char x, unsigned char y) {
     goto_row(y);
 }
 
-void glcd_clrln(const unsigned char ln, const unsigned char data) {
+void glcd_clrln(unsigned char ln, unsigned char data) {
+    unsigned char i;
     goto_xy(0, ln);
-    for (unsigned char i = 0; i < 128; i++) {
+    for (i = 0; i < 128; i++) {
         st7565_data(data);                                                      // put data on data port
         // Also update the buffer that mirrors the LCD.
         GLCDbuf2[i + activeRow * 128] = data;
@@ -184,14 +185,14 @@ void GLCD_buffer_clr(void) {
 }
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-void GLCD_sendbuf(const unsigned char RowAdr, const unsigned char Rows) {
-    unsigned char y = 0;
+void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
+    unsigned char i, y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
         // Sends one chunk of 8 pixels height and 128 pixels wide.
-        for (unsigned char i = 0; i < 128; i++) {
+        for (i = 0; i < 128; i++) {
             const uint8_t data = GLCDbuf[x++];
             st7565_data(data);                    // put data on data port
             GLCDbuf2[i + activeRow * 128] = data; // Also update buffer copy
@@ -779,7 +780,7 @@ void GLCD(void) {
                             time_t epoch = DelayedStartTime.epoch2 + EPOCH2_OFFSET;
                             DelayedStartTimeTM = *localtime(&epoch);
                         }
-                        if (!strftime(Str, 26, StrFormat.c_str(), &DelayedStartTimeTM))
+                        if (!strftime(Str, sizeof(Str), StrFormat.c_str(), &DelayedStartTimeTM))
                             sprintf(Str, "later...");
                         GLCD_print_buf2(4, Str);
                         //print current time
