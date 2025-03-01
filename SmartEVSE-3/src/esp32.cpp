@@ -1922,11 +1922,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         } else {
             // Serve the LCD as BMP image.
-            const auto &bmpImage = createImageFromGLCDBuffer(); // Use const ref to avoid unnecessary copy
-            mg_printf(c, "HTTP/1.1 200 OK\r\n"
+            const std::vector<uint8_t> &bmpImage = createImageFromGLCDBuffer();
+            std::size_t bmpImageSize = bmpImage.size();
+            mg_printf(c,
+                      "HTTP/1.1 200 OK\r\n"
                       "Content-Type: image/bmp\r\n"
-                      "Content-Length: %d\r\n\r\n", static_cast<int>(bmpImage.size()));
-            mg_send(c, bmpImage.data(), bmpImage.size());
+                      // Keep-alive doesn't work reliable. 
+                      "Connection: close\r\n"
+                      // Prevents caching.
+                      "Cache-Control: no-cache\r\n"
+                      "Content-Length: %d\r\n\r\n",
+                      bmpImageSize);
+            mg_send(c, bmpImage.data(), bmpImageSize);
+
+            // Mark connection as draining, close after sending.
             c->is_draining = 1;
         }
         return true;

@@ -44,4 +44,24 @@
 }
 #lcd .lcd-buttons button:hover {
     outline: 2px dotted black;
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+}
+
+#lcd .lcd-activate {
+    position: absolute;
+    display: grid;
+    place-content: center;
+    width: 270px;
+    height: 168px;
+    top: 156px;
+    left: 60px;
+    background-color: rgba(245, 245, 245, .7);
+    font-size: 2rem;
+    opacity: 0;
+    user-select: none;
+    cursor: pointer;
+    transition: opacity 0.3s ease;
+}
+
+#lcd .lcd-activate:hover {
+    opacity: 1;
+}

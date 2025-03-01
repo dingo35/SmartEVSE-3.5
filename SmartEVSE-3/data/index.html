@@ -476,7 +476,8 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="/lcd" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen" src="lcd" width="256" height="128" alt=""/>
+                                          <div class="lcd-activate">Click to activate</div>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
@@ -485,31 +486,79 @@
                                       </div>
 <script>
     (() => {
+        const ONE_SECOND_MS = 1000;
+        const LCD = document.querySelector('#lcd');
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
         const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
+        const LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
+        
+        function updateLcdImage() {
 
-        // Refresh the LCD screen every second.
-        setInterval(refreshLCD, 1000);
+            let signal;
+            if (typeof AbortController !== 'undefined') {
+                // Abort any previous request.
+                updateLcdImage.controller && updateLcdImage.controller.abort();
 
-        function refreshLCD() {
-            LCD_SCREEN.src = `${LCD_SCREEN.src.split('?')[0]}?t=${Date.now()}`;
-        }
-
-        function sendButtonState(btnName, stateDown) {
-            if (btnName) {
-                $.post(`/lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`,
-                    // Immediate LCD screen refresh in case of button down.     
-                    stateDown && refreshLCD);
+                updateLcdImage.controller = new AbortController();
+                signal = updateLcdImage.controller.signal;
             }
+
+            fetch('lcd', {signal})
+                .then(response => {
+                    if (!response.ok) return;
+                    response.blob()
+                        .then(blob => LCD_SCREEN.src = URL.createObjectURL(blob));
+                });
         }
 
+        function createImageUpdater(updateFunc, minDelay) {
+            let lastExecuted = 0;
+            let timer;
+
+            return function (immediate = false) {
+                const now = Date.now();
+                clearTimeout(timer);
+
+                if (immediate || now - lastExecuted >= minDelay) {
+                    updateFunc();
+                    lastExecuted = now;
+                    timer = setTimeout(() => {
+                        lastExecuted = Date.now();
+                        updateFunc();
+                    }, minDelay);
+                    return;
+                }
+                timer = setTimeout(() => {
+                    lastExecuted = Date.now();
+                    updateFunc();
+                }, minDelay - (now - lastExecuted));
+            };
+        }
+
+        const updateLCD = createImageUpdater(updateLcdImage, ONE_SECOND_MS);
+        
+        function sendButtonState(btnName, stateDown) {
+            fetch(`lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
+                .then(() => {
+                    // Immediate LCD screen refresh on button up.
+                    !stateDown && updateLCD(true);
+                });
+        }
+
+        // Register click listeners on the device buttons. 
         ['mousedown', 'mouseup'].forEach(eventName => {
             LCD_BUTTONS.addEventListener(eventName, event => {
                 const btnName = event.target.dataset.name;
                 const stateDown = event.type === 'mousedown';
-                sendButtonState(btnName, stateDown);
+                btnName && sendButtonState(btnName, stateDown);
             });
         });
+
+        // Click to activate auto-update of the LCD.
+        LCD.addEventListener('click', () => {
+            LCD_ACTIVATE.remove();
+            setInterval(updateLCD, ONE_SECOND_MS);
+        }, {once: true});
     })();
 </script>
                                   </div>
