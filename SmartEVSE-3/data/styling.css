@@ -14,6 +14,7 @@
     padding: 0;
     zoom: .75;
 }
+
 .lcd .lcd-screen {
     position: absolute;
     box-sizing: content-box;
@@ -22,8 +23,9 @@
     background-color: #FDFDFD;
     image-rendering: pixelated;
     padding: 20px 6px;
-    filter:hue-rotate(250deg) brightness(95%);
+    filter: hue-rotate(250deg) brightness(95%);
 }
+
 .lcd-buttons {
     position: absolute;
     top: 379px;
@@ -31,6 +33,7 @@
     width: 350px;
     display: flex;
 }
+
 #lcd .lcd-buttons button {
     flex: 1;
     margin: 0;
@@ -42,6 +45,7 @@
     text-shadow: none;
     border-radius: 50px;
 }
+
 #lcd .lcd-buttons button:hover {
     outline: 2px dotted black;
 }
