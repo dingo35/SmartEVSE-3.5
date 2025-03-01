@@ -1,3 +1,5 @@
+#include "glcd.h"
+
 #ifdef GLCD_HIRES_FONT
 
 #ifdef GLCD_FULL_CHARSET

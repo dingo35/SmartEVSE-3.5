@@ -498,7 +498,6 @@
             if (typeof AbortController !== 'undefined') {
                 // Abort any previous request.
                 updateLcdImage.controller && updateLcdImage.controller.abort();
-
                 updateLcdImage.controller = new AbortController();
                 signal = updateLcdImage.controller.signal;
             }
