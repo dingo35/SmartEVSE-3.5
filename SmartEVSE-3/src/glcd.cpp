@@ -194,19 +194,22 @@ void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
         // Sends one chunk of 8 pixels height and 128 pixels wide.
         for (i = 0; i < 128; i++) {
             const uint8_t data = GLCDbuf[x++];
-            st7565_data(data);                    // put data on data port
-            GLCDbuf2[i + activeRow * 128] = data; // Also update buffer copy
+            st7565_data(data);                                              // put data on data port
+            GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
         }
     } while (++y < Rows);
 }
 #else
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
-    unsigned char y = 0;
+    unsigned char i, y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
         st7565_data_buf(GLCDbuf + x, 128);                                  // put data on data port
+        for (i = 0; i < 128; i++) {
+            GLCDbuf2[i + activeRow * 128] = GLCDbuf[x+i];                   // Also update buffer copy
+        }
         x += 128;
     } while (++y < Rows);
 }
