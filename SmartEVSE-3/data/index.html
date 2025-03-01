@@ -554,11 +554,18 @@
             });
         });
 
-        // Click to activate auto-update of the LCD.
-        LCD.addEventListener('click', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('lcd')) {
+            // If the URL contains ?lcd, then activate the lcd immediately.
             LCD_ACTIVATE.remove();
             setInterval(updateLCD, ONE_SECOND_MS);
-        }, {once: true});
+        } else {
+            // Click to activate auto-update of the LCD.
+            LCD.addEventListener('click', () => {
+                LCD_ACTIVATE.remove();
+                setInterval(updateLCD, ONE_SECOND_MS);
+            }, {once: true});
+        }
     })();
 </script>
                                   </div>
