@@ -1428,9 +1428,10 @@ void GLCD_init(void) {
  */
 std::vector<uint8_t> createBMPHeader(const int width, const int height) {
     const uint32_t rowSize = (width + 31) / 32 * 4;  // Each row must be a multiple of 4 bytes
-    const uint32_t fileSize = 54 + (rowSize * height);
+    const uint32_t fileSize = 62 /* header bytes*/ + (rowSize * height / 8);
 
-    std::vector<uint8_t> headerVector = {
+    std::vector<uint8_t> headerVector(fileSize);
+    headerVector = {
         'B', 'M',                     // 'BM' Signature
         static_cast<uint8_t>(fileSize & 0xFF),      // Byte 1 (Least Significant Byte)
         static_cast<uint8_t>(fileSize >> 8 & 0xFF), // Byte 2
@@ -1491,27 +1492,39 @@ void transpose8x8(const std::array<uint8_t, 8>& input, std::array<uint8_t, 8>& o
  * @return A vector of `uint8_t` containing the BMP-formatted image data.
  */
 std::vector<uint8_t> createImageFromGLCDBuffer() {
+    constexpr int WIDTH = 128;        // Image width in pixels
+    constexpr int HEIGHT = 64;        // Image height in pixels
     constexpr int CHUNK_SIZE = 128;
-    std::vector<uint8_t> imageData = createBMPHeader(128, 64);
+    constexpr int BLOCK_SIZE = 8;
 
-    for (size_t i = sizeof(GLCDbuf2); i > 0; i -= CHUNK_SIZE) {
-        const size_t start = i >= CHUNK_SIZE ? i - CHUNK_SIZE : 0;
-        std::vector<uint8_t> chunk(GLCDbuf2 + start, GLCDbuf2 + i);
-        std::vector<uint8_t> processed(128, 0);
+    // Initialize with BMP header and pre-allocate memory inn the vector.
+    std::vector<uint8_t> imageData = createBMPHeader(WIDTH, HEIGHT);
+
+    for (size_t chunkOffset = sizeof(GLCDbuf2); chunkOffset > 0; chunkOffset -= CHUNK_SIZE) {
+        // Calculate chunk boundaries.
+        const size_t start = chunkOffset >= CHUNK_SIZE ? chunkOffset - CHUNK_SIZE : 0;
+        const size_t end = chunkOffset;
+
+        // Extract chunk.
+        const std::vector<uint8_t> chunk(GLCDbuf2 + start, GLCDbuf2 + end);
+        std::vector<uint8_t> processed(CHUNK_SIZE);
 
         // Process the 128-byte chunk in groups of 8.
-        for (int byteIndex = 0; byteIndex < 128; byteIndex += 8) {
-            std::array<uint8_t, 8> input{}, output{};
-            std::copy_n(chunk.begin() + byteIndex, 8, input.begin());
+        for (int byteIndex = 0; byteIndex < CHUNK_SIZE; byteIndex += BLOCK_SIZE) {
+            std::array<uint8_t, BLOCK_SIZE> input{};
+            std::array<uint8_t, BLOCK_SIZE> output{};
+            std::copy_n(chunk.begin() + byteIndex, BLOCK_SIZE, input.begin());
 
             transpose8x8(input, output);
 
             // Distribute transposed bytes into the processed buffer
-            const int newByteIndex = byteIndex / 8;
-            for (int j = 0; j < 8; ++j) {
-                processed[newByteIndex + j * 16] = output[j];
+            const int newByteIndex = byteIndex / BLOCK_SIZE;
+            for (int j = 0; j < BLOCK_SIZE; ++j) {
+                processed[newByteIndex + j * (CHUNK_SIZE / BLOCK_SIZE)] = output[j];
             }
         }
+
+        // Append processed chunk to image data.
         imageData.insert(imageData.end(), processed.begin(), processed.end());
     }
     return imageData;

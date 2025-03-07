@@ -549,6 +549,7 @@ void getButtonState() {
     // As the buttons are shared with the SPI lines going to the LCD,
     // we have to make sure that this does not interfere by write actions to the LCD.
     // Therefore updating the LCD is also done in this task.
+    xSemaphoreTake(buttonMutex, portMAX_DELAY);
     if (ButtonStateOverride != 7 && millis() - LastBtnOverrideTime < 4000)
         ButtonState = ButtonStateOverride;
     else {
@@ -572,6 +573,7 @@ void getButtonState() {
 #endif
         pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
     }
+    xSemaphoreGive(buttonMutex);
 }
 
 
@@ -1883,24 +1885,30 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             const bool btnDown = request->getParam("state")->value() == "1";
 
             // Button state bitmasks.
-            static const std::unordered_map<std::string, uint8_t> btnMasks = {
-                {"right", 0b100},
-                {"middle", 0b010},
-                {"left", 0b001}
-            };
+    		static constexpr uint8_t RIGHT_MASK = 0b100;
+    		static constexpr uint8_t MIDDLE_MASK = 0b010;
+    		static constexpr uint8_t LEFT_MASK = 0b001;
+    		static constexpr uint8_t ALL_BUTTONS_UP = 0b111;
+    		static const std::unordered_map<std::string, uint8_t> btnMasks = {
+        		{"right", RIGHT_MASK},
+        		{"middle", MIDDLE_MASK},
+        		{"left", LEFT_MASK}
+    		};
 
+            xSemaphoreTake(buttonMutex, portMAX_DELAY);
             auto it = btnMasks.find(btnName.c_str());
             if (it != btnMasks.end()) {
                 // Clear bits if button is pressed, set bits if up.
                 const uint8_t mask = it->second;
                 if (btnDown) {
-                    ButtonStateOverride = 7 & ~mask;
+                    ButtonStateOverride = ALL_BUTTONS_UP & ~mask;
                 } else {
-                    ButtonStateOverride = 7 | mask;
+                    ButtonStateOverride = ALL_BUTTONS_UP | mask;
                 }
                 // Prevent stuck button in case we forget to reset to a 'down' button state. 
                 LastBtnOverrideTime = millis();
-            } 
+            }
+            xSemaphoreGive(buttonMutex);
 
             // Create JSON response
             DynamicJsonDocument doc(200);
@@ -1913,22 +1921,24 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         } else {
-            // Serve the LCD as BMP image.
-            const std::vector<uint8_t> &bmpImage = createImageFromGLCDBuffer();
-            std::size_t bmpImageSize = bmpImage.size();
-            mg_printf(c,
-                      "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: image/bmp\r\n"
-                      // Keep-alive doesn't work reliable. 
-                      "Connection: close\r\n"
-                      // Prevents caching.
-                      "Cache-Control: no-cache\r\n"
-                      "Content-Length: %d\r\n\r\n",
-                      bmpImageSize);
-            mg_send(c, bmpImage.data(), bmpImageSize);
+            // Generate BMP image from LCD buffer.
+    		const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+		    const size_t bmpImageSize = bmpImage.size();
 
-            // Mark connection as draining, close after sending.
-            c->is_draining = 1;
+    		// Use string formatting for better readability and safety
+    		constexpr const char* responseHeader =
+        		"HTTP/1.1 200 OK\r\n"
+        		"Content-Type: image/bmp\r\n"
+        		"Connection: close\r\n"          // Keep-alive disabled due to reliability issues
+        		"Cache-Control: no-cache\r\n"    // Prevent client-side caching
+        		"Content-Length: %d\r\n\r\n";
+
+    		// Send HTTP headers and image data.
+    		mg_printf(c, responseHeader, bmpImageSize);
+    		mg_send(c, bmpImage.data(), bmpImageSize);
+
+    		// Mark connection for closure after sending.
+    		c->is_draining = 1;
         }
         return true;
 
