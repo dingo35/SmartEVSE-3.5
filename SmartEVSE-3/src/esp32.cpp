@@ -1925,20 +1925,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     		const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
 		    const size_t bmpImageSize = bmpImage.size();
 
-    		// Use string formatting for better readability and safety
-    		constexpr const char* responseHeader =
-        		"HTTP/1.1 200 OK\r\n"
-        		"Content-Type: image/bmp\r\n"
-        		"Connection: close\r\n"          // Keep-alive disabled due to reliability issues
-        		"Cache-Control: no-cache\r\n"    // Prevent client-side caching
-        		"Content-Length: %d\r\n\r\n";
+            // Start the HTTP response with chunked encoding
+            mg_printf(c,
+                      "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: image/bmp\r\n"
+                      "Connection: keep-alive\r\n"
+                      "Cache-Control: no-cache\r\n"
+                      "Transfer-Encoding: chunked\r\n"
+                      "\r\n");
 
-    		// Send HTTP headers and image data.
-    		mg_printf(c, responseHeader, bmpImageSize);
-    		mg_send(c, bmpImage.data(), bmpImageSize);
+            // Using chunked transfer encoding to get rid of content-len + keep-alive problems.
+            mg_http_write_chunk(c, reinterpret_cast<const char *>(bmpImage.data()), bmpImageSize);
 
-    		// Mark connection for closure after sending.
-    		c->is_draining = 1;
+            // Send an empty chunk to signal the end of the response.
+            mg_http_write_chunk(c, "", 0);
         }
         return true;
 
@@ -2003,7 +2003,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #if FAKE_RFID
     //this can be activated by: http://smartevse-xxx.lan/debug?showrfid=1
     } else if (mg_http_match_uri(hm, "/debug") && !memcmp("GET", hm->method.buf, hm->method.len)) {
-        if(request->hasParam("showrfid")) {
+        if(request->h
             Show_RFID = strtol(request->getParam("showrfid")->value().c_str(),NULL,0);
         }
         _LOG_A("DEBUG: Show_RFID=%u.\n",Show_RFID);

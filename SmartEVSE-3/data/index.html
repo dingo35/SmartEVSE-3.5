@@ -497,7 +497,9 @@
             let signal;
             if (typeof AbortController !== 'undefined') {
                 // Abort any previous request.
-                updateLcdImage.controller && updateLcdImage.controller.abort();
+                if (updateLcdImage.controller) {
+                    updateLcdImage.controller.abort('timeout');
+                }
                 updateLcdImage.controller = new AbortController();
                 signal = updateLcdImage.controller.signal;
             }
