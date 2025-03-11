@@ -184,7 +184,7 @@ void GLCD_buffer_clr(void) {
     } while (x != 0);
 }
 
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+//#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
     unsigned char i, y = 0;
     unsigned int x = 0;
@@ -198,7 +198,7 @@ void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
             GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
         }
     } while (++y < Rows);
-}
+}/*
 #else
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
     unsigned char i, y = 0;
@@ -213,7 +213,7 @@ void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
         x += 128;
     } while (++y < Rows);
 }
-#endif //SMARTEVSE_VERSION
+#endif //SMARTEVSE_VERSION */
 
 void GLCD_font_condense(unsigned char c, unsigned char *start, unsigned char *end, unsigned char space) {
     if(c >= '0' && c <= '9') return;

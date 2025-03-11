@@ -53,6 +53,7 @@
 extern Preferences preferences;
 struct DelayedTimeStruct DelayedStartTime;
 struct DelayedTimeStruct DelayedStopTime;
+extern unsigned char RFID[8];
 #else //CH32
 #define EXT extern "C"
 #include "ch32.h"
@@ -1358,7 +1359,7 @@ static uint8_t x;
 
     if (BacklightTimer) BacklightTimer--;                               // Decrease backlight counter every second.
 #else //CH32
-uint8_t ow = 0, x;
+uint8_t x;
 #endif
     // wait for Activation mode to start
     if (ActivationMode && ActivationMode != 255) {
@@ -1462,13 +1463,20 @@ uint8_t ow = 0, x;
     TempEVSE = TemperatureSensor();                                                             
 #endif
 
-#ifdef SMARTEVSE_VERSION //ESP32
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //ESP32 v3
     // Check if there is a RFID card in front of the reader
-    CheckRFID();
-#else //CH32
-    if (RFIDReader) ow = OneWireReadCardId();
+    if (RFIDReader) {
+        if (OneWireReadCardId() ) {
+            CheckRFID();
+        } else {
+            RFIDstatus = 0;
+            _LOG_A("DINGO: setting RFIDstatus to %u.checkpoint B.\n", RFIDstatus);
+        }
+    }
 #endif
-             
+#if SMARTEVSE_VERSION >=40
+    if (RFIDReader) Serial1.printf("OneWireReadCardId\n");
+#endif
     // When Solar Charging, once the current drops to MINcurrent a timer is started.
     // Charging is stopped when the timer reaches the time set in 'StopTime' (in minutes)
     // Except when Stoptime =0, then charging will continue.
@@ -2038,6 +2046,7 @@ void CheckSerialComm(void) {
     CALL_ON_RECEIVE_PARAM(SetCurrent@, SetCurrent)
     CALL_ON_RECEIVE_PARAM(CalcBalancedCurrent@, CalcBalancedCurrent)
     CALL_ON_RECEIVE(setStatePowerUnavailable)
+    CALL_ON_RECEIVE(OneWireReadCardId)
     CALL_ON_RECEIVE_PARAM(setErrorFlags@, setErrorFlags)
     CALL_ON_RECEIVE_PARAM(clearErrorFlags@, clearErrorFlags)
     // these veriables are owned by ESP32 and copies are kept in CH32:
@@ -2766,6 +2775,7 @@ void Timer10ms_singlerun(void) {
         CALL_ON_RECEIVE_PARAM(OverrideCurrent@, setOverrideCurrent)
         CALL_ON_RECEIVE_PARAM(Mode@, setMode)
         CALL_ON_RECEIVE(write_settings)
+        SET_ON_RECEIVE(RFIDstatus@, RFIDstatus)
         //these variables are owned by CH32 and copies are sent to ESP32:
         SET_ON_RECEIVE(Pilot@, pilot)
         SET_ON_RECEIVE(Temp@, TempEVSE)
@@ -2801,7 +2811,7 @@ void Timer10ms_singlerun(void) {
         if (ret != NULL) {
             short unsigned int Address;
             int16_t Irms[3];
-            int n = sscanf(SerialBuf,"Irms@%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
+            int n = sscanf(ret,"Irms@%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
             if (n == 4) {   //success
                 if (Address == MainsMeter.Address) {
                     for (int x = 0; x < 3; x++)
@@ -2818,13 +2828,24 @@ void Timer10ms_singlerun(void) {
                 _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
         }
 
+        strncpy(token, "RFID@", sizeof(token));
+        ret = strstr(SerialBuf, token);
+        if (ret != NULL) {
+            int n = sscanf(ret,"RFID@%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx", &RFID[0], &RFID[1], &RFID[2], &RFID[3], &RFID[4], &RFID[5], &RFID[6], &RFID[7]);
+            if (n == 8) {   //success
+_LOG_A("DINGO RFID %02x%02x%02x%02x%02x%02x%02x, crc=%02x.\n", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6], RFID[7]);
+                CheckRFID();
+            } else
+                _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
+        }
+
         strncpy(token, "PowerMeasured@", sizeof(token));
         //printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             short unsigned int Address;
             int16_t PowerMeasured;
-            int n = sscanf(SerialBuf,"PowerMeasured@%03hu,%hi", &Address, &PowerMeasured);
+            int n = sscanf(ret,"PowerMeasured@%03hu,%hi", &Address, &PowerMeasured);
             if (n == 2) {   //success
                 if (Address == MainsMeter.Address) {
                     MainsMeter.PowerMeasured = PowerMeasured;
