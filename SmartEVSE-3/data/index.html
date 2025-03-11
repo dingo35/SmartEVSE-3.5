@@ -476,7 +476,7 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="lcd" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
                                           <div class="lcd-activate">Click to activate</div>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
@@ -490,10 +490,9 @@
         const LCD = document.querySelector('#lcd');
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
         const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
-        const LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
+        let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
         
         function updateLcdImage() {
-
             let signal;
             if (typeof AbortController !== 'undefined') {
                 // Abort any previous request.
@@ -546,27 +545,31 @@
                 });
         }
 
+        function activateLCD() {
+            if (!LCD_ACTIVATE) {
+                // Already activated, return.
+                return;
+            }
+            LCD_ACTIVATE.remove();
+            setInterval(updateLCD, ONE_SECOND_MS);
+            LCD_ACTIVATE = null;
+        }
+
         // Register click listeners on the device buttons. 
         ['mousedown', 'mouseup'].forEach(eventName => {
             LCD_BUTTONS.addEventListener(eventName, event => {
+                activateLCD();
                 const btnName = event.target.dataset.name;
                 const stateDown = event.type === 'mousedown';
                 btnName && sendButtonState(btnName, stateDown);
             });
         });
 
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('lcd')) {
-            // If the URL contains ?lcd, then activate the lcd immediately.
-            LCD_ACTIVATE.remove();
-            setInterval(updateLCD, ONE_SECOND_MS);
-        } else {
-            // Click to activate auto-update of the LCD.
-            LCD.addEventListener('click', () => {
-                LCD_ACTIVATE.remove();
-                setInterval(updateLCD, ONE_SECOND_MS);
-            }, {once: true});
-        }
+        // Click to activate auto-update of the LCD.
+        LCD.addEventListener('mousedown', activateLCD, {once: true});
+
+        // Initial load of the LCD image.
+        updateLCD(true);
     })();
 </script>
                                   </div>
