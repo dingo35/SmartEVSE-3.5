@@ -2003,7 +2003,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #if FAKE_RFID
     //this can be activated by: http://smartevse-xxx.lan/debug?showrfid=1
     } else if (mg_http_match_uri(hm, "/debug") && !memcmp("GET", hm->method.buf, hm->method.len)) {
-        if(request->h
+        if(request->hasParam("showrfid")) {
             Show_RFID = strtol(request->getParam("showrfid")->value().c_str(),NULL,0);
         }
         _LOG_A("DEBUG: Show_RFID=%u.\n",Show_RFID);
