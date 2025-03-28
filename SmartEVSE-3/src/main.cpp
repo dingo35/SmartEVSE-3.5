@@ -72,7 +72,7 @@ extern void CheckRS485Comm(void);
 #define CALL_ON_RECEIVE(X) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        printf("DEBUG CALL_ON_RECEIVE: calling %s().\n", #X); */ \
+/*        printf("MSG: CALL_ON_RECEIVE: %s().\n", #X); */ \
         X();\
     }
 
@@ -80,14 +80,14 @@ extern void CheckRS485Comm(void);
 #define CALL_ON_RECEIVE_PARAM(X,Y) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        printf("DEBUG CALL_ON_RECEIVE_PARAM: calling %s(%u).\n", #X, atoi(ret+strlen(#X))); */ \
+/*        printf("MSG: CALL_ON_RECEIVE_PARAM: %s(%u).\n", #X, atoi(ret+strlen(#X))); */ \
         Y(atoi(ret+strlen(#X)));\
     }
 //SET_ON_RECEIVE(Pilot@, pilot) sets pilot=parm when Pilot:param is received
 #define SET_ON_RECEIVE(X,Y) \
     ret = strstr(SerialBuf, #X);\
     if (ret) {\
-/*        printf("DEBUG SET_ON_RECEIVE: setting %s to %u.\n", #Y, atoi(ret+strlen(#X))); */ \
+/*        printf("MSG: SET_ON_RECEIVE: setting %s to %u.\n", #Y, atoi(ret+strlen(#X))); */ \
         Y = atoi(ret+strlen(#X));\
     }
 
@@ -335,7 +335,7 @@ void clearErrorFlags(uint8_t flags) {
 
 #ifndef SMARTEVSE_VERSION //CH32 version
 void Button::HandleSwitch(void) {
-    printf("ExtSwitch@%1u.\n", Pressed);
+    printf("@ExtSwitch:%1u.\n", Pressed);
 }
 #else //v3 and v4
 void Button::HandleSwitch(void) {
@@ -537,7 +537,7 @@ void setMode(uint8_t NewMode) {
         preferences.end();
     }
 #else //CH32
-    printf("Mode@%1u.\n", NewMode); //a
+    printf("@Mode:%1u.\n", NewMode); //a
     _LOG_V("[<-] Mode:%u\n", NewMode);
 #endif //SMARTEVSE_VERSION
 }
@@ -631,7 +631,7 @@ void setStatePowerUnavailable(void) {
     if (State == STATE_C) setState(STATE_C1);                       // If we are charging, tell EV to stop charging
     else if (State != STATE_C1) setState(STATE_B1);                 // If we are not in State C1, switch to State B1
 #else //v4 ESP32
-    printf("setStatePowerUnavailable\n");
+    printf("@setStatePowerUnavailable\n");
 #endif
 }
 
@@ -664,7 +664,7 @@ void setState(uint8_t NewState) { //c
         Serial1.printf("State@%u\n", NewState); //a
 #endif
 #else //CH32
-        printf("State@%1u.\n", NewState); //d
+        printf("@State:%1u.\n", NewState); //d
 #endif
     }
 
@@ -758,7 +758,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
             LCDTimer = 0;
 #else //CH32
-            printf("LCDTimer@0\n");
+            printf("@LCDTimer:0\n");
 #endif
             break;
         case STATE_C1:
@@ -786,7 +786,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
     BacklightTimer = BACKLIGHT;                                                 // Backlight ON
 #else //CH32
-    printf("BacklightTimer@%u\n", BACKLIGHT);
+    printf("@BacklightTimer:%u\n", BACKLIGHT);
 #endif
 
 #endif //SMARTEVSE_VERSION
@@ -836,7 +836,7 @@ void setAccess(bool Access) { //c
     lastMqttUpdate = 10;
 #endif //MQTT
 #else //CH32
-    printf("Access@%1u.\n", Access); //a
+    printf("@Access:%1u.\n", Access); //a
 #endif //SMARTEVSE_VERSION
 }
 
@@ -933,7 +933,7 @@ uint8_t Pilot() {
     if ((Min >= 2000) && (Max < 2400)) ret = PILOT_3V;                      // Pilot at 3V
     if ((Min > 100) && (Max < 350)) ret = PILOT_DIODE;                      // Diode Check OK
     if (ret != old_pilot) {
-        printf("Pilot@%u\n", ret); //d
+        printf("@Pilot:%u\n", ret); //d
         old_pilot = ret;
     }
     return ret;
@@ -1349,7 +1349,7 @@ void CalcBalancedCurrent(char mod) {
     SEND_TO_ESP32(Balanced0)
     SEND_TO_ESP32(IsetBalanced)
 #else //ESP32v4
-    printf("CalcBalancedCurrent@%i\n", mod);
+    printf("@CalcBalancedCurrent:%i\n", mod);
 #endif
 } //CalcBalancedCurrent
 
@@ -1598,25 +1598,10 @@ void Timer1S_singlerun(void) {
 #endif
 
 #ifndef SMARTEVSE_VERSION //CH32
-/*
-    // Send data to ESP
-    // Wait till configuration is received 
-    // change LoadBl to something else
-    if (LoadBl) {
-        printf("Pilot@%u,State@%u,ChargeDelay@%u,Error@%u,Temp@%d,Lock@%u,Mode@%u,Access@%u ", Pilot(), State, ChargeDelay, ErrorFlags, TempEVSE, Lock, Mode, Access_bit);
-        if (ow == 1) {
-            printf(",RFID:");
-            for (x=1 ; x<7 ; x++) printf("%02x",RFID[x]);
-            ow = 0;
-        }
-        printf("\n");
-    }
-*/
- //   printf("10ms loop:%lu uS systick:%lu millis:%lu\n", elapsedmax/12, (uint32_t)SysTick->CNT, millis());
     // this section sends outcomes of functions and variables to ESP32 to fill Shadow variables
     // FIXME this section preferably should be empty
-    printf("IsCurrentAvailable@%u", IsCurrentAvailable());
-    printf("ErrorFlags@%u\n", ErrorFlags);
+    printf("@IsCurrentAvailable:%u", IsCurrentAvailable());
+    printf("@ErrorFlags:%u\n", ErrorFlags);
     elapsedmax = 0;
 #endif
 }
@@ -1824,7 +1809,7 @@ void receiveNodeStatus(uint8_t *buf, uint8_t NodeNr) {
     if ((Node[NodeNr].Mode != Mode) && Switch != 4 && !LCDNav && !NodeNewMode) {
         NodeNewMode = Node[NodeNr].Mode + 1;        // Store the new Mode in NodeNewMode, we'll update Mode in 'ProcessAllNodeStates'
 #ifndef SMARTEVSE_VERSION //CH32
-        printf("NodeNewMode@%1u.\n", Node[NodeNr].Mode + 1); //CH32 sends new value to ESP32
+        printf("@NodeNewMode:%1u.\n", Node[NodeNr].Mode + 1); //CH32 sends new value to ESP32
 #endif
     }
     Node[NodeNr].SolarTimer = (buf[8] * 256) + buf[9];
@@ -1987,7 +1972,7 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
         setMode(NodeNewMode -1);
         NodeNewMode = 0;
 #ifndef SMARTEVSE_VERSION //CH32
-        printf("NodeNewMode@%1u.\n", 0); //CH32 sends new value to ESP32
+        printf("@NodeNewMode:%1u.\n", 0); //CH32 sends new value to ESP32
 #endif
     }    
 
@@ -2040,7 +2025,7 @@ void CheckSerialComm(void) {
     char token[64];
     strncpy(token, "version?", sizeof(token));
     ret = strstr(SerialBuf, token);
-    if (ret != NULL) printf("version@%lu\n", (unsigned long) WCH_VERSION);          // Send WCH software version
+    if (ret != NULL) printf("@version:%lu\n", (unsigned long) WCH_VERSION);          // Send WCH software version
 
     CALL_ON_RECEIVE_PARAM(State@, setState)
     CALL_ON_RECEIVE_PARAM(SetCPDuty@, SetCPDuty)
@@ -2110,7 +2095,7 @@ void CheckSerialComm(void) {
     // Wait till initialized is set by ESP
     strncpy(token, "Initialized@", sizeof(token));
     ret = strstr(SerialBuf, token);
-    if (ret != NULL && Initialized) printf("Config@OK\n"); //only print this on reception of string
+    if (ret != NULL && Initialized) printf("@Config:OK\n"); //only print this on reception of string
 
     // Enable/disable modem power
     ModemPower(ModemPwr);
@@ -2118,13 +2103,7 @@ void CheckSerialComm(void) {
     // Enable/disable Power Panic function
     PowerPanicCtrl(PwrPanic);
 
-    //if (LoadBl) {
-    //    printf("Config@OK %u,Lock@%u,Mode@%u,Current@%u,Switch@%u,RCmon@%u,PwrPanic@%u,RFID@%u\n", Config, Lock, Mode, ChargeCurrent, Switch, RCmon, PwrPanic, RFIDReader);
-//        ConfigChanged = 1;
-    //}
-
     memset(SerialBuf, 0, len);    // clear SerialBuffer
-
 }
 #endif
 
@@ -2819,7 +2798,7 @@ void Timer10ms_singlerun(void) {
         if (memcmp(SerialBuf, "!Panic", 6) == 0) PowerPanicESP();
 
         char token[64];
-        strncpy(token, "ExtSwitch@", sizeof(token));
+        strncpy(token, "ExtSwitch:", sizeof(token));
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             ExtSwitch.Pressed = atoi(ret+strlen(token));
@@ -2828,32 +2807,32 @@ void Timer10ms_singlerun(void) {
             ExtSwitch.HandleSwitch();
         }
         //these variables are owned by ESP32, so if CH32 changes it it has to send copies:
-        SET_ON_RECEIVE(NodeNewMode@, NodeNewMode)
-        SET_ON_RECEIVE(ConfigChanged@, ConfigChanged)
+        SET_ON_RECEIVE(NodeNewMode:, NodeNewMode)
+        SET_ON_RECEIVE(ConfigChanged:, ConfigChanged)
 
-        CALL_ON_RECEIVE_PARAM(Access@, setAccess)
-        CALL_ON_RECEIVE_PARAM(OverrideCurrent@, setOverrideCurrent)
-        CALL_ON_RECEIVE_PARAM(Mode@, setMode)
+        CALL_ON_RECEIVE_PARAM(Access:, setAccess)
+        CALL_ON_RECEIVE_PARAM(OverrideCurrent:, setOverrideCurrent)
+        CALL_ON_RECEIVE_PARAM(Mode:, setMode)
         CALL_ON_RECEIVE(write_settings)
 
         //these variables do not exist in CH32 so values are sent to ESP32
-        SET_ON_RECEIVE(RFIDstatus@, RFIDstatus)
-        SET_ON_RECEIVE(GridActive@, GridActive)
-        SET_ON_RECEIVE(LCDTimer@, LCDTimer)
-        SET_ON_RECEIVE(BacklightTimer@, BacklightTimer)
+        SET_ON_RECEIVE(RFIDstatus:, RFIDstatus)
+        SET_ON_RECEIVE(GridActive:, GridActive)
+        SET_ON_RECEIVE(LCDTimer:, LCDTimer)
+        SET_ON_RECEIVE(BacklightTimer:, BacklightTimer)
 
         //these variables are owned by CH32 and copies are sent to ESP32:
-        SET_ON_RECEIVE(Pilot@, pilot)
-        SET_ON_RECEIVE(Temp@, TempEVSE)
-        SET_ON_RECEIVE(State@, State)
-        SET_ON_RECEIVE(Balanced0@, Balanced0)
-        SET_ON_RECEIVE(IsetBalanced@, IsetBalanced)
-        SET_ON_RECEIVE(ChargeCurrent@, ChargeCurrent)
-        SET_ON_RECEIVE(IsCurrentAvailable@, Shadow_IsCurrentAvailable)
-        SET_ON_RECEIVE(ErrorFlags@, ErrorFlags)
-        SET_ON_RECEIVE(SolarStopTimer@, SolarStopTimer)
+        SET_ON_RECEIVE(Pilot:, pilot)
+        SET_ON_RECEIVE(Temp:, TempEVSE)
+        SET_ON_RECEIVE(State:, State)
+        SET_ON_RECEIVE(Balanced0:, Balanced0)
+        SET_ON_RECEIVE(IsetBalanced:, IsetBalanced)
+        SET_ON_RECEIVE(ChargeCurrent:, ChargeCurrent)
+        SET_ON_RECEIVE(IsCurrentAvailable:, Shadow_IsCurrentAvailable)
+        SET_ON_RECEIVE(ErrorFlags:, ErrorFlags)
+        SET_ON_RECEIVE(SolarStopTimer:, SolarStopTimer)
 
-        strncpy(token, "version@", sizeof(token));
+        strncpy(token, "version:", sizeof(token));
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             unsigned long WCHRunningVersion = atoi(ret+strlen(token));
@@ -2861,25 +2840,25 @@ void Timer10ms_singlerun(void) {
             CommState = COMM_CONFIG_SET;
         }
 
-        ret = strstr(SerialBuf, "Config@OK");
+        ret = strstr(SerialBuf, "Config:OK");
         if (ret != NULL) {
             _LOG_V("Config set\n");
             CommState = COMM_STATUS_REQ;
         }
 
-        strncpy(token, "EnableC2@", sizeof(token));
+        strncpy(token, "EnableC2:", sizeof(token));
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             EnableC2 = (EnableC2_t) atoi(ret+strlen(token)); //e
         }
 
-        strncpy(token, "Irms@", sizeof(token));
-        //Irms@011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
+        strncpy(token, "Irms:", sizeof(token));
+        //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             short unsigned int Address;
             int16_t Irms[3];
-            int n = sscanf(ret,"Irms@%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
+            int n = sscanf(ret,"Irms:%03hu,%hi,%hi,%hi", &Address, &Irms[0], &Irms[1], &Irms[2]);
             if (n == 4) {   //success
                 if (Address == MainsMeter.Address) {
                     for (int x = 0; x < 3; x++)
@@ -2896,23 +2875,23 @@ void Timer10ms_singlerun(void) {
                 _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
         }
 
-        strncpy(token, "RFID@", sizeof(token));
+        strncpy(token, "RFID:", sizeof(token));
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
-            int n = sscanf(ret,"RFID@%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx", &RFID[0], &RFID[1], &RFID[2], &RFID[3], &RFID[4], &RFID[5], &RFID[6], &RFID[7]);
+            int n = sscanf(ret,"RFID:%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx", &RFID[0], &RFID[1], &RFID[2], &RFID[3], &RFID[4], &RFID[5], &RFID[6], &RFID[7]);
             if (n == 8) {   //success
                 CheckRFID();
             } else
                 _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
         }
 
-        strncpy(token, "PowerMeasured@", sizeof(token));
-        //printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
+        strncpy(token, "PowerMeasured:", sizeof(token));
+        //printf("PowerMeasured:%03u,%d\n", Address, PowerMeasured);
         ret = strstr(SerialBuf, token);
         if (ret != NULL) {
             short unsigned int Address;
             int16_t PowerMeasured;
-            int n = sscanf(ret,"PowerMeasured@%03hu,%hi", &Address, &PowerMeasured);
+            int n = sscanf(ret,"PowerMeasured:%03hu,%hi", &Address, &PowerMeasured);
             if (n == 2) {   //success
                 if (Address == MainsMeter.Address) {
                     MainsMeter.PowerMeasured = PowerMeasured;

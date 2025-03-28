@@ -277,7 +277,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
             if (Power[x] < 0) var[x] = -var[x];
         }
 #ifndef SMARTEVSE_VERSION //CH32
-        printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
+        printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
 #endif
     }
 
@@ -286,7 +286,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
         Irms[x] = (var[x] / 100);            // Convert to AMPERE * 10
     }
 #ifndef SMARTEVSE_VERSION //CH32
-    printf("Irms@%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
+    printf("@Irms:%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //@Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
 #endif
     // all OK
     return 1;
