@@ -2519,12 +2519,6 @@ void Timer10ms_singlerun(void) {
     static uint8_t DiodeCheck = 0;
     static uint16_t StateTimer = 0;                                                 // When switching from State B to C, make sure pilot is at 6v for 100ms
     BlinkLed_singlerun();
-#else //v4
-    static uint16_t RXbyte, idx = 0;
-    static char SerialBuf[512];
-    static uint8_t CommState = COMM_VER_REQ;
-    static uint8_t CommTimeout = 0;
-    static char *ret;
 #endif
 
 #ifndef SMARTEVSE_VERSION //CH32
@@ -2781,16 +2775,14 @@ void Timer10ms_singlerun(void) {
 #endif //v3
 #endif //v3 and CH32
 #if SMARTEVSE_VERSION >= 40 //v4
+    static uint16_t idx = 0;
+    static char SerialBuf[512];
+    static uint8_t CommState = COMM_VER_REQ;
+    static uint8_t CommTimeout = 0;
+    static char *ret;
     //ESP32 receives info from CH32
     if (Serial1.available()) {
-        //Serial.printf("[<-] ");        // Data available from mainboard?
-        while (Serial1.available()) {
-            RXbyte = Serial1.read();
-            //Serial.printf("%c",RXbyte);
-            SerialBuf[idx] = RXbyte;
-            idx++;
-        }
-        //SerialBuf[idx] = '\0'; //null terminate
+        idx = Serial1.readBytes(SerialBuf, sizeof(SerialBuf));
         _LOG_D("[(%u)<-] %.*s.\n", idx, idx, SerialBuf);
     }
     // process data from mainboard
