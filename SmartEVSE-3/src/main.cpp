@@ -2782,7 +2782,7 @@ void Timer10ms_singlerun(void) {
     static char *ret;
     //ESP32 receives info from CH32
     if (Serial1.available()) {
-        idx = Serial1.readBytes(SerialBuf, sizeof(SerialBuf));
+        idx = Serial1.readBytesUntil('@', SerialBuf, sizeof(SerialBuf));
         _LOG_D("[(%u)<-] %.*s.\n", idx, idx, SerialBuf);
     }
     // process data from mainboard
