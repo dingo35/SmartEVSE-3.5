@@ -209,7 +209,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
 #ifdef SMARTEVSE_VERSION //ESP32
                     write_settings();
 #else //CH32
-                    printf("write_settings\n");
+                    printf("@write_settings\n");
 #endif
                     LCDNav = 0;
                 }
@@ -227,7 +227,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
 #ifdef SMARTEVSE_VERSION // ESP32 v3
             GridActive = localGridActive;                                       // Enable the GRID menu option
 #else //CH32
-            printf("GridActive@%u\n", localGridActive);
+            printf("@GridActive:%u\n", localGridActive);
 #endif
             if (localGridActive && (buf[1] & 0x3) != (Grid << 1) && (LoadBl < 2)) ModbusWriteSingleRequest(0x0A, 0x800, Grid << 1);
             break;
@@ -394,7 +394,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
 #ifndef SMARTEVSE_VERSION //CH32
-            printf("PowerMeasured@%03u,%d\n", Address, PowerMeasured);
+            printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
 #endif
         } else if (MB.Register == EMConfig[Type].ERegister) {
             //import active energy
