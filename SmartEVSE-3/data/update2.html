@@ -26,8 +26,8 @@ var setStatus = function(text) {
             .then(res => res.json())
             .then(data => {
               // code to handle the response
-              if (data.progress == -1) { //sucess
-                setStatus('Firmware update succesfully completed, will reboot as soon as no EV is connected.');
+              if (data.progress == -1) { //success
+                setStatus('Firmware update successfully completed, will reboot as soon as no EV is connected.');
               }
               else {
                 if (data.progress == -2) { //fail
@@ -75,7 +75,7 @@ var setStatus = function(text) {
             <tr>
               <td>Factory</td>
               <td>stable</td>
-              <td><a href="https://github.com/"
+              <td><a href="https://github.com/SmartEVSE/SmartEVSE-3"
                      onclick="location.href=this.href + OWNER_FACT + '/' + REPO_FACT + '/releases';return false;"><script>document.write(OWNER_FACT)</script></a></td>
               <td><div id="latest_fact"></div></td>
               <td><button onclick="update_fw(OWNER_FACT, 0)" style="width: 100px; display:inline-block;">Standard</button>
@@ -84,7 +84,7 @@ var setStatus = function(text) {
             <tr>
                 <td>Community&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</td>
               <td>bleeding edge&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</td>
-              <td><a href="https://github.com/"
+              <td><a href="https://github.com/dingo35/SmartEVSE-3.5"
                      onclick="location.href=this.href + OWNER_COMM + '/' + REPO_COMM + '/releases';return false;"><script>document.write(OWNER_COMM)</script></a></td>
               <td><div id="latest_comm"></div></td>
               <td><button onclick="update_fw(OWNER_COMM, 0)" style="width: 100px; display:inline-block;">Standard</button>
