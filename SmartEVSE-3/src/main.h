@@ -171,9 +171,6 @@
 #define LCD_BRIGHTNESS 255
 
 
-#define CP_ON digitalWrite(PIN_CPOFF, LOW);
-#define CP_OFF digitalWrite(PIN_CPOFF, HIGH);
-
 //TODO this can be integrated by choosing same definitions
 #ifdef SMARTEVSE_VERSION //ESP32
 #define PILOT_CONNECTED digitalWrite(PIN_CPOFF, LOW);
@@ -202,7 +199,7 @@
 #endif
 #else //CH32
 #define SEND_TO_CH32(X) //dummy
-#define SEND_TO_ESP32(X) printf("%s@%u\n", #X, X);
+#define SEND_TO_ESP32(X) printf("@%s:%u\n", #X, X);
 #define PILOT_CONNECTED funDigitalWrite(CPOFF, FUN_LOW);
 #define PILOT_DISCONNECTED funDigitalWrite(CPOFF, FUN_HIGH);
 
