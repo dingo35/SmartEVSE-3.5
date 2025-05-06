@@ -1,4 +1,17 @@
 #include <unordered_map>
+#if MODEM
+int8_t InitialSoC = -1;                                                     // State of charge of car
+int8_t FullSoC = -1;                                                        // SoC car considers itself fully charged
+int8_t ComputedSoC = -1;                                                    // Estimated SoC, based on charged kWh
+int8_t RemainingSoC = -1;                                                   // Remaining SoC, based on ComputedSoC
+int32_t TimeUntilFull = -1;                                                 // Remaining time until car reaches FullSoC, in seconds
+int32_t EnergyCapacity = -1;                                                // Car's total battery capacity
+int32_t EnergyRequest = -1;                                                 // Requested amount of energy by car
+char EVCCID[32];                                                            // Car's EVCCID (EV Communication Controller Identifer)
+char RequiredEVCCID[32];                                                    // Required EVCCID before allowing charging
+void RecomputeSoC(void);
+#endif
+
 #ifdef SMARTEVSE_VERSION //ESP32
 
 #include <ArduinoJson.h>
@@ -114,15 +127,6 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 hw_timer_t * timerA = NULL;
 Preferences preferences;
 
-int8_t InitialSoC = -1;                                                     // State of charge of car
-int8_t FullSoC = -1;                                                        // SoC car considers itself fully charged
-int8_t ComputedSoC = -1;                                                    // Estimated SoC, based on charged kWh
-int8_t RemainingSoC = -1;                                                   // Remaining SoC, based on ComputedSoC
-int32_t TimeUntilFull = -1;                                                 // Remaining time until car reaches FullSoC, in seconds
-int32_t EnergyCapacity = -1;                                                // Car's total battery capacity
-int32_t EnergyRequest = -1;                                                 // Requested amount of energy by car
-char EVCCID[32];                                                            // Car's EVCCID (EV Communication Controller Identifer)
-char RequiredEVCCID[32];                                                    // Required EVCCID before allowing charging
 uint16_t LCDPin = 0;                                                        // PIN to operate LCD keys from web-interface
 
 extern esp_adc_cal_characteristics_t * adc_chars_CP;
@@ -454,80 +458,6 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
 }
 
 
-#if MODEM
-// Recompute State of Charge, in case we have a known initial state of charge
-// This function is called by kWh logic and after an EV state update through API, Serial or MQTT
-void RecomputeSoC(void) {
-    if (InitialSoC > 0 && FullSoC > 0 && EnergyCapacity > 0) {
-        if (InitialSoC == FullSoC) {
-            // We're already at full SoC
-            ComputedSoC = FullSoC;
-            RemainingSoC = 0;
-            TimeUntilFull = -1;
-        } else {
-            int EnergyRemaining = -1;
-            int TargetEnergyCapacity = (FullSoC / 100.f) * EnergyCapacity;
-
-            if (EnergyRequest > 0) {
-                // Attempt to use EnergyRequest to determine SoC with greater accuracy
-                EnergyRemaining = EVMeter.EnergyCharged > 0 ? (EnergyRequest - EVMeter.EnergyCharged) : EnergyRequest;
-            } else {
-                // We use a rough estimation based on FullSoC and EnergyCapacity
-                EnergyRemaining = TargetEnergyCapacity - (EVMeter.EnergyCharged + (InitialSoC / 100.f) * EnergyCapacity);
-            }
-
-            RemainingSoC = ((FullSoC * EnergyRemaining) / TargetEnergyCapacity);
-            ComputedSoC = RemainingSoC > 1 ? (FullSoC - RemainingSoC) : FullSoC;
-
-            // Only attempt to compute the SoC and TimeUntilFull if we have a EnergyRemaining and PowerMeasured
-            if (EnergyRemaining > -1) {
-                int TimeToGo = -1;
-                // Do a very simple estimation in seconds until car would reach FullSoC according to current charging power
-                if (EVMeter.PowerMeasured > 0) {
-                    // Use real-time PowerMeasured data if available
-                    TimeToGo = (3600 * EnergyRemaining) / EVMeter.PowerMeasured;
-                } else if (Nr_Of_Phases_Charging > 0) {
-                    // Else, fall back on the theoretical maximum of the cable + nr of phases
-                    TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * (Nr_Of_Phases_Charging * 230));
-                }
-
-                // Wait until we have a somewhat sensible estimation while still respecting granny chargers
-                if (TimeToGo < 100000) {
-                    TimeUntilFull = TimeToGo;
-                }
-            }
-
-            // We can't possibly charge to over 100% SoC
-            if (ComputedSoC > FullSoC) {
-                ComputedSoC = FullSoC;
-                RemainingSoC = 0;
-                TimeUntilFull = -1;
-            }
-
-            _LOG_I("SoC: EnergyRemaining %i RemaningSoC %i EnergyRequest %i EnergyCharged %i EnergyCapacity %i ComputedSoC %i FullSoC %i TimeUntilFull %i TargetEnergyCapacity %i\n", EnergyRemaining, RemainingSoC, EnergyRequest, EVMeter.EnergyCharged, EnergyCapacity, ComputedSoC, FullSoC, TimeUntilFull, TargetEnergyCapacity);
-        }
-    } else {
-        if (TimeUntilFull != -1) TimeUntilFull = -1;
-    }
-    // There's also the possibility an external API/app is used for SoC info. In such case, we allow setting ComputedSoC directly.
-}
-#endif
-
-// EV disconnected from charger. Triggered after 60 seconds of disconnect
-// This is done so we can "re-plug" the car in the Modem process without triggering disconnect events
-void DisconnectEvent(void){
-    _LOG_A("EV disconnected for a while. Resetting SoC states");
-    ModemStage = 0; // Enable Modem states again
-    InitialSoC = -1;
-    FullSoC = -1;
-    RemainingSoC = -1;
-    ComputedSoC = -1;
-    EnergyCapacity = -1;
-    EnergyRequest = -1;
-    TimeUntilFull = -1;
-    strncpy(EVCCID, "", sizeof(EVCCID));
-}
-
 void getButtonState() {
     // Sample the three < o > buttons.
     // As the buttons are shared with the SPI lines going to the LCD,
@@ -606,15 +536,15 @@ void mqtt_receive_callback(const String topic, const String payload) {
         int pwm = payload.toInt();
         if (pwm == -1) {
             SetCPDuty(1024);
-            CP_ON;
+            PILOT_CONNECTED;
             CPDutyOverride = false;
         } else if (pwm == 0) {
             SetCPDuty(0);
-            CP_OFF;
+            PILOT_DISCONNECTED;
             CPDutyOverride = true;
         } else if (pwm <= 1024) {
             SetCPDuty(pwm);
-            CP_ON;
+            PILOT_CONNECTED;
             CPDutyOverride = true;
         }
     } else if (topic == MQTTprefix + "/Set/MainsMeter") {
@@ -668,12 +598,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
         homeBatteryCurrent = payload.toInt();
         homeBatteryLastUpdate = time(NULL);
+#if MODEM
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
-        if (preferences.begin("settings", false) ) {                        //false = write mode
-            preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
-            preferences.end();
-        }
+        Serial1.printf("RequiredEVCCID@%s\n", RequiredEVCCID);
+        write_settings();
+#endif
     } else if (topic == MQTTprefix + "/Set/ColorOff") {
         int32_t R, G, B;
         int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
@@ -1075,7 +1005,9 @@ void read_settings() {
 
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
+#if MODEM
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
+#endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1136,7 +1068,9 @@ void write_settings(void) {
     preferences.putUChar("EMFunction", EMConfig[EM_CUSTOM].Function);
     preferences.putUChar("WIFImode", WIFImode);
     preferences.putUShort("EnableC2", EnableC2);
+#if MODEM
     preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
+#endif
     preferences.putUShort("maxTemp", maxTemp);
     preferences.putUChar("AutoUpdate", AutoUpdate);
     preferences.putUChar("LCDlock", LCDlock);
@@ -1589,32 +1523,33 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(request->hasParam("override_pwm")) {
             int pwm = request->getParam("override_pwm")->value().toInt();
             if (pwm == 0){
-                CP_OFF;
+                PILOT_DISCONNECTED;
                 CPDutyOverride = true;
             } else if (pwm < 0){
-                CP_ON;
+                PILOT_CONNECTED;
                 CPDutyOverride = false;
                 pwm = 100; // 10% until next loop, to be safe, corresponds to 6A
             } else{
-                CP_ON;
+                PILOT_CONNECTED;
                 CPDutyOverride = true;
             }
 
             SetCPDuty(pwm);
             doc["override_pwm"] = pwm;
         }
-
+#if MODEM
         //allow basic plug 'n charge based on evccid
         //if required_evccid is set to a value, SmartEVSE will only allow charging requests from said EVCCID
         if(request->hasParam("required_evccid")) {
             if (request->getParam("required_evccid")->value().length() <= 32) {
                 strncpy(RequiredEVCCID, request->getParam("required_evccid")->value().c_str(), sizeof(RequiredEVCCID));
                 doc["required_evccid"] = RequiredEVCCID;
+                Serial1.printf("RequiredEVCCID@%s\n", RequiredEVCCID);
             } else {
                 doc["required_evccid"] = "EVCCID too long (max 32 char)";
             }
         }
-
+#endif
         if(request->hasParam("lcdlock")) {
             int lock = request->getParam("lcdlock")->value().toInt();
             if (lock >= 0 && lock <= 1) {                                   //boundary check
@@ -2523,7 +2458,7 @@ void setup() {
     digitalWrite(PIN_SSR, LOW);             // SSR1 OFF
     digitalWrite(PIN_SSR2, LOW);            // SSR2 OFF
     digitalWrite(PIN_LCD_LED, HIGH);        // LCD Backlight ON
-    CP_OFF;           // CP signal OFF
+    PILOT_DISCONNECTED;                     // CP signal OFF
 
  
     // Uart 0 debug/program port
@@ -2756,7 +2691,7 @@ void setup() {
         // process data from mainboard
         if (idx > 5) {
             char token[64];
-            strncpy(token, "version@", sizeof(token));
+            strncpy(token, "version:", sizeof(token));
             ret = strstr(SerialBuf, token);
             if (ret != NULL) {
                 unsigned long WCHRunningVersion = atoi(ret+strlen(token));
@@ -2816,7 +2751,7 @@ void setup() {
     // Set eModbus LogLevel to 1, to suppress possible E5 errors
     MBUlogLvl = LOG_LEVEL_CRITICAL;
     ConfigureModbusMode(255);
-    CP_ON;           // CP signal ACTIVE
+    PILOT_CONNECTED;           // CP signal ACTIVE
 #endif
 
     firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
@@ -2996,3 +2931,88 @@ void loop() {
 
 }
 #endif //ESP32
+
+#if MODEM
+// Recompute State of Charge, in case we have a known initial state of charge
+// This function is called by kWh logic and after an EV state update through API, Serial or MQTT
+void RecomputeSoC(void) {
+#ifndef SMARTEVSE_VERSION //CH32
+    printf("@RecomputeSoC\n");
+#else
+    if (InitialSoC > 0 && FullSoC > 0 && EnergyCapacity > 0) {
+        if (InitialSoC == FullSoC) {
+            // We're already at full SoC
+            ComputedSoC = FullSoC;
+            RemainingSoC = 0;
+            TimeUntilFull = -1;
+        } else {
+            int EnergyRemaining = -1;
+            int TargetEnergyCapacity = (FullSoC / 100.f) * EnergyCapacity;
+
+            if (EnergyRequest > 0) {
+                // Attempt to use EnergyRequest to determine SoC with greater accuracy
+                EnergyRemaining = EVMeter.EnergyCharged > 0 ? (EnergyRequest - EVMeter.EnergyCharged) : EnergyRequest;
+            } else {
+                // We use a rough estimation based on FullSoC and EnergyCapacity
+                EnergyRemaining = TargetEnergyCapacity - (EVMeter.EnergyCharged + (InitialSoC / 100.f) * EnergyCapacity);
+            }
+
+            RemainingSoC = ((FullSoC * EnergyRemaining) / TargetEnergyCapacity);
+            ComputedSoC = RemainingSoC > 1 ? (FullSoC - RemainingSoC) : FullSoC;
+
+            // Only attempt to compute the SoC and TimeUntilFull if we have a EnergyRemaining and PowerMeasured
+            if (EnergyRemaining > -1) {
+                int TimeToGo = -1;
+                // Do a very simple estimation in seconds until car would reach FullSoC according to current charging power
+                if (EVMeter.PowerMeasured > 0) {
+                    // Use real-time PowerMeasured data if available
+                    TimeToGo = (3600 * EnergyRemaining) / EVMeter.PowerMeasured;
+                } else if (Nr_Of_Phases_Charging > 0) {
+                    // Else, fall back on the theoretical maximum of the cable + nr of phases
+                    TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * (Nr_Of_Phases_Charging * 230));
+                }
+
+                // Wait until we have a somewhat sensible estimation while still respecting granny chargers
+                if (TimeToGo < 100000) {
+                    TimeUntilFull = TimeToGo;
+                }
+            }
+
+            // We can't possibly charge to over 100% SoC
+            if (ComputedSoC > FullSoC) {
+                ComputedSoC = FullSoC;
+                RemainingSoC = 0;
+                TimeUntilFull = -1;
+            }
+
+            _LOG_I("SoC: EnergyRemaining %i RemaningSoC %i EnergyRequest %i EnergyCharged %i EnergyCapacity %i ComputedSoC %i FullSoC %i TimeUntilFull %i TargetEnergyCapacity %i\n", EnergyRemaining, RemainingSoC, EnergyRequest, EVMeter.EnergyCharged, EnergyCapacity, ComputedSoC, FullSoC, TimeUntilFull, TargetEnergyCapacity);
+        }
+    } else {
+        if (TimeUntilFull != -1) TimeUntilFull = -1;
+    }
+    // There's also the possibility an external API/app is used for SoC info. In such case, we allow setting ComputedSoC directly.
+#endif //SMARTEVSE_VERSION
+}
+
+
+// EV disconnected from charger. Triggered after 60 seconds of disconnect
+// This is done so we can "re-plug" the car in the Modem process without triggering disconnect events
+void DisconnectEvent(void){
+#ifndef SMARTEVSE_VERSION //CH32
+    printf("@DisconnectEvent\n");
+#else
+    _LOG_A("EV disconnected for a while. Resetting SoC states");
+    ModemStage = 0; // Enable Modem states again
+    InitialSoC = -1;
+    FullSoC = -1;
+    RemainingSoC = -1;
+    ComputedSoC = -1;
+    EnergyCapacity = -1;
+    EnergyRequest = -1;
+    TimeUntilFull = -1;
+    strncpy(EVCCID, "", sizeof(EVCCID));
+#endif //SMARTEVSE_VERSION
+}
+
+#endif //MODEM
+
