@@ -181,6 +181,7 @@ extern uint16_t ImportCurrent;
 extern struct DelayedTimeStruct DelayedStopTime;
 extern uint8_t DelayedRepeat;
 extern uint8_t LCDlock;
+extern uint8_t Lock;
 extern uint8_t CableLock;
 extern EnableC2_t EnableC2;
 extern uint8_t RFIDReader;
@@ -999,6 +1000,7 @@ void read_settings() {
         DelayedStopTime.epoch2 = preferences.getULong("DelayedStopTime", DELAYEDSTOPTIME);    //epoch2 is 4 bytes long on arduino
         DelayedRepeat = preferences.getUShort("DelayedRepeat", 0);
         LCDlock = preferences.getUChar("LCDlock", LCD_LOCK);
+        Lock = preferences.getUChar("Lock", LOCK);
         CableLock = preferences.getUChar("CableLock", CABLE_LOCK);
         LCDPin = preferences.getUShort("LCDPin", 0);
         AutoUpdate = preferences.getUChar("AutoUpdate", AUTOUPDATE);
@@ -1234,6 +1236,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["stoptime"] = (DelayedStopTime.epoch2 ? DelayedStopTime.epoch2 + EPOCH2_OFFSET : 0);
         doc["settings"]["repeat"] = DelayedRepeat;
         doc["settings"]["lcdlock"] = LCDlock;
+        doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;

@@ -266,7 +266,7 @@
               document.getElementById("lcdlock_label").classList.add("ui-checkbox-off")
             }            
 
-            if (data.evse.lock != 0) {
+            if (data.settings.lock != 0) {
               if (data.settings.cablelock == 1) {
                   document.getElementById("cablelock").checked = true;
                   document.getElementById("cablelock_label").classList.remove("ui-checkbox-off")
@@ -1217,10 +1217,12 @@
                                         Lock:
                                       </div>
                                       <div class="col">
-                                          <input type="checkbox" class="form-check-input" id="lcdlock" onclick="toggleLCDlock()">
-                                          <label class="form-check-label" style="width: 140px; display:inline-block;" for="lcdlock" id="lcdlock_label" title="Lock buttons on LCD screen">LCD Lock</label>
-                                          <input type="checkbox" class="form-check-input" id="cablelock" onclick="toggleCableLock()">
-                                          <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
+                                          <div class="lock-options">
+                                              <input type="checkbox" class="form-check-input" id="lcdlock" onclick="toggleLCDlock()">
+                                              <label class="form-check-label" style="width: 140px; display:inline-block;" for="lcdlock" id="lcdlock_label" title="Lock buttons on LCD screen">LCD Lock</label>
+                                              <input type="checkbox" class="form-check-input" id="cablelock" onclick="toggleCableLock()">
+                                              <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
+                                          </div>
                                       </div>
                                     </div> 
                                     <div class="row no-gutters align-items-center with_modem">

@@ -2188,7 +2188,7 @@ static unsigned int locktimer = 0, unlocktimer = 0;
     // Check if the cable lock is used
     if (!Config && Lock) {                                      // Socket used and Cable lock enabled?
         // UnlockCable takes precedence over LockCable
-        if ((RFIDReader == 2 && AccessStatus == OFF) ||         // One RFID card can Lock/Unlock the charging socket (like a public charging station)
+        if ((RFIDReader == 2 && AccessStatus == OFF) ||        // One RFID card can Lock/Unlock the charging socket (like a public charging station)
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         (OcppMode &&!OcppForcesLock) ||
 #endif
@@ -2832,7 +2832,7 @@ void Timer10ms_singlerun(void) {
                     setState(STATE_MODEM_REQUEST);
                 else
 #endif
-                setState(STATE_B);                                          // switch to State B
+                    setState(STATE_B);                                          // switch to State B
                 ActivationMode = 30;                                        // Activation mode is triggered if state C is not entered in 30 seconds.
                 AccessTimer = 0;
             } else if (Mode == MODE_SOLAR) {                                // Not enough power:
