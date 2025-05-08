@@ -873,7 +873,7 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
     // Process all three phases.
     std::array<int16_t, 3> currents;
     for (size_t i = 0; i < phases; ++i) {
-        int rawCurrent = doc[currentKeys[i]].as<float>() * 10;
+        int16_t rawCurrent = doc[currentKeys[i]].as<float>() * 10;
         currents[i] = std::abs(rawCurrent) * getCorrection(powerKeys[i]);
     }
 return {phases, currents};
