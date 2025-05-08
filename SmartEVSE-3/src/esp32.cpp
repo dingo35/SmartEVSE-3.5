@@ -181,6 +181,8 @@ extern uint16_t ImportCurrent;
 extern struct DelayedTimeStruct DelayedStopTime;
 extern uint8_t DelayedRepeat;
 extern uint8_t LCDlock;
+extern uint8_t Lock;
+extern uint8_t CableLock;
 extern EnableC2_t EnableC2;
 extern uint8_t RFIDReader;
 
@@ -653,6 +655,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
             ColorCustom[1] = G;
             ColorCustom[2] = B;
         }
+    } else if (topic == MQTTprefix + "/Set/CableLock") {
+        if (payload == "1") {
+            CableLock = 1;
+        } else {
+            CableLock = 0;
+        }
     }
 
     // Make sure MQTT updates directly to prevent debounces
@@ -806,6 +814,11 @@ void SetupMQTTClient() {
     optional_payload = jsna("command_topic", String(MQTTprefix + "/Set/CurrentOverride")) + jsna("min", "0") + jsna("max", MaxCurrent ) + jsna("mode","slider");
     optional_payload += jsna("value_template", R"({{ value | int / 10 if value | is_number else none }})") + jsna("command_template", R"({{ value | int * 10 }})");
     announce("Charge Current Override", "number");
+
+    //set the parameters for and announce Cable Lock:
+    optional_payload = jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
+    optional_payload += String(R"(, "options" : ["0", "1"])");
+    announce("Cable Lock", "select");
 }
 
 void mqttPublishData() {
@@ -868,6 +881,9 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/LEDColorSmart", String(ColorSmart[0])+","+String(ColorSmart[1])+","+String(ColorSmart[2]), true, 0);
         MQTTclient.publish(MQTTprefix + "/LEDColorSolar", String(ColorSolar[0])+","+String(ColorSolar[1])+","+String(ColorSolar[2]), true, 0);
         MQTTclient.publish(MQTTprefix + "/LEDColorCustom", String(ColorCustom[0])+","+String(ColorCustom[1])+","+String(ColorCustom[2]), true, 0);
+        if (Lock != 0) {
+            MQTTclient.publish(MQTTprefix + "/CableLock", CableLock ? "Enabled" : "Disabled", true, 0);
+        }
 }
 #endif
 
@@ -984,6 +1000,7 @@ void read_settings() {
         DelayedStopTime.epoch2 = preferences.getULong("DelayedStopTime", DELAYEDSTOPTIME);    //epoch2 is 4 bytes long on arduino
         DelayedRepeat = preferences.getUShort("DelayedRepeat", 0);
         LCDlock = preferences.getUChar("LCDlock", LCD_LOCK);
+        CableLock = preferences.getUChar("CableLock", CABLE_LOCK);
         LCDPin = preferences.getUShort("LCDPin", 0);
         AutoUpdate = preferences.getUChar("AutoUpdate", AUTOUPDATE);
 
@@ -1058,6 +1075,7 @@ void write_settings(void) {
     preferences.putUShort("maxTemp", maxTemp);
     preferences.putUChar("AutoUpdate", AutoUpdate);
     preferences.putUChar("LCDlock", LCDlock);
+    preferences.putUChar("CableLock", CableLock);
     preferences.putUShort("LCDPin", LCDPin);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1217,6 +1235,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["stoptime"] = (DelayedStopTime.epoch2 ? DelayedStopTime.epoch2 + EPOCH2_OFFSET : 0);
         doc["settings"]["repeat"] = DelayedRepeat;
         doc["settings"]["lcdlock"] = LCDlock;
+        doc["settings"]["lock"] = Lock;
+        doc["settings"]["cablelock"] = CableLock;
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
             doc["settings"]["modem"] = "Experiment";
@@ -1537,6 +1557,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if (lock >= 0 && lock <= 1) {                                   //boundary check
                 LCDlock = lock;
                 doc["lcdlock"] = lock;
+            }
+        }
+
+        if(request->hasParam("cablelock")) {
+            int c_lock = request->getParam("cablelock")->value().toInt();
+            if (c_lock >= 0 && c_lock <= 1) {                               //boundary check
+                CableLock = c_lock;
+                doc["cablelock"] = c_lock;
             }
         }
 
@@ -1883,6 +1911,23 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
+        return true;
+
+
+    } else if (mg_http_match_uri(hm, "/cablelock") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+
+        if(request->hasParam("1")) {
+            CableLock = 1;
+            doc["cablelock"] = CableLock;
+        } else {
+            CableLock = 0;
+            doc["cablelock"] = CableLock;
+        }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
 
 #if MODEM
