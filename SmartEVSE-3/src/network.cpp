@@ -865,21 +865,18 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
         return {phases, {0, 0, 0}};
     }
 
-    // Determine the grid direction based on power: negative indicates feed-in, positive indicates usage.
+    // Determine grid direction based on power: negative indicates feed-in, positive indicates usage.
     auto getCorrection = [&doc](const char* powerKey) -> int8_t {
         return doc[powerKey].as<int>() < 0 ? -1 : 1;
     };
 
     // Process all three phases.
-    std::array<int16_t, 3> currents{};
+    std::array<int16_t, 3> currents;
     for (size_t i = 0; i < phases; ++i) {
-        const auto rawCurrentFloat = doc[currentKeys[i]].as<float>();
-        const auto currentInDeciAmps = static_cast<int16_t>(std::round(rawCurrentFloat * 10));
-        const auto absCurrentInDeciAmps = std::abs(currentInDeciAmps);
-        currents[i] = static_cast<int16_t>(absCurrentInDeciAmps * getCorrection(powerKeys[i]));
+        int rawCurrent = doc[currentKeys[i]].as<float>() * 10;
+        currents[i] = std::abs(rawCurrent) * getCorrection(powerKeys[i]);
     }
-
-    return {phases, currents};
+return {phases, currents};
 }
 #endif
 
