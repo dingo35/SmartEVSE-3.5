@@ -2804,7 +2804,7 @@ void Timer10ms_singlerun(void) {
             ChargeDelay = 0;                                                // Clear ChargeDelay when disconnected.
             if (!EVMeter.ResetKwh) EVMeter.ResetKwh = 1;                    // when set, reset EV kWh meter on state B->C change.
         } else if ( pilot == PILOT_9V && ErrorFlags == NO_ERROR
-            && ChargeDelay == 0 && AccessStatus == ON && State != STATE_COMM_B
+            && ChargeDelay == 0 && AccessStatus != OFF && State != STATE_COMM_B
 #if MODEM
             && State != STATE_MODEM_REQUEST && State != STATE_MODEM_WAIT && State != STATE_MODEM_DONE   // switch to State B ?
 #endif
@@ -2833,7 +2833,11 @@ void Timer10ms_singlerun(void) {
                 else
 #endif
                     setState(STATE_B);                                          // switch to State B
-                ActivationMode = 30;                                        // Activation mode is triggered if state C is not entered in 30 seconds.
+                if (AccessStatus == ON) {
+                    ActivationMode = 30;                                        // Activation mode is triggered if state C is not entered in 30 seconds.
+                } else {
+                    ActivationMode = 255;                                       // Deactivate Activation mode
+                }
                 AccessTimer = 0;
             } else if (Mode == MODE_SOLAR) {                                // Not enough power:
                 ErrorFlags |= NO_SUN;                                       // Not enough solar power
@@ -2845,7 +2849,11 @@ void Timer10ms_singlerun(void) {
 
     if (State == STATE_COMM_B_OK) {
         setState(STATE_B);
-        ActivationMode = 30;                                                // Activation mode is triggered if state C is not entered in 30 seconds.
+        if (AccessStatus == ON) {
+            ActivationMode = 30;                                                // Activation mode is triggered if state C is not entered in 30 seconds.
+        } else {
+            ActivationMode = 255;                                               // Deactivate Activation mode
+        }
         AccessTimer = 0;
     }
 
@@ -2856,8 +2864,9 @@ void Timer10ms_singlerun(void) {
         if (pilot == PILOT_12V) {                                           // Disconnected?
             setState(STATE_A);                                              // switch to STATE_A
 
-        } else if (pilot == PILOT_6V && ++StateTimer > 50) {                // When switching from State B to C, make sure pilot is at 6V for at least 500ms
+        } else if (pilot == PILOT_6V && ++StateTimer > 50                   // When switching from State B to C, make sure pilot is at 6V for at least 500ms
                                                                             // Fixes https://github.com/dingo35/SmartEVSE-3.5/issues/40
+                && AccessStatus == ON) {                                    // and Mode is NORMAL, SMART or SOLAR
             if ((DiodeCheck == 1) && (ErrorFlags == NO_ERROR) && (ChargeDelay == 0)) {
                 if (EVMeter.Type && EVMeter.ResetKwh) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
@@ -2889,7 +2898,7 @@ void Timer10ms_singlerun(void) {
             }
 
         // PILOT_9V
-        } else if (pilot == PILOT_9V) {
+        } else if (pilot == PILOT_9V && AccessStatus == ON) {               // EV connected and Mode NORMAL, SMART or SOLAR
 
             StateTimer = 0;                                                 // Reset State B->C transition timer
             if (ActivationMode == 0) {
