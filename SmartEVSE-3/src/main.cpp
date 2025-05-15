@@ -782,7 +782,7 @@ void setState(uint8_t NewState) { //c
 #endif
             PILOT_DISCONNECTED;
             DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
-            LeaveModemDoneStateTimer = 2;                                       // Disconnect CP for 5 seconds, restart charging cycle but this time without the modem steps.
+            LeaveModemDoneStateTimer = 5;                                       // Disconnect CP for 5 seconds, restart charging cycle but this time without the modem steps.
 #endif
             break;
         case STATE_B:
