@@ -409,12 +409,14 @@ void SlacManager(uint16_t rxbytes) {
             qcaspi_write_burst(txbuffer, 109); // Send data to modem
             _LOG_I("transmitting CM_SLAC_MATCH.CNF\n");
             TTMatchJoin = millis();
-            modem_state = MODEM_GET_SW_REQ;
+            modem_state = MODEM_WAIT_LINK;
+            //modem_state = MODEM_GET_SW_REQ;
         }
-//    } else if (mnt == (CM_LINK_STATUS + MMTYPE_CNF) && modem_state == MODEM_WAIT_LINK) {
-//        // We request the link status from the modem, it's the same as the GPIO_0 output.
-//        // 1 = Link Ready, 0 = No Link
-//        LinkReady = rxbuffer[21];
+    } else if (mnt == (CM_LINK_STATUS + MMTYPE_CNF) && modem_state == MODEM_WAIT_LINK) {
+        // We request the link status from the modem, it's the same as the GPIO_0 output.
+        // 1 = Link Ready, 0 = No Link
+        LinkReady = rxbuffer[21];
+        _LOG_I("LinkReady=%u.\n", LinkReady);
 
     } else if (mnt == (CM_GET_SW + MMTYPE_CNF) && modem_state == MODEM_WAIT_SW) {
         // Both the local and Pev modem will send their software version.
