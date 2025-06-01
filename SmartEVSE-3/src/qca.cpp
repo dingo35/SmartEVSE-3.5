@@ -329,6 +329,7 @@ void SlacManager(uint16_t rxbytes) {
             // copy MAC from the EVSE modem to myModemMac. This MAC is not used for communication.
             memcpy(myModemMac, rxbuffer+6, 6);
             _LOG_I("NMK set\n");
+            //ModemReset();
         } else _LOG_W("NMK -NOT- set\n");
 
     } else if (mnt == (CM_SLAC_PARAM + MMTYPE_REQ) && modem_state == MODEM_CONFIGURED) {
@@ -480,6 +481,8 @@ void Timer20ms(void * parameter) {
                 //SetLED(CRGB::Red);
                 modem_state = MODEM_CM_SET_KEY_CNF;
                 TPMatchResponse = millis();
+                ModemReset();
+                modem_state = MODEM_CONFIGURED; //FIXME no retries
                 break;
 
             case MODEM_CM_SET_KEY_CNF:
