@@ -784,7 +784,7 @@ void setState(uint8_t NewState) { //c
         //TODO how about STATE_MODEM_DENIED?
         case STATE_MODEM_DONE:  // This state is reached via STATE_MODEM_WAIT after 60s (timeout condition, nothing received) or after REST/MODEM request (success, shortcut to immediate charging).
 #ifndef SMARTEVSE_VERSION //CH32
-            ModemPower(0);                                                      // switch off modem
+            //FIXME ModemPower(0);                                                      // switch off modem
 #endif
             PILOT_DISCONNECTED;
             DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected

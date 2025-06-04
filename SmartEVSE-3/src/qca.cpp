@@ -324,12 +324,13 @@ void SlacManager(uint16_t rxbytes) {
     if (mnt == (CM_SET_KEY + MMTYPE_CNF)) {
         _LOG_I("received SET_KEY.CNF\n");
         if (rxbuffer[19] == 0x01) {
-            modem_state = MODEM_CONFIGURED;
+            //modem_state = MODEM_CONFIGURED;
             //SetLED(CRGB::Green);
             // copy MAC from the EVSE modem to myModemMac. This MAC is not used for communication.
             memcpy(myModemMac, rxbuffer+6, 6);
-            _LOG_I("NMK set\n");
-            //ModemReset();
+            _LOG_I("NMK set, resetting modem\n");
+            ModemReset();
+            modem_state = MODEM_POWERUP;        //after reset we are waiting until the modem comes back up
         } else _LOG_W("NMK -NOT- set\n");
 
     } else if (mnt == (CM_SLAC_PARAM + MMTYPE_REQ) && modem_state == MODEM_CONFIGURED) {
@@ -407,7 +408,7 @@ void SlacManager(uint16_t rxbytes) {
 }
 
 
-
+static bool ModemPoweringDown = false;
 
 // Task
 //
@@ -460,7 +461,10 @@ void Timer20ms(void * parameter) {
                 reg16 = qcaspi_read_register16(SPI_REG_SIGNATURE); //do it twice following the application notes
                 if (reg16 == QCASPI_GOOD_SIGNATURE) {
                     _LOG_I("QCA700X modem found\n");
-                    modem_state = MODEM_WRITESPACE;
+                    if (ModemPoweringDown)
+                        modem_state = MODEM_POWERDOWN2;
+                    else
+                        modem_state = MODEM_WRITESPACE;
                 }
                 break;
 
@@ -469,7 +473,8 @@ void Timer20ms(void * parameter) {
                 if (reg16 == QCA7K_BUFFER_SIZE) {
                     _LOG_I("QCA700X write space ok\n");
                     SetKeyRetryCount = 0;
-                    modem_state = MODEM_CM_SET_KEY_REQ;
+                    //modem_state = MODEM_CM_SET_KEY_REQ;
+                    modem_state = MODEM_CONFIGURED;             //we assume NMK key was set on powering down, if not we will timeout and ask for a new one
                 }
                 break;
 
@@ -481,8 +486,6 @@ void Timer20ms(void * parameter) {
                 //SetLED(CRGB::Red);
                 modem_state = MODEM_CM_SET_KEY_CNF;
                 TPMatchResponse = millis();
-                ModemReset();
-                modem_state = MODEM_CONFIGURED; //FIXME no retries
                 break;
 
             case MODEM_CM_SET_KEY_CNF:
@@ -547,6 +550,11 @@ void Timer20ms(void * parameter) {
                 break;
 
             case MODEM_POWERDOWN:
+                ModemPoweringDown = true;
+                modem_state = MODEM_CM_SET_KEY_REQ;   // request a new key before powering down
+                break;
+            case MODEM_POWERDOWN2:                    // new NMK key is set
+                ModemPoweringDown = false;
                 vTaskDelete(NULL);                    // end this task
                 break;
 
