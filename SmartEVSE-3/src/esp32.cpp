@@ -46,6 +46,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "OneWire.h"
 #include "modbus.h"
 #include "meter.h"
+#include "ch390.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32

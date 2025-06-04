@@ -1,0 +1,12 @@
+{
+  "name": "ch390",
+  "version": "1.0.0",
+  "build": {
+    "flags": [
+      "-Llib/ch390",
+      "-lmain"
+    ],
+    "includeDir": "."
+  }
+}
+
