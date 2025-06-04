@@ -46,7 +46,9 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "OneWire.h"
 #include "modbus.h"
 #include "meter.h"
-#include "ch390.h"
+extern "C" {
+    #include "ch390.h"
+}
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -2864,6 +2866,7 @@ void setup() {
 #endif
 
     firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
+    app_main(); //call ch390 tcp server
 }
 
 
