@@ -26,7 +26,6 @@
 #include <WiFi.h>
 #include "network.h"
 #include "esp_ota_ops.h"
-#include "mbedtls/md_internal.h"
 
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
