@@ -437,13 +437,13 @@ YtSTUJNSiSwqWt1m0FLOJD0CAwEAAQ==
     }
     free( _buffer );
 
-    unsigned char *hash = (unsigned char*)malloc( mdinfo->size );
+    unsigned char *hash = (unsigned char*)malloc( mbedtls_md_get_size(mdinfo) );
     if(!hash){
         _LOG_A( "malloc failed.\n");
         return false;
     }
     mbedtls_md_finish( &rsa, hash );
-    ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, mdinfo->size, (unsigned char*)signature, SIGNATURE_LENGTH );
+    ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, mbedtls_md_get_size(mdinfo), (unsigned char*)signature, SIGNATURE_LENGTH );
     free( hash );
     mbedtls_md_free( &rsa );
     mbedtls_pk_free( &pk );
@@ -781,7 +781,7 @@ String discoverHomeWizardP1() {
             if (hostname.startsWith("p1meter-")) {
                 const uint16_t port = MDNS.port(i);
                 _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(),
-                       MDNS.IP(i).toString().c_str(), port);
+                       MDNS.address(i).toString().c_str(), port);
 
                 // Return first match.
                 // Cache the result before returning it
