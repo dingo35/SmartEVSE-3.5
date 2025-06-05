@@ -190,7 +190,17 @@ void MQTTclient_t::connect(void) {
         char s_mqtt_url[80];
         snprintf(s_mqtt_url, sizeof(s_mqtt_url), "mqtt://%s:%i", MQTTHost.c_str(), MQTTPort);
         String lwtTopic = MQTTprefix + "/connected";
-        esp_mqtt_client_config_t mqtt_cfg = { .uri = s_mqtt_url, .client_id=MQTTprefix.c_str(), .username=MQTTuser.c_str(), .password=MQTTpassword.c_str(), .lwt_topic=lwtTopic.c_str(), .lwt_msg="offline", .lwt_qos=0, .lwt_retain=1, .lwt_msg_len=7, .keepalive=15 };
+        esp_mqtt_client_config_t mqtt_cfg;
+        mqtt_cfg.broker.address.uri = s_mqtt_url;
+        mqtt_cfg.credentials.client_id=MQTTprefix.c_str();
+        mqtt_cfg.credentials.username=MQTTuser.c_str();
+        mqtt_cfg.credentials.authentication.password=MQTTpassword.c_str();
+        mqtt_cfg.session.last_will.topic=lwtTopic.c_str();
+        mqtt_cfg.session.last_will.msg="offline";
+        mqtt_cfg.session.last_will.qos=0;
+        mqtt_cfg.session.last_will.retain=1;
+        mqtt_cfg.session.last_will.msg_len=7;
+        mqtt_cfg.session.keepalive=15;
         MQTTclient.client = esp_mqtt_client_init(&mqtt_cfg);
         /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
         esp_mqtt_client_register_event(MQTTclient.client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
