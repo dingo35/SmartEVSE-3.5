@@ -2587,7 +2587,7 @@ void setup() {
 
     // setup timer, and one shot timer interrupt to 50us
     timerA = timerBegin(80);
-    timerAttachInterrupt(timerA, &onTimerA, false);
+    timerAttachInterrupt(timerA, &onTimerA);
     // we start in STATE A, with a static +12V CP signal
     // set alarm to trigger every 1mS, and let it reload every 1ms
     timerAlarm(timerA, PWM_100, true, 0);
