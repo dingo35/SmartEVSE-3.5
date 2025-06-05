@@ -743,7 +743,7 @@ void setState(uint8_t NewState) { //c
             CONTACTOR2_OFF;
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
-            timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarm(timerA, PWM_100, true, 0);                               // Alarm every 1ms, auto reload
 #else //CH32
             TIM1->CH1CVR = 1000;                                               // Set CP output to +12V
 #endif
@@ -799,7 +799,7 @@ void setState(uint8_t NewState) { //c
             CONTACTOR1_OFF;
             CONTACTOR2_OFF;
 #ifdef SMARTEVSE_VERSION //v3
-            timerAlarmWrite(timerA, PWM_95, false);                             // Enable Timer alarm, set to diode test (95%)
+            timerAlarm(timerA, PWM_95, false, 0);                               // Enable Timer alarm, set to diode test (95%)
 #endif
             SetCurrent(ChargeCurrent);                                          // Enable PWM
 #ifndef SMARTEVSE_VERSION //CH32
@@ -831,7 +831,7 @@ void setState(uint8_t NewState) { //c
         case STATE_C1:
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
-            timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarm(timerA, PWM_100, true, 0);                               // Alarm every 1ms, auto reload
 #else //CH32                                                                          // EV should detect and stop charging within 3 seconds
             TIM1->CH1CVR = 1000;                                                // Set CP output to +12V
 #endif
@@ -3071,7 +3071,7 @@ void Timer10ms_singlerun(void) {
             DiodeCheck = 1;                                                 // Diode found, OK
             _LOG_A("Diode OK\n");
 #ifdef SMARTEVSE_VERSION //v3 and v4
-            timerAlarmWrite(timerA, PWM_5, false);                          // Enable Timer alarm, set to start of CP signal (5%)
+            timerAlarm(timerA, PWM_5, false, 0);                            // Enable Timer alarm, set to start of CP signal (5%)
 #else //CH32
             TIM1->CH4CVR = PWM_5;
 #endif

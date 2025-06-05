@@ -313,8 +313,7 @@ uint16_t IRAM_ATTR local_adc1_read(int channel) {
 void IRAM_ATTR onCPpulse() {
 
   // reset timer, these functions are in IRAM !
-  timerWrite(timerA, 0);                                        
-  timerAlarmEnable(timerA);
+  timerAlarm(timerA, 0, true, 0);
 }
 
 
@@ -2592,9 +2591,8 @@ void setup() {
     timerAttachInterrupt(timerA, &onTimerA, false);
     // we start in STATE A, with a static +12V CP signal
     // set alarm to trigger every 1mS, and let it reload every 1ms
-    timerAlarmWrite(timerA, PWM_100, true);
+    timerAlarm(timerA, PWM_100, true, 0);
     // when PWM is active, we sample the CP pin after 5% 
-    timerAlarmEnable(timerA);
 
 
     // Setup ADC on CP, PP and Temperature pin
