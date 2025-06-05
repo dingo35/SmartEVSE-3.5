@@ -2610,29 +2610,19 @@ void setup() {
           
     
     // Setup PWM on channel 0, 1000Hz, 10 bits resolution
-    ledcSetup(CP_CHANNEL, 1000, 10);            // channel 0  => Group: 0, Channel: 0, Timer: 0
+    ledcAttach(PIN_CP_OUT, 1000, 10);           // channel 0  => Group: 0, Channel: 0, Timer: 0
     // setup the RGB led PWM channels
     // as PWM channel 1 is used by the same timer as the CP timer (channel 0), we start with channel 2
-    ledcSetup(RED_CHANNEL, 5000, 8);            // R channel 2, 5kHz, 8 bit
-    ledcSetup(GREEN_CHANNEL, 5000, 8);          // G channel 3, 5kHz, 8 bit
-    ledcSetup(BLUE_CHANNEL, 5000, 8);           // B channel 4, 5kHz, 8 bit
-    ledcSetup(LCD_CHANNEL, 5000, 8);            // LCD channel 5, 5kHz, 8 bit
-
-    // attach the channels to the GPIO to be controlled
-    ledcAttachPin(PIN_CP_OUT, CP_CHANNEL);      
-    //pinMode(PIN_CP_OUT, OUTPUT);                // Re-init the pin to output, required in order for attachInterrupt to work (2.0.2)
-                                                // not required/working on master branch..
-                                                // see https://github.com/espressif/arduino-esp32/issues/6140
-    ledcAttachPin(PIN_LEDR, RED_CHANNEL);
-    ledcAttachPin(PIN_LEDG, GREEN_CHANNEL);
-    ledcAttachPin(PIN_LEDB, BLUE_CHANNEL);
-    ledcAttachPin(PIN_LCD_LED, LCD_CHANNEL);
+    ledcAttach(PIN_LEDR, 5000, 8);              // R channel 2, 5kHz, 8 bit
+    ledcAttach(PIN_LEDG, 5000, 8);              // G channel 3, 5kHz, 8 bit
+    ledcAttach(PIN_LEDB, 5000, 8);              // B channel 4, 5kHz, 8 bit
+    ledcAttach(PIN_LCD_LED, 5000, 8);           // LCD channel 5, 5kHz, 8 bit
 
     SetCPDuty(1024);                            // channel 0, duty cycle 100%
-    ledcWrite(RED_CHANNEL, 255);
-    ledcWrite(GREEN_CHANNEL, 0);
-    ledcWrite(BLUE_CHANNEL, 255);
-    ledcWrite(LCD_CHANNEL, 0);
+    ledcWrite(PIN_LEDR, 255);
+    ledcWrite(PIN_LEDG, 0);
+    ledcWrite(PIN_LEDB, 255);
+    ledcWrite(PIN_LCD_LED, 0);
 
     // Setup PIN interrupt on rising edge
     // the timer interrupt will be reset in the ISR.

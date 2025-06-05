@@ -627,7 +627,7 @@ void SetCPDuty(uint32_t DutyCycle){
     Serial1.printf("@SetCPDuty:%u\n", DutyCycle);
 #else //CH32 and v3 ESP32
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3 ESP32
-    ledcWrite(CP_CHANNEL, DutyCycle);                                       // update PWM signal
+    ledcWrite(PIN_CP_OUT, DutyCycle);                                       // update PWM signal
 #endif
 #ifndef SMARTEVSE_VERSION  //CH32
     // update PWM signal
@@ -2701,9 +2701,9 @@ static unsigned int LedPwm = 0;                                                /
 
     }
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-    ledcWrite(RED_CHANNEL, RedPwm);
-    ledcWrite(GREEN_CHANNEL, GreenPwm);
-    ledcWrite(BLUE_CHANNEL, BluePwm);
+    ledcWrite(PIN_LEDR, RedPwm);
+    ledcWrite(PIN_LEDG, GreenPwm);
+    ledcWrite(PIN_LEDB, BluePwm);
 
 #else // CH32
     // somehow the CH32 chokes on 255 values
@@ -2908,18 +2908,18 @@ void Timer10ms_singlerun(void) {
     if (BacklightTimer > 1 && BacklightSet != 1) {                      // Enable LCD backlight at max brightness
                                                                         // start only when fully off(0) or when we are dimming the backlight(2)
         LcdPwm = LCD_BRIGHTNESS;
-        ledcWrite(LCD_CHANNEL, LcdPwm);
+        ledcWrite(PIN_LCD_LED, LcdPwm);
         BacklightSet = 1;                                               // 1: we have set the backlight to max brightness
     }
 
     if (BacklightTimer == 1 && LcdPwm >= 3) {                           // Last second of Backlight
         LcdPwm -= 3;
-        ledcWrite(LCD_CHANNEL, ease8InOutQuad(LcdPwm));                 // fade out
+        ledcWrite(PIN_LCD_LED, ease8InOutQuad(LcdPwm));                 // fade out
         BacklightSet = 2;                                               // 2: we are dimming the backlight
     }
                                                                         // Note: could be simplified by removing following code if LCD_BRIGHTNESS is multiple of 3
     if (BacklightTimer == 0 && BacklightSet) {                          // End of LCD backlight
-        ledcWrite(LCD_CHANNEL, 0);                                      // switch off LED PWM
+        ledcWrite(PIN_LCD_LED, 0);                                      // switch off LED PWM
         BacklightSet = 0;                                               // 0: backlight fully off
     }
 

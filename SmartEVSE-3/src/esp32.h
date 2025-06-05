@@ -66,12 +66,6 @@
 #define SPI_MISO -1
 #define SPI_SCK 26
 #define SPI_SS -1
-
-#define CP_CHANNEL 0
-#define RED_CHANNEL 2                                                           // PWM channel 2 (0 and 1 are used by CP signal)
-#define GREEN_CHANNEL 3
-#define BLUE_CHANNEL 4
-#define LCD_CHANNEL 5                                                           // LED Backlight LCD
 #else
 #define PIN_LCD_A0_B2 40
 #define PIN_LCD_RST 42
@@ -252,8 +246,6 @@ bool ocppLockingTxDefined();
 #define LCD_SCK 39
 #define LCD_LED 41
 #define LCD_CS 1
-
-#define LCD_CHANNEL 5               // PWM channel
 
 // ESP-WCH Communication States
 #define COMM_OFF 0
