@@ -16,21 +16,21 @@ tags:
   - name: device
     description: Generic Device endpoints
   - name: ev-meter
-    description: Endpoints reflecting EV Meter options
+    description: Everything regarding the EV Meter
   - name: led-color
-    description: Endpoints to administrate LED options of a button
+    description: Configure the LED and button LEDs
   - name: mains-meter
-    description: Endpoint reflecting Mains Meter options
+    description: Everything regarding the Mains Meter
   - name: modem
-    description: Endpoints for Modem options
+    description: Modem-related topics
   - name: settings
-    description: Endpoints related to SmartEVSE setting
+    description: SmartEVSE v3 settings
 paths:
   /color_off:
     post:
       tags:
         - led-color
-      summary: hello
+      summary: Button color when noone is charging
       description: |-
         Sets the color of the connected switch while the EVSE is in Off mode (and overrides the default setting (0, 0, 0).
         R, G and B must be send all together otherwise the data won't be registered.
@@ -39,11 +39,14 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/Color'
+      responses:
+        '200':
+          description: No responses
   /color_normal:
     post:
       tags:
         - led-color
-      summary:
+      summary: Button LED color when charging in NORMAL mode
       description: |-
         Sets the color of the connected switch while the EVSE is in Normal mode (and overrides the default green setting (0, 255, 0).
       requestBody:
@@ -51,11 +54,14 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/Color'
+      responses:
+        '200':
+          description: No responses
   /color_smart:
     post:
       tags:
         - led-color
-      summary:
+      summary: Button LED color when in SMART mode
       description: |-
         Sets the color of the connected switch while the EVSE is in Smart mode (and overrides the default green setting (0, 255, 0).
       requestBody:
@@ -63,11 +69,14 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/Color'
+      responses:
+        '200':
+          description: No responses
   /color_solar:
     post:
       tags:
         - led-color
-      summary:
+      summary: Button color when in SOLAR mode
       description: |-
         Sets the color of the connected switch while the EVSE is in Solar mode (and overrides the default yellow setting (255, 170, 0). R, G and B must be send all together otherwise the data won't be registered.
       requestBody:
@@ -75,10 +84,14 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/Color'
+      responses:
+        '200':
+          description: No responses
   /currents:
     post:
       tags:
         - mains-meter
+      summary: Set the currents of the different phases of the mains meter
       description: |-
         Actual home battery current multiplied by 10
         A positive number means the home battery is charging
@@ -103,10 +116,14 @@ paths:
                 L3:
                   type: integer
               required: [L1, L2, L3]
+      responses:
+        '200':
+          description: No responses
   /modem:
     post:
       tags:
         - modem
+      summary: tbd
       description: |-
         The duty cycle (PWM) multiplied by 10
       requestBody:
@@ -122,10 +139,14 @@ paths:
                       Note: EXPERIMENTAL FEATURE ONLY FOR EXPERTS
                       DO NOT USE THIS IF YOU ARE NOT AN EVSE EXPERT. DANGEROUS!
               required: [pwm]
+      responses:
+        '200':
+          description: No responses
   /ev_meter:
     post:
       tags:
         - ev-meter
+      summary: sets the values for the EV Meter
       description: |-
         Note: Only works when EVMeter == API
         L1, L2 and L3 must be send all together otherwise the data won't be registered.
@@ -135,35 +156,53 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                L1:
-                  type: integer
-                  description: Ampere must be multiplied by 10
-                L2:
-                  type: integer
-                  description: Ampere must be multiplied by 10
-                L3:
-                  type: integer
-                  description: Ampere must be multiplied by 10
-                import_active_energy:
-                  type: integer
-                  description: Data should be in Wh (kWh * 1000)
-                export_active_energy:
-                  type: integer
-                  description: Data should be in Wh (kWh * 1000)
-                import_active_power:
-                  type: integer
-                  description: Data should be in w(att)
+              anyOf:
+                - type: object
+                  properties:
+                    L1:
+                      type: integer
+                      description: Ampere must be multiplied by 10
+                    L2:
+                      type: integer
+                      description: Ampere must be multiplied by 10
+                    L3:
+                      type: integer
+                      description: Ampere must be multiplied by 10
+                - type: object
+                  properties:
+                    import_active_energy:
+                      type: integer
+                      description: Data should be in Wh (kWh * 1000)
+                    export_active_energy:
+                      type: integer
+                      description: Data should be in Wh (kWh * 1000)
+                    import_active_power:
+                      type: integer
+                      description: Data should be in w(att)
+      responses:
+        '200':
+          description: No responses
   /reboot:
     post:
       tags:
         - device
       description: Restarts the device - No payload required
+      requestBody:
+        required: false
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: empty string
+      responses:
+        '200':
+          description: No responses
+          
   /settings:
     get:
       tags:
         - settings
+      summary: Get the current settings of the SmartEVSE
       description: This output is often used to add to your bug report, so the developers can see your configuration.
       responses:
         '200':
@@ -175,11 +214,10 @@ paths:
     post:
       tags:
         - settings
+      summary: Set settings of the SmartEVSE
       responses:
         '200':
-          description: ''
-          content:
-            application/json:
+          description: The success response of the API
       requestBody:
         content:
           application/x-www-form-urlencoded:
@@ -187,6 +225,19 @@ paths:
               $ref: '#/components/schemas/SettingsRequest'
 components:
   schemas:
+    Current:
+      type: object
+      description: Schema for three phases
+      properties:
+        L1:
+          type: integer
+          description: Current on L1
+        L2:
+          type: integer
+          description: Current on L2
+        L3:
+          type: integer
+          description: Current on L3
     Color:
       type: object
       properties:
