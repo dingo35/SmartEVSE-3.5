@@ -13,18 +13,18 @@ info:
 servers:
   - url: http://smartevse-xxxx.local/
 tags:
+  - name: device
+    description: Generic Device endpoints
+  - name: ev-meter
+    description: Endpoints reflecting EV Meter options
   - name: led-color
-    description: Everything about your Pets
-    externalDocs:
-      description: Find out more
-      url: https://swagger.io
-  - name: settings
-    description: Access to Petstore orders
-    externalDocs:
-      description: Find out more about our store
-      url: https://swagger.io
+    description: Endpoints to administrate LED options of a button
   - name: mains-meter
-    description: ''
+    description: Endpoint reflecting Mains Meter options
+  - name: modem
+    description: Endpoints for Modem options
+  - name: settings
+    description: Endpoints related to SmartEVSE setting
 paths:
   /color_off:
     post:
@@ -159,7 +159,7 @@ paths:
     post:
       tags:
         - device
-      description: Restarts the device
+      description: Restarts the device - No payload required
   /settings:
     get:
       tags:
@@ -494,7 +494,7 @@ components:
         enable_C2:
           type: integer
           enum: [0, 1, 2, 3, 4]
-          description: >
+          description: |-
             Enables switching between 1 phase mode and 3 phase mode by controlling a 2nd contactor (C2 port)
             
             Note 1: The 2nd contactor will only be turned ON when state chages to C (Charging)
@@ -540,16 +540,3 @@ components:
             The Maximum allowed Mains Current summed over all phases: 10-600A
             This is used for the EU Capacity rate limiting.
             Usually you should leave this setting at its default value (600A) since your electricity provider probably does not supports this.
-  securitySchemes:
-    petstore_auth:
-      type: oauth2
-      flows:
-        implicit:
-          authorizationUrl: https://petstore3.swagger.io/oauth/authorize
-          scopes:
-            "write:pets": modify pets in your account
-            "read:pets": read your pets
-    api_key:
-      type: apiKey
-      name: api_key
-      in: header
