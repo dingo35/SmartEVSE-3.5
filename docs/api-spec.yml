@@ -1,0 +1,555 @@
+openapi: 3.0.4
+info:
+  title: SmartEVSE V3 - OpenAPI 3.0
+  description: |-
+    This is the API definition for the API of the SmartEVSE V3 Charging Controller
+  termsOfService: https://swagger.io/terms/
+  contact:
+    email: apiteam@swagger.io
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: 3.7.4
+servers:
+  - url: http://smartevse-xxxx.local/
+tags:
+  - name: led-color
+    description: Everything about your Pets
+    externalDocs:
+      description: Find out more
+      url: https://swagger.io
+  - name: settings
+    description: Access to Petstore orders
+    externalDocs:
+      description: Find out more about our store
+      url: https://swagger.io
+  - name: mains-meter
+    description: ''
+paths:
+  /color_off:
+    post:
+      tags:
+        - led-color
+      summary: hello
+      description: |-
+        Sets the color of the connected switch while the EVSE is in Off mode (and overrides the default setting (0, 0, 0).
+        R, G and B must be send all together otherwise the data won't be registered.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Color'
+  /color_normal:
+    post:
+      tags:
+        - led-color
+      summary:
+      description: |-
+        Sets the color of the connected switch while the EVSE is in Normal mode (and overrides the default green setting (0, 255, 0).
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Color'
+  /color_smart:
+    post:
+      tags:
+        - led-color
+      summary:
+      description: |-
+        Sets the color of the connected switch while the EVSE is in Smart mode (and overrides the default green setting (0, 255, 0).
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Color'
+  /color_solar:
+    post:
+      tags:
+        - led-color
+      summary:
+      description: |-
+        Sets the color of the connected switch while the EVSE is in Solar mode (and overrides the default yellow setting (255, 170, 0). R, G and B must be send all together otherwise the data won't be registered.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Color'
+  /currents:
+    post:
+      tags:
+        - mains-meter
+      description: |-
+        Actual home battery current multiplied by 10
+        A positive number means the home battery is charging
+        A negative number means the home battery is discharging
+        P.S.: If you want to send your currents through HomeAsistant, look at the scripts in the (integration)[integration] directory.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                battery_current:
+                  type: integer
+                  description: |-
+                    Actual home battery current multiplied by 10
+                    A positive number means the home battery is charging
+                    A negative number means the home battery is discharging
+                L1:
+                  type: integer
+                L2:
+                  type: integer
+                L3:
+                  type: integer
+              required: [L1, L2, L3]
+  /modem:
+    post:
+      tags:
+        - modem
+      description: |-
+        The duty cycle (PWM) multiplied by 10
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                pwm:
+                  type: integer
+                  description: |-
+                      If the desired dutycycle is 5% the value to be sent is 50
+                      Note: EXPERIMENTAL FEATURE ONLY FOR EXPERTS
+                      DO NOT USE THIS IF YOU ARE NOT AN EVSE EXPERT. DANGEROUS!
+              required: [pwm]
+  /ev_meter:
+    post:
+      tags:
+        - ev-meter
+      description: |-
+        Note: Only works when EVMeter == API
+        L1, L2 and L3 must be send all together otherwise the data won't be registered.
+        import_active_energy, export_active_energy and import_active_power must be send all together otherwise
+        the data won't be registered.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                L1:
+                  type: integer
+                  description: Ampere must be multiplied by 10
+                L2:
+                  type: integer
+                  description: Ampere must be multiplied by 10
+                L3:
+                  type: integer
+                  description: Ampere must be multiplied by 10
+                import_active_energy:
+                  type: integer
+                  description: Data should be in Wh (kWh * 1000)
+                export_active_energy:
+                  type: integer
+                  description: Data should be in Wh (kWh * 1000)
+                import_active_power:
+                  type: integer
+                  description: Data should be in w(att)
+  /reboot:
+    post:
+      tags:
+        - device
+      description: Restarts the device
+  /settings:
+    get:
+      tags:
+        - settings
+      description: This output is often used to add to your bug report, so the developers can see your configuration.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+    post:
+      tags:
+        - settings
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SettingsRequest'
+components:
+  schemas:
+    Color:
+      type: object
+      properties:
+        R:
+          type: integer
+          minimum: 0
+          maximum: 255
+        G:
+          type: integer
+          minimum: 0
+          maximum: 255
+        B:
+          type: integer
+          minimum: 0
+          maximum: 255
+      required: [R,G,B]
+    Settings:
+      type: object
+      properties:
+        version:
+          type: string
+          example: 21:02:46 @Jan  3 2024
+        mode:
+          type: string
+          example: ON or OFF
+        mode_id:
+          type: integer
+        car_connected:
+          type: boolean
+          example: true or false
+        wifi:
+          type: object
+          properties:
+            status:
+              type: string
+            ssid:
+              type: string
+            rssi:
+              type: string
+            bssid:
+              type: string
+        evse:
+          type: object
+          properties:
+            temp:
+              type: integer
+              example: 16
+            temp_max:
+              type: integer
+              example: 65
+            connected:
+              type: boolean
+              example: true or false
+            access:
+              type: boolean
+              example: true or false
+            mode:
+              type: integer
+              example: 1
+            loadbl:
+              type: integer
+              example: 1 or 0
+            pwm:
+              type: integer
+              example: 1024
+            solar_stop_timer:
+              type: integer
+              example: 0
+            state:
+              type: string
+              example: Ready to charge
+            state_id:
+              type: integer
+              example: 0
+            error:
+              type: string
+              example: None
+            error_id:
+              type: integer
+              example: 0
+            rfid:
+              type: string
+              example: Not installed
+        settings:
+          type: object
+          properties:
+            charge_current: 
+              type: integer
+              example: 0
+            override_current: 
+              type: integer
+              example: 0
+            current_min: 
+              type: integer
+              example: 6
+            current_max: 
+              type: integer
+              example: 16
+            current_main: 
+              type: integer
+              example: 25
+            current_max_circuit: 
+              type: integer
+              example: 16
+            current_max_sum_mains: 
+              type: integer
+              example: 600
+            solar_max_import: 
+              type: integer
+              example: 9
+            solar_start_current: 
+              type: integer
+              example: 29
+            solar_stop_time: 
+              type: integer
+              example: 10
+            enable_C2: 
+              type: string
+              example: Always On
+            modem:  
+              type: string
+              example: Not present
+            mains_meter:  
+              type: string
+              example: InvEastrn
+            starttime:  
+              type: integer
+              example: 0
+            stoptime:  
+              type: integer
+              example: 0
+            repeat:  
+              type: integer
+              example: 0
+        mqtt:
+          type: object
+          properties:
+            host:
+              type: string
+              example: 10.0.0.28
+            port:
+              type: integer
+              example: 1883
+            topic_prefix: 
+              type: string
+              example: homeassistant
+            username: 
+              type: string
+              example: mqtt_user
+            password_set:
+              type: boolean
+              example: true
+            status: 
+              type: string
+              example: connected
+        home_battery:
+          type: object
+          properties:
+            current: 
+              type: integer
+              example: 0
+            last_update:
+              type: integer
+              example: 0
+        ev_meter:
+          type: object
+          properties:
+            description:
+              type: string
+              example: Eastron3P
+            address:
+              type: integer
+              example: 11
+            import_active_power:
+              type: integer
+              example: 0
+            total_kwh:
+              type: number
+              format: float
+              example: 5670.1
+            charged_kwh:
+              type: integer
+              example: 0
+            currents:
+              type: object
+              properties:
+                L1:
+                  type: integer
+                  example: 0
+                L2:
+                  type: integer
+                  example: 0.0
+                L3:
+                  type: integer
+                  example: 1.0
+                TOTAL:
+                  type: integer
+                  example: 1
+            import_active_energy:
+              type: number
+              format: float
+              example: 5670.1
+            export_active_energy:
+              type: number
+              format: float
+              example: 0
+        mains_meter:
+          type: object
+          properties:
+            import_active_energy:
+              type: number
+              description: "Total active energy imported in kWh"
+              example: 8614.8
+            export_active_energy:
+              type: number
+              description: "Total active energy exported in kWh"
+              example: 5289.
+        phase_currents:
+          type: object
+          properties:
+            TOTAL:
+              type: integer
+              description: Total current across all phases
+              example: 75
+            L1:
+              type: integer
+              description: Current in phase L1
+              example: 57
+            L2:
+              type: integer
+              description: Current in phase L2
+              example: 6
+            L3:
+              type: integer
+              description: Current in phase L3
+              example: 12
+            last_data_update:
+              type: integer
+              description: Timestamp of the last data update in seconsds since epoch
+              example: 1704535684
+            charging_L1:
+              type: boolean
+              description: Indicates if charging is occurring on phase L1
+              example: false
+            charging_L2:
+              type: boolean
+              description: Indicates if charging is occurring on phase L2
+              example: false
+            charging_L3:
+              type: boolean
+              description: Indicates if charging is occurring on phase L3
+              example: false
+            original_data:
+              type: object
+              properties:
+                TOTAL:
+                  type: integer
+                  description: Original total current across all phases
+                  example: 75 
+                L1:
+                  type: integer
+                  description: Original current in phase L1
+                  example: 57
+                L2:
+                  type: integer
+                  description: Original current in phase L2
+                  example: 6
+                L3:
+                  type: integer
+                  description: Original current in phase L3
+                  example: 12
+        backlight:
+          type: object
+          properties:
+            timer:
+              type: integer
+              description: "Time in seconds before the backlight turns off"
+            status:
+              type: string
+              enum: ["ON", "OFF"]
+              description: "Current status of the backlight"
+    SettingsRequest:
+      type: object
+      properties:
+        backlight:
+          type: integer
+          enum: [0, 1]
+          description: Turns backlight on (1) or off (0) for the duration of the backlighttimer.
+        mode:
+          type: string
+          enum: [OFF, NORMAL, SOLAR, SMART]
+        stop_timer:
+          type: integer
+          description: Set the stop timer to be used when there isn't sufficient solar power. Using 0 will disable the stop timer.
+          minimum: 0
+          maximum: 60
+        disable_override_current:
+          type: integer
+          description: If this parameter is passed the override current will be reset (value doesn't matter)
+        override_current:
+          type: number
+          format: float
+          description: Works only when using NORMAL or SMART mode. Desired current multiplied by 10. If set to 0, override_current is disabled
+          example: ;If the desired current is 8.3A the value to be sent is 83
+        enable_C2:
+          type: integer
+          enum: [0, 1, 2, 3, 4]
+          description: >
+            Enables switching between 1 phase mode and 3 phase mode by controlling a 2nd contactor (C2 port)
+            
+            Note 1: The 2nd contactor will only be turned ON when state chages to C (Charging)
+            Note 2: This is just changing the config setting, the contactor will not be controlled immediately but only when there is a state change.
+            
+            If car is charging and you want to change from 1F to 3F or vice versa:
+              - Change mode to OFF
+              - Enable or disable C2 contactor
+              - Change to desired value: 0 "Not present", 1 "Always Off", 2 "Solar Off", 3 "Always On", 4 "Auto"
+          example: If the desired C2 mode is "Solar Off", the string to be sent is 2
+        starttime:
+          type: integer
+          description: >
+            Enables delayed charging; always has to be combined with sending the mode in which you want to start charging.
+            
+            Note 1: The time string has to be in the format "2023-04-14T23:31".
+            Note 2: The time must be in the future, in local time.
+            Note 3: Only valid when combined with Normal or Smart mode. Solar mode will itself decide when to start...
+
+          example: If you want the car to start charging at 23:31 on April 14th 2023, in Smart mode, the strings to be sent are.
+        solar_start_current:
+          type: integer
+          description: >
+            The Start Current at which the car starts charging when in Solar Mode.
+          example:
+            If you want the car to start charging when the sum of all 3 phases of the MainsMeter is exporting 6A or more to the grid, the value to be sent is 6
+        current_min:
+          type: integer
+          description: >
+            The Minimum Charging Current in Ampères, per phase. Usually you should leave this setting at its default value (6A) since this is standarized. 
+            Note: This setting is useful for EV's that don't obey standards, like the Renault Zoe, whose MinCurrents not only differ from the standard, but also change when charging at 1 phase and charging at 2 phases. The values even differ per build year.
+          example: If you want the car to start charging at minimally 6A, the value to be sent is 6
+        solar_max_import:
+          type: integer
+          description: >
+            The maximum current (sum of all phases) of the MainsMeter that can be imported before the solar timer is fired off, after expiration the car will stop charging.
+
+          example:
+            If you want the car to stop charging when the sum of all 3 phases of the MainsMeter is importing 0A or more to the grid, the value to be sent is 0
+        current_max_sum_mains:
+          type: integer
+          description: >
+            The Maximum allowed Mains Current summed over all phases: 10-600A
+            This is used for the EU Capacity rate limiting.
+            Usually you should leave this setting at its default value (600A) since your electricity provider probably does not supports this.
+  securitySchemes:
+    petstore_auth:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://petstore3.swagger.io/oauth/authorize
+          scopes:
+            "write:pets": modify pets in your account
+            "read:pets": read your pets
+    api_key:
+      type: apiKey
+      name: api_key
+      in: header
