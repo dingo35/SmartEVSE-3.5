@@ -432,7 +432,7 @@ void RemoteDebug::handle() {
 			// Verify if the IP is same than actual conection
 
 			WiFiClient newClient; // @suppress("Abstract class cannot be instantiated")
-			newClient = TelnetServer.available();
+			newClient = TelnetServer.accept();
 			String ip = newClient.remoteIP().toString();
 
 			if (ip == TelnetClient.remoteIP().toString()) {
@@ -456,7 +456,7 @@ void RemoteDebug::handle() {
 
 			// New TCP client
 
-			TelnetClient = TelnetServer.available();
+			TelnetClient = TelnetServer.accept();
 
 			// Password request ? - 18/07/18
 
@@ -1643,7 +1643,7 @@ void RemoteDebug::processCommand() {
 				_showProfiler = true;
 				_minTimeShowProfiler = aux;
 				debugPrintf(
-						"* Show profiler: On (with minimal time: %u)\r\n",
+						"* Show profiler: On (with minimal time: %lu)\r\n",
 						_minTimeShowProfiler);
 			}
 		}
@@ -1669,7 +1669,7 @@ void RemoteDebug::processCommand() {
 		}
 
 		debugPrintf(
-				"* Debug level set to Profiler (disable in %u millis)\r\n",
+				"* Debug level set to Profiler (disable in %lu millis)\r\n",
 				_levelProfilerDisable);
 
 	} else if (_command == "A") {
@@ -1686,7 +1686,7 @@ void RemoteDebug::processCommand() {
 		}
 
 		debugPrintf(
-				"* Auto profiler debug level active (time >= %u millis)\r\n",
+				"* Auto profiler debug level active (time >= %lu millis)\r\n",
 				_autoLevelProfiler);
 
 	} else if (_command == "c") {
