@@ -530,7 +530,7 @@ bool forceUpdate(const char* firmwareURL, bool validate) {
     }
 
     Update.onProgress( [](uint32_t progress, uint32_t size) {
-      _LOG_V("Firmware update progress %i/%i.\n", progress, size);
+      _LOG_V("Firmware update progress %li/%li.\n", progress, size);
       //move this data to global var
       downloadProgress = progress;
       downloadSize = size;
@@ -862,7 +862,7 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
         return {false, {0, 0, 0}};
     }
 
-    uint8_t phases = 0;
+    int8_t phases = 0;
     // Verify all required keys exist.
     for (const auto* key : currentKeys) {
         if (doc.containsKey(key))
@@ -1486,7 +1486,7 @@ void WiFiSetup(void) {
         String ec_public = preferences.getString("ec_public");
         preferences.end();
 
-        _LOG_A("hwversion %04x serialnr:%u \n",hwversion, serialnr);
+        _LOG_A("hwversion %04x serialnr:%lu \n",hwversion, serialnr);
         //_LOG_A(ec_public);
     } else {
         _LOG_A("No KeyStorage found in nvs!\n");
@@ -1510,9 +1510,9 @@ void WiFiSetup(void) {
     // First option to get time from local ntp server blocks the second fallback option since 2021:
     // See https://github.com/espressif/arduino-esp32/issues/4964
     //sntp_servermode_dhcp(1);                                                    //try to get the ntp server from dhcp
-    sntp_setservername(1, "europe.pool.ntp.org");                               //fallback server
+    esp_sntp_setservername(1, "europe.pool.ntp.org");                               //fallback server
     sntp_set_time_sync_notification_cb(timeSyncCallback);
-    sntp_init();
+    esp_sntp_init();
 
     // Set random AES Key for SmartConfig provisioning, first 8 positions are 0
     // This key is displayed on the LCD, and should be entered when using the EspTouch app.

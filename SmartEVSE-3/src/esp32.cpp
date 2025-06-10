@@ -391,10 +391,10 @@ uint8_t ProximityPin() {
 
     if (!Config) {                                                          // Configuration (0:Socket / 1:Fixed Cable)
         //socket
-        _LOG_A("PP pin: %u (%u mV)\n", sample, voltage);
+        _LOG_A("PP pin: %lu (%lu mV)\n", sample, voltage);
     } else {
         //fixed cable
-        _LOG_A("PP pin: %u (%u mV) (warning: fixed cable configured so PP probably disconnected, making this reading void)\n", sample, voltage);
+        _LOG_A("PP pin: %lu (%lu mV) (warning: fixed cable configured so PP probably disconnected, making this reading void)\n", sample, voltage);
     }
 
     if ((voltage > 1200) && (voltage < 1400)) MaxCap = 16;             // Max cable current = 16A	680R -> should be around 1.3V
@@ -536,7 +536,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
 
         int32_t L1, L2, L3;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+        int n = sscanf(payload.c_str(), "%ld:%ld:%ld", &L1, &L2, &L3);
 
         // MainsMeter can measure -200A to +200A per phase
         if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
@@ -557,7 +557,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
 
         int32_t L1, L2, L3, W, WH;
-        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
+        int n = sscanf(payload.c_str(), "%ld:%ld:%ld:%ld:%ld", &L1, &L2, &L3, &W, &WH);
 
         // We expect 5 values (and accept -1 for unknown values)
         if (n == 5) {
@@ -606,7 +606,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
 #endif
     } else if (topic == MQTTprefix + "/Set/ColorOff") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%ld,%ld,%ld", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -616,7 +616,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorNormal") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%ld,%ld,%ld", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -626,7 +626,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorSmart") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%ld,%ld,%ld", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -636,7 +636,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorSolar") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%ld,%ld,%ld", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
@@ -646,7 +646,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         }
     } else if (topic == MQTTprefix + "/Set/ColorCustom") {
         int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+        int n = sscanf(payload.c_str(), "%ld,%ld,%ld", &R, &G, &B);
 
         // R,G,B is between 0..255
         if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {

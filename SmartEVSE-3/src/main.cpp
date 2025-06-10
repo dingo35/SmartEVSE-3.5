@@ -936,7 +936,7 @@ int Set_Nr_of_Phases_Charging(void) {
         if (Charging_Prob > 100)
             Charging_Prob = 200 - Charging_Prob;
 #ifdef SMARTEVSE_VERSION //ESP32
-        _LOG_I("Detected Charging Phases: Charging_Prob[%u]=%u.\n", i, Charging_Prob);
+        _LOG_I("Detected Charging Phases: Charging_Prob[%u]=%lu.\n", i, Charging_Prob);
 #else
         _LOG_I("Detected Charging Phases: Charging_Prob[%u]=%lu.\n", i, Charging_Prob);
 #endif
