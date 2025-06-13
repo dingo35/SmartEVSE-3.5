@@ -1199,6 +1199,7 @@
                                           </div>
                                         </div>
                                         <div class="col">
+                                          <form class="form-inline" id="form_mode">
                                             <button id="mode_0" onclick="activate('0')" style="width: 100px; display:inline-block;">OFF</button>
                                             <button id="mode_4" onclick="activate('4')" style="width: 100px; display:inline-block;">PAUSE</button>
                                             <button id="mode_1" onclick="activate('1')" style="width: 120px; display:inline-block;">NORMAL</button>
@@ -1209,7 +1210,7 @@
                                             <div class="form-group">
                                               <div class="d-inline-flex align-items-center">
                                                 <label for="starttime" style="min-width:100px;">
-                                                  <div class="tooltip">START:
+                                                  <div class="tooltip">...STARTING:
                                                   <span class="tooltiptext">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                                   </div>
                                                 </label>
@@ -1221,7 +1222,7 @@
                                             <div class="form-group" id="stoptime_group">
                                               <div class="d-inline-flex align-items-center">
                                                 <label for="stoptime" style="min-width:100px;">
-                                                  <div class="tooltip">END:
+                                                  <div class="tooltip">...ENDING:
                                                   <span class="tooltiptext">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                                   </div>
                                                 </label>
@@ -1236,6 +1237,7 @@
                                                 <input type="checkbox" id="daily_repeat" name="daily_repeat" class="form-control" value="daily" style="max-width: 60px;">
                                               </div>
                                             </div>
+                                          </form>
                                         </div>
                                     </div>
                                     <div class="row no-gutters align-items-center with_solar">
