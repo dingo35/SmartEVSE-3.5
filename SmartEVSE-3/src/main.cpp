@@ -1064,6 +1064,62 @@ char IsCurrentAvailable(void) {
     printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
     return 1;
 }
+
+
+// takes currentToHandout, distributes it to ActiveEVSE's,
+// and returns remaining current to handout
+// calls itself recursively!
+int HandoutCurrent(int currentToHandout) {
+    // divide the remaining current over the ActiveEVSE's
+    int Candidates = 0;
+    for (int n = 0; n < NR_EVSES; n++)
+        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0) {// we only handout to candidate who already have MinCurrent or more
+            if ((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)) { // slave is running in solar mode in solarstarttime period, doesnt need handouts
+                 //IsetBalanced = TotalCurrent;  // TODO I don't understand this line
+                _LOG_V("[S]Node %u = %u.%u A", n, Balanced[n]/10, Balanced[n]%10);
+            } else {
+             Candidates++;
+            }
+        }
+    if (!Candidates) return 0;                                                  // all candidates are satisfied
+    int Average = currentToHandout / Candidates;
+    if (Average < 1) return 0;                                                  // no current anymore to handout
+    for (int n = 0; n < NR_EVSES; n++) {
+        if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0 && !(((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)))) {
+            Balanced[n] += Average;
+            if (Balanced[n] > BalancedMax[n]) {
+                currentToHandout -= (BalancedMax[n] - Balanced[n] + Average);
+                Balanced[n] = BalancedMax[n];
+            }
+            else {
+                currentToHandout -= Average;
+            }
+        }
+    }
+    return HandoutCurrent(currentToHandout);
+}
+
+
+// checks if current is exceeding hard boundaries
+// returns true if exceding
+bool HardBoundariesExceeded(int16_t IsetBalanced, int Baseload, int Baseload_EV) {
+    // check for HARD shortage of power
+    bool hardShortage = false;
+    // guard MaxMains
+    if (MainsMeter.Type && Mode != MODE_NORMAL)
+        if (IsetBalanced > (MaxMains * 10) - Baseload)
+            hardShortage = true;
+    // guard MaxCircuit
+    if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
+        && (IsetBalanced > (MaxCircuit * 10) - Baseload_EV))
+            hardShortage = true;
+    // guard GridRelay
+    if (GridRelayOpen && IsetBalanced > ((GridRelayMaxSumMains * 10) - Isum)/3) //assume the current should be available on all 3 phases
+            hardShortage = true;
+    return hardShortage;
+}
+
+
 #else //v4 ESP32
 bool Shadow_IsCurrentAvailable; // this is a global variable that will be kept uptodate by Timer1S on CH32
 char IsCurrentAvailable(void) {
@@ -1073,18 +1129,16 @@ char IsCurrentAvailable(void) {
 }
 #endif
 
-
 // Calculates Balanced PWM current for each EVSE
 // mod =0 normal
 // mod =1 we have a new EVSE requesting to start charging.
 // only runs on the Master or when loadbalancing Disabled
 void CalcBalancedCurrent(char mod) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
-    int Average, MaxBalanced, Idifference, Baseload_EV;
+    int RestOfIsetBalancedNotAllocatedYet, Idifference, Baseload_EV;
     int ActiveEVSE = 0;
     signed int IsumImport = 0;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
-    char CurrentSet[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
     uint8_t n;
     bool LimitedByMaxSumMains = false;
     // ############### first calculate some basic variables #################
@@ -1265,8 +1319,7 @@ void CalcBalancedCurrent(char mod) {
         IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10) - Baseload_EV); //limiting is per phase so no Nr_Of_Phases_Charging here!
     // guard GridRelay
     if (GridRelayOpen) {
-        int Phases = Force_Single_Phase_Charging() ? 1 : 3;
-        IsetBalanced = min((int) IsetBalanced, (GridRelayMaxSumMains * 10)/Phases); //assume the current should be available on all 3 phases
+        IsetBalanced = min((int) IsetBalanced, (GridRelayMaxSumMains * 10)/Nr_Of_Phases_Charging); //assume the current should be available on all 3 phases
     }
     _LOG_V("Checkpoint 4 Isetbalanced=%d.%d A.\n", IsetBalanced/10, abs(IsetBalanced%10));
 
