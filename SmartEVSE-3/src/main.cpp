@@ -177,6 +177,10 @@ uint16_t Balanced[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                     // A
 uint16_t BalancedMax[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                  // Max Amps value per EVSE
 uint8_t BalancedState[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                 // State of all EVSE's 0=not active (state A), 1=charge request (State B), 2= Charging (State C)
 uint16_t BalancedError[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                // Error state of EVSE
+PrioStrat_t PrioStrat = NODENR;                                             // Default prioritization strategy when Loadbl enabled
+enum PrioStrat_t { NODENR, FIRSTCONN, LASTCONN };
+const static char StrPrioStrat[][11] = { "NodeNr", "First Conn", "Last Conn" };
+unsigned long BalancedConnected[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};       // contains timestamp of millis() when EV has connected to EVSE (so left STATE_A)
 
 Node_t Node[NR_EVSES] = {                                                        // 0: Master / 1: Node 1 ...
    /*         Config   EV     EV       Min      Used    Charge Interval Solar *          // Interval Time   : last Charge time, reset when not charging
@@ -733,6 +737,9 @@ void setState(uint8_t NewState) { //c
     }
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32 //a
+    if (LoadBl && PrioStrat != NODENR && State == STATE_A && NewState != STATE_A) // if we are loadbalancing, record the time EV is connected
+        BalancedConnected[LoadBl] = millis();
+
     switch (NewState) {
         case STATE_B1:
             if (!ChargeDelay) setChargeDelay(3);                                // When entering State B1, wait at least 3 seconds before switching to another state.

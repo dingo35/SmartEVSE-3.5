@@ -280,11 +280,11 @@ void setPilot(bool On);
 #define MENU_SUMMAINS 38
 #define MENU_SUMMAINSTIME 39
 #define MENU_LCDPIN 40
-#define MENU_OFF 41                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 42                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 43
+#define MENU_PRIO 41
+#define MENU_OFF 42                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 43                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 44
 
-#define MENU_STATE 50
 
 class Button {
   public:
