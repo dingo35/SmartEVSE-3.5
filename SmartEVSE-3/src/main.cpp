@@ -547,8 +547,8 @@ void setMode(uint8_t NewMode) {
         }
     }
 
-    /* rob040: similar to the above, when solar charging at 1P and mode change, we need to switch back to 3P */
-    if ((EnableC2 == AUTO) && (Mode != NewMode) && (Mode == MODE_SOLAR) /* && solar 1P*/) {
+    /* rob040: similar to the above, when solar/smart charging at 1P and mode change, we need to switch back to 3P */
+    if ((EnableC2 == AUTO) && (Mode != NewMode)) {                            // solar or smart 1P 
         setAccess(OFF);                                                       //switch to OFF
         switchOnLater = true;
     }
@@ -1383,6 +1383,8 @@ void CalcBalancedCurrent(char mod) {
                 MaxSumMainsTimer = MaxSumMainsTime * 60;
         }
         for (n = 0; n < NR_EVSES; n++) {
+_LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d\n",  StrEnableC2[EnableC2], n, BalancedState[Priority[n]], RestOfIsetBalancedNotAllocatedYet);
+          if (BalancedState[Priority[n]] == STATE_C) {
             if ((BalancedState[Priority[n]] == STATE_C && RestOfIsetBalancedNotAllocatedYet >= MinCurrent * 10) || // give out if available
                 (BalancedState[Priority[n]] == STATE_C && LimitedByMaxSumMains && MaxSumMainsTime && MaxSumMainsTimer &&
                  !HardBoundariesExceeded(IsetBalanced - RestOfIsetBalancedNotAllocatedYet + (MinCurrent * 10), Baseload, Baseload_EV)) || // OR give out if MaxSumMainsTimer is running  AND we would not be exceeding hard boundaries
@@ -1393,13 +1395,23 @@ void CalcBalancedCurrent(char mod) {
                 RestOfIsetBalancedNotAllocatedYet -= Balanced[Priority[n]];           // Update total current to new (lower) value
                 //NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
             } else {                                                        // not enough current to give to an ActiveEVSE
-                Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
-                                                                            // and this also flags the EVSE that it is not supposed to charge:
-                BalancedError[Priority[n]] |= LESS_6A;
-                if (LoadBl < 2) {                                               // TODO make sure [0|1] = master values
-                    ErrorFlags |= LESS_6A;
+                // perhaps we can solve it by switching master to 1P?
+                if (LoadBl < 2 && EnableC2 == AUTO && Nr_Of_Phases_Charging != 1) {
+                    Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+                    setState(STATE_C1);               // tell EV to stop charging
+                    _LOG_D("Charging starting in 1-phase mode\n");
+                } else {
+                    //nope we can't solve it
+                    Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
+                                                                                // and this also flags the EVSE that it is not supposed to charge:
+                    BalancedError[Priority[n]] |= LESS_6A;
+                    if (LoadBl < 2) {                                               // TODO make sure [0|1] = master values
+    _LOG_A("DINGO: setting eror flag in CalcBalancedCurrent.\n");
+                        ErrorFlags |= LESS_6A;
+                    }
                 }
             }
+          } //STATE_C
         }
 
         _LOG_V("Checkpoint 4a Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
