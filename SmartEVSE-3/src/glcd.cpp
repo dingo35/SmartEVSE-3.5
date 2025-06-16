@@ -1139,6 +1139,8 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_START;                                            // - Start Surplus Current (A)
         MenuItems[m++] = MENU_STOP;                                             // - Stop time (min)
         MenuItems[m++] = MENU_IMPORT;                                           // - Import Current from Grid (A)
+    }
+    if ((Mode == MODE_SOLAR || Mode == MODE_SMART) && LoadBl < 2) {
         MenuItems[m++] = MENU_C2;
     }
     MenuItems[m++] = MENU_SWITCH;                                               // External Switch on SW (0:Disable / 1:Access / 2:Smart-Solar)
