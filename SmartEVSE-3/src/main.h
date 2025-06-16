@@ -313,6 +313,7 @@ extern void PowerPanicESP();
 extern uint8_t LCDlock;
 enum Switch_Phase_t { NO_SWITCH, GOING_TO_SWITCH_1P, GOING_TO_SWITCH_3P, AFTER_SWITCH };
 enum AccessStatus_t { OFF, ON, PAUSE };
+enum PrioStrat_t { NODENR, FIRSTCONN, LASTCONN };
 extern void CalcBalancedCurrent(char mod);
 extern void write_settings(void);
 extern void CalcIsum(void);
