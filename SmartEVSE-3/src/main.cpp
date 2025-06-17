@@ -1189,15 +1189,15 @@ void CalcBalancedCurrent(char mod) {
         else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
     } //end MODE_NORMAL
-    else if (Mode == MODE_SOLAR && State == STATE_A) {
+    else if (State == STATE_A) {
         // waiting for Solar
         IsetBalanced = 0;
-        _LOG_V("waiting for Solar (A)\n");
+        _LOG_V("waiting for Power (A)\n");
     }
-    else if (Mode == MODE_SOLAR && State == STATE_B) {
+    else if (State == STATE_B) {
         // Prepare for switching to state C
         IsetBalanced = 10*MinCurrent;
-        _LOG_D("waiting for Solar (B) Isum=%d dA, phases=%d\n", Isum, Nr_Of_Phases_Charging);
+        _LOG_D("waiting for Power (B) Isum=%d dA, phases=%d\n", Isum, Nr_Of_Phases_Charging);
         if (EnableC2 == AUTO) {
             // Mains isn't loaded, so the Isum must be negative for solar charging
             // determine if enough current is available for 3-phase or 1-phase charging
@@ -1205,15 +1205,15 @@ void CalcBalancedCurrent(char mod) {
             if (-Isum >= (30*MinCurrent+30)) { // 30x for 3-phase and 0.1A resolution; +30 to have 3x1.0A room for regulation
                 if (Nr_Of_Phases_Charging != 3) {
                     Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                    _LOG_D("Solar starting in 3-phase mode\n");
+                    _LOG_D("Charging starting in 3-phase mode\n");
                 } else
-                    _LOG_D("Solar continuing in 3-phase mode\n");
+                    _LOG_D("Charging continuing in 3-phase mode\n");
             } else /*if (-Isum >= (10*MinCurrent+2))*/ {
                 if (Nr_Of_Phases_Charging != 1) {
                     Switching_Phases_C2 = GOING_TO_SWITCH_1P;
-                    _LOG_D("Solar starting in 1-phase mode\n");
+                    _LOG_D("Charging starting in 1-phase mode\n");
                 } else
-                    _LOG_D("Solar continuing in 1-phase mode\n");
+                    _LOG_D("Charging continuing in 1-phase mode\n");
             } /*else {
                 Switching_Phases_C2 = NO_SWITCH;
                 // Not enough current;
@@ -1413,12 +1413,12 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
             }
           } //STATE_C
         }
-
-        _LOG_V("Checkpoint 4a Isetbalanced=%.1f A.\n", (float)IsetBalanced/10);
-        if (LoadBl == 1) {
+        _LOG_V("Checkpoint 4a Isetbalanced=%d.%d A.\n", IsetBalanced/10, abs(IsetBalanced%10));
+        if (LoadBl < 2) {
+        //if (LoadBl == 1) {
             _LOG_D("Balance before handout: ");
             for (n = 0; n < NR_EVSES; n++) {
-                _LOG_D_NO_FUNC("EVSE%u:%s(%.1fA) ", n, StrStateName[BalancedState[n]], (float)Balanced[n]/10);
+                _LOG_D_NO_FUNC("EVSE%u:%s(%u.%uA) ", n, StrStateName[BalancedState[n]], Balanced[n]/10, Balanced[n]%10);
             }
             _LOG_D_NO_FUNC("\n");
         }
@@ -1428,15 +1428,18 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
         int rest = HandoutCurrent(RestOfIsetBalancedNotAllocatedYet);
         if (rest) {
             _LOG_A("WARNING: did not handout %i dA of current!\n", rest);
+        }
+
             // ############### no shortage of power  #################
 
             // Solar mode with C2=AUTO and enough power for switching from 1P to 3P solar charge?
-            if (Mode == MODE_SOLAR && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && IsetBalanced + 8 >= MaxCurrent * 10) {
+            if (Mode != MODE_NORMAL && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && (IsetBalanced - rest) + 8 >= ActiveMax) {
                     // are we at max regulation at 1P (Iset hovers at 15.2-16.0A on 16A MaxCurrent)(warning: Iset can also be at max when EV limits current)
                     // and is there enough spare that we can go to 3P charging?
                     // Can it take the step from 1x16A to 3x7A (in regular config)?
                     // Note that we do not take 3P MinCurrent but 3x1A above that to give it some regulation room;
                     // It also needs to sustain that minimal room for 60 seconds before it may switch to 3P
+                    // TODO this only flies for loadBl <2 ?!?!
                     int spareCurrent = (3*(MinCurrent+1)-MaxCurrent);  // constant, gap between 1P range and 3P range
                     if (spareCurrent < 0) spareCurrent = 3;  // const, when 1P range overlaps 3P range
                     if (-Isum > (10*spareCurrent)) { // note that Isum is surplus current, which is negative
@@ -1466,7 +1469,7 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                 MaxSumMainsTimer = 0;
                 NoCurrent = 0;
             }
-        } //rest
+        //} //rest
 
 //        if (Balanced[0] == 0)
 //            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
@@ -1485,8 +1488,9 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
     // ############### print all the distributed currents #################
 
     _LOG_V("Checkpoint 5 Isetbalanced=%d.%d A.\n", IsetBalanced/10, abs(IsetBalanced%10));
-    if (LoadBl == 1) {
-        _LOG_D("Balance: ");
+    if (LoadBl < 2) {
+    //if (LoadBl == 1) {
+        _LOG_D("Balance after  handout: ");
         for (n = 0; n < NR_EVSES; n++) {
             _LOG_D_NO_FUNC("EVSE%u:%s(%u.%uA) ", n, StrStateName[BalancedState[n]], Balanced[n]/10, Balanced[n]%10);
         }
