@@ -873,7 +873,7 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
         }
         MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
-        MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(ErrorFlags), true, 0);
+        MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(BalancedError[LoadBl]), true, 0);
         MQTTclient.publish(MQTTprefix + "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
         MQTTclient.publish(MQTTprefix + "/WiFiSSID", String(WiFi.SSID()), true, 0);
         MQTTclient.publish(MQTTprefix + "/WiFiBSSID", String(WiFi.BSSIDstr()), true, 0);
@@ -1263,10 +1263,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             case 2: backlight = "DIMMED"; break;
         }
         String evstate = StrStateNameWeb[State];
-        String error = getErrorNameWeb(ErrorFlags);
-        int errorId = getErrorId(ErrorFlags);
+        String error = getErrorNameWeb(BalancedError[LoadBl]);
+        int errorId = getErrorId(BalancedError[LoadBl]);
 
-        if (ErrorFlags & LESS_6A) {
+        if (BalancedError[LoadBl] & LESS_6A) {
             evstate += " - " + error;
             error = "None";
             errorId = 0;
@@ -2296,15 +2296,15 @@ void ocppInit() {
 #endif
 
     addErrorCodeInput([] () {
-        return (ErrorFlags & TEMP_HIGH) ? "HighTemperature" : (const char*)nullptr;
+        return (BalancedError[LoadBl] & TEMP_HIGH) ? "HighTemperature" : (const char*)nullptr;
     });
 
     addErrorCodeInput([] () {
-        return (ErrorFlags & RCM_TRIPPED) ? "GroundFailure" : (const char*)nullptr;
+        return (BalancedError[LoadBl] & RCM_TRIPPED) ? "GroundFailure" : (const char*)nullptr;
     });
 
     addErrorDataInput([] () -> MicroOcpp::ErrorData {
-        if (ErrorFlags & CT_NOCOMM) {
+        if (BalancedError[LoadBl] & CT_NOCOMM) {
             MicroOcpp::ErrorData error = "PowerMeterFailure";
             error.info = "Communication with mains meter lost";
             return error;
@@ -2313,7 +2313,7 @@ void ocppInit() {
     });
 
     addErrorDataInput([] () -> MicroOcpp::ErrorData {
-        if (ErrorFlags & EV_NOCOMM) {
+        if (BalancedError[LoadBl] & EV_NOCOMM) {
             MicroOcpp::ErrorData error = "PowerMeterFailure";
             error.info = "Communication with EV meter lost";
             return error;
@@ -2962,9 +2962,9 @@ void loop() {
         //this block is for non-time critical stuff that needs to run approx 1 / second
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
         //printStatus:
-        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A, MainsMeter.Timeout=%u, EVMeter.Timeout=%u.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10, MainsMeter.Timeout, EVMeter.Timeout);
+        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A, MainsMeter.Timeout=%u, EVMeter.Timeout=%u.\n", getStateName(State), BalancedError[LoadBl], StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10, MainsMeter.Timeout, EVMeter.Timeout);
 #else
-        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10);
+        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A.\n", getStateName(State), BalancedError[LoadBl], StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10);
 #endif
         _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A\n", (float)MainsMeter.Irms[0]/10, (float)MainsMeter.Irms[1]/10, (float)MainsMeter.Irms[2]/10, (float)Isum/10);
 

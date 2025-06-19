@@ -532,11 +532,11 @@ void GLCD(void) {
         LCDText++;
     }
 
-    if (ErrorFlags) {                                                           // We switch backlight on, as we exit after displaying the error
+    if (BalancedError[LoadBl]) {                                                // We switch backlight on, as we exit after displaying the error
         BacklightTimer = BACKLIGHT;                                             // Backlight timer is set to 120 seconds
 
-        if (ErrorFlags & (CT_NOCOMM | EV_NOCOMM)) {                             // No serial communication for 10 seconds
-            if (ErrorFlags & EV_NOCOMM) {
+        if (BalancedError[LoadBl] & (CT_NOCOMM | EV_NOCOMM)) {                  // No serial communication for 10 seconds
+            if (BalancedError[LoadBl] & EV_NOCOMM) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "EV METER");
             } else if (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD_P1) {
@@ -549,13 +549,13 @@ void GLCD(void) {
             GLCD_print_buf2(4, (const char *) "CHECK CFG");
             GLCD_print_buf2(6, (const char *) "OR WIRING");
             return;
-        } else if (ErrorFlags & TEMP_HIGH) {                                    // Temperature reached 65C
+        } else if (BalancedError[LoadBl] & TEMP_HIGH) {                         // Temperature reached 65C
             GLCD_print_buf2(0, (const char *) "HIGH TEMP");
             GLCD_print_buf2(2, (const char *) "ERROR");
             GLCD_print_buf2(4, (const char *) "CHARGING");
             GLCD_print_buf2(6, (const char *) "STOPPED");
             return;
-        } else if (ErrorFlags & RCM_TRIPPED) {                                  // Residual Current Sensor tripped
+        } else if (BalancedError[LoadBl] & RCM_TRIPPED) {                       // Residual Current Sensor tripped
             if (!LCDToggle) {
                 GLCD_print_buf2(0, (const char *) "RESIDUAL");
                 GLCD_print_buf2(2, (const char *) "FAULT");
@@ -568,12 +568,12 @@ void GLCD(void) {
                 GLCD_print_buf2(6, (const char *) "RESET");
             }
             return;
-        } else if (ErrorFlags & Test_IO) {                                      // Only used when testing the module
+        } else if (BalancedError[LoadBl] & Test_IO) {                           // Only used when testing the module
             GLCD_print_buf2(2, (const char *) "IO Test");
             sprintf(Str, "FAILED! %u", TestState);
             GLCD_print_buf2(4, Str);
             return;
-        } else if (ErrorFlags & BL_FLASH) {                                     // Bootloader update error
+        } else if (BalancedError[LoadBl] & BL_FLASH) {                          // Bootloader update error
             GLCD_print_buf2(2, (const char *) "BOOTLOADER");
             GLCD_print_buf2(4, (const char *) "UPDATE ERR");
             return;
@@ -640,7 +640,7 @@ void GLCD(void) {
             }
         } else
 #endif //ENABLE_OCPP
-        if (ErrorFlags & LESS_6A) {
+        if (BalancedError[LoadBl] & LESS_6A) {
             GLCD_print_buf2(2, (const char *) "WAITING");
             GLCD_print_buf2(4, (const char *) "FOR POWER");
 #if MODEM
@@ -864,7 +864,7 @@ void GLCD(void) {
         GLCD_sendbuf(0, 4);                                                     // Copy LCD buffer to GLCD
 
         glcd_clrln(4, 0);                                                       // Clear line 4
-        if (ErrorFlags & LESS_6A) {
+        if (BalancedError[LoadBl] & LESS_6A) {
             if (!LCDToggle) {
                 GLCD_print_buf2(5, (const char *) "WAITING");
             } else {
@@ -1313,7 +1313,7 @@ void GLCDMenu(uint8_t Buttons) {
             if (LCDNav == MENU_EXIT) {                                          // Exit Main Menu
                 LCDNav = 0;
                 SubMenu = 0;
-                clearErrorFlags(!(NO_ERROR));                                           // Clear All Errors when exiting the Main Menu
+                clearErrorFlags(!(NO_ERROR));                                   // Clear All Errors when exiting the Main Menu
                 TestState = 0;                                                  // Clear TestState
                 setChargeDelay(0);                                              // Clear ChargeDelay
                 setSolarStopTimer(0);                                           // Disable Solar Timer

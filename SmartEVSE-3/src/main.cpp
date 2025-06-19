@@ -162,7 +162,6 @@ uint8_t Nr_Of_Phases_Charging = 3;                                          // n
 Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // switching phases only used in SOLAR mode with Contactor C2 = AUTO
 
 uint8_t State = STATE_A;
-uint8_t ErrorFlags;
 uint8_t pilot;
 
 uint16_t MaxCapacity;                                                       // Cable limit (A) (limited by the wire in the charge cable, set automatically, or manually if Config=Fixed Cable)
@@ -339,14 +338,14 @@ Button::Button(void) {
 
 //since in v4 ESP32 only a copy of ErrorFlags is available, we need to have functions so v4 ESP32 can set CH32 ErrorFlags
 void setErrorFlags(uint8_t flags) {
-    ErrorFlags |= flags;
+    BalancedError[LoadBl] |= flags;
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
     Serial1.printf("@setErrorFlags:%u\n", flags);
 #endif
 }
 
 void clearErrorFlags(uint8_t flags) {
-    ErrorFlags &= ~flags;
+    BalancedError[LoadBl] &= ~flags;
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
     Serial1.printf("@clearErrorFlags:%u\n", flags);
 #endif
@@ -405,7 +404,7 @@ void Button::HandleSwitch(void) {
 
         // Reset RCM error when button is pressed
         // RCM was tripped, but RCM level is back to normal
-        if (RCmon == 1 && (ErrorFlags & RCM_TRIPPED) && digitalRead(PIN_RCM_FAULT) == LOW) {
+        if (RCmon == 1 && (BalancedError[LoadBl] & RCM_TRIPPED) && digitalRead(PIN_RCM_FAULT) == LOW) {
             clearErrorFlags(RCM_TRIPPED);
         }
         // Also light up the LCD backlight
@@ -424,7 +423,7 @@ void Button::HandleSwitch(void) {
                     } else if (Mode == MODE_SOLAR) {
                         setMode(MODE_SMART);
                     }
-                    ErrorFlags &= ~(LESS_6A);                       // Clear All errors
+                    BalancedError[LoadBl] &= ~(LESS_6A);            // Clear All errors
                     ChargeDelay = 0;                                // Clear any Chargedelay
                     setSolarStopTimer(0);                           // Also make sure the SolarTimer is disabled.
                     MaxSumMainsTimer = 0;
@@ -1454,10 +1453,6 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                     Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
                                                                                 // and this also flags the EVSE that it is not supposed to charge:
                     BalancedError[Priority[n]] |= LESS_6A;
-                    if (LoadBl < 2) {                                               // TODO make sure [0|1] = master values
-    _LOG_A("DINGO: setting eror flag in CalcBalancedCurrent.\n");
-                        ErrorFlags |= LESS_6A;
-                    }
                 }
             }
           } //STATE_C
@@ -1736,18 +1731,18 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
     } else AccessTimer = 0;                                             // Not in state A, then disable timer
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
-    if ((TempEVSE < (maxTemp - 10)) && (ErrorFlags & TEMP_HIGH)) {                  // Temperature below limit?
+    if ((TempEVSE < (maxTemp - 10)) && (BalancedError[LoadBl] & TEMP_HIGH)) {   // Temperature below limit?
         clearErrorFlags(TEMP_HIGH); // clear Error
     }
 
-    if ( (ErrorFlags & (LESS_6A) ) && (LoadBl < 2) && (IsCurrentAvailable())) {
-        clearErrorFlags(LESS_6A);                                         // Clear Errors if there is enough current available, and Load Balancing is disabled or we are Master
+    if ( (BalancedError[LoadBl] & (LESS_6A) ) && (LoadBl < 2) && (IsCurrentAvailable())) {
+        clearErrorFlags(LESS_6A);                                               // Clear Errors if there is enough current available, and Load Balancing is disabled or we are Master
         _LOG_I("No power/current Errors Cleared.\n");
     }
 
     // Mainsmeter defined, and power sharing set to Disabled or Master
     if (MainsMeter.Type && LoadBl < 2) {
-        if ( MainsMeter.Timeout == 0 && !(ErrorFlags & CT_NOCOMM) && Mode != MODE_NORMAL) { // timeout if current measurement takes > 10 secs
+        if ( MainsMeter.Timeout == 0 && !(BalancedError[LoadBl] & CT_NOCOMM) && Mode != MODE_NORMAL) { // timeout if current measurement takes > 10 secs
             // When power sharing is set to Disabled/Master, and in Normal mode, do not timeout;
             // there might be MainsMeter/EVMeter configured that can be retrieved through the API.
             setErrorFlags(CT_NOCOMM);
@@ -1759,7 +1754,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         }
     // We are a Node, we will timeout if there is no communication with the Master controller.
     } else if (LoadBl > 1) {
-        if (MainsMeter.Timeout == 0 && !(ErrorFlags & CT_NOCOMM)) {
+        if (MainsMeter.Timeout == 0 && !(BalancedError[LoadBl] & CT_NOCOMM)) {
             setErrorFlags(CT_NOCOMM);
             setStatePowerUnavailable();
             SB2.SoftwareVer = 0;
@@ -1771,7 +1766,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         MainsMeter.setTimeout(COMM_TIMEOUT);
 
     if (EVMeter.Type) {
-        if ( EVMeter.Timeout == 0 && !(ErrorFlags & EV_NOCOMM) && Mode != MODE_NORMAL) {
+        if ( EVMeter.Timeout == 0 && !(BalancedError[LoadBl] & EV_NOCOMM) && Mode != MODE_NORMAL) {
             setErrorFlags(EV_NOCOMM);
             setStatePowerUnavailable();
             _LOG_W("Error, EV Meter communication error!\n");
@@ -1782,18 +1777,18 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         EVMeter.setTimeout(COMM_EVTIMEOUT);
     
     // Clear communication error, if present
-    if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout) clearErrorFlags(CT_NOCOMM);
+    if ((BalancedError[LoadBl] & CT_NOCOMM) && MainsMeter.Timeout) clearErrorFlags(CT_NOCOMM);
 
-    if ((ErrorFlags & EV_NOCOMM) && EVMeter.Timeout) clearErrorFlags(EV_NOCOMM);
+    if ((BalancedError[LoadBl] & EV_NOCOMM) && EVMeter.Timeout) clearErrorFlags(EV_NOCOMM);
 
-    if (TempEVSE > maxTemp && !(ErrorFlags & TEMP_HIGH))                // Temperature too High?
+    if (TempEVSE > maxTemp && !(BalancedError[LoadBl] & TEMP_HIGH))             // Temperature too High?
     {
         setErrorFlags(TEMP_HIGH);
         setStatePowerUnavailable();
         _LOG_W("Error, temperature %u C !\n", TempEVSE);
     }
 
-    if (ErrorFlags & LESS_6A) {
+    if (BalancedError[LoadBl] & LESS_6A) {
         if (ChargeDelay == 0) {
             if (Mode == MODE_SOLAR) { _LOG_I("Waiting for Solar power...\n"); }
             else { _LOG_I("Not enough current available!\n"); }
@@ -1833,7 +1828,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
     // this section sends outcomes of functions and variables to ESP32 to fill Shadow variables
     // FIXME this section preferably should be empty
     printf("@IsCurrentAvailable:%u\n", IsCurrentAvailable());
-    SEND_TO_ESP32(ErrorFlags)
+    SEND_TO_ESP32(BalancedError[LoadBl])
     elapsedmax = 0;
 #endif
 } //Timer1S_singlerun
@@ -2139,7 +2134,7 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
         }
     }
 
-    if ((ErrorFlags & CT_NOCOMM) && !(BalancedError[NodeNr] & CT_NOCOMM)) {
+    if ((BalancedError[LoadBl] & CT_NOCOMM) && !(BalancedError[NodeNr] & CT_NOCOMM)) {
         BalancedError[NodeNr] |= CT_NOCOMM;                                     // Send Comm Error on Master to Node
         write = 1;
     }
@@ -2641,10 +2636,10 @@ void ModbusRequestLoop() {
                     // Display error message
                     setErrorFlags(LESS_6A); //NOCURRENT;
                     // Broadcast Error code over RS485
-                    ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, ErrorFlags);
+                    ModbusWriteSingleRequest(BROADCAST_ADR, 0x0001, BalancedError[LoadBl]);
                     NoCurrent = 0;
                 }
-                if (LoadBl == 1 && !(ErrorFlags & CT_NOCOMM) ) BroadcastCurrent();               // When there is no Comm Error, Master sends current to all connected EVSE's
+                if (LoadBl == 1 && !(BalancedError[LoadBl] & CT_NOCOMM) ) BroadcastCurrent();               // When there is no Comm Error, Master sends current to all connected EVSE's
 
                 if ((State == STATE_B || State == STATE_C) && !CPDutyOverride) SetCurrent(Balanced[0]); // set PWM output for Master //mind you, the !CPDutyOverride was not checked in Smart/Solar mode, but I think this was a bug!
                 ModbusRequest = 0;
@@ -2673,7 +2668,7 @@ static uint8_t LedCount = 0;                                                   /
 static unsigned int LedPwm = 0;                                                // PWM value 0-255
 
     // RGB LED
-    if (ErrorFlags & (RCM_TRIPPED | CT_NOCOMM | EV_NOCOMM | TEMP_HIGH) ) {
+    if (BalancedError[LoadBl] & (RCM_TRIPPED | CT_NOCOMM | EV_NOCOMM | TEMP_HIGH) ) {
             LedCount += 20;                                                 // Very rapid flashing, RCD tripped or no Serial Communication.
             if (LedCount > 128) LedPwm = ERROR_LED_BRIGHTNESS;              // Red LED 50% of time on, full brightness
             else LedPwm = 0;
@@ -2688,7 +2683,7 @@ static unsigned int LedPwm = 0;                                                /
         RedPwm = ColorOff[0];
         GreenPwm = ColorOff[1];
         BluePwm = ColorOff[2];
-    } else if (ErrorFlags || ChargeDelay) {                                 // Waiting for Solar power or not enough current to start charging
+    } else if (BalancedError[LoadBl] || ChargeDelay) {                      // Waiting for Solar power or not enough current to start charging
             LedCount += 2;                                                  // Slow blinking.
             if (LedCount > 230) LedPwm = WAITING_LED_BRIGHTNESS;            // LED 10% of time on, full brightness
             else LedPwm = 0;
@@ -2893,7 +2888,6 @@ void Handle_ESP32_Message(char *SerialBuf, uint8_t *CommState) {
     SET_ON_RECEIVE(IsetBalanced:, IsetBalanced)
     SET_ON_RECEIVE(ChargeCurrent:, ChargeCurrent)
     SET_ON_RECEIVE(IsCurrentAvailable:, Shadow_IsCurrentAvailable)
-    SET_ON_RECEIVE(ErrorFlags:, ErrorFlags)
     SET_ON_RECEIVE(ChargeDelay:, ChargeDelay)
     SET_ON_RECEIVE(SolarStopTimer:, SolarStopTimer)
 
@@ -2931,6 +2925,14 @@ void Handle_ESP32_Message(char *SerialBuf, uint8_t *CommState) {
             CheckRFID();
         } else
             _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", token, n, SerialBuf);
+        return;
+    }
+    SET_ON_RECEIVE(ErrorFlags:, ErrorFlags)
+
+    strncpy(token, "ErrorFlags:", sizeof(token));
+    ret = strstr(SerialBuf, token);
+    if (ret != NULL) {
+        BalancedError[LoadBl] = atoi(ret+strlen(token));
         return;
     }
 
@@ -3012,7 +3014,7 @@ void Timer10ms_singlerun(void) {
     // When one or more button(s) are pressed, we call GLCDMenu
     if (((ButtonState != 0x07) || (ButtonState != OldButtonState)) ) {
         // RCM was tripped, but RCM level is back to normal
-        if (getItemValue(MENU_RCMON) == 1 && (ErrorFlags & RCM_TRIPPED) && RCMFAULT == LOW) {
+        if (getItemValue(MENU_RCMON) == 1 && (BalancedError[LoadBl] & RCM_TRIPPED) && RCMFAULT == LOW) {
             clearErrorFlags(RCM_TRIPPED);         // Clear RCM error bit
         }
         if (!LCDlock) GLCDMenu(ButtonState);    // LCD is unlocked, enter menu
@@ -3055,7 +3057,7 @@ void Timer10ms_singlerun(void) {
             if (State != STATE_A) setState(STATE_A);                        // reset state, incase we were stuck in STATE_COMM_B
             setChargeDelay(0);                                              // Clear ChargeDelay when disconnected.
             if (!EVMeter.ResetKwh) EVMeter.ResetKwh = 1;                    // when set, reset EV kWh meter on state B->C change.
-        } else if ( pilot == PILOT_9V && ErrorFlags == NO_ERROR
+        } else if ( pilot == PILOT_9V && BalancedError[LoadBl] == NO_ERROR
             && ChargeDelay == 0 && AccessStatus == ON && State != STATE_COMM_B
 #if MODEM
             && State != STATE_MODEM_REQUEST && State != STATE_MODEM_WAIT && State != STATE_MODEM_DONE   // switch to State B ?
@@ -3100,7 +3102,7 @@ void Timer10ms_singlerun(void) {
 
     // ############### EVSE State B #################
 
-    if (State == STATE_B1 && !ErrorFlags) {
+    if (State == STATE_B1 && !BalancedError[LoadBl]) {
         if (pilot == PILOT_12V) {                                           // Disconnected?
             setState(STATE_A);                                              // switch to STATE_A
         } else setState(STATE_B);
@@ -3113,7 +3115,7 @@ void Timer10ms_singlerun(void) {
 
         } else if (pilot == PILOT_6V && ++StateTimer > 50) {                // When switching from State B to C, make sure pilot is at 6V for at least 500ms
                                                                             // Fixes https://github.com/dingo35/SmartEVSE-3.5/issues/40
-            if ((DiodeCheck == 1) && (ErrorFlags == NO_ERROR) && (ChargeDelay == 0)) {
+            if ((DiodeCheck == 1) && (BalancedError[LoadBl] == NO_ERROR) && (ChargeDelay == 0)) {
                 if (EVMeter.Type && EVMeter.ResetKwh) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
                     EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart; // Calculate Energy
@@ -3294,7 +3296,7 @@ void Timer10ms_singlerun(void) {
 
 #ifndef SMARTEVSE_VERSION //CH32
     // Clear communication error, if present
-    if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout == 10) clearErrorFlags(CT_NOCOMM);
+    if ((BalancedError[LoadBl] & CT_NOCOMM) && MainsMeter.Timeout == 10) clearErrorFlags(CT_NOCOMM);
 #endif
 
 }
@@ -3425,8 +3427,8 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             //we want ErrorFlags = val so:
             clearErrorFlags(0xFF);
             setErrorFlags(val);
-            if (ErrorFlags) {                                                   // Is there an actual Error? Maybe the error got cleared?
-                if (ErrorFlags & CT_NOCOMM) MainsMeter.setTimeout(0);           // clear MainsMeter.Timeout on a CT_NOCOMM error, so the error will be immediate.
+            if (BalancedError[LoadBl]) {                                        // Is there an actual Error? Maybe the error got cleared?
+                if (BalancedError[LoadBl] & CT_NOCOMM) MainsMeter.setTimeout(0);// clear MainsMeter.Timeout on a CT_NOCOMM error, so the error will be immediate.
                 setStatePowerUnavailable();
                 setChargeDelay(CHARGEDELAY);
                 _LOG_V("Error message received!\n");
@@ -3542,7 +3544,7 @@ uint16_t getItemValue(uint8_t nav) {
         case STATUS_STATE:
             return State;
         case STATUS_ERROR:
-            return ErrorFlags;
+            return BalancedError[LoadBl];
         case STATUS_CURRENT:
             return Balanced[0];
         case STATUS_SOLAR_TIMER:

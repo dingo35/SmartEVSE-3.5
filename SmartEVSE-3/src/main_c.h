@@ -56,7 +56,7 @@ extern volatile uint8_t ModbusRxLen;
 #define Test_IO 64
 #define BL_FLASH 128
 
-extern uint8_t ErrorFlags;
+extern uint16_t BalancedError[NR_EVSES];
 extern void clearErrorFlags(uint8_t flags);
 //#endif
 
