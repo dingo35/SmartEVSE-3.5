@@ -1394,14 +1394,63 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                 Balanced[Priority[n]] = MinCurrent * 10;                              // Set to MinCurrent
                 RestOfIsetBalancedNotAllocatedYet -= Balanced[Priority[n]];           // Update total current to new (lower) value
                 //NoCurrent = 0;                                              // we have enough current to at least feed one EVSE
+                // ############ check if we are importing too much ###############
+                if (Mode == MODE_SOLAR) {
+                    // ----------- Check to see if we have to continue charging on solar power alone ----------
+                                // Importing too much?
+                    if (ActiveEVSE && StopTime && IsumImport > 0 &&
+                            // Would a stop free so much current that StartCurrent would immediately restart charging?
+                            Isum > (ActiveEVSE * MinCurrent * Nr_Of_Phases_Charging - StartCurrent) * 10) {
+                        if (LoadBl < 2 && Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
+                            // not enough current for 3-phase operation; we can switch to 1-phase after some time
+                            // start solar stop timer
+                            if (SolarStopTimer == 0) {
+                                // for a small current deficiency, we wait full StopTime, to try to stay in 3P mode
+                                if (IsumImport < (10 * MinCurrent)) {
+                                    setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                                }
+                                if (SolarStopTimer == 0) setSolarStopTimer(30); // timer goes off when switching 3P->1P
+                            }
+                            // near end of solar stop timer, instruct to go to 1P charging and restart
+                            if (SolarStopTimer <= 2) {
+                                _LOG_A("Switching to single phase.\n");
+                                Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+                                setState(STATE_C1);               // tell EV to stop charging
+                                setSolarStopTimer(0);
+                            }
+                        }
+                        else {
+                            if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60); // timer that expires when 1P not enough power
+                        }
+                    } else {
+                        _LOG_D("Checkpoint a: Resetting SolarStopTimer, IsetBalanced=%d.%dA, ActiveEVSE=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), ActiveEVSE);
+                        setSolarStopTimer(0);
+                    }
+                } //mode == SOLAR
             } else {                                                        // not enough current to give to an ActiveEVSE
-                // perhaps we can solve it by switching master to 1P?
-                if (LoadBl < 2 && EnableC2 == AUTO && Nr_Of_Phases_Charging != 1) {
-                    Switching_Phases_C2 = GOING_TO_SWITCH_1P;
-                    setState(STATE_C1);               // tell EV to stop charging
-                    _LOG_D("Charging starting in 1-phase mode\n");
+                // ############### hard shortage of power  #################
+                // perhaps we can solve it by switching to 1P
+                // FIXME expand this so it works for slaves too
+                // TODO LoadBl is always < 2 since CalcBalancedCurrent only run on master or disabled!
+                if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
+                    // not enough current for 3-phase operation; we can switch to 1-phase after some time
+                    // start solar stop timer
+                    if (SolarStopTimer == 0) {
+                        // for a small current deficiency, we wait full StopTime, to try to stay in 3P mode
+                        if (IsumImport < (10 * MinCurrent)) {
+                            setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                        }
+                        if (SolarStopTimer == 0) setSolarStopTimer(30); // timer goes off when switching 3P->1P
+                    }
+                    // near end of solar stop timer, instruct to go to 1P charging and restart
+                    if (SolarStopTimer <= 2) {
+                        _LOG_A("Switching to single phase.\n");
+                        Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+                        setState(STATE_C1);               // tell EV to stop charging
+                        setSolarStopTimer(0);
+                    }
                 } else {
-                    //nope we can't solve it
+                    //nope we can't solve it by switching
                     Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
                                                                                 // and this also flags the EVSE that it is not supposed to charge:
                     BalancedError[Priority[n]] |= LESS_6A;
@@ -1412,16 +1461,13 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                 }
             }
           } //STATE_C
-        }
+        } //for loop over EVSEs
         _LOG_V("Checkpoint 4a Isetbalanced=%d.%d A.\n", IsetBalanced/10, abs(IsetBalanced%10));
-        if (LoadBl < 2) {
-        //if (LoadBl == 1) {
-            _LOG_D("Balance before handout: ");
-            for (n = 0; n < NR_EVSES; n++) {
-                _LOG_D_NO_FUNC("EVSE%u:%s(%u.%uA) ", n, StrStateName[BalancedState[n]], Balanced[n]/10, Balanced[n]%10);
-            }
-            _LOG_D_NO_FUNC("\n");
+        _LOG_D("Balance before handout: ");
+        for (n = 0; n < NR_EVSES; n++) {
+            _LOG_D_NO_FUNC("EVSE%u:%s(%u.%uA) ", n, StrStateName[BalancedState[n]], Balanced[n]/10, Balanced[n]%10);
         }
+        _LOG_D_NO_FUNC("\n");
 
         // now we have some EVSE's in State C with a MinCurrent set, and the rest set at 0
         // divide the remaining current over the ActiveEVSE's
@@ -1430,46 +1476,40 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
             _LOG_A("WARNING: did not handout %i dA of current!\n", rest);
         }
 
-            // ############### no shortage of power  #################
-
-            // Solar mode with C2=AUTO and enough power for switching from 1P to 3P solar charge?
-            if (Mode != MODE_NORMAL && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && (IsetBalanced - rest) + 8 >= ActiveMax) {
-                    // are we at max regulation at 1P (Iset hovers at 15.2-16.0A on 16A MaxCurrent)(warning: Iset can also be at max when EV limits current)
-                    // and is there enough spare that we can go to 3P charging?
-                    // Can it take the step from 1x16A to 3x7A (in regular config)?
-                    // Note that we do not take 3P MinCurrent but 3x1A above that to give it some regulation room;
-                    // It also needs to sustain that minimal room for 60 seconds before it may switch to 3P
-                    // TODO this only flies for loadBl <2 ?!?!
-                    int spareCurrent = (3*(MinCurrent+1)-MaxCurrent);  // constant, gap between 1P range and 3P range
-                    if (spareCurrent < 0) spareCurrent = 3;  // const, when 1P range overlaps 3P range
-                    if (-Isum > (10*spareCurrent)) { // note that Isum is surplus current, which is negative
-                        // start solar stop timer
-                        if (SolarStopTimer == 0) setSolarStopTimer(63);
-                        // near end of solar stop timer, instruct to go to 3P charging
-                        if (SolarStopTimer <= 3) {
-                            _LOG_A("Solar charge: Switching to 3P.\n");
-                            Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                            setState(STATE_C1);               // tell EV to stop charging
-                            setSolarStopTimer(0);
-                        }
-                        else {
-                            _LOG_D("Solar charge: we can switch 1P->3P; Isum=%.1fA, spare=%dA\n", (float)-Isum/10, spareCurrent);
-                        }
+        // Solar mode with C2=AUTO and enough power for switching from 1P to 3P solar charge?
+        if (Mode != MODE_NORMAL && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && (IsetBalanced - rest) + 8 >= ActiveMax) {
+                // are we at max regulation at 1P (Iset hovers at 15.2-16.0A on 16A MaxCurrent)(warning: Iset can also be at max when EV limits current)
+                // and is there enough spare that we can go to 3P charging?
+                // Can it take the step from 1x16A to 3x7A (in regular config)?
+                // Note that we do not take 3P MinCurrent but 3x1A above that to give it some regulation room;
+                // It also needs to sustain that minimal room for 60 seconds before it may switch to 3P
+                // TODO this only flies for loadBl <2 ?!?!
+                int spareCurrent = (3*(MinCurrent+1)-MaxCurrent);  // constant, gap between 1P range and 3P range
+                if (spareCurrent < 0) spareCurrent = 3;  // const, when 1P range overlaps 3P range
+                if (-Isum > (10*spareCurrent)) { // note that Isum is surplus current, which is negative
+                    // start solar stop timer
+                    if (SolarStopTimer == 0) setSolarStopTimer(63);
+                    // near end of solar stop timer, instruct to go to 3P charging
+                    if (SolarStopTimer <= 3) {
+                        _LOG_A("Solar charge: Switching to 3P.\n");
+                        Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+                        setState(STATE_C1);               // tell EV to stop charging
+                        setSolarStopTimer(0);
                     }
                     else {
-                        // not enough spare current to switch to 3P
-                        setSolarStopTimer(0);
-                        _LOG_D("Solar charge: not enough spare current to switch to 3P; Isum=%.1fA, spare=%dA\n", (float)-Isum/10, spareCurrent);
+                        _LOG_D("Solar charge: we can switch 1P->3P; Isum=%.1fA, spare=%dA\n", (float)-Isum/10, spareCurrent);
                     }
-
-            }
-            else {
-                _LOG_D("Checkpoint b: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
-                setSolarStopTimer(0);
-                MaxSumMainsTimer = 0;
-                NoCurrent = 0;
-            }
-        //} //rest
+                } else {
+                    // not enough spare current to switch to 3P
+                    setSolarStopTimer(0);
+                    _LOG_D("Solar charge: not enough spare current to switch to 3P; Isum=%.1fA, spare=%dA\n", (float)-Isum/10, spareCurrent);
+                }
+        } else {
+            _LOG_D("Checkpoint b: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
+            setSolarStopTimer(0);
+            MaxSumMainsTimer = 0;
+            NoCurrent = 0;
+        }
 
 //        if (Balanced[0] == 0)
 //            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
