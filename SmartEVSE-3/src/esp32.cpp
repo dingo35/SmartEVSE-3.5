@@ -550,7 +550,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 CalcIsum();
             }
 #else //v4
-            Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+            Serial1.printf("@Irms:%03u,%ld,%ld,%ld\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
         }
     } else if (topic == MQTTprefix + "/Set/EVMeter") {
@@ -571,7 +571,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 EVMeter.CalcImeasured();
                 EVMeter.Timeout = COMM_EVTIMEOUT;
 #else //v4
-                Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+                Serial1.printf("@Irms:%03u,%ld,%ld,%ld\n", EVMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
             }
 
@@ -580,7 +580,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
 #if SMARTEVSE_VERSION < 40 //v3
                 EVMeter.PowerMeasured = W;
 #else //v4
-                Serial1.printf("@PowerMeasured:%03u,%d\n", EVMeter.Address, W);
+                Serial1.printf("@PowerMeasured:%03u,%ld\n", EVMeter.Address, W);
 #endif
             }
 
@@ -1178,7 +1178,7 @@ void RecomputeSoC(void) {
                 TimeUntilFull = -1;
             }
 
-            _LOG_I("SoC: EnergyRemaining %i RemaningSoC %i EnergyRequest %i EnergyCharged %i EnergyCapacity %i ComputedSoC %i FullSoC %i TimeUntilFull %i TargetEnergyCapacity %i\n", EnergyRemaining, RemainingSoC, EnergyRequest, EVMeter.EnergyCharged, EnergyCapacity, ComputedSoC, FullSoC, TimeUntilFull, TargetEnergyCapacity);
+            _LOG_I("SoC: EnergyRemaining %i RemaningSoC %i EnergyRequest %li EnergyCharged %li EnergyCapacity %li ComputedSoC %i FullSoC %i TimeUntilFull %li TargetEnergyCapacity %i\n", EnergyRemaining, RemainingSoC, EnergyRequest, EVMeter.EnergyCharged, EnergyCapacity, ComputedSoC, FullSoC, TimeUntilFull, TargetEnergyCapacity);
         }
     } else {
         if (TimeUntilFull != -1) TimeUntilFull = -1;

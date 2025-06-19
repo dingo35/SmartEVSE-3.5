@@ -280,7 +280,7 @@ void evaluateUdpPayload(void) {
                     sendSdpResponse();
                 }
             } else {
-                _LOG_W("v2gptPayloadLen on SDP request is %u not supported\n", v2gptPayloadLen);
+                _LOG_W("v2gptPayloadLen on SDP request is %lu not supported\n", v2gptPayloadLen);
             }
         } else {
             _LOG_W("v2gptPayloadType %04x not supported\n", v2gptPayloadType);

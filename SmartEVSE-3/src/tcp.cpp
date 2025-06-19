@@ -361,7 +361,7 @@ void decodeV2GTP(void) {
             }
 
             uint32_t deptime = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.DepartureTime;
-            _LOG_A("Modem: Departure Time=%u.\n", deptime);
+            _LOG_A("Modem: Departure Time=%lu.\n", deptime);
 
             Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.EAmount;
             _LOG_A("Modem: EAmount=%d %s.\n", Temp.Value, Temp.Unit_isUsed ? UnitStr[Temp.Unit] : "");
