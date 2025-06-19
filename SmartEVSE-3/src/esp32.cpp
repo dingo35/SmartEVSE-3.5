@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <stdint.h>
 #if MODEM
 int8_t InitialSoC = -1;                                                     // State of charge of car
 int8_t FullSoC = -1;                                                        // SoC car considers itself fully charged
@@ -89,7 +90,7 @@ uint8_t CommState = COMM_OFF;
 void PowerPanicESP() {
 
     _LOG_D("Power Panic!\n");
-    ledcWrite(LCD_CHANNEL, 0);                 // LCD Backlight off
+    ledcWrite(PIN_LCD_LED, 0);                 // LCD Backlight off
 
     // Stop SPI bus, and set all QCA data lines low
     // TODO: store important information.
@@ -105,7 +106,7 @@ void PowerPanicESP() {
 
     _LOG_D("Power Back up!\n");
 
-    ledcWrite(LCD_CHANNEL, 50);                 // LCD Backlight on
+    ledcWrite(PIN_LCD_LED, 50);                 // LCD Backlight on
 }
 
 extern void SendConfigToCH32(void);
@@ -2561,7 +2562,6 @@ void setup() {
     digitalWrite(PIN_ACTB, LOW);        
     digitalWrite(PIN_SSR, LOW);             // SSR1 OFF
     digitalWrite(PIN_SSR2, LOW);            // SSR2 OFF
-    digitalWrite(PIN_LCD_LED, HIGH);        // LCD Backlight ON
     PILOT_DISCONNECTED;                     // CP signal OFF
 
  
@@ -2616,13 +2616,11 @@ void setup() {
     ledcAttach(PIN_LEDR, 5000, 8);              // R channel 2, 5kHz, 8 bit
     ledcAttach(PIN_LEDG, 5000, 8);              // G channel 3, 5kHz, 8 bit
     ledcAttach(PIN_LEDB, 5000, 8);              // B channel 4, 5kHz, 8 bit
-    ledcAttach(PIN_LCD_LED, 5000, 8);           // LCD channel 5, 5kHz, 8 bit
 
     SetCPDuty(1024);                            // channel 0, duty cycle 100%
     ledcWrite(PIN_LEDR, 255);
     ledcWrite(PIN_LEDG, 0);
     ledcWrite(PIN_LEDB, 255);
-    ledcWrite(PIN_LCD_LED, 0);
 
     // Setup PIN interrupt on rising edge
     // the timer interrupt will be reset in the ISR.
@@ -2703,11 +2701,11 @@ void setup() {
     //Serial2.begin(115200, SERIAL_8N1, USART_TX, -1, false);
     Serial.printf("\nSmartEVSE v4 powerup\n");
 
-    _LOG_D("Total heap: %u.\n", ESP.getHeapSize());
-    _LOG_D("Free heap: %u.\n", ESP.getFreeHeap());
-    _LOG_D("Flash Size: %u.\n", ESP.getFlashChipSize());
-    _LOG_D("Total PSRAM: %u.\n", ESP.getPsramSize());
-    _LOG_D("Free PSRAM: %u.\n", ESP.getFreePsram());
+    _LOG_D("Total heap: %lu.\n", ESP.getHeapSize());
+    _LOG_D("Free heap: %lu.\n", ESP.getFreeHeap());
+    _LOG_D("Flash Size: %lu.\n", ESP.getFlashChipSize());
+    _LOG_D("Total PSRAM: %lu.\n", ESP.getPsramSize());
+    _LOG_D("Free PSRAM: %lu.\n", ESP.getFreePsram());
 
 
 
@@ -2724,12 +2722,11 @@ void setup() {
 
     //GLCD_init();                                // Initialize LCD
 
-
-    ledcSetup(LCD_CHANNEL, 5000, 8);            // LCD channel 5, 5kHz, 8 bit
-    ledcAttachPin(LCD_LED, LCD_CHANNEL);
-    ledcWrite(LCD_CHANNEL, 255);                // Set LCD backlight brightness 0-255
-
 #endif //SMARTEVSE_VERSION
+
+    ledcAttach(PIN_LCD_LED, 5000, 8);             // LCD channel 5, 5kHz, 8 bit
+    ledcWrite(PIN_LCD_LED, 255);                  // Set LCD backlight brightness 0-255
+
 
     // Read all settings from non volatile memory; MQTTprefix will be overwritten if stored in NVS
     read_settings();                                                            // initialize with default data when starting for the first time

@@ -76,6 +76,8 @@ extern void RecomputeSoC(void);
 extern uint8_t modem_state;
 static bool ModemFound = false;                                                 //signals if the modem is found
 #include <qca.h>
+#include <esp_system.h>
+#include <esp_efuse.h>
 #else
 #define RETURN
 #endif
@@ -1468,18 +1470,31 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
                 extern void Timer20ms(void * parameter);
                 extern uint8_t modem_state;
                 extern void setSeccIp();
-                    esp_read_mac(myMac, ESP_MAC_ETH); // select the Ethernet MAC
-                    setSeccIp();  // use myMac to create link-local IPv6 address.
-                    modem_state = MODEM_WRITESPACE;
-                    // Create Task 20ms Timer
-                    xTaskCreate(
-                        Timer20ms,      // Function that should be called
-                        "Timer20ms",    // Name of the task (for debugging)
-                        3072,           // Stack size (bytes)
-                        NULL,           // Parameter to pass
-                        1,              // Task priority
-                        NULL            // Task handle
-                    );
+                //this does not work in pioarduino: esp_read_mac(myMac, ESP_MAC_ETH); // select the Ethernet MAC
+                //a lot of trouble to get the ethernet mac:
+                // Get WiFi MAC address (base MAC)
+                String wifiMAC = WiFi.macAddress();
+                // Convert to bytes directly into myMac
+                int res = sscanf(wifiMAC.c_str(),
+                                 "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+                                 &myMac[0], &myMac[1], &myMac[2], &myMac[3], &myMac[4], &myMac[5]);
+                if (res != 6) {
+                  Serial.println("Failed to parse WiFi MAC");
+                  while (1) delay(1);
+                }
+                // Derive Ethernet MAC by adding 3 to last byte
+                myMac[5] += 3;
+                setSeccIp();  // use myMac to create link-local IPv6 address.
+                modem_state = MODEM_WRITESPACE;
+                // Create Task 20ms Timer
+                xTaskCreate(
+                    Timer20ms,      // Function that should be called
+                    "Timer20ms",    // Name of the task (for debugging)
+                    3072,           // Stack size (bytes)
+                    NULL,           // Parameter to pass
+                    1,              // Task priority
+                    NULL            // Task handle
+                );
             }
         }
 #endif

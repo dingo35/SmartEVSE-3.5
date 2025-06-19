@@ -169,9 +169,6 @@ void setPilot(bool On);
 //TODO this can be integrated by choosing same definitions
 #ifdef SMARTEVSE_VERSION //ESP32
 
-#define BACKLIGHT_ON digitalWrite(PIN_LCD_LED, HIGH);
-#define BACKLIGHT_OFF digitalWrite(PIN_LCD_LED, LOW);
-
 #define ACTUATOR_LOCK { _LOG_A("Locking Actuator.\n"); digitalWrite(PIN_ACTB, HIGH); digitalWrite(PIN_ACTA, LOW); }
 #define ACTUATOR_UNLOCK { _LOG_A("Unlocking Actuator.\n"); digitalWrite(PIN_ACTB, LOW); digitalWrite(PIN_ACTA, HIGH); }
 #define ACTUATOR_OFF { digitalWrite(PIN_ACTB, HIGH); digitalWrite(PIN_ACTA, HIGH); }

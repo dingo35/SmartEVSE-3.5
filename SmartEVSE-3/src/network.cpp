@@ -5,7 +5,6 @@
 #include "mbedtls/md.h"
 #include "utils.h"
 #include "network.h"
-#include "spi_flash_mmap.h"
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <Update.h>

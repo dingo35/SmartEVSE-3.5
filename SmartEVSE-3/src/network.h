@@ -46,6 +46,7 @@
 #endif
 
 #define FREE(x) free(x); x = NULL;
+#define SPI_FLASH_SEC_SIZE 4096
 
 #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
 // MQTT connection info
