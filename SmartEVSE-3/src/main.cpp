@@ -1400,7 +1400,7 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                     if (ActiveEVSE && StopTime && IsumImport > 0 &&
                             // Would a stop free so much current that StartCurrent would immediately restart charging?
                             Isum > (ActiveEVSE * MinCurrent * Nr_Of_Phases_Charging - StartCurrent) * 10) {
-                        if (LoadBl < 2 && Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
+                        if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
                             // not enough current for 3-phase operation; we can switch to 1-phase after some time
                             // start solar stop timer
                             if (SolarStopTimer == 0) {
@@ -1427,7 +1427,7 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                     }
                 } //mode == SOLAR
             } else {                                                        // not enough current to give to an ActiveEVSE
-                // ############### hard shortage of power  #################
+                // ############### hard? shortage of power  #################
                 // perhaps we can solve it by switching to 1P
                 // FIXME expand this so it works for slaves too
                 // TODO LoadBl is always < 2 since CalcBalancedCurrent only run on master or disabled!
@@ -1449,10 +1449,15 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                         setSolarStopTimer(0);
                     }
                 } else {
-                    //nope we can't solve it by switching
-                    Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
-                                                                                // and this also flags the EVSE that it is not supposed to charge:
-                    BalancedError[Priority[n]] |= LESS_6A;
+                    // test for soft shortage
+                    if (!HardBoundariesExceeded(MinCurrent *10, Baseload, Baseload_EV) && Mode == MODE_SOLAR) {
+                        if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60);
+                        Balanced[Priority[n]] = MinCurrent * 10;                 // keep charging at mincurrent when solarstoptimer is running
+                    } else {
+                        //nope stop charging
+                        Balanced[Priority[n]] = 0;                                            // this flags the EVSE that it is not supposed to charge
+                        BalancedError[Priority[n]] |= LESS_6A;
+                    }
                 }
             }
           } //STATE_C
@@ -1499,12 +1504,12 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                     setSolarStopTimer(0);
                     _LOG_D("Solar charge: not enough spare current to switch to 3P; Isum=%.1fA, spare=%dA\n", (float)-Isum/10, spareCurrent);
                 }
-        } else {
+        }/* else {
             _LOG_D("Checkpoint b: Resetting SolarStopTimer, MaxSumMainsTimer, IsetBalanced=%.1fA, ActiveEVSE=%i.\n", (float)IsetBalanced/10, ActiveEVSE);
             setSolarStopTimer(0);
             MaxSumMainsTimer = 0;
             NoCurrent = 0;
-        }
+        }*/
 
 //        if (Balanced[0] == 0)
 //            Balanced[0] = MinCurrent *10;                                   // so we mimic the old behaviour, keep charging until NoCurrent = 2
