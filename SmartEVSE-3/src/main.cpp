@@ -1124,19 +1124,19 @@ int HandoutCurrent(int currentToHandout) {
 // returns true if exceding
 bool HardBoundariesExceeded(int16_t IsetBalanced, int Baseload, int Baseload_EV) {
     // check for HARD shortage of power
-    bool hardShortage = false;
     // guard MaxMains
     if (MainsMeter.Type && Mode != MODE_NORMAL)
         if (IsetBalanced > (MaxMains * 10) - Baseload)
-            hardShortage = true;
+            return true;
     // guard MaxCircuit
     if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
         && (IsetBalanced > (MaxCircuit * 10) - Baseload_EV))
-            hardShortage = true;
+            return true;
     // guard GridRelay
-    if (GridRelayOpen && IsetBalanced > ((GridRelayMaxSumMains * 10) - Isum)/3) //assume the current should be available on all 3 phases
-            hardShortage = true;
-    return hardShortage;
+    if (GridRelayOpen && IsetBalanced > ((GridRelayMaxSumMains * 10) - Isum)/Nr_Of_Phases_Charging)
+            return true;
+    //FIXME how about MaxSumMains ?
+    return false;
 }
 
 
