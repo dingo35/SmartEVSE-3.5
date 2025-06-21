@@ -875,7 +875,8 @@ void setState(uint8_t NewState) { //c
             break;
     }
 
-    BalancedState[0] = NewState;
+    BalancedState[0] = NewState; //FIXME
+    BalancedState[LoadBl] = NewState;
     State = NewState;
 
 #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
@@ -1514,7 +1515,7 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                     if (SolarStopTimer <= 3) {
                         _LOG_A("Solar charge: Switching to 3P.\n");
                         Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                        setState(STATE_C1);               // tell EV to stop charging
+                        setState(STATE_C1);               // tell EV to stop charging //FIXME how about slaves
                         setSolarStopTimer(0);
                     }
                     else {
@@ -3141,7 +3142,7 @@ void Timer10ms_singlerun(void) {
 
         } else if (pilot == PILOT_6V && ++StateTimer > 50) {                // When switching from State B to C, make sure pilot is at 6V for at least 500ms
                                                                             // Fixes https://github.com/dingo35/SmartEVSE-3.5/issues/40
-            if ((DiodeCheck == 1) && (BalancedError[LoadBl] == NO_ERROR) && (ChargeDelay == 0)) {
+            if (DiodeCheck == 1 && BalancedError[LoadBl] == NO_ERROR && ChargeDelay == 0 && AccessStatus == ON) {
                 if (EVMeter.Type && EVMeter.ResetKwh) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
                     EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart; // Calculate Energy
