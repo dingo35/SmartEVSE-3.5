@@ -638,7 +638,10 @@ uint8_t Force_Single_Phase_Charging() {                                         
         case SOLAR_OFF:
             return (Mode == MODE_SOLAR); //1P solar charging
         case AUTO:
-            return (Nr_Of_Phases_Charging == 1);
+            if (LoadBl < 2)
+                return (Nr_Of_Phases_Charging == 1);
+            else //disable C2 == AUTO on slaves!
+                return 0;  //3P charging = NOT_PRESENT behaviour!
         case ALWAYS_ON:
             return 0;   //3P charging
     }
