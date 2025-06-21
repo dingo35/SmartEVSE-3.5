@@ -1418,7 +1418,6 @@ void CalcBalancedCurrent(char mod) {
                 MaxSumMainsTimer = MaxSumMainsTime * 60;
         }
         for (n = 0; n < NR_EVSES; n++) {
-_LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d\n",  StrEnableC2[EnableC2], n, BalancedState[Priority[n]], RestOfIsetBalancedNotAllocatedYet);
           if (BalancedState[Priority[n]] == STATE_C) {
             if ((BalancedState[Priority[n]] == STATE_C && RestOfIsetBalancedNotAllocatedYet >= MinCurrent * 10) || // give out if available
                 (BalancedState[Priority[n]] == STATE_C && LimitedByMaxSumMains && MaxSumMainsTime && MaxSumMainsTimer &&
