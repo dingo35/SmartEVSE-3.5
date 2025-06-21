@@ -176,6 +176,7 @@ uint16_t Balanced[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                     // A
 uint16_t BalancedMax[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                  // Max Amps value per EVSE
 uint8_t BalancedState[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                 // State of all EVSE's 0=not active (state A), 1=charge request (State B), 2= Charging (State C)
 uint16_t BalancedError[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};                // Error state of EVSE
+uint16_t StopTimer[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};
 PrioStrat_t PrioStrat = NODENR;                                             // Default prioritization strategy when Loadbl enabled
 const static char StrPrioStrat[][11] = { "NodeNr", "First Conn", "Last Conn" };
 unsigned long BalancedConnected[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};       // contains timestamp of millis() when EV has connected to EVSE (so left STATE_A)
@@ -600,6 +601,23 @@ void setSolarStopTimer(uint16_t Timer) {
 #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
     MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
 #endif
+}
+
+
+// Every node needs a StopTimer:
+void setStopTimer(uint16_t Timer, uint8_t NodeNr) {
+    if (StopTimer[NodeNr] == Timer)
+        return;                                                             // prevent unnecessary publishing of SolarStopTimer
+    StopTimer[NodeNr] = Timer;
+    if (NodeNr < 2) { // FIXME get rid of local setSolarStopTimer?
+        setSolarStopTimer(Timer);
+#if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+        MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+#endif
+    } else { //setSolarStopTimer takes care of SEND_TOs when NodeNr < 2
+        SEND_TO_ESP32(Timer);
+        SEND_TO_CH32(Timer);
+    }
 }
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
@@ -1403,27 +1421,27 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                         if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
                             // not enough current for 3-phase operation; we can switch to 1-phase after some time
                             // start solar stop timer
-                            if (SolarStopTimer == 0) {
+                            if (StopTimer[Priority[n]] == 0) {
                                 // for a small current deficiency, we wait full StopTime, to try to stay in 3P mode
                                 if (IsumImport < (10 * MinCurrent)) {
-                                    setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                                    setStopTimer(StopTime * 60, Priority[n]); // Convert minutes into seconds
                                 }
-                                if (SolarStopTimer == 0) setSolarStopTimer(30); // timer goes off when switching 3P->1P
+                                if (StopTimer[Priority[n]] == 0) setStopTimer(30, Priority[n]); // timer goes off when switching 3P->1P
                             }
                             // near end of solar stop timer, instruct to go to 1P charging and restart
-                            if (SolarStopTimer <= 2) {
+                            if (StopTimer[Priority[n]] <= 2) {
                                 _LOG_A("Switching to single phase.\n");
                                 Switching_Phases_C2 = GOING_TO_SWITCH_1P;
                                 setState(STATE_C1);               // tell EV to stop charging
-                                setSolarStopTimer(0);
+                                setStopTimer(0, Priority[n]);
                             }
                         }
                         else {
-                            if (SolarStopTimer == 0) setSolarStopTimer(StopTime * 60); // timer that expires when 1P not enough power
+                            if (StopTimer[Priority[n]] == 0) setStopTimer(StopTime * 60, Priority[n]); // timer that expires when 1P not enough power
                         }
                     } else {
                         _LOG_D("Checkpoint a: Resetting SolarStopTimer, IsetBalanced=%d.%dA, ActiveEVSE=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), ActiveEVSE);
-                        setSolarStopTimer(0);
+                        setStopTimer(0, Priority[n]);
                     }
                 } //mode == SOLAR
             } else {                                                        // not enough current to give to an ActiveEVSE
@@ -1434,19 +1452,19 @@ _LOG_A("DINGO: EnableC2=%s, BalancedState[Priority[%d] = %d, RestNotAllocated=%d
                 if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
                     // not enough current for 3-phase operation; we can switch to 1-phase after some time
                     // start solar stop timer
-                    if (SolarStopTimer == 0) {
+                    if (StopTimer[Priority[n]] == 0) {
                         // for a small current deficiency, we wait full StopTime, to try to stay in 3P mode
                         if (IsumImport < (10 * MinCurrent)) {
-                            setSolarStopTimer(StopTime * 60); // Convert minutes into seconds
+                            setStopTimer(StopTime * 60, Priority[n]); // Convert minutes into seconds
                         }
-                        if (SolarStopTimer == 0) setSolarStopTimer(30); // timer goes off when switching 3P->1P
+                        if (StopTimer[Priority[n]] == 0) setStopTimer(30, Priority[n]); // timer goes off when switching 3P->1P
                     }
                     // near end of solar stop timer, instruct to go to 1P charging and restart
-                    if (SolarStopTimer <= 2) {
+                    if (StopTimer[Priority[n]] <= 2) {
                         _LOG_A("Switching to single phase.\n");
                         Switching_Phases_C2 = GOING_TO_SWITCH_1P;
                         setState(STATE_C1);               // tell EV to stop charging
-                        setSolarStopTimer(0);
+                        setStopTimer(0, Priority[n]);
                     }
                 } else {
                     // test for soft shortage
