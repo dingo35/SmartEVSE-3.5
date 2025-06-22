@@ -1107,6 +1107,7 @@ int HandoutCurrent(int currentToHandout) {
     for (int n = 0; n < NR_EVSES; n++) {
         if (BalancedState[n] == STATE_C && Balanced[n] < BalancedMax[n] && Balanced[n] != 0 && !(((Mode == MODE_SOLAR) && (Node[n].IntTimer < SOLARSTARTTIME)))) {
             Balanced[n] += Average;
+            setStopTimer(0, n); //if we are handing out excess current, the timer should be stopped!
             if (Balanced[n] > BalancedMax[n]) {
                 currentToHandout -= (BalancedMax[n] - Balanced[n] + Average);
                 Balanced[n] = BalancedMax[n];
