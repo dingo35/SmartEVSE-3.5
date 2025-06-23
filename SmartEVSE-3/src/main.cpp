@@ -375,9 +375,15 @@ void Button::HandleSwitch(void) {
                 break;
             case 6: // Custom button B
                 CustomButton = !CustomButton;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif                
                 break;
             case 7: // Custom button S
                 CustomButton = true;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif                
                 break;
             default:
                 if (State == STATE_C) {                             // Menu option Access is set to Disabled
@@ -422,6 +428,9 @@ void Button::HandleSwitch(void) {
                 break;
             case 7: // Custom button S
                 CustomButton = false;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif                
                 break;
             default:
                 break;
