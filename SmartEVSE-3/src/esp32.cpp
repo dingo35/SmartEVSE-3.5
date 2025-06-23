@@ -21,7 +21,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <FS.h>
 
 #include <WiFi.h>
-#include "network.h"
+#include "network_common.h"
 #include "esp_ota_ops.h"
 
 #include <HTTPClient.h>
