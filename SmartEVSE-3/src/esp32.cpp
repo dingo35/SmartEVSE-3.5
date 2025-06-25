@@ -444,6 +444,36 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
     else return "Multiple Errors";
 }
 
+// Read the MOSI pin as GPIO33.
+// This function will first disconnect the MOSI pin from the SPI perhipheral, configure it as input, 
+// Read the GPIO pin, and then reattach it to the SPI peripheral. (takes only 2uS)
+// Make sure no SPI transfer is in progress!!
+uint8_t LowLevelReadMOSI() {
+
+    uint32_t func_reg = GPIO_FUNC0_OUT_SEL_CFG_REG + (SPI_MOSI * 4);
+    uint32_t input_func_reg = DR_REG_GPIO_BASE + 0x154 + (SPI_MOSI * 4);
+
+    uint32_t saved_gpio_func = *((volatile uint32_t *)func_reg);            // Save current configuration
+    uint32_t saved_iomux = *((volatile uint32_t *)IO_MUX_GPIO33_REG);
+    uint8_t ret;
+        
+    *((volatile uint32_t *)func_reg) = SIG_GPIO_OUT_IDX;                    // Disconnect from ALL peripherals (both input and output)
+    *((volatile uint32_t *)input_func_reg) = 0x3F;                          // Also disconnect any input routing
+    *((volatile uint32_t *)GPIO_ENABLE1_W1TC_REG) = (1 << (SPI_MOSI - 32)); // Disable output
+    *((volatile uint32_t *)IO_MUX_GPIO33_REG) = 0x2200;                     // Configure IO_MUX to input, no pullup
+    
+    delayMicroseconds(1);
+
+    // Read the MOSI pin as GPIO
+    ret = (*((volatile uint32_t *)GPIO_IN1_REG) >> (SPI_MOSI - 32)) & 0x1;  // Read from GPIO_IN1_REG and shift by (33-32) = 1
+    
+    // Reattach the MOSI pin to the SPI peripheral
+    *((volatile uint32_t *)GPIO_ENABLE1_W1TS_REG) = (1 << (SPI_MOSI - 32)); // Re-enable output driver (GPIO33 is in bank 1)
+    *((volatile uint32_t *)func_reg) = saved_gpio_func;
+    *((volatile uint32_t *)IO_MUX_GPIO33_REG) = saved_iomux;                // Restore IO_MUX configuration 
+
+    return ret;
+}
 
 void getButtonState() {
     // Sample the three < o > buttons.
@@ -455,17 +485,12 @@ void getButtonState() {
         ButtonState = ButtonStateOverride;
     else {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-        pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
-        pinMode(PIN_LCD_SDO_B3, INPUT);
         pinMode(PIN_LCD_A0_B2, INPUT);
 
         // sample buttons                                                         < o >
-        ButtonState = (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |  // > (right)
+        ButtonState = (LowLevelReadMOSI()          ? 4 : 0) |  // > (right)
                       (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
                       (digitalRead(PIN_IO0_B1)     ? 1 : 0);   // < (left)
-
-        pinMode(PIN_LCD_SDO_B3, OUTPUT);
-        pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
 #else
         pinMode(PIN_LCD_A0_B2, INPUT_PULLUP);                  // Switch the shared pin for the middle button to input
         ButtonState = (digitalRead(BUTTON3)        ? 4 : 0) |  // > (right)
