@@ -40,7 +40,7 @@
 #define PIN_LCD_SDO_B3 33                                                       // = SPI_MOSI
 #define PIN_LCD_CLK 26                                                          // = SPI_SCK
 #define PIN_SSR2 27
-#define PIN_LCD_LED 14
+
 #define PIN_LEDB 12
 #define PIN_RCM_FAULT 13 //TODO ok for v4?
 
@@ -60,6 +60,7 @@
 #define PIN_CPOFF 15
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+#define PIN_LCD_LED 14
 #define PIN_LCD_A0_B2 25
 #define PIN_LCD_RST 5
 #define SPI_MOSI 33                                                             // SPI connections to LCD
@@ -67,6 +68,12 @@
 #define SPI_SCK 26
 #define SPI_SS -1
 #else
+#define SPI_SS 1            // LCD_CS
+#define PIN_ETH_SCS 15
+#define PIN_ETH_MISO 16
+#define PIN_ETH_RST 6
+#define PIN_ETH_INT 15
+#define PIN_LCD_LED 41
 #define PIN_LCD_A0_B2 40
 #define PIN_LCD_RST 42
 #include "funconfig.h"
