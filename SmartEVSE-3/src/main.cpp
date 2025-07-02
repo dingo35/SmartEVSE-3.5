@@ -285,6 +285,7 @@ unsigned long OcppLastTxNotification;
 EXT uint32_t elapsedmax, elapsedtime;
 #ifdef SMARTEVSE_VERSION //v3 and v4
 EXT hw_timer_t * timerA;
+EXT bool timerRunning;
 esp_adc_cal_characteristics_t * adc_chars_CP;
 #endif
 
@@ -744,7 +745,8 @@ void setState(uint8_t NewState) { //c
             CONTACTOR2_OFF;
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
-            timerAlarm(timerA, PWM_100, true, 0);                               // Alarm every 1ms, auto reload
+            if (!timerRunning) timerStart(timerA);                              // Trigger Alarm every 1ms, auto reload
+            timerRunning = true;
 #else //CH32
             TIM1->CH1CVR = 1000;                                               // Set CP output to +12V
 #endif
@@ -800,7 +802,11 @@ void setState(uint8_t NewState) { //c
             CONTACTOR1_OFF;
             CONTACTOR2_OFF;
 #ifdef SMARTEVSE_VERSION //v3
-            timerAlarm(timerA, PWM_95, false, 0);                               // Enable Timer alarm, set to diode test (95%)
+            if (timerRunning) {
+                timerStop(timerA);                                              // Stop 1mS timer
+                timerRunning = false;                                           // keep track of status, otherwise Timer will report a (non critical) error
+            }    
+            attachInterrupt(PIN_CP_OUT, onCPpulse, FALLING);                    // Measure on High->Low transition: diode test
 #endif
             SetCurrent(ChargeCurrent);                                          // Enable PWM
 #ifndef SMARTEVSE_VERSION //CH32
@@ -832,7 +838,8 @@ void setState(uint8_t NewState) { //c
         case STATE_C1:
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
-            timerAlarm(timerA, PWM_100, true, 0);                               // Alarm every 1ms, auto reload
+            if (!timerRunning) timerStart(timerA);                              // Trigger Alarm every 1ms, auto reload
+            timerRunning = true;
 #else //CH32                                                                          // EV should detect and stop charging within 3 seconds
             TIM1->CH1CVR = 1000;                                                // Set CP output to +12V
 #endif
@@ -1115,7 +1122,7 @@ char IsCurrentAvailable(void) {
     }
 #endif //ENABLE_OCPP
 
-    printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
+//    printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
     return 1;
 }
 #else //v4 ESP32
@@ -3085,7 +3092,7 @@ void Timer10ms_singlerun(void) {
             DiodeCheck = 1;                                                 // Diode found, OK
             _LOG_A("Diode OK\n");
 #ifdef SMARTEVSE_VERSION //v3 and v4
-            timerAlarm(timerA, PWM_5, false, 0);                            // Enable Timer alarm, set to start of CP signal (5%)
+            attachInterrupt(PIN_CP_OUT, onCPpulse, RISING);                 // Set Pin interrupt to Low>High transition
 #else //CH32
             TIM1->CH4CVR = PWM_5;
 #endif

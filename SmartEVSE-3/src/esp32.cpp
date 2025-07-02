@@ -122,6 +122,7 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 #endif //SMARTEVSE_VERSION
 
 hw_timer_t * timerA = NULL;
+bool timerRunning = false;
 Preferences preferences;
 
 uint16_t LCDPin = 0;                                                        // PIN to operate LCD keys from web-interface
@@ -307,28 +308,18 @@ uint16_t IRAM_ATTR local_adc1_read(int channel) {
 
 
 
-// CP pin low to high transition ISR
+// CP pin Low to High (___/```) or High to Low (```\___) transition ISR.
+// The actual ADC measurement starts around 23uS (2.3%) after the transition, and finishes after 29uS (2.9%)
 //
-//
+// Also called every 1mS by the Timer in STATE A.
 void IRAM_ATTR onCPpulse() {
-
-  // reset timer, these functions are in IRAM !
-  timerAlarm(timerA, 0, true, 0);
-}
-
-
-
-// Timer interrupt handler
-// in STATE A this is called every 1ms (autoreload)
-// in STATE B/C there is a PWM signal, and the Alarm is set to 5% after the low-> high transition of the PWM signal
-void IRAM_ATTR onTimerA() {
 
   RTC_ENTER_CRITICAL();
   adcsample = local_adc1_read(ADC1_CHANNEL_3);
-
   RTC_EXIT_CRITICAL();
 
-  ADCsamples[sampleidx++] = adcsample;
+  ADCsamples[sampleidx] = adcsample;
+  sampleidx = sampleidx + 1;
   if (sampleidx == 25) sampleidx = 0;
 }
 
@@ -2606,18 +2597,16 @@ void setup() {
 
     // The CP (control pilot) output is a fixed 1khz square-wave (+6..9v / -12v).
     // It's pulse width varies between 10% and 96% indicating 6A-80A charging current.
-    // to detect state changes we should measure the CP signal while it's at ~5% (so 50uS after the positive pulse started)
-    // we use an i/o interrupt at the CP pin output, and a one shot timer interrupt to start the ADC conversion.
-    // would be nice if there was an easier way...
+    // to detect state changes we should measure the CP signal just after the low->high transition ___/````
+    // to detect the Diode, we change the interrupt to trigger on the High->Low transition ````\____
 
-    // setup timer, and one shot timer interrupt to 50us
-    timerA = timerBegin(80);
-    timerAttachInterrupt(timerA, &onTimerA);
+    // setup timer, to 1Mhz (1uS)
+    timerA = timerBegin(1000000);
+    timerAttachInterrupt(timerA, &onCPpulse);
     // we start in STATE A, with a static +12V CP signal
     // set alarm to trigger every 1mS, and let it reload every 1ms
     timerAlarm(timerA, PWM_100, true, 0);
-    // when PWM is active, we sample the CP pin after 5% 
-
+    timerRunning = true;    
 
     // Setup ADC on CP, PP and Temperature pin
     adc1_config_width(ADC_WIDTH_BIT_10);                                    // 10 bits ADC resolution is enough
@@ -2632,23 +2621,20 @@ void setup() {
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_10, 1100, adc_chars_CP);
     esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_6, ADC_WIDTH_BIT_10, 1100, adc_chars_PP);
     esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_6, ADC_WIDTH_BIT_10, 1100, adc_chars_Temperature);
-          
-    
-    // Setup PWM on channel 0, 1000Hz, 10 bits resolution
-    ledcAttach(PIN_CP_OUT, 1000, 10);           // channel 0  => Group: 0, Channel: 0, Timer: 0
-    // setup the RGB led PWM channels
-    // as PWM channel 1 is used by the same timer as the CP timer (channel 0), we start with channel 2
-    ledcAttach(PIN_LEDR, 5000, 8);              // R channel 2, 5kHz, 8 bit
-    ledcAttach(PIN_LEDG, 5000, 8);              // G channel 3, 5kHz, 8 bit
-    ledcAttach(PIN_LEDB, 5000, 8);              // B channel 4, 5kHz, 8 bit
+
+
+    ledcAttach(PIN_LEDR, 5000, 8);              // R channel, 5kHz, 8 bit
+    ledcAttach(PIN_LEDG, 5000, 8);              // G channel, 5kHz, 8 bit
+    ledcAttach(PIN_LEDB, 5000, 8);              // B channel, 5kHz, 8 bit
+                                                // ledcAttach can not be before RGB channels, as CP_OUT will then also be 5kHz??
+    ledcAttach(PIN_CP_OUT, 1000, 10);           // Setup PWM on channel 0, 1kHz, 10 bits resolution 
 
     SetCPDuty(1024);                            // channel 0, duty cycle 100%
     ledcWrite(PIN_LEDR, 255);
     ledcWrite(PIN_LEDG, 0);
     ledcWrite(PIN_LEDB, 255);
 
-    // Setup PIN interrupt on rising edge
-    // the timer interrupt will be reset in the ISR.
+    // Setup PIN interrupt on rising edge ___/```
     attachInterrupt(PIN_CP_OUT, onCPpulse, RISING);   
    
     // Uart 1 is used for Modbus @ 9600 8N1
@@ -2694,7 +2680,6 @@ void setup() {
     pinMode(WCH_NRST, INPUT);               // WCH NRST
 
 
-    delay(1000); //this delay is necessary for the modem to be reliably found
     // shutdown QCA is done by the WCH32V, we set all IO pins low, so no current is flowing into the powered down chip.
     digitalWrite(PIN_QCA700X_CS, LOW);
     digitalWrite(PIN_QCA700X_RESETN, LOW);
