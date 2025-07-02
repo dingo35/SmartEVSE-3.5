@@ -68,7 +68,7 @@
 extern RemoteDebug Debug;
 #endif
 
-#define EVSE_LOG_FORMAT(letter, format) "[%6u][" #letter "][%s:%u] %s(): " format , (uint32_t) (esp_timer_get_time() / 1000ULL), pathToFileName(__FILE__), __LINE__, __FUNCTION__
+#define EVSE_LOG_FORMAT(letter, format) "[%6lu][" #letter "][%s:%u] %s(): " format , (uint32_t) (esp_timer_get_time() / 1000ULL), pathToFileName(__FILE__), __LINE__, __FUNCTION__
 
 #if DBG == 2 && defined(SMARTEVSE_VERSION) //only on ESP32
 #define DEBUG_DISABLED 1

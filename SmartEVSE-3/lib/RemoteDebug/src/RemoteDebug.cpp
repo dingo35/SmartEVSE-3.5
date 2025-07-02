@@ -329,7 +329,7 @@ RemoteDebug::~RemoteDebug() {
 	// Flush
 
 	if (TelnetClient && TelnetClient.connected()) {
-		TelnetClient.flush();
+		TelnetClient.clear();
 	}
 
 	// Stop
@@ -479,7 +479,7 @@ void RemoteDebug::handle() {
 		// Set client
 
 		TelnetClient.setNoDelay(true); // More faster
-		TelnetClient.flush(); // clear input buffer, else you get strange characters
+		TelnetClient.clear(); // clear input buffer, else you get strange characters
 
 		// Empty buffer
 
