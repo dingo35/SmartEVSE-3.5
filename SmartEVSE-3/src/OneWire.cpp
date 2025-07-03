@@ -39,7 +39,7 @@ unsigned char RFID[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 unsigned char RFIDlist[RFIDSIZE];                                               // holds up to 100 RFIDs
 
-OneWire32 ds(PIN_SW_IN, 0, 1, 0);                                               //gpio pin, tx, rx, parasite power
+OneWire32 ds(PIN_SW_IN);
 
 // ############################# OneWire functions #############################
 
@@ -66,18 +66,28 @@ unsigned char OneWireReadCardId(void) {
 unsigned char OneWireReadCardId(void) {
     uint8_t x;
 
-    // Use ReadRom command (33)
-    if (!ds.readRom(RFID)) {                                                    // read Family code (0x01) RFID ID (6 bytes) and crc8
-        if (crc8(RFID,8)) {
-            RFID[0] = 0;                                                        // CRC incorrect, clear first byte of RFID buffer
+    if (!ds.reset()) {
+        return 0;                                                               // No device present
+    }
+    
+    ds.write(0x33);                                                             // Use ReadRom command (33)
+    
+    // Read 8 bytes one by one (Family code + 6-byte ID + CRC8)
+    for (x=0; x<8; x++) {
+        if (!ds.read(RFID[x])) {                                                // read one byte at a time
+            RFID[0] = 0;                                                        // Error reading, clear first byte
             return 0;
-        } else {
-            for (x=0 ; x<7 ; x++) _LOG_A_NO_FUNC("%02x",RFID[x]);
-            _LOG_A_NO_FUNC("\r\n");
-            return 1;
         }
     }
-    return 0;
+    
+    if (crc8(RFID,8)) {
+        RFID[0] = 0;                                                            // CRC incorrect, clear first byte of RFID buffer
+        return 0;
+    } else {
+        for (x=0; x<7; x++) _LOG_A_NO_FUNC("%02x",RFID[x]);
+        _LOG_A_NO_FUNC("\r\n");
+        return 1;
+    }
 }
 #endif
 #endif //FAKE_RFID
