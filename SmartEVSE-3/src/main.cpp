@@ -24,7 +24,7 @@
 #include <FS.h>
 
 #include <WiFi.h>
-#include "network.h"
+#include "network_common.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/md_internal.h"
 
@@ -54,6 +54,7 @@ struct DelayedTimeStruct DelayedStartTime;
 struct DelayedTimeStruct DelayedStopTime;
 extern unsigned char RFID[8];
 extern uint16_t LCDPin;
+extern uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT; //these pins have to be assigned dynamically because of hw version v3.1
 #else //CH32
 #define EXT extern "C"
 #define _GLCD                                                                   // the GLCD doesnt have to be updated on the CH32
@@ -387,9 +388,15 @@ void Button::HandleSwitch(void) {
                 break;
             case 6: // Custom button B
                 CustomButton = !CustomButton;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif  
                 break;
             case 7: // Custom button S
                 CustomButton = true;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif  
                 break;
             default:
                 if (State == STATE_C) {                             // Menu option Access is set to Disabled
@@ -438,6 +445,9 @@ void Button::HandleSwitch(void) {
                 break;
             case 7: // Custom button S
                 CustomButton = false;
+                #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
+                        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
+                #endif  
                 break;
             default:
                 break;
@@ -3164,11 +3174,23 @@ void Timer10ms_singlerun(void) {
     //ESP32 receives info from CH32
     //each message starts with @, : separates variable name from value, ends with \n
     //so @State:2\n would be a valid message
-    idx = Serial1.readBytesUntil('@', SerialBuf, sizeof(SerialBuf));
-    if (idx > 0) {
-        _LOG_D("[(%u)<-] %.*s", idx, idx, SerialBuf);
-        Handle_ESP32_Message(SerialBuf, &CommState);
+    while (Serial1.available()) {       // Process ALL available messages in one cycle
+        idx = Serial1.readBytesUntil('\n', SerialBuf, sizeof(SerialBuf)-1);
+        if (idx > 0) {
+            SerialBuf[idx++] = '\n';
+            SerialBuf[idx] = '\0';  // Null terminate for safety
+            
+            if (SerialBuf[0] == '@') {
+                _LOG_D("[(%u)<-] %.*s", idx, idx, SerialBuf);
+                Handle_ESP32_Message(SerialBuf, &CommState);
+            } else {
+                _LOG_W("Invalid message\n");
+            }
+        } else {
+            break; // No more complete messages
+        }
     }
+
     // process data from mainboard
     if (CommTimeout == 0 && CommState != COMM_STATUS_RSP) {
         switch (CommState) {

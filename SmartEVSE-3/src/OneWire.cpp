@@ -39,8 +39,11 @@ unsigned char RFID[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 unsigned char RFIDlist[RFIDSIZE];                                               // holds up to 100 RFIDs
 
-OneWire32 ds(PIN_SW_IN, 0, 1, 0);                                               //gpio pin, tx, rx, parasite power
-
+extern uint8_t PIN_SW_IN;
+OneWire32& ds() {                                             //gpio pin, tx, rx, parasite power
+    static OneWire32* ans = new OneWire32(PIN_SW_IN, 0, 1, 0);
+    return *ans;
+}
 // ############################# OneWire functions #############################
 
 #if FAKE_RFID
@@ -67,7 +70,7 @@ unsigned char OneWireReadCardId(void) {
     uint8_t x;
 
     // Use ReadRom command (33)
-    if (!ds.readRom(RFID)) {                                                    // read Family code (0x01) RFID ID (6 bytes) and crc8
+    if (!ds().readRom(RFID)) {                                                    // read Family code (0x01) RFID ID (6 bytes) and crc8
         if (crc8(RFID,8)) {
             RFID[0] = 0;                                                        // CRC incorrect, clear first byte of RFID buffer
             return 0;
@@ -334,6 +337,10 @@ void CheckRFID(void) {
                         break;
                 }
             }
+            if (RFIDstatus <= 3)
+                BuzzConfirmation();
+            else
+                BuzzError();
 }
 #else //CH32
 

@@ -20,7 +20,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <FS.h>
 
 #include <WiFi.h>
-#include "network.h"
+#include "network_common.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/md_internal.h"
 
@@ -44,6 +44,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "glcd.h"
 #include "utils.h"
 #include "OneWire.h"
+#include "OneWireESP32.h"
 #include "modbus.h"
 #include "meter.h"
 
@@ -124,7 +125,8 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 hw_timer_t * timerA = NULL;
 Preferences preferences;
 
-uint16_t LCDPin = 0;                                                        // PIN to operate LCD keys from web-interface
+uint16_t LCDPin = 0;                                                        // PINcode to operate LCD keys from web-interface
+uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT, PIN_RS485_RX; //these pins have to be assigned dynamically because of hw version v3.1
 
 extern esp_adc_cal_characteristics_t * adc_chars_CP;
 extern void setStatePowerUnavailable(void);
@@ -137,9 +139,8 @@ const char StrStateNameWeb[15][17] = {"Ready to Charge", "Connected to EV", "Cha
 const char StrErrorNameWeb[9][20] = {"None", "No Power Available", "Communication Error", "Temperature High", "EV Meter Comm Error", "RCM Tripped", "Waiting for Solar", "Test IO", "Flash Error"};
 const char StrMode[3][8] = {"Normal", "Smart", "Solar"};
 const char StrRFIDStatusWeb[8][20] = {"Ready to read card","Present", "Card Stored", "Card Deleted", "Card already stored", "Card not in storage", "Card Storage full", "Invalid" };
-
-// Global data
-
+extern const char StrRFIDReader[7][10] = {"Disabled", "EnableAll", "EnableOne", "Learn", "Delete", "DeleteAll", "Rmt/OCPP"};
+bool BuzzerPresent = false;
 
 // The following data will be updated by eeprom/storage data at powerup:
 extern uint16_t MaxMains;
@@ -238,6 +239,7 @@ extern uint16_t firmwareUpdateTimer;
                                                                                 // 0 < timer < FW_UPDATE_DELAY means we are in countdown for an actual update
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
+extern OneWire32& ds();
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
 extern unsigned char OcppRfidUuid [7];
@@ -680,165 +682,175 @@ void printRFID(char *buf) {
 }
 
 
+//jsn(device_class, current) expands to:
+// "device_class" : "current"
+String jsn(const String& key, const String& value) {
+    return "\"" + key + "\" : \"" + value + "\"";
+}
+template<typename T>
+String jsn(const String& key, T value) {
+    return "\"" + key + "\" : \"" + String(value) + "\"";
+}
+
+
+//jsna(device_class, current) expands to:
+// , "device_class" : "current"
+String jsna(const String& key, const String& value) {
+    return ", " + jsn(key, value);
+}
+template<typename T>
+String jsna(const String& key, T value) {
+    return ", " + jsn(key, value);
+}
+
+
+void announce(const String& entity_name, const String& domain, const String& optional_payload) {
+    String entity_suffix = entity_name;
+    entity_suffix.replace(" ", "");
+    String topic = "homeassistant/" + domain + "/" + MQTTprefix + "-" + entity_suffix + "/config";
+
+    const String config_url = "http://" + WiFi.localIP().toString();
+    const String device_payload = String(R"("device": {)") + jsn("model","SmartEVSE v3") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+
+    String payload = "{"
+        + jsn("name", entity_name)
+        + jsna("object_id", String(MQTTprefix + "-" + entity_suffix))
+        + jsna("unique_id", String(MQTTprefix + "-" + entity_suffix))
+        + jsna("state_topic", String(MQTTprefix + "/" + entity_suffix))
+        + jsna("availability_topic", String(MQTTprefix + "/connected"))
+        + ", " + device_payload + optional_payload
+        + "}";
+
+    MQTTclient.publish(topic.c_str(), payload.c_str(), true, 0);  // Retain + QoS 0
+}
+
 void SetupMQTTClient() {
     // Set up subscriptions
     MQTTclient.subscribe(MQTTprefix + "/Set/#",1);
     MQTTclient.publish(MQTTprefix+"/connected", "online", true, 0);
 
-    //publish MQTT discovery topics
-    //we need something to make all this JSON stuff readable, without doing all this assign and serialize stuff
-#define jsn(x, y) String(R"(")") + x + R"(" : ")" + y + R"(")"
-    //jsn(device_class, current) expands to:
-    // R"("device_class" : "current")"
-
-#define jsna(x, y) String(R"(, )") + jsn(x, y)
-    //json add expansion, same as above but now with a comma prepended
-
-    //first all device stuff:
-    const String device_payload = String(R"("device": {)") + jsn("model","SmartEVSE v3") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", "http://" + WiFi.localIP().toString().c_str()) + jsna("sw_version", String(VERSION)) + "}";
-    //a device SmartEVSE-1001 consists of multiple entities, and an entity can be in the domains sensor, number, select etc.
-    String entity_suffix, entity_name, optional_payload;
-
-    //some self-updating variables here:
-#define entity_id String(MQTTprefix + "-" + entity_suffix)
-#define entity_path String(MQTTprefix + "/" + entity_suffix)
-#define entity_name(x) entity_name = x; entity_suffix = entity_name; entity_suffix.replace(" ", "");
-
-    //create template to announce an entity in it's own domain:
-#define announce(x, entity_domain) entity_name(x); \
-    MQTTclient.publish("homeassistant/" + String(entity_domain) + "/" + entity_id + "/config", \
-     "{" \
-        + jsn("name", entity_name) \
-        + jsna("object_id", entity_id) \
-        + jsna("unique_id", entity_id) \
-        + jsna("state_topic", entity_path) \
-        + jsna("availability_topic",String(MQTTprefix+"/connected")) \
-        + ", " + device_payload + optional_payload \
-        + "}", \
-    true, 0); // Retain + QoS 0
-
     //set the parameters for and announce sensors with device class 'current':
-    optional_payload = jsna("device_class","current") + jsna("unit_of_measurement","A") + jsna("value_template", R"({{ value | int / 10 }})");
-    announce("Charge Current", "sensor");
-    announce("Max Current", "sensor");
+    String optional_payload = jsna("device_class","current") + jsna("unit_of_measurement","A") + jsna("value_template", R"({{ value | int / 10 }})");
+    announce("Charge Current", "sensor", optional_payload);
+    announce("Max Current", "sensor", optional_payload);
     if (MainsMeter.Type) {
-        announce("Mains Current L1", "sensor");
-        announce("Mains Current L2", "sensor");
-        announce("Mains Current L3", "sensor");
+        announce("Mains Current L1", "sensor", optional_payload);
+        announce("Mains Current L2", "sensor", optional_payload);
+        announce("Mains Current L3", "sensor", optional_payload);
     }
     if (EVMeter.Type) {
-        announce("EV Current L1", "sensor");
-        announce("EV Current L2", "sensor");
-        announce("EV Current L3", "sensor");
+        announce("EV Current L1", "sensor", optional_payload);
+        announce("EV Current L2", "sensor", optional_payload);
+        announce("EV Current L3", "sensor", optional_payload);
     }
     if (homeBatteryLastUpdate) {
-        announce("Home Battery Current", "sensor");
+        announce("Home Battery Current", "sensor", optional_payload);
     }
 
 #if MODEM
         //set the parameters for modem/SoC sensor entities:
         optional_payload = jsna("unit_of_measurement","%") + jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
-        announce("EV Initial SoC", "sensor");
-        announce("EV Full SoC", "sensor");
-        announce("EV Computed SoC", "sensor");
-        announce("EV Remaining SoC", "sensor");
+        announce("EV Initial SoC", "sensor", optional_payload);
+        announce("EV Full SoC", "sensor", optional_payload);
+        announce("EV Computed SoC", "sensor", optional_payload);
+        announce("EV Remaining SoC", "sensor", optional_payload);
 
         optional_payload = jsna("device_class","duration") + jsna("unit_of_measurement","m") + jsna("value_template", R"({{ none if (value | int == -1) else (value | int / 60) | round }})");
-        announce("EV Time Until Full", "sensor");
+        announce("EV Time Until Full", "sensor", optional_payload);
 
         optional_payload = jsna("device_class","energy") + jsna("unit_of_measurement","Wh") + jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
-        announce("EV Energy Capacity", "sensor");
-        announce("EV Energy Request", "sensor");
+        announce("EV Energy Capacity", "sensor", optional_payload);
+        announce("EV Energy Request", "sensor", optional_payload);
 
         optional_payload = jsna("value_template", R"({{ none if (value == '') else value }})");
-        announce("EVCCID", "sensor");
+        announce("EVCCID", "sensor", optional_payload);
         optional_payload = jsna("state_topic", String(MQTTprefix + "/RequiredEVCCID")) + jsna("command_topic", String(MQTTprefix + "/Set/RequiredEVCCID"));
-        announce("Required EVCCID", "text");
+        announce("Required EVCCID", "text", optional_payload);
 #endif
 
     optional_payload = jsna("device_class","energy") + jsna("unit_of_measurement","Wh") + jsna("state_class","total_increasing");
     if (MainsMeter.Type) {
-        announce("Mains Import Active Energy", "sensor");
-        announce("Mains Export Active Energy", "sensor");
+        announce("Mains Import Active Energy", "sensor", optional_payload);
+        announce("Mains Export Active Energy", "sensor", optional_payload);
     }
 
     if (EVMeter.Type) {
-        announce("EV Import Active Energy", "sensor");
-        announce("EV Export Active Energy", "sensor");
+        announce("EV Import Active Energy", "sensor", optional_payload);
+        announce("EV Export Active Energy", "sensor", optional_payload);
         //set the parameters for and announce other sensor entities:
         optional_payload = jsna("device_class","power") + jsna("unit_of_measurement","W");
-        announce("EV Charge Power", "sensor");
+        announce("EV Charge Power", "sensor", optional_payload);
         optional_payload = jsna("device_class","energy") + jsna("unit_of_measurement","Wh");
-        announce("EV Energy Charged", "sensor");
+        announce("EV Energy Charged", "sensor", optional_payload);
         optional_payload = jsna("device_class","energy") + jsna("unit_of_measurement","Wh") + jsna("state_class","total_increasing");
-        announce("EV Total Energy Charged", "sensor");
+        announce("EV Total Energy Charged", "sensor", optional_payload);
     }
 
     //set the parameters for and announce sensor entities without device_class or unit_of_measurement:
     optional_payload = "";
-    announce("EV Plug State", "sensor");
-    announce("Access", "sensor");
-    announce("State", "sensor");
-    announce("RFID", "sensor");
-    announce("RFIDLastRead", "sensor");
+    announce("EV Plug State", "sensor", optional_payload);
+    announce("Access", "sensor", optional_payload);
+    announce("State", "sensor", optional_payload);
+    announce("RFID", "sensor", optional_payload);
+    announce("RFIDLastRead", "sensor", optional_payload);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    announce("OCPP", "sensor");
-    announce("OCPPConnection", "sensor");
+    announce("OCPP", "sensor", optional_payload);
+    announce("OCPPConnection", "sensor", optional_payload);
 #endif //ENABLE_OCPP
 
     optional_payload = jsna("state_topic", String(MQTTprefix + "/LEDColorOff")) + jsna("command_topic", String(MQTTprefix + "/Set/ColorOff"));
-    announce("LED Color Off", "text");
+    announce("LED Color Off", "text", optional_payload);
     optional_payload = jsna("state_topic", String(MQTTprefix + "/LEDColorNormal")) + jsna("command_topic", String(MQTTprefix + "/Set/ColorNormal"));
-    announce("LED Color Normal", "text");
+    announce("LED Color Normal", "text", optional_payload);
     optional_payload = jsna("state_topic", String(MQTTprefix + "/LEDColorSmart")) + jsna("command_topic", String(MQTTprefix + "/Set/ColorSmart"));
-    announce("LED Color Smart", "text");
+    announce("LED Color Smart", "text", optional_payload);
     optional_payload = jsna("state_topic", String(MQTTprefix + "/LEDColorSolar")) + jsna("command_topic", String(MQTTprefix + "/Set/ColorSolar"));
-    announce("LED Color Solar", "text");
+    announce("LED Color Solar", "text", optional_payload);
     optional_payload = jsna("state_topic", String(MQTTprefix + "/LEDColorCustom")) + jsna("command_topic", String(MQTTprefix + "/Set/ColorCustom"));
-    announce("LED Color Custom", "text");
+    announce("LED Color Custom", "text", optional_payload);
     
     optional_payload = jsna("state_topic", String(MQTTprefix + "/CustomButton")) + jsna("command_topic", String(MQTTprefix + "/Set/CustomButton"));
     optional_payload += String(R"(, "options" : ["On", "Off"])");
-    announce("Custom Button", "select");
+    announce("Custom Button", "select", optional_payload);
 
     optional_payload = jsna("device_class","duration") + jsna("unit_of_measurement","s");
-    announce("SolarStopTimer", "sensor");
+    announce("SolarStopTimer", "sensor", optional_payload);
     //set the parameters for and announce diagnostic sensor entities:
     optional_payload = jsna("entity_category","diagnostic");
-    announce("Error", "sensor");
-    announce("WiFi SSID", "sensor");
-    announce("WiFi BSSID", "sensor");
+    announce("Error", "sensor", optional_payload);
+    announce("WiFi SSID", "sensor", optional_payload);
+    announce("WiFi BSSID", "sensor", optional_payload);
     optional_payload = jsna("entity_category","diagnostic") + jsna("device_class","signal_strength") + jsna("unit_of_measurement","dBm");
-    announce("WiFi RSSI", "sensor");
+    announce("WiFi RSSI", "sensor", optional_payload);
     optional_payload = jsna("entity_category","diagnostic") + jsna("device_class","temperature") + jsna("unit_of_measurement","°C");
-    announce("ESP Temp", "sensor");
+    announce("ESP Temp", "sensor", optional_payload);
     optional_payload = jsna("entity_category","diagnostic") + jsna("device_class","duration") + jsna("unit_of_measurement","s") + jsna("entity_registry_enabled_default","False");
-    announce("ESP Uptime", "sensor");
+    announce("ESP Uptime", "sensor", optional_payload);
 
 #if MODEM
         optional_payload = jsna("unit_of_measurement","%") + jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
-        announce("CP PWM", "sensor");
+        announce("CP PWM", "sensor", optional_payload);
 
         optional_payload = jsna("value_template", R"({{ none if (value | int == -1) else (value | int / 1024 * 100) | round }})");
         optional_payload += jsna("command_topic", String(MQTTprefix + "/Set/CPPWMOverride")) + jsna("min", "-1") + jsna("max", "100") + jsna("mode","slider");
         optional_payload += jsna("command_template", R"({{ (value | int * 1024 / 100) | round }})");
-        announce("CP PWM Override", "number");
+        announce("CP PWM Override", "number", optional_payload);
 #endif
     //set the parameters for and announce select entities, overriding automatic state_topic:
     optional_payload = jsna("state_topic", String(MQTTprefix + "/Mode")) + jsna("command_topic", String(MQTTprefix + "/Set/Mode"));
     optional_payload += String(R"(, "options" : ["Off", "Normal", "Smart", "Solar", "Pause"])");
-    announce("Mode", "select");
+    announce("Mode", "select", optional_payload);
 
     //set the parameters for and announce number entities:
     optional_payload = jsna("command_topic", String(MQTTprefix + "/Set/CurrentOverride")) + jsna("min", "0") + jsna("max", MaxCurrent ) + jsna("mode","slider");
     optional_payload += jsna("value_template", R"({{ value | int / 10 if value | is_number else none }})") + jsna("command_template", R"({{ value | int * 10 }})");
-    announce("Charge Current Override", "number");
+    announce("Charge Current Override", "number", optional_payload);
 
     //set the parameters for and announce Cable Lock:
     optional_payload = jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
     optional_payload += String(R"(, "options" : ["0", "1"])");
-    announce("Cable Lock", "select");
+    announce("Cable Lock", "select", optional_payload);
 }
 
 void mqttPublishData() {
@@ -864,6 +876,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
+        MQTTclient.publish(MQTTprefix + "/NrOfPhases", Nr_Of_Phases_Charging, false, 0);
         MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
         if (RFIDReader) {
@@ -1311,6 +1324,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["state_id"] = State;
         doc["evse"]["error"] = error;
         doc["evse"]["error_id"] = errorId;
+        doc["evse"]["rfidreader"] = StrRFIDReader[RFIDReader];
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
         if (RFIDReader) {
             char buf[15];
@@ -2550,7 +2564,58 @@ void WCHUPDATE(unsigned long RunningVersion) {
 #endif
 
 
+void BuzzConfirmation (void) {
+    if (!BuzzerPresent) return;
+    ledcWriteTone(6, 2637); // E7
+    ledcWrite(6, 128);      // Buzzer: 50% duty cycle
+    delay(100);
+    ledcWriteTone(6, 2794); // F7
+    delay(100);
+    ledcWriteTone(6, 3136); // G7
+    delay(100);
+    ledcWrite(6, 0);       // Buzzer off
+}
+
+
+void BuzzError (void) {
+    if (!BuzzerPresent) return;
+    ledcWriteTone(6, 3136); // G7
+    ledcWrite(6, 128);      // Buzzer: 50% duty cycle
+    delay(100);
+    ledcWriteTone(6, 2794); // F7
+    delay(100);
+    ledcWriteTone(6, 2637); // E7
+    delay(100);
+    ledcWrite(6, 0);       // Buzzer off
+}
+
+
 void setup() {
+    //detect if we are on 3.1 hardware version:
+    uint8_t chip_ver = (( *(volatile uint32_t *) 0x3ff5A00c) >> 9 ) & 7 ;       // Read chip version directly from Efuses. 0=ESP32D0WDQ6 4=ESP32U4WDH
+    // change default pins in case ESP32-MINI-1 is detected
+    if (chip_ver == 4) { //SmartEVSE hw version 3.1
+        PIN_SW_IN = PIN_SW_IN_V31;
+        PIN_ACTA = PIN_ACTA_V31;
+        PIN_ACTB = PIN_ACTB_V31;
+        PIN_RCM_FAULT = PIN_RCM_FAULT_V31;
+        PIN_RS485_RX = PIN_RS485_RX_V31;
+        pinMode(PIN_EXT_V31, INPUT);
+        pinMode(PIN_BUZZER_V31, OUTPUT);
+        digitalWrite(PIN_BUZZER_V31, LOW);
+        ledcSetup(6, 4186, 8);                      // channel 6, 4kHz, 8bit
+        ledcAttachPin(PIN_BUZZER_V31, 6);
+        BuzzerPresent = true;
+        BuzzConfirmation();
+    } else { //SmartEVSE hw version 3.0 or 4.0
+        PIN_SW_IN = PIN_SW_IN_V30;
+        PIN_ACTA = PIN_ACTA_V30;
+        PIN_ACTB = PIN_ACTB_V30;
+        PIN_RCM_FAULT = PIN_RCM_FAULT_V30;
+        PIN_RS485_RX = PIN_RS485_RX_V30;
+    }
+    ds(); // initialize OneWire32 object on use, to avoid static initialization order fiasco
+
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
     pinMode(PIN_CP_OUT, OUTPUT);            // CP output
@@ -2719,9 +2784,12 @@ void setup() {
     // Setup SWDIO pin as Power Panic interrupt received from the WCH uC. (unused, we use serial comm)
     //attachInterrupt(WCH_SWDIO, PowerPanicESP, FALLING);
 
+    Serial.setTxBufferSize(2048);                                       // prevent error message: [HWCDC.cpp:467] write(): write failed due to waiting USB Host - timeout
     Serial.begin();                                                     // Debug output on USB
     Serial.setTxTimeoutMs(1);                                           // Workaround for Serial.print while unplugged USB.
                                                                         // log_d does not have this issue?
+    Serial1.setRxBufferSize(2048);                                      // increase RX/TX buffers, prevent buffer overruns
+    Serial1.setTxBufferSize(2048);
     Serial1.begin(FUNCONF_UART_PRINTF_BAUD, SERIAL_8N1, USART_RX, USART_TX, false);       // Serial connection to main board microcontroller
     //Serial2.begin(115200, SERIAL_8N1, USART_TX, -1, false);
     Serial.printf("\nSmartEVSE v4 powerup\n");
