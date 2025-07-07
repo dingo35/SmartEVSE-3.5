@@ -2549,6 +2549,9 @@ void setup() {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
     pinMode(PIN_CP_OUT, OUTPUT);            // CP output
+    //uncomment next line to prevent clogging of USB log with message:
+    //[W][esp32-hal-gpio.c:188] __digitalRead(): IO 1073454972 is not set as GPIO. digitalRead() may return an inconsistent value.
+    //BUT leave commented in production because it influences the behaviour of the Onewire library
     //pinMode(PIN_SW_IN, INPUT);            // SW Switch input, handled by OneWire32 class
     pinMode(PIN_SSR, OUTPUT);               // SSR1 output
     pinMode(PIN_SSR2, OUTPUT);              // SSR2 output
