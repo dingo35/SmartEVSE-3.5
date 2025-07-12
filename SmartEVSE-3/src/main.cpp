@@ -824,7 +824,7 @@ void setState(uint8_t NewState) { //c
                     setSolarStopTimer(0);
                     MaxSumMainsTimer = 0;
                     Nr_Of_Phases_Charging = 1;                                  // switch to 1F
-                    Switching_Phases_C2 = AFTER_SWITCH;                         // we finished the switching process,
+                    Switching_Phases_C2 = NO_SWITCH;                            // we finished the switching process,
                                                                                 // BUT we don't know which is the single phase
             }
 
@@ -832,7 +832,7 @@ void setState(uint8_t NewState) { //c
                     setSolarStopTimer(0);
                     MaxSumMainsTimer = 0;
                     Nr_Of_Phases_Charging = 3;                                  // switch to 3P
-                    Switching_Phases_C2 = AFTER_SWITCH;                         // we finished the switching process,
+                    Switching_Phases_C2 = NO_SWITCH;                            // we finished the switching process,
             }
 
             CONTACTOR1_ON;
@@ -860,6 +860,7 @@ void setState(uint8_t NewState) { //c
     }
 
     BalancedState[0] = NewState;
+    BalancedState[LoadBl] = NewState;
     State = NewState;
 
 #if MQTT && defined(SMARTEVSE_VERSION) // ESP32 only
@@ -1185,6 +1186,8 @@ void CalcBalancedCurrent(char mod) {
                     Switching_Phases_C2 = GOING_TO_SWITCH_3P;
                 }
             }
+        } else if (Mode == MODE_SMART && Nr_Of_Phases_Charging != 3) {          // in SMART AUTO mode go back to the old 3P
+                    Switching_Phases_C2 = GOING_TO_SWITCH_3P;
         }
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
@@ -1367,7 +1370,7 @@ void CalcBalancedCurrent(char mod) {
                         if (SolarStopTimer <= 3) {
                             _LOG_A("Solar charge: Switching to 3P.\n");
                             Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                            setState(STATE_C1);               // tell EV to stop charging
+                            setState(STATE_C1);               // tell EV to stop charging //FIXME how about slaves
                             setSolarStopTimer(0);
                         }
                         else {
@@ -3042,7 +3045,7 @@ void Timer10ms_singlerun(void) {
 
         } else if (pilot == PILOT_6V && ++StateTimer > 50) {                // When switching from State B to C, make sure pilot is at 6V for at least 500ms
                                                                             // Fixes https://github.com/dingo35/SmartEVSE-3.5/issues/40
-            if ((DiodeCheck == 1) && (ErrorFlags == NO_ERROR) && (ChargeDelay == 0)) {
+            if (DiodeCheck == 1 && ErrorFlags == NO_ERROR && ChargeDelay == 0 && AccessStatus == ON) {
                 if (EVMeter.Type && EVMeter.ResetKwh) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
                     EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart; // Calculate Energy
