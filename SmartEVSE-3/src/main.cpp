@@ -797,7 +797,7 @@ void setState(uint8_t NewState) { //c
         case STATE_MODEM_WAIT:
             PILOT_CONNECTED;
             SetCPDuty(50);
-            ToModemDoneStateTimer = 60;
+            ToModemDoneStateTimer = 120;
             break;
         //TODO how about STATE_MODEM_DENIED?
         case STATE_MODEM_DONE:  // This state is reached via STATE_MODEM_WAIT after 60s (timeout condition, nothing received) or after REST/MODEM request (success, shortcut to immediate charging).
@@ -1490,7 +1490,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
 #endif
     // wait for Activation mode to start
     if (ActivationMode && ActivationMode != 255) {
-        ActivationMode--;                                               // Decrease ActivationMode every second.
+    //    ActivationMode--;                                               // Decrease ActivationMode every second.
     }
 
     // activation Mode is active
