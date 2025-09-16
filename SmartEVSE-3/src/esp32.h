@@ -98,7 +98,6 @@ extern portMUX_TYPE rtc_spinlock;   //TODO: Will be placed in the appropriate po
 #define RTC_EXIT_CRITICAL()     portEXIT_CRITICAL(&rtc_spinlock)
 
 
-extern char SmartConfigKey[];
 extern struct tm timeinfo;
 
 
@@ -266,7 +265,6 @@ bool ocppLockingTxDefined();
 #define LCD_CHANNEL 5               // PWM channel
 
 // ESP-WCH Communication States
-#define COMM_OFF 0
 #define COMM_VER_REQ 1              // Version Reqest           ESP -> WCH
 #define COMM_VER_RSP 2              // Version Response         ESP <- WCH
 #define COMM_CONFIG_SET 3           // Configuration Set        ESP -> WCH

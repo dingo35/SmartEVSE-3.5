@@ -73,6 +73,7 @@
 #define MODEM 0  //0 = no modem 1 = modem
 #endif
 
+#define RCM_TEST_DURATION 15                                                    // nr of seconds the RCM Test is allowed (v4 only)
 #define MAX_MAINS 25                                                            // max Current the Mains connection can supply
 #define MAX_SUMMAINS 0                                                          // only used for capacity rate limiting, max current over the sum of all phases
 #define MAX_SUMMAINSTIME 0
@@ -313,6 +314,8 @@ extern void PowerPanicESP();
 extern uint8_t LCDlock;
 enum Switch_Phase_t { NO_SWITCH, GOING_TO_SWITCH_1P, GOING_TO_SWITCH_3P };
 enum AccessStatus_t { OFF, ON, PAUSE };
+enum Charging_Protocol_t {IEC, DIN, ISO2, ISO20}; // IEC 61851-1 (low-level signaling through PWM), the others are high-level signalling via the modem
+
 extern void CalcBalancedCurrent(char mod);
 extern void write_settings(void);
 extern void CalcIsum(void);

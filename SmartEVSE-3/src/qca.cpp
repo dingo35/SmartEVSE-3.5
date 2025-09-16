@@ -329,7 +329,9 @@ void SlacManager(uint16_t rxbytes) {
             // copy MAC from the EVSE modem to myModemMac. This MAC is not used for communication.
             memcpy(myModemMac, rxbuffer+6, 6);
             _LOG_I("NMK set\n");
-        } else _LOG_W("NMK -NOT- set\n");
+        } else {
+            _LOG_W("NMK -NOT- set\n");
+        }
 
     } else if (mnt == (CM_SLAC_PARAM + MMTYPE_REQ) && modem_state == MODEM_CONFIGURED) {
         _LOG_I("received CM_SLAC_PARAM.REQ\n");
@@ -623,6 +625,7 @@ void Timer20ms(void * parameter) {
 
         // Pause the task for 20ms
         vTaskDelay(20 / portTICK_PERIOD_MS);
+        //_LOG_A("Timer20ms task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
 
     } // while(1)
 }

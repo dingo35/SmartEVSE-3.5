@@ -284,6 +284,15 @@ void ModemPower(uint8_t enable)
 }
 
 
+// test RCMON
+// enable test signal to RCM14-03 sensor. Should trigger the fault output
+void testRCMON(void) {
+    setErrorFlags(RCM_TEST);
+    funDigitalWrite(RCMTEST, FUN_LOW);
+    delay(1000);                                        // we take this long so you can actually see the red led on the RCM14
+    funDigitalWrite(RCMTEST, FUN_HIGH);
+}
+
 
 //============================ Peripheral Init Functions ==============================
 //
@@ -720,17 +729,10 @@ void setup(void) {
     // Note that printf will only actually send data to the uart, when it detects a newline, or after a timeout
     //
 
-    printf("@MSG: \nSmartEVSE mainboard startup\n");
+    printf("@MSG: SmartEVSE mainboard startup\n");
     printf("@MSG: SystemClk:%d\n",FUNCONF_SYSTEM_CORE_CLOCK);
     //printf("@MSG: ChipID:%08x\n", DBGMCU_GetCHIPID() );
     //printf("@MSG: UID:%08x%04x\n", *( uint32_t * )0x1FFFF7E8 , (*( uint32_t * )0x1FFFF7EC)>>16 );
-
-    EXTInit();                                      // Interrupt on RCMFAULT pin
-    ADCInit();                                      // CP, PP and Temp inputs
-    TIM1Init();                                     // Timebase for CP (PWM)signal and CP/PP/Temp ADC reading (1kHz)
-    TIM2Init();                                     // Modbus t3.5 timeout timer, calls ISR after 3.5ms of silence on the bus
-    TIM3Init();                                     // LED PWM ~4Khz
-    TIM4Init();                                     // ZC input monitoring 50Hz
 
     funDigitalWrite(VCC_EN, FUN_LOW);               // Modem power control OFF
     funDigitalWrite(CPOFF, FUN_LOW);                // CP enabled
@@ -742,26 +744,22 @@ void setup(void) {
     funDigitalWrite(ACTB, FUN_HIGH);                // Actuator output W at 12V
     funDigitalWrite(SWDIO, FUN_HIGH);               // SWDIO High (pull up) unused
 
+    EXTInit();                                      // Interrupt on RCMFAULT pin
+    ADCInit();                                      // CP, PP and Temp inputs
+    TIM1Init();                                     // Timebase for CP (PWM)signal and CP/PP/Temp ADC reading (1kHz)
+    TIM2Init();                                     // Modbus t3.5 timeout timer, calls ISR after 3.5ms of silence on the bus
+    TIM3Init();                                     // LED PWM ~4Khz
+    TIM4Init();                                     // ZC input monitoring 50Hz
 
     ModemPower(1);
     RCmonCtrl(DISABLE);
     PowerPanicCtrl(DISABLE);
-
-    // test RCMON
-    // enable test signal to RCM14-03 sensor. Should trigger the fault output
-    /*
-    funDigitalWrite(RCMTEST, FUN_LOW);
-    delay(100);
-    funDigitalWrite(RCMTEST, FUN_HIGH);
-    */
-
 }
 
 
 // Delay in milliseconds
 // We don't reset SysTick counter, but instead set the SysTick compare register
-void delay(uint32_t ms)
-{
+void delay(uint32_t ms) {
     uint32_t i;
 
     // Clear Status register

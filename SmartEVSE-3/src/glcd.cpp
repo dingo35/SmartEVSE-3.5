@@ -86,11 +86,12 @@ uint8_t GridActive = 0;                                                         
 uint32_t ScrollTimer = 0;
 
 extern void CheckSwitch(bool force = false);
-extern void handleWIFImode(void *s  = &Serial);
-extern char SmartConfigKey[16];
+extern void handleWIFImode(void);
 extern Button ExtSwitch;
+extern String APpassword;
 unsigned char activeRow;
 extern Switch_Phase_t Switching_Phases_C2;
+extern uint8_t RCMTestCounter;
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
@@ -499,19 +500,17 @@ void GLCD(void) {
                     GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
                 } else GLCD_write_buf_str(0,0, "Not connected to WiFi", GLCD_ALIGN_LEFT);
 
-            // When Wifi Setup is selected, show AES key for the ESPTouch app
+            // When Wifi Setup is selected, show password and SSID of the Access Point
             } else if (WIFImode == 2) {
                 if (SubMenu && WiFi.getMode() != WIFI_AP_STA) {           // Do not show if AP_STA mode is started
-                    sprintf(Str, "O button starts config");
+                    sprintf(Str, "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
-                    // Show ESPTouch key
-                    sprintf(Str, "Key:%s", SmartConfigKey);
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
-                    GLCD_sendbuf(7, 1);
-                    GLCD_buffer_clr();
-                    sprintf(Str, "Now use EspTouch app ");
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
+                    // Show Access Point password
+                    //sprintf(Str, "AP:SmartEVSE-config");
+                    //GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+                    sprintf(Str, "Portal PW:%s", APpassword.c_str());
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
             }
         }
@@ -555,7 +554,7 @@ void GLCD(void) {
             GLCD_print_buf2(4, (const char *) "CHARGING");
             GLCD_print_buf2(6, (const char *) "STOPPED");
             return;
-        } else if (ErrorFlags & RCM_TRIPPED) {                                  // Residual Current Sensor tripped
+        } else if ((ErrorFlags & RCM_TRIPPED) && !(ErrorFlags & RCM_TEST)) {    // Residual Current Sensor tripped
             if (!LCDToggle) {
                 GLCD_print_buf2(0, (const char *) "RESIDUAL");
                 GLCD_print_buf2(2, (const char *) "FAULT");
@@ -568,6 +567,21 @@ void GLCD(void) {
                 GLCD_print_buf2(6, (const char *) "RESET");
             }
             return;
+#if SMARTEVSE_VERSION >= 40
+        } else if (!(ErrorFlags & RCM_TRIPPED) && (ErrorFlags & RCM_TEST) && !RCMTestCounter) {    // Residual Current Sensor test failed
+            if (!LCDToggle) {
+                GLCD_print_buf2(0, (const char *) "RESIDUAL");
+                GLCD_print_buf2(2, (const char *) "SENSOR");
+                GLCD_print_buf2(4, (const char *) "TEST");
+                GLCD_print_buf2(6, (const char *) "FAILED");
+            } else {
+                GLCD_print_buf2(0, (const char *) "REBOOT");
+                GLCD_print_buf2(2, (const char *) "TO");
+                GLCD_print_buf2(4, (const char *) "RESET");
+                GLCD_print_buf2(6, (const char *) "");
+            }
+            return;
+#endif
         } else if (ErrorFlags & Test_IO) {                                      // Only used when testing the module
             GLCD_print_buf2(2, (const char *) "IO Test");
             sprintf(Str, "FAILED! %u", TestState);
