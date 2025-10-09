@@ -571,7 +571,7 @@ void setMode(uint8_t NewMode) {
     }
 
     /* rob040: similar to the above, when solar charging at 1P and mode change, we need to switch back to 3P */
-    if ((EnableC2 == AUTO) && (Mode != NewMode) && (Mode == MODE_SOLAR) /* && solar 1P*/) {
+    if ((EnableC2 == AUTO) && (Mode != NewMode) && (Mode == MODE_SOLAR) && (Nr_Of_Phases_Charging == 1)) {
         setAccess(OFF);                                                       //switch to OFF
         switchOnLater = true;
     }
@@ -698,7 +698,7 @@ void setStatePowerUnavailable(void) {
     //State changes between x1 and x2 are created by the EVSE
     //State changes between x1 and x2 indicate availability (x2) of unavailability (x1) of power supply to the EV
     if (State == STATE_C) setState(STATE_C1);                       // If we are charging, tell EV to stop charging
-    else if (State != STATE_C1) setState(STATE_B1);                 // If we are not in State C1, switch to State B1
+    else if (State != STATE_C1 && State != STATE_B1) setState(STATE_B1);    // If we are not in State C1 or B1, switch to State B1
 #else //v4 ESP32
     printf("@setStatePowerUnavailable\n");
 #endif
@@ -762,7 +762,7 @@ void setState(uint8_t NewState) { //c
     switch (NewState) {
         case STATE_B1:
             if (!ChargeDelay) setChargeDelay(3);                                // When entering State B1, wait at least 3 seconds before switching to another state.
-            if (State != STATE_C1 && State != STATE_B1 && State != STATE_B && !PilotDisconnected) {
+            if (State != STATE_B1 && !PilotDisconnected) {
                 PILOT_DISCONNECTED;
                 PilotDisconnected = true;
                 PilotDisconnectTime = 5;                                       // Set PilotDisconnectTime to 5 seconds
@@ -1006,6 +1006,7 @@ uint8_t Pilot() {
     if ((Min >= 2735) && (Max < 3055)) return PILOT_9V;                     // Pilot at 9V
     if ((Min >= 2400) && (Max < 2735)) return PILOT_6V;                     // Pilot at 6V
     if ((Min >= 2000) && (Max < 2400)) return PILOT_3V;                     // Pilot at 3V
+    if ((Min >= 1600) && (Max < 2000)) return PILOT_SHORT;                  // Pilot short or open
     if ((Min > 100) && (Max < 300)) return PILOT_DIODE;                     // Diode Check OK
     return PILOT_NOK;                                                       // Pilot NOT ok
 }
@@ -1068,7 +1069,7 @@ char IsCurrentAvailable(void) {
     } //else
         //printf("@MSG: Current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_EV=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_EV/10, abs(Baseload_EV%10), MinCurrent, MaxCircuit);
     //assume the current should be available on all 3 phases
-    int Phases = Force_Single_Phase_Charging() ? 1 : 3;
+    int Phases = 1; //Force_Single_Phase_Charging() ? 1 : 3;
     if (Mode != MODE_NORMAL && MaxSumMains && ((Phases * ActiveEVSE * MinCurrent * 10) + Isum > MaxSumMains * 10)) {
         //printf("@MSG: No current available MaxSumMains line %d. ActiveEVSE=%u, MinCurrent=%uA, Isum=%d.%dA, MaxSumMains=%uA.\n", __LINE__, ActiveEVSE, MinCurrent, Isum/10, abs(Isum%10), MaxSumMains);
         return 0;                                                           // Not enough current available!, return with error
@@ -1085,7 +1086,7 @@ char IsCurrentAvailable(void) {
     }
 #endif //ENABLE_OCPP
 
-    printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
+    //printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
     return 1;
 }
 #else //v4 ESP32
@@ -1172,14 +1173,12 @@ void CalcBalancedCurrent(char mod) {
                     if (Nr_Of_Phases_Charging != 3) {
                         Switching_Phases_C2 = GOING_TO_SWITCH_3P;
                         _LOG_D("Solar starting in 3-phase mode\n");
-                    } else
-                        _LOG_D("Solar continuing in 3-phase mode\n");
+                    }    
                 } else /*if (-Isum >= (10*MinCurrent+2))*/ {
                     if (Nr_Of_Phases_Charging != 1) {
                         Switching_Phases_C2 = GOING_TO_SWITCH_1P;
                         _LOG_D("Solar starting in 1-phase mode\n");
-                    } else
-                        _LOG_D("Solar continuing in 1-phase mode\n");
+                    }  
                 }
             }
         }
@@ -1195,8 +1194,12 @@ void CalcBalancedCurrent(char mod) {
                     Switching_Phases_C2 = GOING_TO_SWITCH_3P;
                 }
             }
-        } else if (Mode == MODE_SMART && Nr_Of_Phases_Charging != 3) {          // in SMART AUTO mode go back to the old 3P
+        } else if (Mode == MODE_SMART) {
+                if (Nr_Of_Phases_Charging != 3) {                               // in SMART AUTO mode go back to the old 3P
                     Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+                } else if (Switching_Phases_C2 != NO_SWITCH) {
+                    Switching_Phases_C2 = NO_SWITCH;                            // Was about to switch phases, but cancelled now
+                }   
         }
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
@@ -1205,11 +1208,16 @@ void CalcBalancedCurrent(char mod) {
             Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - EVMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
-        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum)/Nr_Of_Phases_Charging;
-        if (MaxSumMains && (Idifference > ExcessMaxSumMains)) {
-            Idifference = ExcessMaxSumMains;
-            LimitedByMaxSumMains = true;
-            _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
+        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);// /Nr_Of_Phases_Charging;
+        if (MaxSumMains) {
+            if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
+                Idifference = ExcessMaxSumMains;
+                LimitedByMaxSumMains = true;
+                _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
+            } else {
+                LimitedByMaxSumMains = false;
+                MaxSumMainsTimer = 0;
+            }
         }
 
         if (!mod) {                                                             // no new EVSE's charging
@@ -2615,7 +2623,7 @@ void ModbusRequestLoop() {
 }
 
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
-// Blink the RGB LED and LCD Backlight.
+// Blink the RGB LED.
 //
 // NOTE: need to add multiple colour schemes 
 //
@@ -3012,7 +3020,7 @@ void Timer10ms_singlerun(void) {
         // When the pilot line is disconnected, wait for PilotDisconnectTime, then reconnect
         if (PilotDisconnected) {
 #ifdef SMARTEVSE_VERSION //ESP32 v3
-            if (PilotDisconnectTime == 0 && pilot == PILOT_NOK ) {          // Pilot should be ~ 0V when disconnected
+            if (PilotDisconnectTime == 0 && pilot == PILOT_SHORT ) {        // Pilot should be ~ 0V when disconnected
 #else //CH32
             if (PilotDisconnectTime == 0 && pilot == PILOT_3V ) {          // Pilot should be ~ 3V when disconnected TODO is this ok?
 #endif
@@ -3182,7 +3190,7 @@ void Timer10ms_singlerun(void) {
 #ifdef SMARTEVSE_VERSION //not on CH32
             GLCD_init();                                                    // Re-init LCD (200ms delay); necessary because switching contactors can cause LCD to mess up
 #endif                                                                            // Mark EVSE as inactive (still State B)
-        } else if (pilot != PILOT_6V) {                                     // Pilot level at anything else is an error
+        } else if (pilot == PILOT_SHORT) {                                  // Pilot shorted to ground
             if (++StateTimer > 50) {                                        // make sure it's not a glitch, by delaying by 500mS (re-using StateTimer here)
                 StateTimer = 0;                                             // Reset StateTimer for use in State B
                 setState(STATE_B);
