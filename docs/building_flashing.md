@@ -8,7 +8,7 @@ Following these instructions on Linux you would create firmware.bin in directory
 ```
 sudo apt install platformio
 git clone https://github.com/dingo35/SmartEVSE-3.5.git
-cd SmartEVSE-3.5/SmartEVSE
+cd SmartEVSE-3.5/SmartEVSE-3
 pio run
 ```
 
