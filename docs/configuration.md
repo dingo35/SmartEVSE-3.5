@@ -328,6 +328,8 @@ There are three options to integrate your SmartEVSE with Home Assistant:
 
 If you already use MQTT in your Home Assistant setup, this is the easiest and fastest way to integrate your SmartEVSE into HA. As soon as you have MQTT configured correctly in the SmartEVSE, the device will automatically be discovered by Home Assistant!
 
+The value transmitted over MQTT needs to be an integer and in deci-Ampères. 
+
 > [!TIP]
 > Just add the MQTT details in the SmartEVSE and you're good! There is no further integration needed to set up, you will find the SmartEVSE listed on the [MQTT integration page](https://my.home-assistant.io/redirect/integration/?domain=mqtt). Not even a HA restart needed!
 
