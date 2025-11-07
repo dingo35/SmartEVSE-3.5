@@ -14,33 +14,6 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
   <link href="styling.css" rel="stylesheet">
-  <style>
-    .tooltip {
-      position: relative;
-      display: inline-block;
-      border-bottom: 1px dotted black;
-      opacity: unset;
-      font-size: inherit;
-    }
-    .tooltip .tooltiptext {
-      visibility: hidden;
-      width: 220px;
-      background-color: black;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 5px 0;
-      position: absolute;
-      z-index: 1;
-      bottom: 100%;
-      left: 50%;
-      margin-left: -110px;
-      font-size: .875rem;
-    }
-    .tooltip:hover .tooltiptext {
-      visibility: visible;
-    }
-  </style>
 </head>
 
 <body>
@@ -1236,10 +1209,13 @@
                                     </div>
 -->                                    
                                     <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;">
-                                          <div class="tooltip font-weight-bold text-gray-800">
-                                            Mode:
-                                            <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">NORMAL: basic charging<br>SOLAR: Use Solar surplus power<br>SMART: Take home consumers into account</span>
+                                        <div class="col-auto h5 mb-0 mr-3" style="width:120px;">
+                                          <div class="tooltip tooltip--align-start font-weight-bold text-gray-800"
+                                               aria-describedby="tip-mode" tabindex="0">Mode:
+                                            <span id="tip-mode" class="tooltiptext" role="tooltip">
+                                              NORMAL: basic charging<br>
+                                              SOLAR: Use Solar surplus power<br>
+                                              SMART: Take home consumers into account</span>
                                           </div>
                                         </div>
                                         <div class="col">
@@ -1252,14 +1228,14 @@
                                             <button id="mode_3" type="button" class="with_mainsmeter" onclick="activate(3)">SMART</button>
 
                                             <div class="form-group">
-                                              <label for="starttime" class="tooltip">...STARTING:
-                                                <span class="tooltiptext">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+                                              <label for="starttime" class="tooltip" aria-describedby="tip-starttime" tabindex="0">...STARTING:
+                                                <span id="tip-starttime" class="tooltiptext" role="tooltip">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                               </label>
                                               <input type="datetime-local" id="starttime" name="starttime" class="form-control">
                                             </div>
                                             <div class="form-group" id="stoptime_group">
-                                              <label for="stoptime" class="tooltip">...ENDING:
-                                                <span class="tooltiptext">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+                                              <label for="stoptime" class="tooltip" aria-describedby="tip-stoptime" tabindex="0">...ENDING:
+                                                <span id="tip-stoptime" class="tooltiptext" role="tooltip">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                               </label>
                                               <input type="datetime-local" id="stoptime" name="stoptime" class="form-control">
                                             </div>
@@ -1282,9 +1258,9 @@
                                     </div>
                                     <div class="row no-gutters align-items-center">
                                       <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;" id="override_current_box">
-                                        <div class="tooltip font-weight-bold text-gray-800">
-                                          Override:
-                                          <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">Override (limit) output current.<br>Select one and press NORMAL / SMART to set.</span>
+                                        <div class="tooltip tooltip--align-start font-weight-bold text-gray-800"
+                                             aria-describedby="tip-override" tabindex="0">Override:
+                                          <span id="tip-override" class="tooltiptext" role="tooltip">Override (limit) output current.<br>Select one and press NORMAL / SMART to set.</span>
                                         </div>
                                       </div>
                                         <div class="col" id="override_current_box2" style="max-width:425px;">
