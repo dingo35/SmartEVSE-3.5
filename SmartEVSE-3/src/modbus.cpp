@@ -859,7 +859,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             if (newmode != 255) MBserver.end();
             _LOG_A("ConfigureModbusMode2 task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
 
-            MBclient.setTimeout(85);                        // Set modbus timeout to 85ms. 15ms lower then modbusRequestloop time of 100ms.
+            MBclient.setTimeout(200);                        // Set modbus timeout to 200ms. Should this be lower than the modbusRequestloop time of 100ms?
             MBclient.onDataHandler(&MBhandleData);
             MBclient.onErrorHandler(&MBhandleError);
             // Start ModbusRTU Master background task
