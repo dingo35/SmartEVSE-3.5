@@ -7,6 +7,7 @@ extern unsigned long pow_10[10];
 extern void CalcIsum(void);
 extern void RecomputeSoC(void);
 extern void request_write_settings(void);
+extern bool LocalTimeSet;
 
 #define ENDIANESS_LBF_LWF 0
 #define ENDIANESS_LBF_HWF 1
@@ -404,6 +405,37 @@ void Meter::UpdateEnergies() {
 #endif //SMARTEVSE_VERSION
 }
 
+void Meter::UpdateCapacity() {
+//Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
+#define CapacityPeriodSeconds 900  // 15 minutes
+#define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+    static time_t LastPeriod = 0;
+    static int8_t LastMonth = 0;
+    CurrentPeriodStartEnergy = Import_active_energy;
+    time_t now;
+    time(&now);
+    // only process if time is valid
+    if (LocalTimeSet && now != 0) {
+        time_t CurrentPeriod = now / CapacityPeriodSeconds;
+        if (CurrentPeriod != LastPeriod) {
+            // fires once per period utc interval
+            LastPeriod = CurrentPeriod;
+            int32_t PreviousPeriodEnergy = Import_active_energy - CurrentPeriodStartEnergy; //Wh
+            uint16_t AveragePower = PreviousPeriodEnergy * 3600 / CapacityPeriodSeconds; // average Power use in previous period in W
+            CurrentPeriodStartEnergy = Import_active_energy;
+
+            tm* t = localtime(&now);
+            int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
+            if (LastMonth != CurrentMonth) {    // we started a new month
+                Peak_Period_Power = CapacityMinimumPower;
+            } else if (AveragePower > Peak_Period_Power)
+                Peak_Period_Power = AveragePower;
+            //Peak_period_active_energy = 0;
+            _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power is %i.\n", AveragePower, Peak_Period_Power);
+        }
+    }
+}
+
 void Meter::setTimeout(uint8_t NewTimeout) {
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
     if (Address == MainsMeter.Address) {
@@ -440,14 +472,17 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             //import active energy
             if (Type == EM_EASTRON3P_INV)
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
-            else
+            else {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
+                if (Address == MainsMeter.Address) UpdateCapacity();
+            }
             UpdateEnergies();
         } else if (MB.Register == EMConfig[Type].ERegister_Exp) {
             //export active energy
-            if (Type == EM_EASTRON3P_INV)
+            if (Type == EM_EASTRON3P_INV) {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
-            else
+                if (Address == MainsMeter.Address) UpdateCapacity();
+            } else
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             UpdateEnergies();
         }

@@ -97,9 +97,15 @@ class Meter {
     int32_t EnergyMeterStart;                                                   // kWh meter value is stored once EV is connected to EVSE (Wh)
     uint8_t ResetKwh;                                                           // if set, reset kwh meter at state transition B->C
                                                                                 // cleared when charging, reset to 1 when disconnected (state A)
+    // capacity variables
+    int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
+    int32_t Peak_Period_Power;                                                  // the peak of the average power in CapacityPeriodSeconds in the current month
+
     // constructor
     Meter(uint8_t type, uint8_t address, uint8_t timeout);
+
     void UpdateEnergies();
+    void UpdateCapacity();
     void ResponseToMeasurement(struct ModBus MB);
     void CalcImeasured(void);
     void setTimeout(uint8_t Timeout);
