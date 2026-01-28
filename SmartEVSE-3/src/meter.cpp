@@ -409,6 +409,7 @@ void Meter::UpdateCapacity() {
 //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
 #define CapacityPeriodSeconds 900  // 15 minutes
 #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+#define AssumedVoltage 230         // TODO take this from the meter measurements
     static time_t LastPeriod = 0;
     static int8_t LastMonth = 0;
     CurrentPeriodStartEnergy = Import_active_energy;
@@ -430,7 +431,9 @@ void Meter::UpdateCapacity() {
                 Peak_Period_Power = CapacityMinimumPower;
             } else if (AveragePower > Peak_Period_Power)
                 Peak_Period_Power = AveragePower;
-            //Peak_period_active_energy = 0;
+            extern int16_t MaxSumMains;
+            extern uint8_t Nr_Of_Phases_Charging;
+            MaxSumMains = (CapacityMinimumPower / 230) / Nr_Of_Phases_Charging;
             _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power is %i.\n", AveragePower, Peak_Period_Power);
         }
     }
