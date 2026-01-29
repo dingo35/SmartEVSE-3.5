@@ -415,7 +415,7 @@ void Meter::UpdateCapacity() {
     extern uint16_t MaxSumMains;
     static time_t LastPeriod = 0;
     static int8_t LastMonth = 0;
-    CurrentPeriodStartEnergy = Import_active_energy;
+    static int32_t CurrentPeriodStartEnergy = Import_active_energy;
     time_t now;
     time(&now);
     // only process if time is valid
@@ -442,12 +442,16 @@ void Meter::UpdateCapacity() {
         } else {
             //we are in the middle of a period
             //calculate time remaining
-            time_t TimeRemaining = now % CapacityPeriodSeconds; //in seconds
+            time_t TimeRemaining = CapacityPeriodSeconds - (now % CapacityPeriodSeconds); //in seconds
             int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
             int32_t Energy_Capacity_This_Period = Peak_Period_Power * CapacityPeriodSeconds / 3600;
-            int32_t Energy_Available_This_Period = Energy_Used_This_Period - Energy_Capacity_This_Period;
+            int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
             int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
             MaxSumMains = (Average_Power_Available_This_Period / AssumedVoltage) / Nr_Of_Phases_Charging;
+            if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
+                MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
+            _LOG_D("Import_active_energy: %iWh CurrentPeriodStartEnergy: %iWh.\n", Import_active_energy, CurrentPeriodStartEnergy);
+            _LOG_D("TimeRemaining: %lu Energy_Used_This_Period: %iWh, Energy_Capacity_This_Period: %iWh, Energy_Available_This_Period: %iWh.\n", TimeRemaining, Energy_Used_This_Period, Energy_Capacity_This_Period, Energy_Available_This_Period);
             _LOG_V("Capacity: setting MaxSumMains to %uA; average power available rest of this period: %iW.\n", MaxSumMains, Average_Power_Available_This_Period);
             //TODO:
             //add LCD config item "Capacity Mode": disabled, manual, Flanders
