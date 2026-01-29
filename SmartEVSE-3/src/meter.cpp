@@ -446,8 +446,13 @@ void Meter::UpdateCapacity() {
             int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
             int32_t Energy_Capacity_This_Period = Peak_Period_Power * CapacityPeriodSeconds / 3600;
             int32_t Energy_Available_This_Period = Energy_Used_This_Period - Energy_Capacity_This_Period;
-            int16_t Average_Power_Available_This_Period = Energy_Available_This_Period * 3600 / TimeRemaining;
+            int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
             MaxSumMains = (Average_Power_Available_This_Period / AssumedVoltage) / Nr_Of_Phases_Charging;
+            _LOG_V("Capacity: setting MaxSumMains to %uA; average power available rest of this period: %iW.\n", MaxSumMains, Average_Power_Available_This_Period);
+            //TODO:
+            //add LCD config item "Capacity Mode": disabled, manual, Flanders
+            //make sure this stuff only is activated under "Flanders" mode
+
 /*            //calculate current power
             int16_t Total_Power = 0; //TODO get this from measurement from the meter
             for (int i=0; i < 3; i++) {
