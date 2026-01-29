@@ -640,18 +640,37 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (MainsMeter.Type != EM_API || LoadBl >= 2)
             return;
 
-        int32_t L1, L2, L3;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+        int32_t L1, L2, L3, W, WH;
+        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
 
         // MainsMeter can measure -200A to +200A per phase
-        if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+        if ((n == 3 || n == 5) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
 #if SMARTEVSE_VERSION < 40 //v3
+            // We expect 5 values (and accept -1 for unknown values)
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
                 MainsMeter.Irms[0] = L1;
                 MainsMeter.Irms[1] = L2;
                 MainsMeter.Irms[2] = L3;
                 CalcIsum();
+            }
+            if (n == 5) {
+                if (W > -1) {
+                    // Power measurement
+    #if SMARTEVSE_VERSION < 40 //v3
+                    MainsMeter.PowerMeasured = W;
+    #else //v4
+                    Serial1.printf("@PowerMeasured:%03u,%d\n", MainsMeter.Address, W);
+    #endif
+                }
+
+                if (WH > -1) {
+                    // Energy measurement;  //we dont send the energies to CH32 because they are not used there
+                    MainsMeter.Import_active_energy = WH;
+                    MainsMeter.Export_active_energy = 0;
+                    MainsMeter.UpdateEnergies();
+                    MainsMeter.UpdateCapacity();
+                }
             }
 #else //v4
             Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
