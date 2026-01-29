@@ -409,7 +409,10 @@ void Meter::UpdateCapacity() {
 //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
 #define CapacityPeriodSeconds 900  // 15 minutes
 #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+#define CapacitySafety 100         // stay 100W under the Capacity ceiling
 #define AssumedVoltage 230         // TODO take this from the meter measurements
+    extern uint8_t Nr_Of_Phases_Charging;
+    extern uint16_t MaxSumMains;
     static time_t LastPeriod = 0;
     static int8_t LastMonth = 0;
     CurrentPeriodStartEnergy = Import_active_energy;
@@ -427,14 +430,41 @@ void Meter::UpdateCapacity() {
 
             tm* t = localtime(&now);
             int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
-            if (LastMonth != CurrentMonth) {    // we started a new month
+            if (LastMonth != CurrentMonth) {      // we started a new month
                 Peak_Period_Power = CapacityMinimumPower;
-            } else if (AveragePower > Peak_Period_Power)
+                MaxSumMains = ((CapacityMinimumPower - CapacitySafety) / 230) / Nr_Of_Phases_Charging;
+            } else if (AveragePower > Peak_Period_Power) { //this period is this months record, lets register it
                 Peak_Period_Power = AveragePower;
-            extern int16_t MaxSumMains;
-            extern uint8_t Nr_Of_Phases_Charging;
-            MaxSumMains = (CapacityMinimumPower / 230) / Nr_Of_Phases_Charging;
+                //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
+                //TODO for now we wait until the next measurement comes in
+            }
             _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power is %i.\n", AveragePower, Peak_Period_Power);
+        } else {
+            //we are in the middle of a period
+            //calculate time remaining
+            time_t TimeRemaining = now % CapacityPeriodSeconds; //in seconds
+            int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
+            int32_t Energy_Capacity_This_Period = Peak_Period_Power * CapacityPeriodSeconds / 3600;
+            int32_t Energy_Available_This_Period = Energy_Used_This_Period - Energy_Capacity_This_Period;
+            int16_t Average_Power_Available_This_Period = Energy_Available_This_Period * 3600 / TimeRemaining;
+            MaxSumMains = (Average_Power_Available_This_Period / AssumedVoltage) / Nr_Of_Phases_Charging;
+/*            //calculate current power
+            int16_t Total_Power = 0; //TODO get this from measurement from the meter
+            for (int i=0; i < 3; i++) {
+                Total_Power = Total_Power + (Irms[i] * AssumedVoltage / 10); // Irms in dA
+            }
+            int16_t Surplus_Power_Per_Phase = (Average_Power_Available_This_Period - Total_Power) / Nr_Of_Phases_Charging;
+            int32_t Surplus_Current_Per_Phase = 10 * Surplus_Power_Per_Phase / AssumedVoltage; // in dA
+            //shamelessly copied from main.cpp, this should be optimized TODO
+            int Baseload, TotalCurrent = 0;
+            for (n = 0; n < NR_EVSES; n++) if (BalancedState[n] == STATE_C)             // must be in STATE_C
+            {
+                ActiveEVSE++;                                                           // Count nr of active (charging) EVSE's
+                TotalCurrent += Balanced[n];                                            // Calculate total of all set charge currents
+            }
+
+            Baseload = MainsMeter.Imeasured - TotalCurrent;                         // Calculate Baseload (load without any active EVSE)
+*/
         }
     }
 }
