@@ -146,6 +146,7 @@ struct SettingsCache {
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
+    uint8_t CapacityMode;
     uint16_t EnableC2;
 #if MODEM
     char RequiredEVCCID[32];
@@ -1206,6 +1207,14 @@ void read_settings() {
         LoadBl = preferences.getUChar("LoadBl", LOADBL); 
         MaxMains = preferences.getUShort("MaxMains", MAX_MAINS); 
         MaxSumMains = preferences.getUShort("MaxSumMains", MAX_SUMMAINS);
+        if (!preferences.isKey("CapacityMode")) {
+            //old firmware has not yet introduced CapacityMode, so do it here:
+            if (MaxSumMains) //enabled, so CapacityMode MANUAL
+                preferences.putUShort("CapacityMode", MANUAL);
+            else //disabled so CapacityMode CAP_DISABLED
+                preferences.putUShort("CapacityMode", CAP_DISABLED);
+        }
+        CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
@@ -1297,6 +1306,7 @@ void read_settings() {
         settingsCache.EMFunction = EMConfig[EM_CUSTOM].Function;
         settingsCache.WIFImode = WIFImode;
         settingsCache.EnableC2 = EnableC2;
+        settingsCache.CapacityMode = CapacityMode;
 #if MODEM
         strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
 #endif
@@ -1368,6 +1378,7 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("EMFunction", EMConfig[EM_CUSTOM].Function, EMFunction);
     PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode, WIFImode);
     PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2, EnableC2);
+    PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode, CapacityMode);
 #if MODEM
     if (!settingsCache.valid || strcmp(RequiredEVCCID, settingsCache.RequiredEVCCID) != 0) {
         preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
