@@ -282,14 +282,15 @@ void setPilot(bool On);
 #define MENU_AUTOUPDATE 35
 #define MENU_C2 36
 #define MENU_MAX_TEMP 37
-#define MENU_SUMMAINS 38
-#define MENU_SUMMAINSTIME 39
-#define MENU_LCDPIN 40
-#define MENU_PAIRING 41
-#define MENU_APPSERVER 42
-#define MENU_OFF 43                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 44                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 45
+#define MENU_CAPACITY_MODE 38
+#define MENU_SUMMAINS 39
+#define MENU_SUMMAINSTIME 40
+#define MENU_LCDPIN 41
+#define MENU_PAIRING 42
+#define MENU_APPSERVER 43
+#define MENU_OFF 44                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 45                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 46
 
 #define MENU_STATE 50
 
@@ -342,6 +343,8 @@ uint16_t getItemValue(uint8_t nav);
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 extern EnableC2_t EnableC2;
+enum CapacityMode_t { CAP_DISABLED, MANUAL, FLANDERS };
+extern CapacityMode_t CapacityMode;
 
 struct Node_t {
     uint8_t Online;

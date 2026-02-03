@@ -162,6 +162,7 @@ uint8_t Show_RFID = 0;
 #endif
 
 EnableC2_t EnableC2 = ENABLE_C2;                                            // CONTACT 2 menu setting, can be set to: NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO
+CapacityMode_t CapacityMode = CAP_DISABLED;
 uint16_t maxTemp = MAX_TEMPERATURE;
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
@@ -3415,6 +3416,11 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_AUTOUPDATE, AutoUpdate)
         SETITEM(STATUS_SOLAR_TIMER, SolarStopTimer)
         SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
+        case MENU_CAPACITY_MODE:
+            CapacityMode = (CapacityMode_t) val;
+            SEND_TO_CH32(CapacityMode)
+            SEND_TO_ESP32(CapacityMode)
+            break;
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
             CheckSwitchingPhases();
@@ -3513,6 +3519,8 @@ uint16_t getItemValue(uint8_t nav) {
             return LoadBl;
         case MENU_MAINS:
             return MaxMains;
+        case MENU_CAPACITY_MODE:
+            return CapacityMode;
         case MENU_SUMMAINS:
             return MaxSumMains;
         case MENU_SUMMAINSTIME:
