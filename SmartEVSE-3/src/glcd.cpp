@@ -997,6 +997,7 @@ const char * getMenuItemOption(uint8_t nav) {
     const static char StrExitMenu[] = "MENU";
     extern const char StrRFIDReader[7][10];
     const static char StrWiFi[3][10] = {"Disabled", "Enabled", "SetupWifi"};
+    const static char StrCapMode[][9] = {"Disabled", "Manual", "Flanders"};
 
     unsigned int value = getItemValue(nav);
 
@@ -1014,8 +1015,10 @@ const char * getMenuItemOption(uint8_t nav) {
             else if (Mode == MODE_SOLAR) return StrSolar;
             else return StrNormal;
         case MENU_START:
-                sprintf(Str, "-%2u A", value);
-                return Str;
+            sprintf(Str, "-%2u A", value);
+            return Str;
+        case MENU_CAPACITY_MODE:
+            return StrCapMode[value];
         case MENU_SUMMAINSTIME:
         case MENU_STOP:
             if (value) {
@@ -1023,7 +1026,7 @@ const char * getMenuItemOption(uint8_t nav) {
                 return Str;
             } else return StrDisabled;
         case MENU_LOADBL:
-            return StrLoadBl[LoadBl];
+            return StrLoadBl[LoadBl]; //TODO shouldnt this be [value] ?
         case MENU_SUMMAINS:
             if (value)
                 sprintf(Str, "%2u A", value);
@@ -1190,9 +1193,12 @@ uint8_t getMenuItems (void) {
     }
     MenuItems[m++] = MENU_MAX_TEMP;
     if (MainsMeter.Type && LoadBl < 2) {
-        MenuItems[m++] = MENU_SUMMAINS;
-        if (getItemValue(MENU_SUMMAINS) != 0)
-            MenuItems[m++] = MENU_SUMMAINSTIME;
+        MenuItems[m++] = MENU_CAPACITY_MODE;
+        if (getItemValue(MENU_CAPACITY_MODE) == MANUAL) {
+            MenuItems[m++] = MENU_SUMMAINS;
+            if (getItemValue(MENU_SUMMAINS) != 0)
+                MenuItems[m++] = MENU_SUMMAINSTIME;
+        }
     }
     MenuItems[m++] = MENU_LCDPIN;
     MenuItems[m++] = MENU_EXIT;
