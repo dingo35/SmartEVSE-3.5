@@ -1194,7 +1194,7 @@ uint8_t getMenuItems (void) {
     MenuItems[m++] = MENU_MAX_TEMP;
     if (MainsMeter.Type && LoadBl < 2) {
         MenuItems[m++] = MENU_CAPACITY_MODE;
-        if (getItemValue(MENU_CAPACITY_MODE) == MANUAL) {
+        if (getItemValue(MENU_CAPACITY_MODE) == FIXED) {
             MenuItems[m++] = MENU_SUMMAINS;
             if (getItemValue(MENU_SUMMAINS) != 0)
                 MenuItems[m++] = MENU_SUMMAINSTIME;

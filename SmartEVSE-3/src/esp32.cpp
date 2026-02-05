@@ -1209,8 +1209,8 @@ void read_settings() {
         MaxSumMains = preferences.getUShort("MaxSumMains", MAX_SUMMAINS);
         if (!preferences.isKey("CapacityMode")) {
             //old firmware has not yet introduced CapacityMode, so do it here:
-            if (MaxSumMains) //enabled, so CapacityMode MANUAL
-                preferences.putUShort("CapacityMode", MANUAL);
+            if (MaxSumMains) //enabled, so CapacityMode FIXED
+                preferences.putUShort("CapacityMode", FIXED);
             else //disabled so CapacityMode CAP_DISABLED
                 preferences.putUShort("CapacityMode", CAP_DISABLED);
         }
