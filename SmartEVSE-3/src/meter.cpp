@@ -413,7 +413,8 @@ void Meter::UpdateCapacity() {
 #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
 #define CapacitySafety 100         // stay 100W under the Capacity ceiling
 #define AssumedVoltage 230         // TODO take this from the meter measurements
-        extern uint8_t Nr_Of_Phases_Charging;
+#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
+                                   // so you better use it by changing the power limit to the new ceiling
         extern uint16_t MaxSumMains;
         static time_t LastPeriod = 0;
         static int8_t LastMonth = 0;
@@ -434,7 +435,7 @@ void Meter::UpdateCapacity() {
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
                 if (LastMonth != CurrentMonth) {      // we started a new month
                     Peak_Period_Power = CapacityMinimumPower;
-                    MaxSumMains = ((CapacityMinimumPower - CapacitySafety) / 230) / Nr_Of_Phases_Charging;
+                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / 230;
                 } else if (AveragePower > Peak_Period_Power) { //this period is this months record, lets register it
                     Peak_Period_Power = AveragePower;
                     //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
@@ -449,7 +450,7 @@ void Meter::UpdateCapacity() {
                 int32_t Energy_Capacity_This_Period = Peak_Period_Power * CapacityPeriodSeconds / 3600;
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
                 int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
-                MaxSumMains = (Average_Power_Available_This_Period / AssumedVoltage) / Nr_Of_Phases_Charging;
+                MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
                 if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
                     MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
                 _LOG_D("Import_active_energy: %iWh CurrentPeriodStartEnergy: %iWh.\n", Import_active_energy, CurrentPeriodStartEnergy);
