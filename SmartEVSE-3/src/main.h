@@ -343,7 +343,7 @@ uint16_t getItemValue(uint8_t nav);
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 extern EnableC2_t EnableC2;
-enum CapacityMode_t { CAP_DISABLED, MANUAL, FLANDERS };
+enum CapacityMode_t { CAP_DISABLED, FIXED, PERIODS, FLANDERS };
 extern CapacityMode_t CapacityMode;
 
 struct Node_t {
