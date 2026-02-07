@@ -310,6 +310,7 @@ extern uint16_t firmwareUpdateTimer;
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
 extern OneWire32& ds();
+extern CapacityNode* first_interval;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
 extern unsigned char OcppRfidUuid [7];
@@ -1645,6 +1646,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lcdlock"] = LCDlock;
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
+        doc["settings"]["capacity_mode"] = CapacityMode;
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
@@ -1746,7 +1748,21 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["color"]["custom"]["R"] = ColorCustom[0];
         doc["color"]["custom"]["G"] = ColorCustom[1];
         doc["color"]["custom"]["B"] = ColorCustom[2];
+/////////////////
+JsonArray arr = doc.createNestedArray("intervals");
 
+    CapacityNode* n = first_interval;
+    while (n) {
+        JsonObject obj = arr.createNestedObject();
+        obj["start"] = n->start_minutes;
+        obj["power"] = n->max_power_watts;
+        n = n->next;
+    }
+
+/*    String json;
+    serializeJson(doc, json);
+    request->send(200, "application/json", json);*/
+///////////////
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
@@ -1770,6 +1786,72 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["current_min"] = MinCurrent;
             } else {
                 doc["current_min"] = "Value not allowed!";
+            }
+        }
+
+        if(request->hasParam("capacity_mode")) {
+            int val = request->getParam("capacity_mode")->value().toInt();
+            if (val >= 0 && val <= 3) {
+                CapacityMode = (CapacityMode_t)val;
+                doc["capacity_mode"] = val;
+            }
+        }
+
+        if (request->hasParam("intervals_update")) {
+            if (request->getParam("intervals_update")->value().toInt() == 1) {
+                String jsonStr = request->getParam("intervals")->value();
+                DynamicJsonDocument doc(4096);
+                DeserializationError error = deserializeJson(doc, jsonStr);
+                if (!error && doc.is<JsonArray>()) {
+                    // free_intervals();
+                    int count = 0;
+                    CapacityNode* current = first_interval;
+                    while (current) {
+                        CapacityNode* temp = current;
+                        current = current->next;
+                        free(temp);
+                        count++;
+                    }
+                    first_interval = nullptr;
+                    Serial.printf("Freed %d interval nodes\n", count);
+                    CapacityNode* tail = nullptr;
+                    JsonArray arr = doc.as<JsonArray>();
+                    // parse commandline
+                    for (JsonVariant v : arr) {
+                        JsonObject obj = v.as<JsonObject>();
+                        if (!obj["start"].is<uint16_t>() || !obj["power"].is<int32_t>()) continue;
+                        uint16_t start = obj["start"].as<uint16_t>();
+                        int32_t  power = obj["power"].as<int32_t>();
+
+                        if (start > 1439 || power < 0) continue;
+
+                        CapacityNode* node = (CapacityNode*)malloc(sizeof(CapacityNode));
+                        if (!node) break;
+
+                        node->start_minutes   = start;
+                        node->max_power_watts = power;
+                        node->next            = nullptr;
+
+                        if (!first_interval) {
+                            first_interval = node;
+                        } else {
+                            tail->next = node;
+                        }
+                        tail = node;
+                    }
+
+                    //changed = true;
+                } /*else {
+                    request->send(400, "text/plain", "Invalid intervals JSON");
+                    return;
+                }*/
+/*
+                if (changed) {
+                    save_intervals();  // your existing save function
+                    request->send(200, "text/plain", "Settings updated");
+                } else {
+                    request->send(400, "text/plain", "No valid parameters");
+                }*/
             }
         }
 
