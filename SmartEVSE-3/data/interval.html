@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart EVSE V3 - Power Limit Intervals</title>
+
+    <!-- jQuery Mobile (kept for consistency) -->
+    <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
+    <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
+    <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+
+    <!-- Your custom styling -->
+    <link href="styling.css" rel="stylesheet">
+
+    <style>
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            border-bottom: 1px dotted black;
+            opacity: unset;
+            font-size: inherit;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 220px;
+            background-color: black;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 1;
+            bottom: 100%;
+            left: 50%;
+            margin-left: -110px;
+            font-size: .875rem;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+        }
+        .table th {
+            background-color: #f8f9fa;
+        }
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="wrapper">
+        <div id="content-wrapper" class="d-flex flex-column">
+            <div id="content">
+                <div class="container-fluid">
+
+                    <!-- Header (identical to index.html) -->
+                    <div style="margin-bottom: 20px;">
+                        <div class="card bg-success text-white shadow">
+                            <div class="card-body">
+                                <h1 class="h3 mb-0 text-white-800">Smart EVSE V3</h1>
+                                <h1 class="h5 mb-0 text-white-800">
+                                    <span id="version-label">Version:</span>
+                                    <span id="version" data-version=""></span>
+                                </h1>
+                                <h1 id="serialnr" class="h5 mb-0 text-white-800">SmartEVSE-</h1>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+
+                        <!-- Form to add/edit interval -->
+                        <div class="col-lg-5 mb-4">
+                            <div class="card border-left-primary shadow h-100 py-2">
+                                <div class="card-body">
+                                    <h5 class="card-title">Add / Edit Power Limit Interval</h5>
+                                    <form id="intervalForm">
+                                        <input type="hidden" id="editIndex" value="-1">
+
+                                        <div class="mb-3">
+                                            <label for="start_time" class="form-label tooltip">
+                                                Start Time
+                                                <span class="tooltiptext">Time when this power limit becomes active (last interval continues until next day)</span>
+                                            </label>
+                                            <input type="time" class="form-control" id="start_time" required>
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label for="power_limit" class="form-label tooltip">
+                                                Max Power (W)
+                                                <span class="tooltiptext">Maximum allowed power from this time until the next interval</span>
+                                            </label>
+                                            <input type="number" class="form-control" id="power_limit" min="0" max="32000" step="100" placeholder="e.g. 6000" required>
+                                        </div>
+
+                                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                            <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display:none;" onclick="cancelEdit()">Cancel</button>
+                                            <button type="submit" class="btn btn-primary" id="saveBtn">Add Interval</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- List of intervals -->
+                        <div class="col-lg-7 mb-4">
+                            <div class="card border-left-primary shadow h-100 py-2">
+                                <div class="card-body">
+                                    <h5 class="card-title">Configured Intervals</h5>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover" id="intervalsTable">
+                                            <thead>
+                                                <tr>
+                                                    <th>Start Time</th>
+                                                    <th>Max Power (W)</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="intervalsBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <div id="noIntervalsMsg" class="text-center py-4 text-muted">
+                                        No intervals defined yet.<br>Use the form on the left to add time-based power limits.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Bottom actions -->
+                    <div class="row mt-3">
+                        <div class="col text-center">
+                            <a href="index.html" class="btn btn-outline-secondary me-2">Back to Dashboard</a>
+                            <button class="btn btn-outline-danger" onclick="if(confirm('Clear ALL intervals? This cannot be undone.')) clearAllIntervals()">Clear All Intervals</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+
+    <script>
+        let intervals = [];
+
+        // Load version, serialnr and intervals from /settings
+        $(document).ready(function() {
+            let endpoint = window.location.origin + '/settings';
+
+            function loadData() {
+                $.ajax({
+                    url: endpoint,
+                    success: function(data) {
+                        $('#version').text(data.version).attr('data-version', data.version);
+                        $('#serialnr').append(data.serialnr);
+
+                        // Load intervals if present
+                        if (data.intervals && Array.isArray(data.intervals)) {
+                            intervals = data.intervals;
+                        } else {
+                            intervals = [];
+                        }
+                        renderTable();
+                    },
+                    error: function() {
+                        alert("Failed to load settings from device.");
+                    }
+                });
+            }
+
+            loadData();
+
+            // Optional: refresh every 30 seconds (like main page)
+            setInterval(loadData, 30000);
+        });
+
+        function renderTable() {
+            const tbody = document.getElementById('intervalsBody');
+            const noMsg = document.getElementById('noIntervalsMsg');
+            tbody.innerHTML = '';
+
+            if (intervals.length === 0) {
+                noMsg.style.display = 'block';
+                return;
+            }
+
+            noMsg.style.display = 'none';
+
+            intervals.forEach((interval, index) => {
+                const h = Math.floor(interval.start / 60).toString().padStart(2, '0');
+                const m = (interval.start % 60).toString().padStart(2, '0');
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${h}:${m}</td>
+                    <td>${interval.power.toLocaleString()} W</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editInterval(${index})">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteInterval(${index})">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function saveToDevice() {
+            const payload = {
+                intervals_update: 1,
+                intervals: JSON.stringify(intervals)
+            };
+
+            const query = Object.keys(payload)
+                .map(k => k + "=" + encodeURIComponent(payload[k]))
+                .join("&");
+
+            $.post("/settings?" + query, function() {
+                // Silent success
+            }).fail(function() {
+                alert("Failed to save intervals to device.");
+            });
+        }
+
+        function addOrUpdateInterval(timeStr, power, editIndex = -1) {
+            const [hour, minute] = timeStr.split(':').map(Number);
+            if (isNaN(hour) || isNaN(minute)) {
+                alert("Please select a valid time.");
+                return false;
+            }
+
+            const startMinutes = hour * 60 + minute;
+
+            const duplicate = intervals.some((it, i) => it.start === startMinutes && i !== editIndex);
+            if (duplicate) {
+                alert("An interval already exists at this exact start time.");
+                return false;
+            }
+
+            const entry = { start: startMinutes, power: parseInt(power) };
+
+            if (editIndex >= 0) {
+                intervals[editIndex] = entry;
+            } else {
+                intervals.push(entry);
+            }
+
+            intervals.sort((a, b) => a.start - b.start);
+            renderTable();
+            saveToDevice();
+            resetForm();
+            return true;
+        }
+
+        function editInterval(index) {
+            const item = intervals[index];
+            const h = Math.floor(item.start / 60).toString().padStart(2, '0');
+            const m = (item.start % 60).toString().padStart(2, '0');
+
+            document.getElementById('start_time').value = `${h}:${m}`;
+            document.getElementById('power_limit').value = item.power;
+            document.getElementById('editIndex').value = index;
+            document.getElementById('saveBtn').textContent = "Update Interval";
+            document.getElementById('cancelEditBtn').style.display = 'inline-block';
+        }
+
+        function deleteInterval(index) {
+            if (!confirm("Delete this interval?")) return;
+            intervals.splice(index, 1);
+            renderTable();
+            saveToDevice();
+        }
+
+        function clearAllIntervals() {
+            intervals = [];
+            renderTable();
+            saveToDevice();
+        }
+
+        function resetForm() {
+            document.getElementById('intervalForm').reset();
+            document.getElementById('editIndex').value = -1;
+            document.getElementById('saveBtn').textContent = "Add Interval";
+            document.getElementById('cancelEditBtn').style.display = 'none';
+        }
+
+        document.getElementById('intervalForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const timeStr = document.getElementById('start_time').value;
+            const power   = document.getElementById('power_limit').value;
+
+            if (!timeStr || isNaN(power)) {
+                alert("Please select a time and enter a valid power value.");
+                return;
+            }
+
+            const editIdx = parseInt(document.getElementById('editIndex').value);
+
+            addOrUpdateInterval(timeStr, power, editIdx);
+        });
+
+        document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
+    </script>
+
+</body>
+</html>
