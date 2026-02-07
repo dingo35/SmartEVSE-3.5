@@ -10,6 +10,9 @@ extern void request_write_settings(void);
 extern bool LocalTimeSet;
 extern CapacityMode_t CapacityMode;
 
+// Global pointer to the first interval in the sorted list
+CapacityNode* first_interval = NULL;
+
 #define ENDIANESS_LBF_LWF 0
 #define ENDIANESS_LBF_HWF 1
 #define ENDIANESS_HBF_LWF 2
@@ -407,6 +410,7 @@ void Meter::UpdateEnergies() {
 }
 
 void Meter::UpdateCapacity() {
+    extern uint16_t MaxSumMains;
     if (CapacityMode == FLANDERS) {
 //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
 #define CapacityPeriodSeconds 900  // 15 minutes
@@ -415,7 +419,6 @@ void Meter::UpdateCapacity() {
 #define AssumedVoltage 230         // TODO take this from the meter measurements
 #define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
                                    // so you better use it by changing the power limit to the new ceiling
-        extern uint16_t MaxSumMains;
         static time_t LastPeriod = 0;
         static int8_t LastMonth = 0;
         static int32_t CurrentPeriodStartEnergy = Import_active_energy;
@@ -476,6 +479,52 @@ void Meter::UpdateCapacity() {
     */
             }
         }
+    } else if (CapacityMode == PERIODS) {
+        time_t now;
+        time(&now);
+
+        // Only proceed if we have valid local time
+        if (LocalTimeSet && now != 0) {
+            tm* t = localtime(&now);
+
+            // ────────────────────────────────────────────────────────────────
+            // Inline lookup + safety margin + direct current calculation
+            // ────────────────────────────────────────────────────────────────
+            if (first_interval) {
+                uint16_t now_minutes = t->tm_hour * 60u + t->tm_min;
+
+                const CapacityNode* prev = NULL;
+                const CapacityNode* curr = first_interval;
+
+                while (curr != NULL) {
+                    if (curr->start_minutes <= now_minutes) {
+                        prev = curr;
+                        curr = curr->next;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (prev != NULL) {
+                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / 230;
+                } else {
+                    // Before first interval → use last rule minus safety
+                    const CapacityNode* last = first_interval;
+                    while (last->next) {
+                        last = last->next;
+                    }
+                    MaxSumMains = (last->max_power_watts - CapacitySafety) / 230;
+                }
+            } else {
+                // No schedule → silently skip (MaxSumMains unchanged)
+                return;
+            }
+            // ────────────────────────────────────────────────────────────────
+
+            _LOG_V("PERIODS mode: time %02u:%02u → MaxSumMains = %u A\n",
+                   t->tm_hour, t->tm_min, MaxSumMains);
+        }
+        // If time is invalid → silently skip update (MaxSumMains keeps previous value)
     }
 }
 
