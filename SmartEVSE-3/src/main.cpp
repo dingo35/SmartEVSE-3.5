@@ -2070,7 +2070,12 @@ void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export) {
             // Note:
             // - Sinotimer uses 16-bit values, except for this measurement it uses 32bit int format
             // fallthrough
-        case EM_ABB:
+        case EM_ABB_B23:
+            // Note:
+            // - ABB uses 64bit values for this register (size 2)
+            Count = 2;
+            break;
+         case EM_ABB_EV3:
             // Note:
             // - ABB uses 64bit values for this register (size 2)
             Count = 2;
@@ -2559,7 +2564,7 @@ void ModbusRequestLoop() {
                         case EM_EASTRON1P:
                         case EM_EASTRON3P:
                         case EM_EASTRON3P_INV:
-                        case EM_ABB:
+                        case EM_ABB_B23:
                         case EM_FINDER_7M:
                         case EM_SCHNEIDER:
                             updated = 0;

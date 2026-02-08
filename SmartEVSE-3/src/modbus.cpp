@@ -502,7 +502,7 @@ void requestCurrentMeasurement(uint8_t Meter, uint8_t Address) {
             // Phase 1-3 power:   Register 0x0C - 0x11 (signed)
             ModbusReadInputRequest(Address, 4, 0x06, 12);
             break;
-        case EM_ABB:
+        case EM_ABB_B23:
             // Phase 1-3 current: Register 0x5B0C - 0x5B11 (unsigned)
             // Phase 1-3 power:   Register 0x5B16 - 0x5B1B (signed)
             ModbusReadInputRequest(Address, 3, 0x5B0C, 16);
