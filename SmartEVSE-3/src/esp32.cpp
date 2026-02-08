@@ -148,6 +148,7 @@ struct SettingsCache {
     uint8_t WIFImode;
     uint8_t CapacityMode;
     uint16_t EnableC2;
+    char intervals_json[128];
 #if MODEM
     char RequiredEVCCID[32];
 #endif
@@ -1187,6 +1188,74 @@ void validate_settings(void) {
 
 }
 
+
+// Returns the "intervals" part as a JSON string (array only)
+// Example output: [{"start":300,"power":11000},{"start":960,"power":3680}]
+String GetIntervalString(void) {
+    DynamicJsonDocument tempDoc(128);          // Temporary doc just for the array
+    JsonArray arr = tempDoc.to<JsonArray>();    // Root is directly an array
+
+    CapacityNode* n = first_interval;
+    while (n) {
+        JsonObject obj = arr.createNestedObject();
+        obj["start"] = n->start_minutes;
+        obj["power"] = n->max_power_watts;
+        n = n->next;
+    }
+
+    String jsonResult;
+    serializeJson(arr, jsonResult);             // Compact serialization
+
+    return jsonResult;
+}
+
+
+// Puts a JSON string into the capacitynode structure
+void SetIntervalString(String jsonStr) {
+    DynamicJsonDocument doc(128);
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    if (!error && doc.is<JsonArray>()) {
+        // free_intervals();
+        int count = 0;
+        CapacityNode* current = first_interval;
+        while (current) {
+            CapacityNode* temp = current;
+            current = current->next;
+            free(temp);
+            count++;
+        }
+        first_interval = nullptr;
+        Serial.printf("Freed %d interval nodes\n", count);
+        CapacityNode* tail = nullptr;
+        JsonArray arr = doc.as<JsonArray>();
+        // parse commandline
+        for (JsonVariant v : arr) {
+            JsonObject obj = v.as<JsonObject>();
+            if (!obj["start"].is<uint16_t>() || !obj["power"].is<int32_t>()) continue;
+            uint16_t start = obj["start"].as<uint16_t>();
+            int32_t  power = obj["power"].as<int32_t>();
+
+            if (start > 1439 || power < 0) continue;
+
+            CapacityNode* node = (CapacityNode*)malloc(sizeof(CapacityNode));
+            if (!node) break;
+
+            node->start_minutes   = start;
+            node->max_power_watts = power;
+            node->next            = nullptr;
+
+            if (!first_interval) {
+                first_interval = node;
+            } else {
+                tail->next = node;
+            }
+            tail = node;
+        }
+
+    }
+}
+
+
 void read_settings() {
     
     // Open preferences. true = read only,  false = read/write
@@ -1255,8 +1324,12 @@ void read_settings() {
         MQTTSmartServer = preferences.getBool("MQTTSmartServer", APPSERVER);
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
+        String Interval = preferences.getString("intervals_json", "");
+        SetIntervalString(Interval);
+        strncpy(settingsCache.intervals_json, Interval.c_str(), sizeof(settingsCache.intervals_json));
 #if MODEM
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
+        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
 
@@ -1308,9 +1381,7 @@ void read_settings() {
         settingsCache.WIFImode = WIFImode;
         settingsCache.EnableC2 = EnableC2;
         settingsCache.CapacityMode = CapacityMode;
-#if MODEM
-        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
-#endif
+        strncpy(settingsCache.intervals_json, GetIntervalString().c_str(), sizeof(settingsCache.intervals_json));
         settingsCache.maxTemp = maxTemp;
         settingsCache.AutoUpdate = AutoUpdate;
         settingsCache.LCDlock = LCDlock;
@@ -1380,6 +1451,10 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode, WIFImode);
     PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2, EnableC2);
     PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode, CapacityMode);
+    if (!settingsCache.valid || strcmp(GetIntervalString().c_str(), settingsCache.intervals_json) != 0) {
+        preferences.putString("intervals_json", GetIntervalString());
+        strncpy(settingsCache.intervals_json, GetIntervalString().c_str(), sizeof(settingsCache.intervals_json));
+    }
 #if MODEM
     if (!settingsCache.valid || strcmp(RequiredEVCCID, settingsCache.RequiredEVCCID) != 0) {
         preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
@@ -1647,6 +1722,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["capacity_mode"] = CapacityMode;
+        String intervalsStr = GetIntervalString();
+        doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
@@ -1748,21 +1825,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["color"]["custom"]["R"] = ColorCustom[0];
         doc["color"]["custom"]["G"] = ColorCustom[1];
         doc["color"]["custom"]["B"] = ColorCustom[2];
-/////////////////
-JsonArray arr = doc.createNestedArray("intervals");
 
-    CapacityNode* n = first_interval;
-    while (n) {
-        JsonObject obj = arr.createNestedObject();
-        obj["start"] = n->start_minutes;
-        obj["power"] = n->max_power_watts;
-        n = n->next;
-    }
-
-/*    String json;
-    serializeJson(doc, json);
-    request->send(200, "application/json", json);*/
-///////////////
         String json;
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
@@ -1800,58 +1863,7 @@ JsonArray arr = doc.createNestedArray("intervals");
         if (request->hasParam("intervals_update")) {
             if (request->getParam("intervals_update")->value().toInt() == 1) {
                 String jsonStr = request->getParam("intervals")->value();
-                DynamicJsonDocument doc(4096);
-                DeserializationError error = deserializeJson(doc, jsonStr);
-                if (!error && doc.is<JsonArray>()) {
-                    // free_intervals();
-                    int count = 0;
-                    CapacityNode* current = first_interval;
-                    while (current) {
-                        CapacityNode* temp = current;
-                        current = current->next;
-                        free(temp);
-                        count++;
-                    }
-                    first_interval = nullptr;
-                    Serial.printf("Freed %d interval nodes\n", count);
-                    CapacityNode* tail = nullptr;
-                    JsonArray arr = doc.as<JsonArray>();
-                    // parse commandline
-                    for (JsonVariant v : arr) {
-                        JsonObject obj = v.as<JsonObject>();
-                        if (!obj["start"].is<uint16_t>() || !obj["power"].is<int32_t>()) continue;
-                        uint16_t start = obj["start"].as<uint16_t>();
-                        int32_t  power = obj["power"].as<int32_t>();
-
-                        if (start > 1439 || power < 0) continue;
-
-                        CapacityNode* node = (CapacityNode*)malloc(sizeof(CapacityNode));
-                        if (!node) break;
-
-                        node->start_minutes   = start;
-                        node->max_power_watts = power;
-                        node->next            = nullptr;
-
-                        if (!first_interval) {
-                            first_interval = node;
-                        } else {
-                            tail->next = node;
-                        }
-                        tail = node;
-                    }
-
-                    //changed = true;
-                } /*else {
-                    request->send(400, "text/plain", "Invalid intervals JSON");
-                    return;
-                }*/
-/*
-                if (changed) {
-                    save_intervals();  // your existing save function
-                    request->send(200, "text/plain", "Settings updated");
-                } else {
-                    request->send(400, "text/plain", "No valid parameters");
-                }*/
+                SetIntervalString(jsonStr);
             }
         }
 
