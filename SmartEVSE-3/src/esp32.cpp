@@ -1860,11 +1860,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
-        if (request->hasParam("intervals_update")) {
-            if (request->getParam("intervals_update")->value().toInt() == 1) {
-                String jsonStr = request->getParam("intervals")->value();
-                SetIntervalString(jsonStr);
-            }
+        if (request->hasParam("intervals")) {
+            String jsonStr = request->getParam("intervals")->value();
+            SetIntervalString(jsonStr);
         }
 
         if(request->hasParam("current_max_sum_mains")) {
