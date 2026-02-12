@@ -19,6 +19,7 @@
 
 #ifndef SENSORBOX_VERSION
 #include "esp32.h"
+#include "ch390.h"
 #endif
 
 #if SMARTEVSE_VERSION >=30
@@ -180,8 +181,8 @@ void MQTTclient_t::connect(void) {
 
     client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
-    // Start now if WiFi already connected, otherwise WiFi event handler will start it
-    if (WiFi.isConnected()) {
+    // Start now if any network interface is connected (WiFi or Ethernet)
+    if (NetworkConnected()) {
         esp_mqtt_client_start(client);
     }
 }
@@ -1791,6 +1792,99 @@ void timeSyncCallback(struct timeval *tv)
     LocalTimeSet = true;
 }
 
+// Returns true if any network interface (WiFi or Ethernet) has an IP address
+bool NetworkConnected(void) {
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
+    if (EthHasIP) return true;
+#endif
+    if (!WiFi.isConnected()) return false;
+    return WiFi.localIP() != IPAddress((uint32_t)0);
+}
+
+static bool servicesStarted = false;
+static bool mgrInitialized = false;
+
+// Ensure mongoose event manager is initialized (safe to call multiple times).
+static void ensureMgrInit(void) {
+    if (!mgrInitialized) {
+        mg_mgr_init(&mgr);
+        mgrInitialized = true;
+    }
+}
+
+// Start network services (HTTP, MQTT, mDNS, SNTP, RemoteDebug).
+// Safe to call multiple times — only starts services once.
+static void startNetworkServices(void) {
+    if (servicesStarted) return;
+    servicesStarted = true;
+
+    ensureMgrInit();
+    mg_log_set(MG_LL_NONE);
+
+    // Start HTTP listeners (bind to 0.0.0.0 — works on all interfaces)
+    if (!HttpListener80) {
+        HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);
+    }
+    if (!HttpListener443) {
+        HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *)1);
+    }
+    _LOG_A("HTTP server started\n");
+
+#if MQTT
+#if MQTT_ESP == 0
+    if (!MQTTtimer) {
+        MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
+    }
+#else
+    if (MQTTHost != "" && MQTTclient.client)
+        esp_mqtt_client_start(MQTTclient.client);
+#ifdef SMARTEVSE_VERSION
+    if (MQTTSmartServer && MQTTclientSmartEVSE.client)
+        esp_mqtt_client_start(MQTTclientSmartEVSE.client);
+#endif
+#endif
+#endif //MQTT
+
+#if DBG == 1
+    Debug.begin(APhostname, 23, 1);
+    Debug.showColors(true);
+#endif
+}
+
+// Configure DNS, SNTP and mDNS when an interface gets an IP.
+// Can be called from both WiFi and Ethernet got-IP events.
+void onGotIP(const char *dns_ip) {
+    ensureMgrInit();
+
+    // Load DHCP DNS into mongoose
+    static char dns4url[] = "udp://123.123.123.123:53";
+    if (dns_ip && strlen(dns_ip) > 0) {
+        snprintf(dns4url, sizeof(dns4url), "udp://%s:53", dns_ip);
+        mgr.dns4.url = dns4url;
+    }
+
+    // Configure SNTP (safe to call again)
+    if (!esp_sntp_enabled()) {
+        esp_sntp_setservername(1, "europe.pool.ntp.org");
+        sntp_set_time_sync_notification_cb(timeSyncCallback);
+        esp_sntp_init();
+    }
+
+    if (TZinfo == "") {
+        xTaskCreate(setTimeZone, "setTimeZone", 4096, NULL, 1, NULL);
+    }
+
+    // Start mDNS
+    if (!MDNS.begin(APhostname.c_str())) {
+        _LOG_A("Error setting up MDNS responder!\n");
+    } else {
+        _LOG_A("mDNS responder started. http://%s.local\n", APhostname.c_str());
+        MDNS.addService("http", "tcp", 80);
+    }
+
+    startNetworkServices();
+}
+
 void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP:
@@ -1799,76 +1893,10 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 #else
             Serial.printf("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 #endif            
-            //load dhcp dns ip4 address into mongoose
-            static char dns4url[]="udp://123.123.123.123:53";
-            sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
-            mgr.dns4.url = dns4url;
-
-            // Init and get the time
-            // First option to get time from local ntp server blocks the second fallback option since 2021:
-            // See https://github.com/espressif/arduino-esp32/issues/4964
-            //sntp_servermode_dhcp(1);                                                    //try to get the ntp server from dhcp
-
-            // Configure time after WiFi is connected
-            esp_sntp_setservername(1, "europe.pool.ntp.org");
-            sntp_set_time_sync_notification_cb(timeSyncCallback);
-            esp_sntp_init();
-            
-            if (TZinfo == "") {
-                xTaskCreate(
-                    setTimeZone, // Function that should be called
-                    "setTimeZone",// Name of the task (for debugging)
-                    4096,           // Stack size (bytes)
-                    NULL,           // Parameter to pass
-                    1,              // Task priority - low
-                    NULL            // Task handle
-                );
-            }
-
-            // Start the mDNS responder so that the SmartEVSE can be accessed using a local hostame: http://SmartEVSE-xxxxxx.local
-            if (!MDNS.begin(APhostname.c_str())) {
-                _LOG_A("Error setting up MDNS responder!\n");
-            } else {
-                _LOG_A("mDNS responder started. http://%s.local\n",APhostname.c_str());
-                MDNS.addService("http", "tcp", 80);   // announce Web server
-            }
-
+            onGotIP(WiFi.dnsIP().toString().c_str());
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
             _LOG_A("Connected or reconnected to WiFi\n");
-
-#if MQTT
-#if MQTT_ESP == 0
-            if (!MQTTtimer) {
-               MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
-            }
-#else
-            if (MQTTHost != "" && MQTTclient.client)
-                esp_mqtt_client_start(MQTTclient.client);
-#ifdef SMARTEVSE_VERSION                
-            if (MQTTSmartServer && MQTTclientSmartEVSE.client)
-                esp_mqtt_client_start(MQTTclientSmartEVSE.client);
-#endif
-#endif
-#endif //MQTT
-            mg_log_set(MG_LL_NONE);
-            //mg_log_set(MG_LL_VERBOSE);
-
-            if (!HttpListener80) {
-                HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
-            }
-            if (!HttpListener443) {
-                HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
-            }
-            _LOG_A("HTTP server started\n");
-
-#if DBG == 1
-            // if we start RemoteDebug with no wifi credentials installed we get in a bootloop
-            // so we start it here
-            // Initialize the server (telnet or web socket) of RemoteDebug
-            Debug.begin(APhostname, 23, 1);
-            Debug.showColors(true); // Colors
-#endif
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             if (WIFImode == 1) {
@@ -1908,6 +1936,7 @@ void handleWIFImode() {
 #endif
         IPAddress IP = WiFi.softAPIP();
 
+        ensureMgrInit();
         if (!HttpListener80) {
             HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
         }
@@ -2044,7 +2073,7 @@ void WiFiSetup(void) {
         APpassword[i] = c;
     }
 
-    mg_mgr_init(&mgr);  // Initialise event manager
+    ensureMgrInit();     // Safe: no-op if Ethernet already initialised mgr
 
     WiFi.setAutoReconnect(true);                                                // Required for Arduino 3
     //WiFi.persistent(true);

@@ -3045,7 +3045,7 @@ void Timer10ms_singlerun(void) {
 // Task that handles EVSE State Changes
 // Reads buttons, and updates the LCD.
     static uint16_t old_sec = 0;
-    getButtonState();
+    if (!EthPresent) getButtonState();
 
     // When one or more button(s) are pressed, we call GLCDMenu
     if (((ButtonState != 0x07) || (ButtonState != OldButtonState)) ) {
@@ -3628,7 +3628,7 @@ int16_t getBatteryCurrent(void) {
         homeBatteryLastUpdate = 0;                      // last update was more then 60s ago, set to 0
         homeBatteryCurrent = 0;
         return 0;
-    } else if (Mode == MODE_SOLAR) {
+    } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
         return homeBatteryCurrent;
     } else {
         return 0;                                       // don't touch homeBatteryCurrent, just return 0

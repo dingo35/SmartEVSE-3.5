@@ -67,6 +67,8 @@
 #define SPI_SCK 26
 #define SPI_SS -1
 
+#include "ch390.h"                                                              // CH390D SPI Ethernet (add-on board)
+
 #define CP_CHANNEL 0
 #define RED_CHANNEL 2                                                           // PWM channel 2 (0 and 1 are used by CP signal)
 #define GREEN_CHANNEL 3

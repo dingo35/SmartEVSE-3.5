@@ -422,6 +422,9 @@ unsigned char MenuNavCharArray(unsigned char Buttons, unsigned char Value, unsig
 // uses buffer
 void GLCDHelp(void)                                                             // Display/Scroll helptext on LCD 
 {
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+  if (EthPresent) return;                                                       // SPI bus used by Ethernet
+#endif
   if (ScrollTimer + 5000 < millis()) {
     unsigned int x = strlen(MenuStr[LCDNav].Desc);
     GLCD_print_buf2_left(MenuStr[LCDNav].Desc + LCDpos);
@@ -437,6 +440,9 @@ void GLCDHelp(void)                                                             
 
 // called once a second
 void GLCD(void) {
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    if (EthPresent) return;                                                     // SPI bus used by Ethernet
+#endif
     unsigned char x;
     unsigned int seconds, minutes;
     static unsigned char energy_mains = 20; // X position
@@ -1210,6 +1216,9 @@ uint8_t getMenuItems (void) {
  *            Bit: 0:Pressed / 1:Released
  */
 void GLCDMenu(uint8_t Buttons) {
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    if (EthPresent) return;                                                     // SPI bus used by Ethernet
+#endif
     static unsigned long ButtonTimer = 0;
     static uint8_t ButtonRelease = 0;                                           // keeps track of LCD Menu Navigation
     static uint16_t value, ButtonRepeat = 0;
@@ -1435,6 +1444,7 @@ void GLCDMenu(uint8_t Buttons) {
 
 void GLCD_init(void) {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    if (EthPresent) return;                                                     // SPI bus used by Ethernet
     delay(200);                                                                 // transients on the line could have garbled the LCD, wait 200ms then re-init.
 #endif
     _A0_0;                                                                      // A0=0

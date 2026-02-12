@@ -154,6 +154,8 @@ extern int downloadProgress;
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
+extern bool NetworkConnected(void);                                             // true if WiFi or Ethernet has IP
+extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
 extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
 extern String homeWizardHost;
