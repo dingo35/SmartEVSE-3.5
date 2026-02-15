@@ -3654,7 +3654,7 @@ int16_t getBatteryCurrent(void) {
         homeBatteryLastUpdate = 0;                      // last update was more then 60s ago, set to 0
         homeBatteryCurrent = 0;
         return 0;
-    } else if (Mode == MODE_SOLAR && MainsMeter.Type == EM_API) {   // Only use BatteryCurrent if Mainsmeter = API, and Solar Mode
+    } else if (Mode == MODE_SOLAR) {
         return homeBatteryCurrent;
     } else {
         return 0;                                       // don't touch homeBatteryCurrent, just return 0
