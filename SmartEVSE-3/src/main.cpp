@@ -1756,6 +1756,32 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
 
     if (EVMeter.Type) {
         if ( EVMeter.Timeout == 0 && !(ErrorFlags & EV_NOCOMM) && Mode != MODE_NORMAL) {
+
+            uint8_t wait_retry = 0;
+            // in case of ABB EV3 the parity may be wrong - change partity and try again
+            switch(EVMeter.Type) {
+                case EM_ABB_EV3:                      
+                    _LOG_V("EV3 does not respond, try to change the default meter parity\n");
+    
+                    // Chanbge parity of UART to even
+                    Serial1.begin(MODBUS_BAUDRATE, SERIAL_8E1, PIN_RS485_RX, PIN_RS485_TX); 
+                    delay(10);                     // small settle time before sending request        
+                    MBclient.clearQueue();        // Clear modbus request queue
+                    ModbusWriteSingleRequest(EVMeter.Address, 0x0414, 0x0001);  // Send message to change default parity of meter
+                    while (MBclient.pendingRequests() != 0 && wait_retry<10){ // Wait for the queue to empty
+                        _LOG_V("Waiting for a the message is sent\n");
+                        delay(20);                
+                        wait_retry++;
+                    }
+
+                    // Change partity of UART back to none
+                    Serial1.begin(MODBUS_BAUDRATE, SERIAL_8N1, PIN_RS485_RX, PIN_RS485_TX);
+                    delay(10);         // small settle time before sending request
+                    break;
+                default:
+                    break;
+            }
+
             setErrorFlags(EV_NOCOMM);
             setStatePowerUnavailable();
             _LOG_W("Error, EV Meter communication error!\n");

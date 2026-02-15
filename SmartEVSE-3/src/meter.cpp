@@ -34,8 +34,7 @@ struct EMstruct EMConfig[] = {
     {"Schneider", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x0BD3, 0, 0x0BB7, 0, 0x0BF3,-3, 0xB02B, 0,0xB02D, 0}, // Schneider iEM3x5x series (V / A / kW / kWh) iEM3x50 counts only Energy Import, no Export
     {"Chint",     ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh)
     {"C.Gavazzi", ENDIANESS_HBF_LWF, 4, MB_DATATYPE_INT32,      0x0, 1,    0xC, 3,   0x28, 1,   0x34, 1,  0x4E, 1}, // Carlo Gavazzi EM340 (0.1V / mA / 0.1W / 0.1kWh) 
-    {"ABB EV3",   ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 4,0x5004, 4}, // ABB EV3 (0.1V / 0.01A / 0.01W / 0.0001kWh) EV3 has higher Energy resolution than B23, so EDivisor is 4 instead of 2 (EV3 is delivered with Even partiy -> Change to None first)
-    {"Unused 3",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
+    {"ABB EV3",   ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 4,0x5004, 4}, // ABB EV3 (0.1V / 0.01A / 0.01W / 0.0001kWh) Note that adresses on the EV3 are numeric hex values only (so Addr 19 on EV3 is 0x19 ( Decimal 25 ))
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
