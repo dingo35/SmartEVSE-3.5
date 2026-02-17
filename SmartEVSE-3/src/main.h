@@ -343,7 +343,7 @@ uint16_t getItemValue(uint8_t nav);
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 extern EnableC2_t EnableC2;
-enum CapacityMode_t { CAP_DISABLED, FIXED, PERIODS, FLANDERS };
+enum CapacityMode_t { CAP_DISABLED, FIXED, INTERVAL, FLANDERS };
 extern CapacityMode_t CapacityMode;
 typedef struct CapacityNode {
     uint16_t     start_minutes;     // Minutes since midnight (0–1439)
