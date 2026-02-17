@@ -86,7 +86,7 @@
                                 <div class="card-body">
                                     <h5 class="card-title">Capacity Mode</h5>
                                     <div class="d-flex align-items-center">
-                                        <select id="capacityMode" class="form-select">
+                                        <select id="capacity_mode" class="form-select">
                                             <option value="0">Disabled</option>
                                             <option value="1">Fixed</option>
                                             <option value="2">Periods</option>
@@ -95,9 +95,9 @@
                                         <span id="saveFeedback" class="saved-feedback">Saved ✓</span>
                                     </div>
                                     <div id="fixedCapacitySection" class="mt-3" style="display: none;">
-                                        <label for="maxSumMains" class="form-label">Max Sum Mains (A)</label>
+                                        <label for="current_max_sum_mains" class="form-label">Max Sum Mains (A)</label>
                                         <div class="d-flex align-items-center">
-                                            <input type="number" id="maxSumMains" class="form-control" min="10" max="600" step="1" required>
+                                            <input type="number" id="current_max_sum_mains" class="form-control" min="10" max="600" step="1" required>
                                             <span id="saveMaxFeedback" class="saved-feedback">Saved ✓</span>
                                         </div>
                                     </div>
@@ -205,12 +205,12 @@
                         }
                         renderTable();
 
-                        if (data.capacityMode !== undefined) {
-                            $('#capacityMode').val(data.capacityMode);
+                        if (data.capacity_mode !== undefined) {
+                            $('#capacity_mode').val(data.capacity_mode);
                         }
 
-                        if (data.maxSumMains !== undefined) {
-                            $('#maxSumMains').val(data.maxSumMains);
+                        if (data.current_max_sum_mains !== undefined) {
+                            $('#current_max_sum_mains').val(data.current_max_sum_mains);
                         }
 
                         toggleSections();  // Toggle visibility after loading
@@ -225,11 +225,11 @@
             setInterval(loadData, 30000);
 
             // Auto-save Capacity Mode on change
-            $('#capacityMode').on('change', function() {
+            $('#capacity_mode').on('change', function() {
                 const mode = $(this).val();
                 const feedback = $('#saveFeedback');
 
-                const payload = { capacityMode: mode };
+                const payload = { capacity_mode: mode };
                 const query = Object.keys(payload)
                     .map(k => k + "=" + encodeURIComponent(payload[k]))
                     .join("&");
@@ -246,7 +246,7 @@
             });
 
             // Auto-save Max Sum Mains on blur
-            $('#maxSumMains').on('blur', function() {
+            $('#current_max_sum_mains').on('blur', function() {
                 const val = $(this).val();
                 if (val < 10 || val > 600 || isNaN(val)) {
                     alert("Value must be between 10 and 600");
@@ -254,7 +254,7 @@
                 }
                 const feedback = $('#saveMaxFeedback');
 
-                const payload = { maxSumMains: val };
+                const payload = { current_max_sum_mains: val };
                 const query = Object.keys(payload)
                     .map(k => k + "=" + encodeURIComponent(payload[k]))
                     .join("&");
@@ -269,7 +269,7 @@
         });
 
         function toggleSections() {
-            const mode = $('#capacityMode').val();
+            const mode = $('#capacity_mode').val();
             $('#intervalsContent').toggle(mode === "2");
             $('#clearIntervalsSection').toggle(mode === "2");
             $('#fixedCapacitySection').toggle(mode === "1");
