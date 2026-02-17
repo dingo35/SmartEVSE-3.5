@@ -110,18 +110,18 @@
             <p>Click and hold buttons to simulate physical button press</p>
             <div style="text-align: center;">
                 <button class="lcd-button" id="leftBtn" disabled
-                    onmousedown="pressButton('left')" onmouseup="releaseButton('left')"
-                    ontouchstart="pressButton('left')" ontouchend="releaseButton('left')">
+                    onmousedown="pressButton('left', event)" onmouseup="releaseButton('left', event)"
+                    ontouchstart="pressButton('left', event)" ontouchend="releaseButton('left', event)">
                     LEFT
                 </button>
                 <button class="lcd-button" id="middleBtn" disabled
-                    onmousedown="pressButton('middle')" onmouseup="releaseButton('middle')"
-                    ontouchstart="pressButton('middle')" ontouchend="releaseButton('middle')">
+                    onmousedown="pressButton('middle', event)" onmouseup="releaseButton('middle', event)"
+                    ontouchstart="pressButton('middle', event)" ontouchend="releaseButton('middle', event)">
                     MIDDLE
                 </button>
                 <button class="lcd-button" id="rightBtn" disabled
-                    onmousedown="pressButton('right')" onmouseup="releaseButton('right')"
-                    ontouchstart="pressButton('right')" ontouchend="releaseButton('right')">
+                    onmousedown="pressButton('right', event)" onmouseup="releaseButton('right', event)"
+                    ontouchstart="pressButton('right', event)" ontouchend="releaseButton('right', event)">
                     RIGHT
                 </button>
             </div>
@@ -153,6 +153,7 @@
     <script>
         let ws = null;
         let frameCount = 0;
+        let buttonTimers = {}; // Track button press timers
 
         function connect() {
             const deviceUrl = document.getElementById('deviceUrl').value.trim();
@@ -254,8 +255,18 @@
             status.className = className;
         }
 
-        // Button control functions
-        function pressButton(button) {
+        // Button control functions with minimum 300ms press duration
+        function pressButton(button, event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            // Clear any existing timer for this button
+            if (buttonTimers[button]) {
+                clearTimeout(buttonTimers[button]);
+                delete buttonTimers[button];
+            }
+
             if (ws && ws.readyState === WebSocket.OPEN) {
                 const message = JSON.stringify({
                     button: button,
@@ -263,17 +274,60 @@
                 });
                 ws.send(message);
                 console.log('Button pressed:', button);
+
+                // Store the press timestamp
+                buttonTimers[button] = {
+                    pressTime: Date.now(),
+                    released: false
+                };
+            } else {
+                console.log('WebSocket not connected, cannot press button:', button);
             }
         }
 
-        function releaseButton(button) {
+        function releaseButton(button, event) {
+            if (event) {
+                event.preventDefault();
+            }
+
             if (ws && ws.readyState === WebSocket.OPEN) {
-                const message = JSON.stringify({
-                    button: button,
-                    state: 0
-                });
-                ws.send(message);
-                console.log('Button released:', button);
+                const timer = buttonTimers[button];
+
+                if (timer && !timer.released) {
+                    const elapsed = Date.now() - timer.pressTime;
+                    const minDuration = 300; // Minimum 300ms press
+
+                    timer.released = true; // Mark as released to prevent double-release
+
+                    if (elapsed < minDuration) {
+                        // Delay the release to ensure minimum press duration
+                        const delay = minDuration - elapsed;
+                        console.log(`Button ${button}: delaying release by ${delay}ms to ensure minimum press duration`);
+
+                        setTimeout(() => {
+                            const releaseMessage = JSON.stringify({
+                                button: button,
+                                state: 0
+                            });
+                            ws.send(releaseMessage);
+                            console.log('Button released:', button);
+                            delete buttonTimers[button];
+                        }, delay);
+                    } else {
+                        // Release immediately
+                        const releaseMessage = JSON.stringify({
+                            button: button,
+                            state: 0
+                        });
+                        ws.send(releaseMessage);
+                        console.log('Button released:', button);
+                        delete buttonTimers[button];
+                    }
+                } else {
+                    console.log('Button release ignored - no active press for:', button);
+                }
+            } else {
+                console.log('WebSocket not connected, cannot release button:', button);
             }
         }
 
