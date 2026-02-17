@@ -479,7 +479,7 @@ void Meter::UpdateCapacity() {
     */
             }
         }
-    } else if (CapacityMode == PERIODS) {
+    } else if (CapacityMode == INTERVAL) {
         time_t now;
         time(&now);
 
@@ -521,7 +521,7 @@ void Meter::UpdateCapacity() {
             }
             // ────────────────────────────────────────────────────────────────
 
-            _LOG_V("PERIODS mode: time %02u:%02u → MaxSumMains = %u A\n",
+            _LOG_V("INTERVAL mode: time %02u:%02u → MaxSumMains = %u A\n",
                    t->tm_hour, t->tm_min, MaxSumMains);
         }
         // If time is invalid → silently skip update (MaxSumMains keeps previous value)

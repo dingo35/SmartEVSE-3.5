@@ -191,7 +191,7 @@ const struct {
     {"AUTOUPDAT","Automatic Firmware Update",                         0, 1, AUTOUPDATE},
     {"CONTACT 2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
-    {"CAP MODE","Capacity Rate limit mode",                           0, 2, 0},
+    {"CAP MODE","Capacity Rate limit mode",                           0, 3, 0},
     {"CAPACITY","Capacity Rate limit on sum of MAINS Current (A)",    0, 600, MAX_SUMMAINS},
     {"CAP STOP","Stop Capacity Rate limit charging after X minutes",    0, 60, MAX_SUMMAINSTIME},
     {"LCD PIN", "Pin code to operate LCD from web interface",         0, 9999, 0},

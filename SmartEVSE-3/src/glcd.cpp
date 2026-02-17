@@ -997,7 +997,7 @@ const char * getMenuItemOption(uint8_t nav) {
     const static char StrExitMenu[] = "MENU";
     extern const char StrRFIDReader[7][10];
     const static char StrWiFi[3][10] = {"Disabled", "Enabled", "SetupWifi"};
-    const static char StrCapMode[][9] = {"Disabled", "Manual", "Flanders"};
+    const static char StrCapMode[][9] = {"Disabled", "Fixed", "Interval", "Flanders"};
 
     unsigned int value = getItemValue(nav);
 

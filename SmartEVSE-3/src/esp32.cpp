@@ -1192,7 +1192,7 @@ void validate_settings(void) {
 // Returns the "intervals" part as a JSON string (array only)
 // Example output: [{"start":300,"power":11000},{"start":960,"power":3680}]
 String GetIntervalString(void) {
-    DynamicJsonDocument tempDoc(128);          // Temporary doc just for the array
+    DynamicJsonDocument tempDoc(2048);          // Temporary doc just for the array
     JsonArray arr = tempDoc.to<JsonArray>();    // Root is directly an array
 
     CapacityNode* n = first_interval;
@@ -1212,9 +1212,11 @@ String GetIntervalString(void) {
 
 // Puts a JSON string into the capacitynode structure
 void SetIntervalString(String jsonStr) {
-    DynamicJsonDocument doc(128);
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, jsonStr);
-    if (!error && doc.is<JsonArray>()) {
+    if (error) {
+        _LOG_A("DeserializeJson() failed: %s.\n", error.c_str());
+    } else if (doc.is<JsonArray>()) {
         // free_intervals();
         int count = 0;
         CapacityNode* current = first_interval;
@@ -1225,7 +1227,7 @@ void SetIntervalString(String jsonStr) {
             count++;
         }
         first_interval = nullptr;
-        Serial.printf("Freed %d interval nodes\n", count);
+        _LOG_V("Freed %d interval nodes\n", count);
         CapacityNode* tail = nullptr;
         JsonArray arr = doc.as<JsonArray>();
         // parse commandline
@@ -1235,7 +1237,7 @@ void SetIntervalString(String jsonStr) {
             uint16_t start = obj["start"].as<uint16_t>();
             int32_t  power = obj["power"].as<int32_t>();
 
-            if (start > 1439 || power < 0) continue;
+            if (start > 1439) continue;
 
             CapacityNode* node = (CapacityNode*)malloc(sizeof(CapacityNode));
             if (!node) break;
