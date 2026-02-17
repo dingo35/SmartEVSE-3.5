@@ -250,6 +250,44 @@ If C2 is set to "Always Off", you are signalling a single phase system; in that 
 <br>&emsp;&emsp;the data won't be registered.
 <br>&emsp;&emsp;Data should be in Wh (kWh * 1000), for import_active_power data should be in w(att)
 
+# POST: /rfid
+
+* rfid
+
+&emsp;&emsp;Simulate an RFID card swipe to start or stop a charging session
+<br>&emsp;&emsp;The RFID parameter must be a hex string representing the card UID
+<br>&emsp;&emsp;- 12 hex characters for 6 byte UIDs (older RFID readers)
+<br>&emsp;&emsp;- 14 hex characters for 7 byte UIDs (newer RFID readers)
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;The RFID will be processed using all existing checks:
+<br>&emsp;&emsp;- RFID reader must be enabled in settings
+<br>&emsp;&emsp;- Whitelist verification (if using local whitelist)
+<br>&emsp;&emsp;- OCPP authorization (if OCPP mode is enabled)
+<br>&emsp;&emsp;- RFID reader mode logic (EnableAll, EnableOne, Learn, Delete)
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Returns JSON with status and rfid_status fields
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Examples:
+```
+    # 6 byte UID (12 hex characters)
+    curl -X POST "http://ipaddress/rfid?rfid=112233445566" -d ''
+    
+    # 7 byte UID (14 hex characters)
+    curl -X POST "http://ipaddress/rfid?rfid=11223344556677" -d ''
+```
+
+&emsp;&emsp;Response examples:
+```
+    # Success
+    {"rfid":"112233445566","rfid_status":"Present"}
+    
+    # Error - RFID reader not enabled
+    {"rfid_status":"RFID reader not enabled"}
+    
+    # Error - Invalid format
+    {"rfid_status":"Invalid RFID hex string"}
+```
+
 # POST: /reboot
 
 &emsp;&emsp;Note: no parameters, reboots your device.

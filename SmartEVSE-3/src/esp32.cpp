@@ -2320,7 +2320,69 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
 
-#if MODEM && SMARTEVSE_VERSION < 40 
+    } else if (mg_http_match_uri(hm, "/rfid") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(200);
+
+        uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
+        if (!RFIDReader) {
+            doc["rfid_status"] = "RFID reader not enabled";
+        } else if (request->hasParam("rfid")) {
+            String hexString = request->getParam("rfid")->value();
+            hexString.trim();
+
+            // Check if payload is valid hex and correct length
+            bool validHex = true;
+            for (size_t i = 0; i < hexString.length(); i++) {
+                if (!isxdigit(hexString[i])) {
+                    validHex = false;
+                    break;
+                }
+            }
+
+            if (!validHex) {
+                doc["rfid_status"] = "Invalid RFID hex string";
+            } else if (hexString.length() == 12 || hexString.length() == 14) {
+                // Parse hex string into RFID array
+                memset(RFID, 0, 8);
+
+                if (hexString.length() == 12) {
+                    // 6 byte UID (old reader format, starts at RFID[1])
+                    RFID[0] = 0x01; // Family code for old reader
+                    for (int i = 0; i < 6; i++) {
+                        RFID[i + 1] = (uint8_t)strtol(hexString.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
+                    }
+                    RFID[7] = crc8((unsigned char *)RFID, 7);
+                } else {
+                    // 7 byte UID (new reader format)
+                    for (int i = 0; i < 7; i++) {
+                        RFID[i] = (uint8_t)strtol(hexString.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
+                    }
+                    RFID[7] = crc8((unsigned char *)RFID, 7);
+                }
+
+                _LOG_A("RFID received via REST API: %s\n", hexString.c_str());
+
+                // Reset RFIDstatus so CheckRFID processes the card as new
+                RFIDstatus = 0;
+
+                // Process RFID using existing logic (whitelist check, OCPP, etc.)
+                CheckRFID();
+
+                doc["rfid"] = hexString;
+                doc["rfid_status"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
+            } else {
+                doc["rfid_status"] = "Invalid RFID length";
+            }
+        } else {
+            doc["rfid_status"] = "Missing rfid parameter";
+        }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
+        return true;
+
+#if MODEM && SMARTEVSE_VERSION < 40
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
 
