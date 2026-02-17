@@ -109,7 +109,7 @@ uint32_t MacId() {
  * @param unsinged char Divisor where to set decimal point
  * @param unsigned char Decimal place count
  */
-void sprintfl(char *str, const char *Format, signed long Value, unsigned char Divisor, unsigned char Decimal) {
+void sprintfl(char *str, size_t size, const char *Format, signed long Value, unsigned char Divisor, unsigned char Decimal) {
     signed long val;
 
     val = Value / (signed long) pow_10[Divisor - Decimal - 1];
@@ -118,8 +118,8 @@ void sprintfl(char *str, const char *Format, signed long Value, unsigned char Di
     else val += 5;
     val /= 10;
     // Split value
-    if(Decimal > 0) sprintf(str, Format, (signed int) (val / (signed long) pow_10[Decimal]), (unsigned int) (abs(val) % pow_10[Decimal]));
-    else sprintf(str, Format, (signed int) val);
+    if(Decimal > 0) snprintf(str, size, Format, (signed int) (val / (signed long) pow_10[Decimal]), (unsigned int) (abs(val) % pow_10[Decimal]));
+    else snprintf(str, size, Format, (signed int) val);
 }
 
 #else //CH32
