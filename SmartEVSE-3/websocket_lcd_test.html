@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCD WebSocket Stream Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        #lcdDisplay {
+            border: 2px solid #333;
+            margin: 20px 0;
+            background-color: #000;
+            display: inline-block;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        #status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        #status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #status.connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .button-controls {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .lcd-button {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 5px;
+            background-color: #28a745;
+            font-weight: bold;
+        }
+        .lcd-button:hover:not(:disabled) {
+            background-color: #218838;
+        }
+        .lcd-button:active {
+            background-color: #1e7e34;
+            transform: scale(0.95);
+        }
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e7f3ff;
+            border-left: 4px solid #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LCD WebSocket Stream Test</h1>
+
+        <div id="status" class="disconnected">Disconnected</div>
+
+        <div>
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <canvas id="lcdDisplay" width="128" height="64"></canvas>
+        </div>
+
+        <div class="button-controls">
+            <h3>LCD Button Controls</h3>
+            <p>Click and hold buttons to simulate physical button press</p>
+            <div style="text-align: center;">
+                <button class="lcd-button" id="leftBtn" disabled
+                    onmousedown="pressButton('left')" onmouseup="releaseButton('left')"
+                    ontouchstart="pressButton('left')" ontouchend="releaseButton('left')">
+                    LEFT
+                </button>
+                <button class="lcd-button" id="middleBtn" disabled
+                    onmousedown="pressButton('middle')" onmouseup="releaseButton('middle')"
+                    ontouchstart="pressButton('middle')" ontouchend="releaseButton('middle')">
+                    MIDDLE
+                </button>
+                <button class="lcd-button" id="rightBtn" disabled
+                    onmousedown="pressButton('right')" onmouseup="releaseButton('right')"
+                    ontouchstart="pressButton('right')" ontouchend="releaseButton('right')">
+                    RIGHT
+                </button>
+            </div>
+        </div>
+
+        <div class="info">
+            <p><strong>How to use:</strong></p>
+            <ol>
+                <li>Make sure your SmartEVSE device is powered on and connected to the network</li>
+                <li>Enter the device IP address or hostname in the input field below</li>
+                <li>Click "Connect" to start receiving LCD images</li>
+                <li>The LCD screen will update every second automatically</li>
+                <li>Use the LEFT, MIDDLE, and RIGHT buttons to control the LCD menu</li>
+                <li>Click and hold buttons to simulate a physical button press</li>
+            </ol>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <label for="deviceUrl">Device URL:</label><br>
+            <input type="text" id="deviceUrl" placeholder="ws://192.168.1.100" style="width: 300px; padding: 5px;">
+        </div>
+
+        <div id="stats" style="margin-top: 20px; font-size: 12px; color: #666;">
+            Frames received: <span id="frameCount">0</span><br>
+            Last update: <span id="lastUpdate">Never</span>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let frameCount = 0;
+
+        function connect() {
+            const deviceUrl = document.getElementById('deviceUrl').value.trim();
+            let wsUrl;
+
+            if (!deviceUrl) {
+                // Use current host if no URL specified
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.host}/ws/lcd`;
+            } else {
+                // Clean up user input
+                let url = deviceUrl.replace(/^(https?|wss?):\/\//, '');
+                url = url.replace(/\/$/, '');
+                wsUrl = deviceUrl.startsWith('ws') ? deviceUrl : `ws://${url}`;
+                if (!wsUrl.includes('/ws/lcd')) {
+                    wsUrl += '/ws/lcd';
+                }
+            }
+
+            updateStatus('Connecting...', 'connecting');
+            console.log('Connecting to:', wsUrl);
+
+            try {
+                ws = new WebSocket(wsUrl);
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateStatus('Connected', 'connected');
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    // Enable button controls
+                    document.getElementById('leftBtn').disabled = false;
+                    document.getElementById('middleBtn').disabled = false;
+                    document.getElementById('rightBtn').disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    // Check if binary (BMP image) or text (button acknowledgment)
+                    if (event.data instanceof ArrayBuffer) {
+                        // Received BMP image data
+                        const blob = new Blob([event.data], { type: 'image/bmp' });
+                        const url = URL.createObjectURL(blob);
+
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.getElementById('lcdDisplay');
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            URL.revokeObjectURL(url);
+
+                            frameCount++;
+                            document.getElementById('frameCount').textContent = frameCount;
+                            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                        };
+                        img.src = url;
+                    } else {
+                        // Received text message (button acknowledgment)
+                        try {
+                            const data = JSON.parse(event.data);
+                            console.log('Button acknowledgment:', data);
+                        } catch (e) {
+                            console.log('Received text message:', event.data);
+                        }
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Error - Check console', 'disconnected');
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    updateStatus('Disconnected', 'disconnected');
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    // Disable button controls
+                    document.getElementById('leftBtn').disabled = true;
+                    document.getElementById('middleBtn').disabled = true;
+                    document.getElementById('rightBtn').disabled = true;
+                    ws = null;
+                };
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                updateStatus('Failed to connect', 'disconnected');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function updateStatus(text, className) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = className;
+        }
+
+        // Button control functions
+        function pressButton(button) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = JSON.stringify({
+                    button: button,
+                    state: 1
+                });
+                ws.send(message);
+                console.log('Button pressed:', button);
+            }
+        }
+
+        function releaseButton(button) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = JSON.stringify({
+                    button: button,
+                    state: 0
+                });
+                ws.send(message);
+                console.log('Button released:', button);
+            }
+        }
+
+        // Load saved device URL from localStorage
+        window.onload = () => {
+            const savedUrl = localStorage.getItem('deviceUrl');
+            if (savedUrl) {
+                document.getElementById('deviceUrl').value = savedUrl;
+            }
+        };
+
+        // Save device URL to localStorage when it changes
+        document.getElementById('deviceUrl').addEventListener('change', (e) => {
+            localStorage.setItem('deviceUrl', e.target.value);
+        });
+    </script>
+</body>
+</html>
