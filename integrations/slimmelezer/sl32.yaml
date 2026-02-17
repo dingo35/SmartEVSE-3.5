@@ -269,7 +269,7 @@ interval:
                           id(signed_current_l2).state * 10,
                           id(signed_current_l3).state * 10);
                   return url;
-                headers:
+                request_headers:
                   Content-Length: 0
                 on_response:
                   then:
