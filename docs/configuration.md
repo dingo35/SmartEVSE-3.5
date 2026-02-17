@@ -279,6 +279,10 @@ Valid topics you can publish to are:
 /Set/CableLock
 /Set/EnableC2  0 "Not present", 1 "Always Off", 2 "Solar Off", 3 "Always On", 4 "Auto" ; do not change during charging to prevent unexpected errors of your EV!
                You can send either the number or the string, SmartEVSE will accept both!
+/Set/RFID      Hex string representing RFID card UID (12 or 14 hex characters for 6 or 7 byte UIDs)
+               Example: "112233445566" (6 bytes) or "11223344556677" (7 bytes)
+               This will simulate an RFID card swipe and start/stop a charging session using all existing RFID checks
+               (whitelist verification, OCPP authorization, etc.)
 ```
 Your mains kWh meter data can be fed with:
 ```
@@ -294,6 +298,15 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A.
 ...where P is the Power in W,
 ...where E is the Energy in Wh.
+
+You can simulate an RFID card swipe via MQTT to start/stop a charging session:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/RFID' -m '112233445566'
+```
+...where 112233445566 is the hex representation of your RFID card's UID (6 byte example).
+...For a 7 byte UID, use 14 hex characters (e.g., '11223344556677').
+...The RFID will be processed using all existing checks: whitelist verification, OCPP authorization, etc.
+...Swiping the same card again will typically stop the session (behavior depends on RFID Reader mode setting).
 
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 

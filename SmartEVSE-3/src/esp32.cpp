@@ -785,6 +785,58 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 EnableC2 = (EnableC2_t) value;
         }
         request_write_settings();
+    } else if (topic == MQTTprefix + "/Set/RFID") {
+        // Accept RFID card via MQTT to start/stop session
+        // Payload should be hex string: 12 or 14 characters for 6 or 7 byte UID
+        // Examples: "010203040506" (6 bytes) or "01020304050607" (7 bytes)
+        uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
+        if (!RFIDReader) {
+            _LOG_A("RFID reader not enabled, ignoring MQTT RFID\n");
+        } else {
+            String hexString = payload;
+            hexString.trim();
+
+            // Check if payload is valid hex and correct length
+            bool validHex = true;
+            for (size_t i = 0; i < hexString.length(); i++) {
+                if (!isxdigit(hexString[i])) {
+                    validHex = false;
+                    break;
+                }
+            }
+
+            if (!validHex) {
+                _LOG_A("Invalid RFID hex string received via MQTT: %s\n", hexString.c_str());
+            } else if (hexString.length() == 12 || hexString.length() == 14) {
+                // Parse hex string into RFID array
+                memset(RFID, 0, 8);
+
+                if (hexString.length() == 12) {
+                    // 6 byte UID (old reader format, starts at RFID[1])
+                    RFID[0] = 0x01; // Family code for old reader
+                    for (int i = 0; i < 6; i++) {
+                        RFID[i + 1] = (uint8_t)strtol(hexString.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
+                    }
+                    RFID[7] = crc8((unsigned char *)RFID, 7);
+                } else {
+                    // 7 byte UID (new reader format)
+                    for (int i = 0; i < 7; i++) {
+                        RFID[i] = (uint8_t)strtol(hexString.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
+                    }
+                    RFID[7] = crc8((unsigned char *)RFID, 7);
+                }
+
+                _LOG_A("RFID received via MQTT: %s\n", hexString.c_str());
+
+                // Reset RFIDstatus so CheckRFID processes the card as new
+                RFIDstatus = 0;
+
+                // Process RFID using existing logic (whitelist check, OCPP, etc.)
+                CheckRFID();
+            } else {
+                _LOG_A("Invalid RFID length received via MQTT (expected 12 or 14 hex chars): %s\n", hexString.c_str());
+            }
+        }
     }
 
     // Make sure MQTT updates directly to prevent debounces
