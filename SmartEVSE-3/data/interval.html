@@ -58,7 +58,7 @@
             <div id="content">
                 <div class="container-fluid">
 
-                    <!-- Header -->
+                    <!-- Header (identical to index.html) -->
                     <div style="margin-bottom: 20px;">
                         <div class="card bg-success text-white shadow">
                             <div class="card-body">
@@ -72,32 +72,7 @@
                         </div>
                     </div>
 
-                    <!-- Capacity Mode Section -->
                     <div class="row">
-                        <div class="col-lg-12 mb-4">
-                            <div class="card border-left-primary shadow h-100 py-2">
-                                <div class="card-body">
-                                    <h5 class="card-title">Capacity Mode</h5>
-                                    <div class="d-flex align-items-center">
-                                        <select id="capacity_mode" class="form-select">
-                                            <option value="0">Disabled</option>
-                                            <option value="1">Fixed</option>
-                                            <option value="2">Interval</option>
-                                            <option value="3">Flanders</option>
-                                        </select>
-                                    </div>
-                                    <div id="fixedCapacitySection" class="mt-3" style="display: none;">
-                                        <label for="current_max_sum_mains" class="form-label">Max Sum Mains (A)</label>
-                                        <div class="d-flex align-items-center">
-                                            <input type="number" id="current_max_sum_mains" class="form-control" min="10" max="600" step="1" required>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row" id="intervalsContent">
 
                         <!-- Form to add/edit interval -->
                         <div class="col-lg-5 mb-4">
@@ -159,10 +134,10 @@
                     </div>
 
                     <!-- Bottom actions -->
-                    <div class="row mt-3" id="clearIntervalsSection">
+                    <div class="row mt-3">
                         <div class="col text-center">
                             <a href="index.html" class="btn btn-outline-secondary me-2">Back to Dashboard</a>
-                            <button class="btn btn-outline-danger me-2" onclick="if(confirm('Clear ALL intervals? This cannot be undone.')) clearAllIntervals()">Clear All Intervals</button>
+                            <button class="btn btn-outline-danger" onclick="if(confirm('Clear ALL intervals? This cannot be undone.')) clearAllIntervals()">Clear All Intervals</button>
                         </div>
                     </div>
 
@@ -177,7 +152,7 @@
     <script>
         let intervals = [];
 
-        // Load data from /settings
+        // Load version, serialnr and intervals from /settings
         $(document).ready(function() {
             let endpoint = window.location.origin + '/settings';
 
@@ -188,22 +163,13 @@
                         $('#version').text(data.version).attr('data-version', data.version);
                         $('#serialnr').append(data.serialnr);
 
-                        if (data.settings.intervals && Array.isArray(data.settings.intervals)) {
-                            intervals = data.settings.intervals;
+                        // Load intervals if present
+                        if (data.intervals && Array.isArray(data.intervals)) {
+                            intervals = data.intervals;
                         } else {
                             intervals = [];
                         }
                         renderTable();
-
-                        if (data.settings.capacity_mode !== undefined) {
-                            document.getElementById("capacity_mode").value = data.settings.capacity_mode;
-                        }
-
-                        if (data.settings.current_max_sum_mains !== undefined) {
-                            $('#current_max_sum_mains').val(data.settings.current_max_sum_mains);
-                        }
-
-                        toggleSections();  // Toggle visibility after loading
                     },
                     error: function() {
                         alert("Failed to load settings from device.");
@@ -212,35 +178,10 @@
             }
 
             loadData();
+
+            // Optional: refresh every 30 seconds (like main page)
             setInterval(loadData, 30000);
-
-            // Auto-save Capacity Mode on change
-            $('#capacity_mode').on('change', function() {
-                $.post("/settings?capacity_mode=" + $(this).val());
-                toggleSections();
-            });
-
-            // Auto-save Max Sum Mains on blur
-            $('#current_max_sum_mains').on('change', function() {
-                const val = $(this).val();
-                if (val < 10 || val > 600 || isNaN(val)) {
-                    alert("Value must be between 10 and 600");
-                    return;
-                }
-                //$.post("/settings?current_max_sum_mains=" + val);
-                $.post("/settings?current_max_sum_mains=" + val, function() {
-                }).fail(function() {
-                    alert("Failed to save max sum mains.");
-                });
-            });
         });
-
-        function toggleSections() {
-            const mode = $('#capacity_mode').val();
-            $('#intervalsContent').toggle(mode === "2");
-            $('#clearIntervalsSection').toggle(mode === "2");
-            $('#fixedCapacitySection').toggle(mode === "1");
-        }
 
         function renderTable() {
             const tbody = document.getElementById('intervalsBody');
