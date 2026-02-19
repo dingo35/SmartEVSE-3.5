@@ -428,6 +428,14 @@ void Timer20ms(void * parameter) {
 
     while(1)  // infinite loop
     {
+        // One-time stack usage check after modem has done real work
+        static bool stackChecked = false;
+        if (!stackChecked && modem_state > MODEM_POWERUP) {
+            _LOG_A("Timer20ms stack high water mark: %u bytes free\n",
+                   uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t));
+            stackChecked = true;
+        }
+
         // poll modem for data
         reg16 = qcaspi_read_burst(rxbuffer);
 

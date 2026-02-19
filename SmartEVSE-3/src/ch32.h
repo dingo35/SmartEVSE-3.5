@@ -95,7 +95,15 @@
 #define false 0
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void delayMicroseconds(uint32_t us);
 uint32_t millis();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
