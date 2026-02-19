@@ -22,6 +22,10 @@ on:
     branches:
       - master
       - release/*
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,7 +43,7 @@ jobs:
         id: version
         shell: bash
         run: |
-              if [ -z "${{ inputs.major }}" ] 
+              if [ -z "${{ inputs.major }}" ]
               then
                  echo "version=${{ steps.time.outputs.time }}" >> $GITHUB_OUTPUT
                else
@@ -50,21 +54,23 @@ jobs:
                     echo "version=${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}-${{ inputs.prerelease }}" >> $GITHUB_OUTPUT
                  fi
               fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Cache pip
-        uses: actions/cache@v3
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/pip
           key: '${{ runner.os }}-pip-${{ hashFiles(''**/requirements.txt'') }}'
           restore-keys: |
             ${{ runner.os }}-pip-
       - name: Cache PlatformIO
-        uses: actions/cache@v3
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.platformio
-          key: '${{ runner.os }}-${{ hashFiles(''**/lockfiles'') }}'
+          key: '${{ runner.os }}-pio-${{ hashFiles(''SmartEVSE-3/platformio.ini'') }}'
+          restore-keys: |
+            ${{ runner.os }}-pio-
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.10'
       - name: Install PlatformIO
@@ -72,48 +78,51 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade platformio
       - name: Build normal version
-        env:
-          super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
           PLATFORMIO_BUILD_FLAGS='-DVERSION=\"v${{ steps.version.outputs.version }}\" -DDBG=0' pio run -d SmartEVSE-3/
-          # Create a temporary file
-          secret_file=$(mktemp)
-          # Write the secret to the temporary file, because passing it as command line argument might reveal it for users using ps -a
-          echo "$super_secret" > "$secret_file"
-          # Create signature file
-          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
-          # throw it all in one file
-          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./SmartEVSE-3/.pio/build/release/firmware.signed.bin
-
-          # save .bin files to directory because v4 upload-artifact@v4 can no longer add files to an existing artifact; so much for efficiency :-(
-          mkdir ./SmartEVSE-3/distribution
-          mv ./SmartEVSE-3/.pio/build/release/*.bin ./SmartEVSE-3/distribution
-
-          # Remove the temporary file
-          rm -f "$secret_file"
-      - name: Build debug version
+          mkdir -p ./SmartEVSE-3/distribution
+      - name: Sign normal version
         env:
           super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
-          PLATFORMIO_BUILD_FLAGS='-DVERSION=\"v${{ steps.version.outputs.version }}\" -DDBG=1' pio run -d SmartEVSE-3/
-          # Create a temporary file
+          if [ -z "$super_secret" ]; then
+            echo "Signing key not available, skipping firmware signing"
+            exit 0
+          fi
           secret_file=$(mktemp)
-          # Write the secret to the temporary file, because passing it as command line argument might reveal it for users using ps -a
           echo "$super_secret" > "$secret_file"
-          # Create signature file
           openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
-          # throw it all in one file
           cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./SmartEVSE-3/.pio/build/release/firmware.signed.bin
-          # Remove the temporary file
           rm -f "$secret_file"
+      - name: Collect normal build artifacts
+        run: mv ./SmartEVSE-3/.pio/build/release/*.bin ./SmartEVSE-3/distribution
+      - name: Build debug version
+        run: |
+          PLATFORMIO_BUILD_FLAGS='-DVERSION=\"v${{ steps.version.outputs.version }}\" -DDBG=1' pio run -d SmartEVSE-3/
+      - name: Sign debug version
+        env:
+          super_secret: ${{ secrets.SECRET_RSA_KEY }}
+        run: |
+          if [ -z "$super_secret" ]; then
+            echo "Signing key not available, skipping firmware signing"
+            exit 0
+          fi
+          secret_file=$(mktemp)
+          echo "$super_secret" > "$secret_file"
+          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
+          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./SmartEVSE-3/.pio/build/release/firmware.signed.bin
+          rm -f "$secret_file"
+      - name: Collect debug build artifacts
+        run: |
           mv ./SmartEVSE-3/.pio/build/release/firmware.bin ./SmartEVSE-3/distribution/firmware.debug.bin
-          mv ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ./SmartEVSE-3/distribution/firmware.debug.signed.bin
-          # prevent the .bin files are gathered in .pio directory in the dists-zip file:
+          if [ -f ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ]; then
+            mv ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ./SmartEVSE-3/distribution/firmware.debug.signed.bin
+          fi
           cp -a ./SmartEVSE-3/HowToFlash.txt ./SmartEVSE-3/distribution
-      
+
       # Combined upload for all artifacts using v4
       - name: Upload all artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dists_zip
           path: |

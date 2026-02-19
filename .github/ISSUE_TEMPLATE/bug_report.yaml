@@ -1,0 +1,81 @@
+name: Bug Report
+description: Report a bug to help us improve SmartEVSE
+labels: [bug]
+body:
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Hardware Version
+      options:
+        - SmartEVSE v3
+        - SmartEVSE v4
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware Version
+      description: Shown on the LCD or webserver status page (e.g. v3.10.2)
+      placeholder: v3.10.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Operating Mode
+      options:
+        - Normal
+        - Smart
+        - Solar
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration JSON
+      description: Press the "raw" button in the SmartEVSE webserver and paste the JSON settings here.
+      render: json
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: What steps trigger the problem?
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen? Expected charging current?
+    validations:
+      required: true
+
+  - type: textarea
+    id: debug_log
+    attributes:
+      label: Debug Log
+      description: Flash the debug firmware, telnet to your device, and capture the log around the problem.
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Only add screenshots if they provide additional information.

@@ -1,0 +1,13 @@
+# Default owner for everything
+* @dingo35
+
+# State machine module (safety-critical)
+SmartEVSE-3/src/evse_state_machine.c @dingo35
+SmartEVSE-3/src/evse_state_machine.h @dingo35
+SmartEVSE-3/src/evse_ctx.h @dingo35
+
+# CI/CD workflows
+.github/workflows/ @dingo35
+
+# Test infrastructure
+SmartEVSE-3/test/ @dingo35

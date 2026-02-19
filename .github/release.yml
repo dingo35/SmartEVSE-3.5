@@ -1,0 +1,41 @@
+changelog:
+  categories:
+    - title: Safety & Charging Protocol
+      labels:
+        - safety
+        - iec-61851
+        - charging
+    - title: OCPP & Communication
+      labels:
+        - ocpp
+        - mqtt
+        - modbus
+        - communication
+    - title: New Features
+      labels:
+        - enhancement
+        - feature
+    - title: Bug Fixes
+      labels:
+        - bug
+        - fix
+    - title: Load Balancing & Solar
+      labels:
+        - load-balancing
+        - solar
+    - title: UI & Display
+      labels:
+        - ui
+        - display
+        - webserver
+    - title: Documentation
+      labels:
+        - documentation
+    - title: CI & Build
+      labels:
+        - ci
+        - build
+        - testing
+    - title: Other Changes
+      labels:
+        - "*"

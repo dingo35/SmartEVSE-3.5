@@ -9,3 +9,9 @@ sdkconfig.*
 .DS_Store
 */.DS_Store
 .idea
+
+# Claude Code
+.claude/
+
+# Native test build artifacts
+SmartEVSE-3/test/native/build/
