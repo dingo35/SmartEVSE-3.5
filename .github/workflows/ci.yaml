@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  native-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run native tests with coverage
+        run: make clean test CFLAGS_EXTRA="--coverage"
+        working-directory: SmartEVSE-3/test/native
+      - name: Generate coverage report
+        run: |
+          sudo apt-get -qq install -y lcov
+          lcov --capture --directory SmartEVSE-3/test/native/build --output-file coverage.info --include '*/evse_state_machine.c'
+          lcov --list coverage.info
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-report
+          path: coverage.info
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install cppcheck
+        run: sudo apt-get -qq install -y cppcheck
+      - name: Run cppcheck on state machine module
+        run: |
+          cppcheck --enable=warning,style,performance \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            -I SmartEVSE-3/src \
+            -I SmartEVSE-3/test/native/include \
+            SmartEVSE-3/src/evse_state_machine.c
+      - name: Check stack usage (GCC)
+        run: make clean all CFLAGS_EXTRA="-Wstack-usage=1024"
+        working-directory: SmartEVSE-3/test/native
+
+  memory-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run tests with ASan + UBSan
+        run: make clean test CFLAGS_EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
+        working-directory: SmartEVSE-3/test/native
+
+  valgrind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install Valgrind
+        run: sudo apt-get -qq install -y valgrind
+      - name: Build tests
+        run: make clean all
+        working-directory: SmartEVSE-3/test/native
+      - name: Run tests under Valgrind
+        working-directory: SmartEVSE-3/test/native
+        run: |
+          failed=0
+          for bin in build/test_*; do
+            echo "=== Valgrind: $(basename $bin) ==="
+            if ! valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=definite,possible --errors-for-leak-kinds=definite "$bin"; then
+              failed=1
+            fi
+          done
+          exit $failed
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+      - name: Cache PlatformIO
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-${{ hashFiles('SmartEVSE-3/platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build ESP32 release
+        run: |
+          set -o pipefail
+          pio run -e release -d SmartEVSE-3/ 2>&1 | tee esp32-build.log
+      - name: Build CH32
+        run: |
+          set -o pipefail
+          pio run -e ch32 -d SmartEVSE-3/ 2>&1 | tee ch32-build.log
+      - name: Check firmware memory budget
+        run: |
+          check_budget() {
+            local log="$1" label="$2" flash_max="$3" ram_max="$4"
+            echo "=== $label Memory Budget ==="
+            # PlatformIO prints: RAM:   [==        ]  XX.X% (used XXXXX bytes from XXXXXX bytes)
+            #                    Flash: [=======   ]  XX.X% (used XXXXXX bytes from XXXXXXX bytes)
+            ram_pct=$(grep -oP 'RAM:.*?(\d+\.\d+)%' "$log" | grep -oP '\d+\.\d+' | tail -1)
+            flash_pct=$(grep -oP 'Flash:.*?(\d+\.\d+)%' "$log" | grep -oP '\d+\.\d+' | tail -1)
+            echo "  RAM usage:   ${ram_pct}% (budget: ${ram_max}%)"
+            echo "  Flash usage: ${flash_pct}% (budget: ${flash_max}%)"
+            failed=0
+            if [ -n "$ram_pct" ] && [ "$(echo "$ram_pct > $ram_max" | bc -l)" -eq 1 ]; then
+              echo "  ERROR: RAM usage ${ram_pct}% exceeds budget ${ram_max}%"
+              failed=1
+            fi
+            if [ -n "$flash_pct" ] && [ "$(echo "$flash_pct > $flash_max" | bc -l)" -eq 1 ]; then
+              echo "  ERROR: Flash usage ${flash_pct}% exceeds budget ${flash_max}%"
+              failed=1
+            fi
+            return $failed
+          }
+          result=0
+          # ESP32: 4MB flash (1.75MB OTA partition), 320KB RAM
+          check_budget esp32-build.log "ESP32" 95 90 || result=1
+          # CH32: 64KB flash, 20KB RAM - much tighter
+          check_budget ch32-build.log "CH32" 95 90 || result=1
+          exit $result
+
+  traceability:
+    needs: [native-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+      - name: Generate traceability report
+        working-directory: SmartEVSE-3/test/native
+        run: |
+          python scripts/extract_traceability.py \
+            --html traceability-report.html \
+            --markdown test-specification.md
+      - name: Validate state transitions
+        working-directory: SmartEVSE-3/test/native
+        run: python scripts/validate_transitions.py
+      - name: Upload traceability artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: traceability-reports
+          path: |
+            SmartEVSE-3/test/native/traceability-report.html
+            SmartEVSE-3/test/native/test-specification.md
+      - name: Commit updated test specification
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add SmartEVSE-3/test/native/test-specification.md SmartEVSE-3/test/native/traceability-report.html
+          if git diff --cached --quiet; then
+            echo "Reports are already up to date"
+          else
+            git commit -m "docs: regenerate test specification and traceability report
+
+          Auto-generated from SbE annotations by CI pipeline.
+          $(grep -c '###' SmartEVSE-3/test/native/test-specification.md) scenarios across $(grep -c '^## ' SmartEVSE-3/test/native/test-specification.md) features."
+            git push
+          fi
+
+  bdd-tests:
+    needs: [native-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+      - name: Install BDD dependencies
+        run: pip install -r SmartEVSE-3/test/native/requirements-bdd.txt
+      - name: Build native test binaries
+        run: make all
+        working-directory: SmartEVSE-3/test/native
+      - name: Run BDD feature tests
+        working-directory: SmartEVSE-3/test/native
+        run: |
+          python -m pytest steps/ \
+            --tb=short \
+            --html=bdd-report.html \
+            --self-contained-html \
+            -v
+      - name: Upload BDD report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bdd-report
+          path: SmartEVSE-3/test/native/bdd-report.html
+
+  version-check:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate tag matches platformio.ini VERSION
+        run: |
+          # Extract VERSION from platformio.ini build_flags
+          ini_version=$(grep -oP '(?<=-DVERSION=\\")[^\\]+' SmartEVSE-3/platformio.ini)
+          tag_version="${GITHUB_REF#refs/tags/}"
+          echo "platformio.ini VERSION: $ini_version"
+          echo "Git tag:               $tag_version"
+          if [ "$ini_version" != "$tag_version" ]; then
+            echo "ERROR: Tag '$tag_version' does not match platformio.ini VERSION '$ini_version'"
+            echo "Update VERSION in SmartEVSE-3/platformio.ini to match the tag before releasing."
+            exit 1
+          fi
+          echo "Version match confirmed."
+
+  ci-passed:
+    if: always()
+    needs: [native-tests, firmware-build, static-analysis, memory-sanitizers, valgrind, traceability, bdd-tests, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.native-tests.result }}" != "success" ] || \
+             [ "${{ needs.firmware-build.result }}" != "success" ] || \
+             [ "${{ needs.static-analysis.result }}" != "success" ] || \
+             [ "${{ needs.memory-sanitizers.result }}" != "success" ] || \
+             [ "${{ needs.valgrind.result }}" != "success" ] || \
+             [ "${{ needs.traceability.result }}" != "success" ] || \
+             [ "${{ needs.bdd-tests.result }}" != "success" ]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          # version-check only runs on tag pushes; fail if it ran and didn't succeed
+          if [ "${{ needs.version-check.result }}" != "success" ] && \
+             [ "${{ needs.version-check.result }}" != "skipped" ]; then
+            echo "Version check failed"
+            exit 1
+          fi
+          echo "All checks passed"

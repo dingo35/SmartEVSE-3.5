@@ -1,0 +1,42 @@
+name: Feature Request
+description: Suggest an idea for SmartEVSE
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: Is your feature request related to a problem? Link any related issues.
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or features you've considered.
+
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Hardware Version
+      options:
+        - SmartEVSE v3
+        - SmartEVSE v4
+        - Both
+        - Not applicable
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context or screenshots about the feature request.
