@@ -64,6 +64,61 @@ After updating the firmware, you can access the status page again using the norm
 [Configuration](docs/configuration.md)<br>
 [Operation](docs/operation.md)<br>
 [Building and Flashing the firmware](docs/building_flashing.md)<br>
+[REST API reference](docs/REST_API.md)<br>
+[Coding standards](CODING_STANDARDS.md)<br>
+[Contributing](CONTRIBUTING.md)<br>
+[AI agent instructions (Claude Code)](CLAUDE.md)<br>
+[AI agent instructions (GitHub Copilot)](.github/copilot-instructions.md)<br>
+
+# Testing & Quality
+
+The firmware is verified by a comprehensive native test suite that runs on the host
+(no hardware required) and an 8-job CI pipeline.
+
+| Metric | Value |
+|--------|-------|
+| Test suites | 19 |
+| Test scenarios | 410 |
+| Features covered | 31 |
+| Requirement traceability | 100% |
+
+**Test areas** include IEC 61851-1 state transitions, load balancing (single and
+multi-node), Smart/Solar operating modes, OCPP current limiting, MQTT command
+parsing, HTTP API validation, error handling & safety, modem/ISO15118 negotiation,
+phase switching, and end-to-end charging flows.
+
+Every test function carries Specification-by-Example (SbE) annotations (`@feature`,
+`@req`, `@scenario`, `@given`/`@when`/`@then`) that trace back to requirements. The
+CI pipeline generates two reports on every build:
+
+- **[Test Specification](SmartEVSE-3/test/native/test-specification.md)** — Markdown
+  document listing all scenarios grouped by feature, with requirement IDs and
+  Given/When/Then steps. Auto-regenerated and committed on every merge to master.
+- **[Traceability Report](SmartEVSE-3/test/native/traceability-report.html)** — Interactive HTML matrix
+  mapping requirements to test functions. Auto-regenerated and committed on every
+  merge to master. Also attached to every GitHub release.
+
+Additional CI artifacts:
+
+| Artifact | Description |
+|----------|-------------|
+| `coverage-report` | Line coverage for the state machine module (lcov) |
+| `traceability-reports` | HTML + Markdown specification reports |
+| `bdd-report` | BDD feature test results (pytest-bdd HTML) |
+
+To run the test suite locally:
+
+```bash
+cd SmartEVSE-3/test/native
+make clean test
+```
+
+To generate the specification and traceability reports locally:
+
+```bash
+cd SmartEVSE-3/test/native
+python3 scripts/extract_traceability.py --html traceability-report.html --markdown test-specification.md
+```
 
 # SmartEVSE App
 
