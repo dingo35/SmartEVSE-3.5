@@ -23,7 +23,7 @@ jobs:
         working-directory: SmartEVSE-3/test/native
       - name: Generate coverage report
         run: |
-          sudo apt-get -qq install -y lcov
+          sudo apt-get update -qq && sudo apt-get -qq install -y lcov
           lcov --capture --directory SmartEVSE-3/test/native/build --output-file coverage.info --include '*/evse_state_machine.c'
           lcov --list coverage.info
       - name: Upload coverage artifact
@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install cppcheck
-        run: sudo apt-get -qq install -y cppcheck
+        run: sudo apt-get update -qq && sudo apt-get -qq install -y cppcheck
       - name: Run cppcheck on state machine module
         run: |
           cppcheck --enable=warning,style,performance \
@@ -64,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install Valgrind
-        run: sudo apt-get -qq install -y valgrind
+        run: sudo apt-get update -qq && sudo apt-get -qq install -y valgrind
       - name: Build tests
         run: make clean all
         working-directory: SmartEVSE-3/test/native
