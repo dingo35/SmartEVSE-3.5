@@ -82,7 +82,7 @@ uint8_t GLCDbuf[512];                                                           
 uint8_t GLCDbuf2[1024];                                                         // Buffer that mirrors the complete LCD.    
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
-uint8_t MenuItems[MENU_EXIT];
+uint8_t MenuItems[MENU_EXIT + 4];
 uint8_t GridActive = 0;                                                         // When the CT's are used on Sensorbox2, it enables the GRID menu option.
 uint32_t ScrollTimer = 0;
 
@@ -420,11 +420,18 @@ unsigned char MenuNavCharArray(unsigned char Buttons, unsigned char Value, unsig
 }
 
 // uses buffer
-void GLCDHelp(void)                                                             // Display/Scroll helptext on LCD 
+void GLCDHelp(void)                                                             // Display/Scroll helptext on LCD
 {
   if (ScrollTimer + 5000 < millis()) {
-    unsigned int x = strlen(MenuStr[LCDNav].Desc);
-    GLCD_print_buf2_left(MenuStr[LCDNav].Desc + LCDpos);
+    const char *desc;
+    switch (LCDNav) {
+        case MENU_PRIO:         desc = "Priority strategy for load sharing"; break;
+        case MENU_ROTATION:     desc = "Rotation interval in minutes (0=off)"; break;
+        case MENU_IDLE_TIMEOUT: desc = "Idle timeout in seconds (anti-flap)"; break;
+        default:                desc = (LCDNav < MENU_EXIT) ? MenuStr[LCDNav].Desc : ""; break;
+    }
+    unsigned int x = strlen(desc);
+    GLCD_print_buf2_left(desc + LCDpos);
 
     if (LCDpos++ == 0) ScrollTimer = millis() - 4000;
     else if (LCDpos > (x - 10)) {
@@ -1107,6 +1114,21 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_WIFI:
         case MENU_SB2_WIFI:
             return StrWiFi[value];
+        case MENU_PRIO:
+            switch(value) {
+                case 0: return "Modbus Adr";
+                case 1: return "First Conn";
+                case 2: return "Last Conn";
+                default: return "";
+            }
+        case MENU_ROTATION:
+            if (value) {
+                snprintf(Str, sizeof(Str), "%u min", value);
+                return Str;
+            } else return StrDisabled;
+        case MENU_IDLE_TIMEOUT:
+            snprintf(Str, sizeof(Str), "%u s", value);
+            return Str;
         case MENU_EXIT:
             return StrExitMenu;
         default:
@@ -1193,6 +1215,11 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_SUMMAINS;
         if (getItemValue(MENU_SUMMAINS) != 0)
             MenuItems[m++] = MENU_SUMMAINSTIME;
+    }
+    if (LoadBl == 1) {
+        MenuItems[m++] = MENU_PRIO;
+        MenuItems[m++] = MENU_ROTATION;
+        MenuItems[m++] = MENU_IDLE_TIMEOUT;
     }
     MenuItems[m++] = MENU_LCDPIN;
     MenuItems[m++] = MENU_EXIT;
@@ -1321,6 +1348,20 @@ void GLCDMenu(uint8_t Buttons) {
                         } while (LoadBl >=2 && value == AUTO);
                         setItemValue(LCDNav, value);
                         break;
+                    case MENU_PRIO:
+                        value = MenuNavInt(Buttons, value, 0, 2);
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_ROTATION:
+                        do {
+                            value = MenuNavInt(Buttons, value, 0, 1440);
+                        } while (value > 0 && value < 30);
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_IDLE_TIMEOUT:
+                        value = MenuNavInt(Buttons, value, 30, 300);
+                        setItemValue(LCDNav, value);
+                        break;
                     default:
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         setItemValue(LCDNav, value);
@@ -1389,7 +1430,14 @@ void GLCDMenu(uint8_t Buttons) {
             if (ButtonRelease == 1) {
                 GLCD_print_menu(4, getMenuItemOption(LCDNav));                  // print Menu
                 if (LCDNav != 0) {
-                    GLCD_print_menu(2, MenuStr[LCDNav].LCD);                            // add navigation arrows on both sides
+                    const char *lcdLabel;
+                    switch (LCDNav) {
+                        case MENU_PRIO:         lcdLabel = "PRIORITY"; break;
+                        case MENU_ROTATION:     lcdLabel = "ROTATION"; break;
+                        case MENU_IDLE_TIMEOUT: lcdLabel = "IDLE TMO"; break;
+                        default:                lcdLabel = (LCDNav < MENU_EXIT) ? MenuStr[LCDNav].LCD : ""; break;
+                    }
+                    GLCD_print_menu(2, lcdLabel);                                           // add navigation arrows on both sides
                     // Bottom row of the GLCD
                     GLCD_buffer_clr();
                     snprintf(Str, sizeof(Str), "%i%cC", getItemValue(STATUS_TEMP), 0x0C);                              // ° Degree symbol

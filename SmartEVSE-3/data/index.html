@@ -190,6 +190,19 @@
               //$('[id=mode_override_current]').prop('disabled',false);
               $('[id=form_pwm] :input').prop('disabled',false);
             }
+            if(data.evse.loadbl == 1) {
+              $('.with_scheduling').show();
+              $('#prio_strategy').val(data.settings.prio_strategy);
+              $('#rotation_interval').val(data.settings.rotation_interval);
+              $('#idle_timeout').val(data.settings.idle_timeout);
+              if(data.schedule) {
+                let states = data.schedule.state.join(', ');
+                $('#schedule_state').text(states);
+                $('#rotation_timer').text(data.schedule.rotation_timer + 's');
+              }
+            } else {
+              $('.with_scheduling').hide();
+            }
             $('#car_connected').text(data.car_connected ? "Yes" : "No");
             $('#state').text(data.evse.state);
             last_evse_state_id = data.evse.last_state_id;
@@ -1071,6 +1084,18 @@
                       let val = $('#solar_stop_time').val();
                       $.post( "/settings?stop_timer=" + val);
                     }
+                    function setPrioStrategy() {
+                      let val = $('#prio_strategy').val();
+                      $.post( "/settings?prio_strategy=" + val);
+                    }
+                    function setRotationInterval() {
+                      let val = $('#rotation_interval').val();
+                      $.post( "/settings?rotation_interval=" + val);
+                    }
+                    function setIdleTimeout() {
+                      let val = $('#idle_timeout').val();
+                      $.post( "/settings?idle_timeout=" + val);
+                    }
 
                     /**
                      * Activates a mode by sending configuration data to the server.
@@ -1346,7 +1371,22 @@
                                         <input type="checkbox" id="cablelock" onclick="toggleCableLock()">
                                         <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
                                       </div>
-                                    </div> 
+                                    </div>
+                                    <div class="row no-gutters align-items-center with_scheduling" style="display:none;">
+                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
+                                        <div class="tooltip font-weight-bold text-gray-800">
+                                          Scheduling:
+                                          <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">Priority-based power scheduling for load balancing.<br>When power is insufficient, EVSEs are paused in priority order.</span>
+                                        </div>
+                                      </div>
+                                      <div class="col">
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="prio_strategy">Strategy</label><select onchange="setPrioStrategy()" id="prio_strategy" style="width:140px;" class="ui-corner-all ui-shadow-inset"><option value="0">Modbus Addr</option><option value="1">First Conn</option><option value="2">Last Conn</option></select></div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="rotation_interval">Rotation</label><input type="number" onchange="setRotationInterval()" id="rotation_interval" min="0" max="1440" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;min (0=off)</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="idle_timeout">Idle Timeout</label><input type="number" onchange="setIdleTimeout()" id="idle_timeout" min="30" max="300" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;s</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">State</label><span id="schedule_state" class="text-gray-800">-</span></div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">Rot. Timer</label><span id="rotation_timer" class="text-gray-800">-</span></div></div>
+                                      </div>
+                                    </div>
                                     <div class="row no-gutters align-items-center with_modem">
                                         <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
                                             Override PWM:
