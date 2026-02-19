@@ -27,6 +27,10 @@
 
 #include "main_c.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define CIRCULARBUFFER 256     // Must be a power of 2
 
 // USART Circular buffers
@@ -48,4 +52,9 @@ int buffer_write(CircularBuffer *cb, char *data, uint16_t size);
 void uart_start_dma_transfer(void);
 int _write(int fd, const char *buffer, int size);
 void delay(uint32_t ms);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

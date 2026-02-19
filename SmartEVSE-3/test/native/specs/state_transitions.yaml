@@ -1,0 +1,575 @@
+# SmartEVSE-3 IEC 61851-1 State Transition Specification
+# This file defines all valid state transitions and maps them to tests.
+#
+# Phase 2 of the Specification by Example implementation.
+# Each transition is identified, linked to the IEC 61851-1 requirement it
+# satisfies, and mapped to one or more test functions that verify it.
+#
+# States (from evse_ctx.h):
+#   STATE_A  (0)  - Disconnected
+#   STATE_B  (1)  - Connected, not charging
+#   STATE_C  (2)  - Charging
+#   STATE_D  (3)  - Ventilation required
+#   STATE_COMM_B     (4)  - Node requesting B permission
+#   STATE_COMM_B_OK  (5)  - Node B permission granted
+#   STATE_COMM_C     (6)  - Node requesting C permission
+#   STATE_COMM_C_OK  (7)  - Node C permission granted
+#   STATE_ACTSTART   (8)  - Activation mode start
+#   STATE_B1  (9)  - Waiting (connected but errors/delay)
+#   STATE_C1 (10)  - Charging suspended
+#   STATE_MODEM_REQUEST (11) - Modem negotiation request
+#   STATE_MODEM_WAIT    (12) - Modem waiting for response
+#   STATE_MODEM_DONE    (13) - Modem negotiation complete
+#   STATE_MODEM_DENIED  (14) - Modem denied
+
+metadata:
+  standard: "IEC 61851-1"
+  version: "1.0"
+  description: "EVSE state machine transition specification for SmartEVSE-3"
+  generated: "2026-02-14"
+
+# ---------------------------------------------------------------------------
+#  Core pilot-driven transitions (IEC 61851-1 state machine)
+# ---------------------------------------------------------------------------
+transitions:
+
+  # ==========================================================================
+  #  FROM STATE_A (Disconnected)
+  # ==========================================================================
+
+  - id: "ST-001"
+    from: "STATE_A"
+    to: "STATE_B"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == ON"
+      - "ErrorFlags == 0 (no errors)"
+      - "ChargeDelay == 0 (no delay)"
+      - "ModemStage == 1 (modem authenticated or skipped)"
+    requirement: "REQ-IEC61851-A-to-B"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_to_B_on_9V_when_ready"
+    safety_critical: true
+    description: "Vehicle plugs in and charger transitions to connected state"
+
+  - id: "ST-002"
+    from: "STATE_A"
+    to: "STATE_B1"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == ON"
+      - "ErrorFlags != 0 (errors present)"
+    requirement: "REQ-IEC61851-A-to-B1-error"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_to_B1_when_errors"
+    safety_critical: true
+    description: "Vehicle plugs in but errors divert to waiting state B1"
+
+  - id: "ST-003"
+    from: "STATE_A"
+    to: "STATE_B1"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == ON"
+      - "ChargeDelay > 0"
+    requirement: "REQ-IEC61851-A-to-B1-delay"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_to_B1_when_charge_delay"
+    safety_critical: false
+    description: "Vehicle plugs in but charge delay diverts to waiting state B1"
+
+  - id: "ST-004"
+    from: "STATE_A"
+    to: "STATE_MODEM_REQUEST"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == ON"
+      - "ModemStage == 0 (modem not authenticated)"
+    requirement: "REQ-IEC61851-A-to-MODEM"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_to_modem_when_modem_stage_0"
+    safety_critical: false
+    description: "Vehicle plugs in but ISO 15118 modem negotiation required first"
+
+  - id: "ST-005"
+    from: "STATE_A"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "No vehicle connected (12V = no load on pilot)"
+    requirement: "REQ-IEC61851-A-stays-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_stays_A_on_12V"
+    safety_critical: false
+    description: "No vehicle present; state remains disconnected"
+
+  - id: "ST-006"
+    from: "STATE_A"
+    to: "STATE_A"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == OFF (not authorized)"
+    requirement: "REQ-IEC61851-A-stays-A-noauth"
+    test_file: "test_state_transitions.c"
+    test_function: "test_A_stays_A_when_access_off"
+    safety_critical: true
+    description: "Vehicle plugs in but access denied; state stays disconnected"
+
+  # ==========================================================================
+  #  FROM STATE_B (Connected, not charging)
+  # ==========================================================================
+
+  - id: "ST-007"
+    from: "STATE_B"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected (pilot returns to 12V)"
+    requirement: "REQ-IEC61851-B-to-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_B_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects while connected; return to disconnected"
+
+  - id: "ST-008"
+    from: "STATE_B"
+    to: "STATE_C"
+    trigger: "PILOT_6V"
+    conditions:
+      - "DiodeCheck == 1 (diode check passed)"
+      - "6V sustained for >= 500ms (debounce)"
+      - "ChargeCurrent > 0"
+      - "No errors"
+      - "Standalone mode (LoadBl == 0 or LoadBl == 1)"
+    requirement: "REQ-IEC61851-B-to-C"
+    test_file: "test_state_transitions.c"
+    test_function: "test_B_to_C_on_6V_with_diode_check"
+    safety_critical: true
+    description: "Vehicle requests charge after diode check; contactors close"
+
+  - id: "ST-009"
+    from: "STATE_B"
+    to: "STATE_ACTSTART"
+    trigger: "PILOT_9V"
+    conditions:
+      - "ActivationMode == 0 (activation required)"
+    requirement: "REQ-IEC61851-B-to-ACTSTART"
+    test_file: "test_state_transitions.c"
+    test_function: "test_activation_mode_triggers_actstart"
+    safety_critical: false
+    description: "Activation mode required; transition to activation start"
+
+  - id: "ST-010"
+    from: "STATE_B"
+    to: "STATE_COMM_C"
+    trigger: "PILOT_6V"
+    conditions:
+      - "6V sustained for >= 500ms (debounce)"
+      - "DiodeCheck == 1"
+      - "LoadBl >= 2 (node mode)"
+    requirement: "REQ-IEC61851-B-to-COMM-C-node"
+    test_file: "test_load_balancing.c"
+    test_function: "test_node_requests_comm_c"
+    safety_critical: false
+    description: "Node requests charging permission from master via COMM_C"
+
+  # ==========================================================================
+  #  FROM STATE_C (Charging)
+  # ==========================================================================
+
+  - id: "ST-011"
+    from: "STATE_C"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected (pilot returns to 12V)"
+    requirement: "REQ-IEC61851-C-to-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects during charging; contactors open immediately"
+
+  - id: "ST-012"
+    from: "STATE_C"
+    to: "STATE_B"
+    trigger: "PILOT_9V"
+    conditions:
+      - "Vehicle stops requesting charge (pilot returns to 9V)"
+    requirement: "REQ-IEC61851-C-to-B"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C_to_B_on_9V"
+    safety_critical: true
+    description: "Vehicle stops charging; revert to connected state, DiodeCheck reset"
+
+  - id: "ST-013"
+    from: "STATE_C"
+    to: "STATE_B"
+    trigger: "PILOT_SHORT"
+    conditions:
+      - "PILOT_SHORT sustained for >= 500ms (debounce)"
+    requirement: "REQ-IEC61851-C-to-B-short"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C_to_B_on_pilot_short"
+    safety_critical: true
+    description: "Pilot short detected during charging; revert to connected state"
+
+  # ==========================================================================
+  #  FROM STATE_C1 (Charging suspended)
+  # ==========================================================================
+
+  - id: "ST-014"
+    from: "STATE_C1"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected (pilot returns to 12V)"
+    requirement: "REQ-IEC61851-C1-to-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C1_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects while charging is suspended"
+
+  - id: "ST-015"
+    from: "STATE_C1"
+    to: "STATE_B1"
+    trigger: "PILOT_9V"
+    conditions:
+      - "Vehicle reverts to 9V while suspended"
+    requirement: "REQ-IEC61851-C1-to-B1"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C1_to_B1_on_9V"
+    safety_critical: false
+    description: "Vehicle stops requesting charge while suspended; go to waiting"
+
+  - id: "ST-016"
+    from: "STATE_C1"
+    to: "STATE_B1"
+    trigger: "C1Timer expiry"
+    conditions:
+      - "C1Timer counts down to 0 (6 seconds via tick_1s)"
+    requirement: "REQ-IEC61851-C1-timer-to-B1"
+    test_file: "test_state_transitions.c"
+    test_function: "test_C1_timer_transitions_to_B1"
+    safety_critical: true
+    description: "C1 suspension timer expires; contactors open, transition to B1"
+
+  # ==========================================================================
+  #  FROM STATE_B1 (Waiting / connected with errors or delay)
+  # ==========================================================================
+
+  - id: "ST-017"
+    from: "STATE_B1"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "PilotDisconnected == false (pilot disconnect guard inactive)"
+      - "Vehicle disconnected (pilot returns to 12V)"
+    requirement: "REQ-IEC61851-B1-to-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_B1_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects while in waiting state"
+
+  # ==========================================================================
+  #  FROM STATE_MODEM_REQUEST (Modem negotiation request)
+  # ==========================================================================
+
+  - id: "ST-018"
+    from: "STATE_MODEM_REQUEST"
+    to: "STATE_MODEM_WAIT"
+    trigger: "Timer expiry (tick_1s)"
+    conditions:
+      - "ToModemWaitStateTimer counts down to 0"
+    requirement: "REQ-ISO15118-REQUEST-to-WAIT"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_request_to_wait_on_timer"
+    safety_critical: false
+    description: "Modem request timer expires; begin waiting for modem response"
+
+  - id: "ST-019"
+    from: "STATE_MODEM_REQUEST"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected during modem negotiation"
+    requirement: "REQ-ISO15118-REQUEST-to-A"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_request_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects during modem request phase"
+
+  # ==========================================================================
+  #  FROM STATE_MODEM_WAIT (Modem waiting for response)
+  # ==========================================================================
+
+  - id: "ST-020"
+    from: "STATE_MODEM_WAIT"
+    to: "STATE_MODEM_DONE"
+    trigger: "60s timeout (tick_1s)"
+    conditions:
+      - "ToModemDoneStateTimer counts down from 60 to 0"
+    requirement: "REQ-ISO15118-WAIT-to-DONE"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_wait_to_done_after_timeout"
+    safety_critical: false
+    description: "Modem wait timer expires; negotiation assumed complete"
+
+  - id: "ST-021"
+    from: "STATE_MODEM_WAIT"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected while waiting for modem"
+    requirement: "REQ-ISO15118-WAIT-to-A"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_wait_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects during modem wait phase"
+
+  # ==========================================================================
+  #  FROM STATE_MODEM_DONE (Modem negotiation complete)
+  # ==========================================================================
+
+  - id: "ST-022"
+    from: "STATE_MODEM_DONE"
+    to: "STATE_B"
+    trigger: "5s timer (tick_1s)"
+    conditions:
+      - "LeaveModemDoneStateTimer counts down from 5 to 0"
+      - "ModemStage set to 1 (authenticated)"
+    requirement: "REQ-ISO15118-DONE-to-B"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_done_to_B_after_timer"
+    safety_critical: false
+    description: "Modem done timer expires; proceed to connected state with modem authenticated"
+
+  - id: "ST-023"
+    from: "STATE_MODEM_DONE"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected after modem negotiation"
+    requirement: "REQ-ISO15118-DONE-to-A"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_done_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects after modem negotiation completes"
+
+  # ==========================================================================
+  #  FROM STATE_MODEM_DENIED (Modem denied)
+  # ==========================================================================
+
+  - id: "ST-024"
+    from: "STATE_MODEM_DENIED"
+    to: "STATE_A"
+    trigger: "Timer expiry (tick_1s)"
+    conditions:
+      - "LeaveModemDeniedStateTimer counts down to 0"
+    requirement: "REQ-ISO15118-DENIED-to-A"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_denied_to_A_after_timer"
+    safety_critical: false
+    description: "Modem denied timer expires; return to disconnected"
+
+  - id: "ST-025"
+    from: "STATE_MODEM_DENIED"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected after modem denial"
+    requirement: "REQ-ISO15118-DENIED-to-A-disconnect"
+    test_file: "test_modem_states.c"
+    test_function: "test_modem_denied_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects after modem is denied"
+
+  # ==========================================================================
+  #  FROM STATE_ACTSTART (Activation mode start)
+  # ==========================================================================
+
+  - id: "ST-026"
+    from: "STATE_ACTSTART"
+    to: "STATE_A"
+    trigger: "PILOT_12V"
+    conditions:
+      - "Vehicle disconnected during activation"
+    requirement: "REQ-IEC61851-ACTSTART-to-A"
+    test_file: "test_state_transitions.c"
+    test_function: "test_actstart_to_A_on_disconnect"
+    safety_critical: true
+    description: "Vehicle disconnects during activation start"
+
+  - id: "ST-027"
+    from: "STATE_ACTSTART"
+    to: "STATE_B"
+    trigger: "ActivationTimer == 0"
+    conditions:
+      - "ActivationTimer counts down to 0"
+      - "Pilot is not 12V (vehicle still connected)"
+      - "ActivationMode set to 255 (activated)"
+    requirement: "REQ-IEC61851-ACTSTART-to-B"
+    test_file: "test_state_transitions.c"
+    test_function: "test_actstart_returns_to_B_when_timer_expires"
+    safety_critical: false
+    description: "Activation timer expires; proceed to connected state"
+
+  # ==========================================================================
+  #  FROM STATE_COMM_B_OK (Node B permission granted)
+  # ==========================================================================
+
+  - id: "ST-028"
+    from: "STATE_COMM_B_OK"
+    to: "STATE_B"
+    trigger: "PILOT_9V"
+    conditions:
+      - "Master has granted B permission to this node"
+      - "ActivationMode set to 30"
+    requirement: "REQ-IEC61851-COMM-B-OK-to-B"
+    test_file: "test_state_transitions.c"
+    test_function: "test_comm_b_ok_transitions_to_B"
+    safety_critical: false
+    description: "Node receives B permission from master; transition to connected"
+
+  # ==========================================================================
+  #  FROM STATE_COMM_C_OK (Node C permission granted)
+  # ==========================================================================
+
+  - id: "ST-029"
+    from: "STATE_COMM_C_OK"
+    to: "STATE_C"
+    trigger: "PILOT_6V"
+    conditions:
+      - "Master has granted C permission to this node"
+    requirement: "REQ-IEC61851-COMM-C-OK-to-C"
+    test_file: "test_state_transitions.c"
+    test_function: "test_comm_c_ok_transitions_to_C"
+    safety_critical: true
+    description: "Node receives C permission from master; contactors close, begin charging"
+
+  # ==========================================================================
+  #  FROM STATE_A (Node mode)
+  # ==========================================================================
+
+  - id: "ST-030"
+    from: "STATE_A"
+    to: "STATE_COMM_B"
+    trigger: "PILOT_9V"
+    conditions:
+      - "AccessStatus == ON"
+      - "LoadBl >= 2 (node mode)"
+      - "ModemStage == 1"
+    requirement: "REQ-IEC61851-A-to-COMM-B-node"
+    test_file: "test_state_transitions.c"
+    test_function: "test_node_sends_comm_b"
+    safety_critical: false
+    description: "Node detects vehicle and requests B permission from master"
+
+  # ==========================================================================
+  #  Access-triggered transitions (setAccess)
+  # ==========================================================================
+
+  - id: "ST-031"
+    from: "STATE_C"
+    to: "STATE_C1"
+    trigger: "setAccess(OFF)"
+    conditions:
+      - "Access revoked while charging"
+    requirement: "REQ-ACCESS-OFF-from-C"
+    test_file: "test_authorization.c"
+    test_function: "test_set_access_off_from_C_goes_C1"
+    safety_critical: true
+    description: "Access turned OFF during charging; suspend charging gracefully"
+
+  - id: "ST-032"
+    from: "STATE_C"
+    to: "STATE_C1"
+    trigger: "setAccess(PAUSE)"
+    conditions:
+      - "Access paused while charging"
+    requirement: "REQ-ACCESS-PAUSE-from-C"
+    test_file: "test_authorization.c"
+    test_function: "test_set_access_pause_from_C_goes_C1"
+    safety_critical: true
+    description: "Access paused during charging; suspend charging gracefully"
+
+  - id: "ST-033"
+    from: "STATE_B"
+    to: "STATE_B1"
+    trigger: "setAccess(OFF)"
+    conditions:
+      - "Access revoked while connected (not charging)"
+    requirement: "REQ-ACCESS-OFF-from-B"
+    test_file: "test_authorization.c"
+    test_function: "test_set_access_off_from_B_goes_B1"
+    safety_critical: false
+    description: "Access turned OFF while connected; go to waiting state"
+
+  - id: "ST-034"
+    from: "STATE_MODEM_REQUEST"
+    to: "STATE_B1"
+    trigger: "setAccess(OFF)"
+    conditions:
+      - "Access revoked during modem request phase"
+    requirement: "REQ-ACCESS-OFF-from-MODEM-REQ"
+    test_file: "test_authorization.c"
+    test_function: "test_set_access_off_from_modem_request_goes_B1"
+    safety_critical: false
+    description: "Access turned OFF during modem request; abort and go to waiting"
+
+  - id: "ST-035"
+    from: "STATE_MODEM_WAIT"
+    to: "STATE_B1"
+    trigger: "setAccess(OFF)"
+    conditions:
+      - "Access revoked during modem wait phase"
+    requirement: "REQ-ACCESS-OFF-from-MODEM-WAIT"
+    test_file: "test_authorization.c"
+    test_function: "test_set_access_off_from_modem_wait_goes_B1"
+    safety_critical: false
+    description: "Access turned OFF during modem wait; abort and go to waiting"
+
+  # ==========================================================================
+  #  Power-unavailable transitions (set_power_unavailable)
+  # ==========================================================================
+
+  - id: "ST-036"
+    from: "STATE_C"
+    to: "STATE_C1"
+    trigger: "Power unavailable"
+    conditions:
+      - "Insufficient current available (LESS_6A or overload)"
+    requirement: "REQ-POWER-UNAVAIL-from-C"
+    test_file: "test_error_handling.c"
+    test_function: "test_power_unavailable_from_C_goes_C1"
+    safety_critical: true
+    description: "Power becomes unavailable during charging; suspend gracefully"
+
+  - id: "ST-037"
+    from: "STATE_B"
+    to: "STATE_B1"
+    trigger: "Power unavailable"
+    conditions:
+      - "Insufficient current available while connected"
+    requirement: "REQ-POWER-UNAVAIL-from-B"
+    test_file: "test_error_handling.c"
+    test_function: "test_power_unavailable_from_B_goes_B1"
+    safety_critical: false
+    description: "Power becomes unavailable while connected; go to waiting"
+
+  # ==========================================================================
+  #  Node B -> COMM_C (duplicate entry from tick_10ms perspective)
+  # ==========================================================================
+
+  - id: "ST-038"
+    from: "STATE_B"
+    to: "STATE_COMM_C"
+    trigger: "PILOT_6V"
+    conditions:
+      - "6V sustained for >= 500ms (debounce)"
+      - "DiodeCheck == 1"
+      - "LoadBl >= 2 (node mode)"
+    requirement: "REQ-IEC61851-B-to-COMM-C-node-tick10"
+    test_file: "test_tick_10ms.c"
+    test_function: "test_node_b_to_comm_c"
+    safety_critical: false
+    description: "Node in STATE_B detects 6V charge request; requests C permission (tick_10ms test)"

@@ -291,6 +291,11 @@ void setPilot(bool On);
 #define MENU_ON 44                                                              // so access bit is set and charging starts when pressing > button 2 seconds
 #define MENU_EXIT 45
 
+// Priority scheduling (Master only, visible when LoadBl=1)
+#define MENU_PRIO           46                                                  // Priority strategy (0:Modbus Address / 1:First Connected / 2:Last Connected)
+#define MENU_ROTATION       47                                                  // Rotation interval (minutes, 0=disabled)
+#define MENU_IDLE_TIMEOUT   48                                                  // Idle timeout (seconds)
+
 #define MENU_STATE 50
 
 class Button {
