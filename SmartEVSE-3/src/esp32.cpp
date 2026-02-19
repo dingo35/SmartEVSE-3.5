@@ -50,6 +50,9 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "OneWireESP32.h"
 #include "modbus.h"
 #include "meter.h"
+#include "evse_bridge.h"
+#include "mqtt_parser.h"
+#include "http_api.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -127,6 +130,10 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 hw_timer_t * timerA = NULL;
 Preferences preferences;
 
+#if DIAG_LOG
+volatile uint32_t cpPulseCount = 0;  // Count CP rising edge interrupts
+#endif
+
 // delayed write settings - reduces flash wear by combining multiple writes into one
 static bool SettingsDirty = false;                      // Flag indicating settings need to be written
 static unsigned long LastSettingsWriteTime = 0;         // millis() timestamp of last write
@@ -151,6 +158,9 @@ struct SettingsCache {
     char RequiredEVCCID[32];
 #endif
     uint16_t maxTemp;
+    uint8_t PrioStrategy;
+    uint16_t RotationInterval;
+    uint16_t IdleTimeout;
     uint8_t AutoUpdate, LCDlock, CableLock;
     uint16_t LCDPin;
     bool MQTTSmartServer;
@@ -247,6 +257,12 @@ extern EnableC2_t EnableC2;
 extern uint8_t RFIDReader;
 
 extern uint16_t maxTemp;
+extern uint8_t PrioStrategy;
+extern uint16_t RotationInterval;
+extern uint16_t IdleTimeout;
+extern uint32_t ConnectedTime[];
+extern uint8_t ScheduleState[];
+extern uint16_t RotationTimer;
 
 extern uint16_t MaxCapacity;                                                       // Cable limit (A) (limited by the wire in the charge cable, set automatically, or manually if Config=Fixed Cable)
 extern uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
@@ -383,8 +399,11 @@ uint16_t IRAM_ATTR local_adc1_read(int channel) {
 void IRAM_ATTR onCPpulse() {
 
   // reset timer, these functions are in IRAM !
-  timerWrite(timerA, 0);                                        
+  timerWrite(timerA, 0);
   timerAlarmEnable(timerA);
+#if DIAG_LOG
+  cpPulseCount++;
+#endif
 }
 
 
@@ -582,210 +601,181 @@ void writeMqttCaCert(const String& cert) {
 
 #if MQTT
 void mqtt_receive_callback(const String topic, const String payload) {
-    if (topic == MQTTprefix + "/Set/Mode") {
-        if (payload == "Off") {
-#if SMARTEVSE_VERSION >=40 //v4            
-            Serial1.printf("@ResetModemTimers\n");
-#endif            
-            setAccess(OFF);
-        } else if (payload == "Normal") {
-            setMode(MODE_NORMAL);
-        } else if (payload == "Solar") {
-            setOverrideCurrent(0);
-            setMode(MODE_SOLAR);
-        } else if (payload == "Smart") {
-            setMode(MODE_SMART);
-        } else if (payload == "Pause") {
-            setAccess(PAUSE);
-        }
-    } else if (topic == MQTTprefix + "/Set/CustomButton") {
-        if (payload == "On") {
-            CustomButton = true;
-        } else {
-            CustomButton = false;
-        }
-    } else if (topic == MQTTprefix + "/Set/CurrentOverride") {
-        uint16_t RequestedCurrent = payload.toInt();
-        if (RequestedCurrent == 0) {
-            setOverrideCurrent(0);
-        } else if (LoadBl < 2 && (Mode == MODE_NORMAL || Mode == MODE_SMART)) { // OverrideCurrent not possible on Slave
-            if (RequestedCurrent >= (MinCurrent * 10) && RequestedCurrent <= (MaxCurrent * 10)) {
-                setOverrideCurrent(RequestedCurrent);
+    mqtt_command_t cmd;
+    if (!mqtt_parse_command(MQTTprefix.c_str(), topic.c_str(), payload.c_str(), &cmd))
+        return;
+
+    uint8_t *color_target = NULL; // used by MQTT_CMD_COLOR
+
+    switch (cmd.cmd) {
+        case MQTT_CMD_MODE:
+            if (cmd.mode == MQTT_MODE_OFF) {
+#if SMARTEVSE_VERSION >= 40
+                Serial1.printf("@ResetModemTimers\n");
+#endif
+                setAccess(OFF);
+            } else if (cmd.mode == MQTT_MODE_PAUSE) {
+                setAccess(PAUSE);
+            } else if (cmd.mode == MQTT_MODE_SOLAR) {
+                setOverrideCurrent(0);
+                setMode(cmd.mode);
+            } else {
+                setMode(cmd.mode);
             }
-        }
-    } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
-        uint16_t RequestedCurrent = payload.toInt();
-        if (RequestedCurrent == 0) {
-            MaxSumMains = 0;
-        } else if (RequestedCurrent == 0 || (RequestedCurrent >= 10 && RequestedCurrent <= 600)) {
-                MaxSumMains = RequestedCurrent;
-        }
-    } else if (topic == MQTTprefix + "/Set/CPPWMOverride") {
-        int pwm = payload.toInt();
-        if (pwm == -1) {
-            SetCPDuty(1024);
-            PILOT_CONNECTED;
-            CPDutyOverride = false;
-        } else if (pwm == 0) {
-            SetCPDuty(0);
-            PILOT_DISCONNECTED;
-            CPDutyOverride = true;
-        } else if (pwm <= 1024) {
-            SetCPDuty(pwm);
-            PILOT_CONNECTED;
-            CPDutyOverride = true;
-        }
-    } else if (topic == MQTTprefix + "/Set/MainsMeter") {
-        if (MainsMeter.Type != EM_API || LoadBl >= 2)
-            return;
+            break;
 
-        int32_t L1, L2, L3;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+        case MQTT_CMD_CUSTOM_BUTTON:
+            CustomButton = cmd.custom_button;
+            break;
 
-        // MainsMeter can measure -200A to +200A per phase
-        if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-#if SMARTEVSE_VERSION < 40 //v3
+        case MQTT_CMD_CURRENT_OVERRIDE:
+            if (cmd.current_override == 0) {
+                setOverrideCurrent(0);
+            } else if (LoadBl < 2 && (Mode == MODE_NORMAL || Mode == MODE_SMART)) {
+                if (cmd.current_override >= (MinCurrent * 10) && cmd.current_override <= (MaxCurrent * 10)) {
+                    setOverrideCurrent(cmd.current_override);
+                }
+            }
+            break;
+
+        case MQTT_CMD_MAX_SUM_MAINS:
+            if (LoadBl < 2)
+                MaxSumMains = cmd.max_sum_mains;
+            break;
+
+        case MQTT_CMD_CP_PWM_OVERRIDE:
+            if (cmd.cp_pwm == -1) {
+                SetCPDuty(1024);
+                PILOT_CONNECTED;
+                CPDutyOverride = false;
+            } else if (cmd.cp_pwm == 0) {
+                SetCPDuty(0);
+                PILOT_DISCONNECTED;
+                CPDutyOverride = true;
+            } else {
+                SetCPDuty(cmd.cp_pwm);
+                PILOT_CONNECTED;
+                CPDutyOverride = true;
+            }
+            break;
+
+        case MQTT_CMD_MAINS_METER:
+            if (MainsMeter.Type != EM_API || LoadBl >= 2)
+                return;
+#if SMARTEVSE_VERSION < 40
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
-                MainsMeter.Irms[0] = L1;
-                MainsMeter.Irms[1] = L2;
-                MainsMeter.Irms[2] = L3;
+                MainsMeter.Irms[0] = cmd.mains_meter.L1;
+                MainsMeter.Irms[1] = cmd.mains_meter.L2;
+                MainsMeter.Irms[2] = cmd.mains_meter.L3;
                 CalcIsum();
             }
-#else //v4
-            Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#else
+            Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address,
+                           (int)cmd.mains_meter.L1, (int)cmd.mains_meter.L2, (int)cmd.mains_meter.L3);
 #endif
-        }
-    } else if (topic == MQTTprefix + "/Set/EVMeter") {
-        if (EVMeter.Type != EM_API)
-            return;
+            break;
 
-        int32_t L1, L2, L3, W, WH;
-        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
-
-        // We expect 5 values (and accept -1 for unknown values)
-        if (n == 5) {
-            if ((L1 > -1 && L1 < 1000) && (L2 > -1 && L2 < 1000) && (L3 > -1 && L3 < 1000)) {
-#if SMARTEVSE_VERSION < 40 //v3
-                // RMS currents
-                EVMeter.Irms[0] = L1;
-                EVMeter.Irms[1] = L2;
-                EVMeter.Irms[2] = L3;
+        case MQTT_CMD_EV_METER:
+            if (EVMeter.Type != EM_API)
+                return;
+            if ((cmd.ev_meter.L1 > -1 && cmd.ev_meter.L1 < 1000) &&
+                (cmd.ev_meter.L2 > -1 && cmd.ev_meter.L2 < 1000) &&
+                (cmd.ev_meter.L3 > -1 && cmd.ev_meter.L3 < 1000)) {
+#if SMARTEVSE_VERSION < 40
+                EVMeter.Irms[0] = cmd.ev_meter.L1;
+                EVMeter.Irms[1] = cmd.ev_meter.L2;
+                EVMeter.Irms[2] = cmd.ev_meter.L3;
                 EVMeter.CalcImeasured();
                 EVMeter.Timeout = COMM_EVTIMEOUT;
-#else //v4
-                Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#else
+                Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address,
+                               (int)cmd.ev_meter.L1, (int)cmd.ev_meter.L2, (int)cmd.ev_meter.L3);
 #endif
             }
-
-            if (W > -1) {
-                // Power measurement
-#if SMARTEVSE_VERSION < 40 //v3
-                EVMeter.PowerMeasured = W;
-#else //v4
-                Serial1.printf("@PowerMeasured:%03u,%d\n", EVMeter.Address, W);
+            if (cmd.ev_meter.W > -1) {
+#if SMARTEVSE_VERSION < 40
+                EVMeter.PowerMeasured = cmd.ev_meter.W;
+#else
+                Serial1.printf("@PowerMeasured:%03u,%d\n", EVMeter.Address, (int)cmd.ev_meter.W);
 #endif
             }
-
-            if (WH > -1) {
-                // Energy measurement;  //we dont send the energies to CH32 because they are not used there
-                EVMeter.Import_active_energy = WH;
+            if (cmd.ev_meter.Wh > -1) {
+                EVMeter.Import_active_energy = cmd.ev_meter.Wh;
                 EVMeter.Export_active_energy = 0;
                 EVMeter.UpdateEnergies();
             }
-        }
-    } else if (topic == MQTTprefix + "/Set/HomeBatteryCurrent") {
-        if (LoadBl >= 2)
-            return;
-        homeBatteryCurrent = payload.toInt();
-        homeBatteryLastUpdate = time(NULL);
+            break;
+
+        case MQTT_CMD_HOME_BATTERY_CURRENT:
+            if (LoadBl >= 2)
+                return;
+            homeBatteryCurrent = cmd.home_battery_current;
+            homeBatteryLastUpdate = time(NULL);
 #if SMARTEVSE_VERSION >= 40
-        SEND_TO_CH32(homeBatteryCurrent); //we set homeBatteryLastUpdate on CH32 on receipt
+            SEND_TO_CH32(homeBatteryCurrent);
 #endif
+            break;
+
+        case MQTT_CMD_REQUIRED_EVCCID:
 #if MODEM
-    } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
-        strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
-        Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
-        request_write_settings();
+            strncpy(RequiredEVCCID, cmd.evccid, sizeof(RequiredEVCCID));
+            Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
+            request_write_settings();
 #endif
-    } else if (topic == MQTTprefix + "/Set/ColorOff") {
-        int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
+            break;
 
-        // R,G,B is between 0..255
-        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-            ColorOff[0] = R;
-            ColorOff[1] = G;
-            ColorOff[2] = B;
-        }
-    } else if (topic == MQTTprefix + "/Set/ColorNormal") {
-        int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
-
-        // R,G,B is between 0..255
-        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-            ColorNormal[0] = R;
-            ColorNormal[1] = G;
-            ColorNormal[2] = B;
-        }
-    } else if (topic == MQTTprefix + "/Set/ColorSmart") {
-        int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
-
-        // R,G,B is between 0..255
-        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-            ColorSmart[0] = R;
-            ColorSmart[1] = G;
-            ColorSmart[2] = B;
-        }
-    } else if (topic == MQTTprefix + "/Set/ColorSolar") {
-        int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
-
-        // R,G,B is between 0..255
-        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-            ColorSolar[0] = R;
-            ColorSolar[1] = G;
-            ColorSolar[2] = B;
-        }
-    } else if (topic == MQTTprefix + "/Set/ColorCustom") {
-        int32_t R, G, B;
-        int n = sscanf(payload.c_str(), "%d,%d,%d", &R, &G, &B);
-
-        // R,G,B is between 0..255
-        if (n == 3 && (R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-            ColorCustom[0] = R;
-            ColorCustom[1] = G;
-            ColorCustom[2] = B;
-        }
-    } else if (topic == MQTTprefix + "/Set/CableLock") {
-        if (payload == "1") {
-            CableLock = 1;
-        } else {
-            CableLock = 0;
-        }
-        request_write_settings();
-    } else if (topic == MQTTprefix + "/Set/EnableC2") {
-        // for backwards compatibility we accept both 0-4 as string argument:
-        //{ "Not present", "Always Off", "Solar Off", "Always On", "Auto" }
-        uint8_t value;
-        if (isdigit(payload[0])) {
-            value = payload.toInt();
-            if (value <=4) { //value is always >=0 because unsigned
-                EnableC2 = (EnableC2_t) value;
+        case MQTT_CMD_COLOR:
+            switch (cmd.color.index) {
+                case MQTT_COLOR_OFF:    color_target = ColorOff;    break;
+                case MQTT_COLOR_NORMAL: color_target = ColorNormal; break;
+                case MQTT_COLOR_SMART:  color_target = ColorSmart;  break;
+                case MQTT_COLOR_SOLAR:  color_target = ColorSolar;  break;
+                case MQTT_COLOR_CUSTOM: color_target = ColorCustom; break;
+                default: return;
             }
-        } else {
-            bool found=false;
-            for (value=0; value<5; value++)
-                if (payload == StrEnableC2[value]) {
-                    found = true;
-                    break;
-                }
-            if (found)
-                EnableC2 = (EnableC2_t) value;
-        }
-        request_write_settings();
-    } else if (topic == MQTTprefix + "/Set/RFID") {
+            color_target[0] = cmd.color.r;
+            color_target[1] = cmd.color.g;
+            color_target[2] = cmd.color.b;
+            break;
+
+        case MQTT_CMD_CABLE_LOCK:
+            CableLock = cmd.cable_lock;
+            request_write_settings();
+            break;
+
+        case MQTT_CMD_ENABLE_C2:
+            EnableC2 = (EnableC2_t)cmd.enable_c2;
+            request_write_settings();
+            break;
+
+        case MQTT_CMD_PRIO_STRATEGY:
+            if (LoadBl < 2) {
+                setItemValue(MENU_PRIO, cmd.prio_strategy);
+                request_write_settings();
+            }
+            break;
+
+        case MQTT_CMD_ROTATION_INTERVAL:
+            if (LoadBl < 2) {
+                setItemValue(MENU_ROTATION, cmd.rotation_interval);
+                request_write_settings();
+            }
+            break;
+
+        case MQTT_CMD_IDLE_TIMEOUT:
+            if (LoadBl < 2) {
+                setItemValue(MENU_IDLE_TIMEOUT, cmd.idle_timeout);
+                request_write_settings();
+            }
+            break;
+
+        default:
+            return;
+    }
+
+    // Handle RFID via MQTT (not part of mqtt_parser — uses Arduino String for hex parsing)
+    if (topic == MQTTprefix + "/Set/RFID") {
         // Accept RFID card via MQTT to start/stop session
         // Payload should be hex string: 12 or 14 characters for 6 or 7 byte UID
         // Examples: "010203040506" (6 bytes) or "01020304050607" (7 bytes)
@@ -845,11 +835,11 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
 
 //print RFID in hex format
-void printRFID(char *buf) {
+void printRFID(char *buf, size_t bufsize) {
     if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-        sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+        snprintf(buf, bufsize, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
     } else {
-        sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+        snprintf(buf, bufsize, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
     }
 }
 
@@ -986,6 +976,25 @@ void SetupMQTTClient() {
     optional_payload = MQTTclient.jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
     optional_payload += String(R"(, "options" : ["0", "1"])");
     MQTTclient.announce("Cable Lock", "select", optional_payload);
+
+    //set the parameters for and MQTTclient.announce priority scheduling entities:
+    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/PrioStrategy")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/PrioStrategy"));
+    optional_payload += String(R"(, "options" : ["0", "1", "2"])");
+    MQTTclient.announce("Priority Strategy", "select", optional_payload);
+
+    optional_payload = MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/RotationInterval")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "1440") + MQTTclient.jsna("mode","box");
+    optional_payload += MQTTclient.jsna("unit_of_measurement", "min");
+    MQTTclient.announce("Rotation Interval", "number", optional_payload);
+
+    optional_payload = MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/IdleTimeout")) + MQTTclient.jsna("min", "30") + MQTTclient.jsna("max", "300") + MQTTclient.jsna("mode","box");
+    optional_payload += MQTTclient.jsna("unit_of_measurement", "s");
+    MQTTclient.announce("Idle Timeout", "number", optional_payload);
+
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic");
+    MQTTclient.announce("Rotation Timer", "sensor", optional_payload);
+
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic");
+    MQTTclient.announce("Schedule State", "sensor", optional_payload);
 }
 
 void mqttPublishData() {
@@ -1017,7 +1026,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/EnableC2", StrEnableC2[EnableC2], true, 0);
         if (RFIDReader) {
             char buf[15];
-            printRFID(buf);
+            printRFID(buf, sizeof(buf));
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
         }
         MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
@@ -1062,6 +1071,20 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/LoadBl", LoadBl, true, 0);
         MQTTclient.publish(MQTTprefix + "/PairingPin", PairingPin, true, 0);
         MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+        if (LoadBl == 1) {
+            static const char *StrPrioStrategy[] = {"ModbusAddr", "FirstConn", "LastConn"};
+            MQTTclient.publish(MQTTprefix + "/PrioStrategy", PrioStrategy <= 2 ? StrPrioStrategy[PrioStrategy] : "N/A", true, 0);
+            MQTTclient.publish(MQTTprefix + "/RotationInterval", RotationInterval, true, 0);
+            MQTTclient.publish(MQTTprefix + "/IdleTimeout", IdleTimeout, true, 0);
+            MQTTclient.publish(MQTTprefix + "/RotationTimer", RotationTimer, false, 0);
+            static const char *StrSchedState[] = {"Inactive", "Active", "Paused"};
+            String schedStr;
+            for (int i = 0; i < NR_EVSES; i++) {
+                if (i > 0) schedStr += ",";
+                schedStr += (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
+            }
+            MQTTclient.publish(MQTTprefix + "/ScheduleState", schedStr, false, 0);
+        }
 }
 
 // SmartEVSE server MQTT client setup - subscribe to Set topics
@@ -1229,6 +1252,9 @@ void read_settings() {
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
+        PrioStrategy = preferences.getUChar("PrioStrategy", PRIO_MODBUS_ADDR);
+        RotationInterval = preferences.getUShort("RotationIntvl", 0);
+        IdleTimeout = preferences.getUShort("IdleTimeout", 60);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
@@ -1281,6 +1307,9 @@ void read_settings() {
         strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
 #endif
         settingsCache.maxTemp = maxTemp;
+        settingsCache.PrioStrategy = PrioStrategy;
+        settingsCache.RotationInterval = RotationInterval;
+        settingsCache.IdleTimeout = IdleTimeout;
         settingsCache.AutoUpdate = AutoUpdate;
         settingsCache.LCDlock = LCDlock;
         settingsCache.CableLock = CableLock;
@@ -1355,6 +1384,9 @@ void write_settings(void) {
     }
 #endif
     PREFS_PUT_USHORT_IF_CHANGED("maxTemp", maxTemp, maxTemp);
+    PREFS_PUT_UCHAR_IF_CHANGED("PrioStrategy", PrioStrategy, PrioStrategy);
+    PREFS_PUT_USHORT_IF_CHANGED("RotationIntvl", RotationInterval, RotationInterval);
+    PREFS_PUT_USHORT_IF_CHANGED("IdleTimeout", IdleTimeout, IdleTimeout);
     PREFS_PUT_UCHAR_IF_CHANGED("AutoUpdate", AutoUpdate, AutoUpdate);
     PREFS_PUT_UCHAR_IF_CHANGED("LCDlock", LCDlock, LCDlock);
     PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
@@ -1549,7 +1581,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
+        DynamicJsonDocument doc(3200); // https://arduinojson.org/v6/assistant/
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -1592,7 +1624,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
         if (RFIDReader) {
             char buf[15];
-            printRFID(buf);
+            printRFID(buf, sizeof(buf));
             doc["evse"]["rfid_lastread"] = buf;
         }
 
@@ -1615,6 +1647,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lcdlock"] = LCDlock;
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
+        doc["settings"]["prio_strategy"] = PrioStrategy;
+        doc["settings"]["rotation_interval"] = RotationInterval;
+        doc["settings"]["idle_timeout"] = IdleTimeout;
+
+        if (LoadBl == 1) {
+            static const char *StrSchedState[] = {"Inactive", "Active", "Paused"};
+            for (int i = 0; i < NR_EVSES; i++) {
+                doc["schedule"]["state"][i] = (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
+            }
+            doc["schedule"]["rotation_timer"] = RotationTimer;
+        }
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
@@ -1735,21 +1778,23 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("current_min")) {
             int current = request->getParam("current_min")->value().toInt();
-            if(current >= MIN_CURRENT && current <= 16 && LoadBl < 2) {
+            const char *err = http_api_validate_current_min(current, LoadBl);
+            if(!err) {
                 MinCurrent = current;
                 doc["current_min"] = MinCurrent;
             } else {
-                doc["current_min"] = "Value not allowed!";
+                doc["current_min"] = err;
             }
         }
 
         if(request->hasParam("current_max_sum_mains")) {
             int current = request->getParam("current_max_sum_mains")->value().toInt();
-            if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
+            const char *err = http_api_validate_max_sum_mains(current, LoadBl);
+            if(!err) {
                 MaxSumMains = current;
                 doc["current_max_sum_mains"] = MaxSumMains;
             } else {
-                doc["current_max_sum_mains"] = "Value not allowed!";
+                doc["current_max_sum_mains"] = err;
             }
         }
 
@@ -1860,45 +1905,47 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("stop_timer")) {
             int stop_timer = request->getParam("stop_timer")->value().toInt();
-
-            if(stop_timer >= 0 && stop_timer <= 60) {
+            const char *err = http_api_validate_stop_timer(stop_timer);
+            if(!err) {
                 StopTime = stop_timer;
                 doc["stop_timer"] = true;
             } else {
                 doc["stop_timer"] = false;
             }
-
         }
 
         if(Mode == MODE_NORMAL || Mode == MODE_SMART) {
             if(request->hasParam("override_current")) {
                 int current = request->getParam("override_current")->value().toInt();
-                if (LoadBl < 2 && (current == 0 || (current >= ( MinCurrent * 10 ) && current <= ( MaxCurrent * 10 )))) { //OverrideCurrent not possible on Slave
+                const char *err = http_api_validate_override_current(current, MinCurrent, MaxCurrent, LoadBl);
+                if (!err) {
                     setOverrideCurrent(current);
                     doc["override_current"] = OverrideCurrent;
                 } else {
-                    doc["override_current"] = "Value not allowed!";
+                    doc["override_current"] = err;
                 }
             }
         }
 
         if(request->hasParam("solar_start_current")) {
             int current = request->getParam("solar_start_current")->value().toInt();
-            if(current >= 0 && current <= 48) {
+            const char *err = http_api_validate_solar_start(current);
+            if(!err) {
                 StartCurrent = current;
                 doc["solar_start_current"] = StartCurrent;
             } else {
-                doc["solar_start_current"] = "Value not allowed!";
+                doc["solar_start_current"] = err;
             }
         }
 
         if(request->hasParam("solar_max_import")) {
             int current = request->getParam("solar_max_import")->value().toInt();
-            if(current >= 0 && current <= 48) {
+            const char *err = http_api_validate_solar_max_import(current);
+            if(!err) {
                 ImportCurrent = current;
                 doc["solar_max_import"] = ImportCurrent;
             } else {
-                doc["solar_max_import"] = "Value not allowed!";
+                doc["solar_max_import"] = err;
             }
         }
 
@@ -1925,7 +1972,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         //if required_evccid is set to a value, SmartEVSE will only allow charging requests from said EVCCID
         if(request->hasParam("required_evccid")) {
             if (request->getParam("required_evccid")->value().length() <= 32) {
-                strncpy(RequiredEVCCID, request->getParam("required_evccid")->value().c_str(), sizeof(RequiredEVCCID));
+                strncpy(RequiredEVCCID, request->getParam("required_evccid")->value().c_str(), sizeof(RequiredEVCCID) - 1);
+                RequiredEVCCID[sizeof(RequiredEVCCID) - 1] = '\0';
                 doc["required_evccid"] = RequiredEVCCID;
                 Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
             } else {
@@ -1933,6 +1981,39 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 #endif
+        if(request->hasParam("prio_strategy")) {
+            int val = request->getParam("prio_strategy")->value().toInt();
+            const char *err = http_api_validate_prio_strategy(val, LoadBl);
+            if(!err) {
+                setItemValue(MENU_PRIO, val);
+                doc["prio_strategy"] = PrioStrategy;
+            } else {
+                doc["prio_strategy"] = err;
+            }
+        }
+
+        if(request->hasParam("rotation_interval")) {
+            int val = request->getParam("rotation_interval")->value().toInt();
+            const char *err = http_api_validate_rotation_interval(val, LoadBl);
+            if(!err) {
+                setItemValue(MENU_ROTATION, val);
+                doc["rotation_interval"] = RotationInterval;
+            } else {
+                doc["rotation_interval"] = err;
+            }
+        }
+
+        if(request->hasParam("idle_timeout")) {
+            int val = request->getParam("idle_timeout")->value().toInt();
+            const char *err = http_api_validate_idle_timeout(val, LoadBl);
+            if(!err) {
+                setItemValue(MENU_IDLE_TIMEOUT, val);
+                doc["idle_timeout"] = IdleTimeout;
+            } else {
+                doc["idle_timeout"] = err;
+            }
+        }
+
         if(request->hasParam("lcdlock")) {
             int lock = request->getParam("lcdlock")->value().toInt();
             if (lock >= 0 && lock <= 1) {                                   //boundary check
@@ -2022,118 +2103,78 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
       }
     } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
-        
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorOff[0] = R;
-                ColorOff[1] = G;
-                ColorOff[2] = B;
-                doc["color"]["off"]["R"] = ColorOff[0];
-                doc["color"]["off"]["G"] = ColorOff[1];
-                doc["color"]["off"]["B"] = ColorOff[2];
+            uint8_t r, g, b;
+            if (http_api_parse_color(request->getParam("R")->value().toInt(),
+                                     request->getParam("G")->value().toInt(),
+                                     request->getParam("B")->value().toInt(), &r, &g, &b)) {
+                ColorOff[0] = r; ColorOff[1] = g; ColorOff[2] = b;
+                doc["color"]["off"]["R"] = r; doc["color"]["off"]["G"] = g; doc["color"]["off"]["B"] = b;
             }
         }
-
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_normal") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
-        
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorNormal[0] = R;
-                ColorNormal[1] = G;
-                ColorNormal[2] = B;
-                doc["color"]["normal"]["R"] = ColorNormal[0];
-                doc["color"]["normal"]["G"] = ColorNormal[1];
-                doc["color"]["normal"]["B"] = ColorNormal[2];
+            uint8_t r, g, b;
+            if (http_api_parse_color(request->getParam("R")->value().toInt(),
+                                     request->getParam("G")->value().toInt(),
+                                     request->getParam("B")->value().toInt(), &r, &g, &b)) {
+                ColorNormal[0] = r; ColorNormal[1] = g; ColorNormal[2] = b;
+                doc["color"]["normal"]["R"] = r; doc["color"]["normal"]["G"] = g; doc["color"]["normal"]["B"] = b;
             }
         }
-
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_smart") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
-        
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorSmart[0] = R;
-                ColorSmart[1] = G;
-                ColorSmart[2] = B;
-                doc["color"]["smart"]["R"] = ColorSmart[0];
-                doc["color"]["smart"]["G"] = ColorSmart[1];
-                doc["color"]["smart"]["B"] = ColorSmart[2];
+            uint8_t r, g, b;
+            if (http_api_parse_color(request->getParam("R")->value().toInt(),
+                                     request->getParam("G")->value().toInt(),
+                                     request->getParam("B")->value().toInt(), &r, &g, &b)) {
+                ColorSmart[0] = r; ColorSmart[1] = g; ColorSmart[2] = b;
+                doc["color"]["smart"]["R"] = r; doc["color"]["smart"]["G"] = g; doc["color"]["smart"]["B"] = b;
             }
         }
-
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_solar") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
-        
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorSolar[0] = R;
-                ColorSolar[1] = G;
-                ColorSolar[2] = B;
-                doc["color"]["solar"]["R"] = ColorSolar[0];
-                doc["color"]["solar"]["G"] = ColorSolar[1];
-                doc["color"]["solar"]["B"] = ColorSolar[2];
+            uint8_t r, g, b;
+            if (http_api_parse_color(request->getParam("R")->value().toInt(),
+                                     request->getParam("G")->value().toInt(),
+                                     request->getParam("B")->value().toInt(), &r, &g, &b)) {
+                ColorSolar[0] = r; ColorSolar[1] = g; ColorSolar[2] = b;
+                doc["color"]["solar"]["R"] = r; doc["color"]["solar"]["G"] = g; doc["color"]["solar"]["B"] = b;
             }
         }
-
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_custom") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
-        
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorCustom[0] = R;
-                ColorCustom[1] = G;
-                ColorCustom[2] = B;
-                doc["color"]["custom"]["R"] = ColorCustom[0];
-                doc["color"]["custom"]["G"] = ColorCustom[1];
-                doc["color"]["custom"]["B"] = ColorCustom[2];
+            uint8_t r, g, b;
+            if (http_api_parse_color(request->getParam("R")->value().toInt(),
+                                     request->getParam("G")->value().toInt(),
+                                     request->getParam("B")->value().toInt(), &r, &g, &b)) {
+                ColorCustom[0] = r; ColorCustom[1] = g; ColorCustom[2] = b;
+                doc["color"]["custom"]["R"] = r; doc["color"]["custom"]["G"] = g; doc["color"]["custom"]["B"] = b;
             }
         }
-
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -2399,7 +2440,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         // Update EVCCID of car
         if (request->hasParam("evccid")) {
             if (request->getParam("evccid")->value().length() <= 32) {
-                strncpy(EVCCID, request->getParam("evccid")->value().c_str(), sizeof(EVCCID));
+                strncpy(EVCCID, request->getParam("evccid")->value().c_str(), sizeof(EVCCID) - 1);
+                EVCCID[sizeof(EVCCID) - 1] = '\0';
                 doc["evccid"] = EVCCID;
             }
         }
@@ -2841,9 +2883,9 @@ void ocppLoop() {
             _LOG_A("OCPP detected Access_bit set\n");
             char buf[15];
             if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             } else {
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             }
             beginTransaction_authorized(buf);
         } else if (AccessStatus == OFF && (OcppTrackAccessBit || (getTransaction() && getTransaction()->isActive()))) {
@@ -2851,9 +2893,9 @@ void ocppLoop() {
             _LOG_A("OCPP detected Access_bit unset\n");
             char buf[15];
             if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             } else {
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
             }
             endTransaction_authorized(buf);
         }
@@ -3181,7 +3223,7 @@ extern void Timer20ms(void * parameter);
     xTaskCreate(
         Timer20ms,      // Function that should be called
         "Timer20ms",    // Name of the task (for debugging)
-        40000,          // Stack size (bytes)
+        10240,          // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         NULL            // Task handle
@@ -3259,6 +3301,10 @@ extern void Timer20ms(void * parameter);
         WCHUPDATE(0);
     }
 #endif
+
+    // Initialize state machine HAL callbacks (contactor, PWM, state change logging)
+    // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
+    evse_bridge_init();
 
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
@@ -3451,6 +3497,7 @@ void loop() {
                 if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) {
                     if (fwNeedsUpdate(version)) {
                         _LOG_A("Firmware reports it needs updating, will update in %i seconds\n", FW_UPDATE_DELAY);
+                        if (downloadUrl) { free(downloadUrl); downloadUrl = NULL; }
                         asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
                     } else {
                         _LOG_A("Firmware reports it needs NO update!\n");
@@ -3461,6 +3508,7 @@ void loop() {
                 if (getLatestVersion(String(String(OWNER_FACT) + "/" + String(REPO_FACT)), "", version)) { // recheck version info
                     if (fwNeedsUpdate(version)) {
                         _LOG_A("Firmware reports it needs updating, starting update NOW!\n");
+                        if (downloadUrl) { free(downloadUrl); downloadUrl = NULL; }
                         asprintf(&downloadUrl, "%s/fact_firmware.signed.bin", FW_DOWNLOAD_PATH); //will be freed in FirmwareUpdate() ; format: http://s3.com/fact_firmware.debug.signed.bin
                         RunFirmwareUpdate();
                     } else {
