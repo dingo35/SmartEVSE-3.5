@@ -1,20 +1,80 @@
 
 # How to configure
-* First configure all settings that are shown to you (see below); don't configure your MAINSMET
-* Now you are ready to test/operate your SmartEVSE in its simplest mode, called Normal Mode.
-* If your EV charges at MAX current, everything works as expected, and you don't have a MAINSMET, you are done!
-* If you have a MAINSMET, configure it now; browse through the settings again, since now other options have opened up
-* If you are feeding your SmartEVSE with MAINS or EV data through the REST API or the MQTT API, make sure you have set up these feeds; as soon as you select "API" for the Meters, the data is expected within 11 seconds! You can use the test scripts in the test directory to feed your MQTT server with test data.
-* If you configured MULTIple SmartEVSE's, follow the instructions below
-* Put your SmartEVSE in Solar Mode, and some specific settings for Solar Mode will open up
-* Now your SmartEVSE is ready for use!
 
-# All menu options on the LCD screen:
+## Getting started
+
+1. **Start in Normal mode.** Walk through the settings shown on the LCD. At first, leave MAINS MET unconfigured. Set CONFIG, PWR SHARE, MAX, and the hardware settings (SWITCH, RCMON, RFID, WIFI).
+2. **Test Normal mode.** Verify your EV charges at MAX current. If you don't need Smart/Solar charging and have no mains meter, you are done.
+3. **Configure your mains meter.** Set MODE to Smart or Solar, then configure MAINS MET. New settings will appear in the menu (MAINS, MIN, and more). Browse through them again.
+4. **If using API or MQTT meter feeds**, set up the data feeds before selecting "API" for the meter type. Data is expected within 11 seconds of selecting API. Test scripts are available in the test directory.
+5. **For multiple SmartEVSEs**, see [Power Share setup](#multiple-smartevse-controllers-on-one-mains-supply-power-share) below.
+6. **For Solar mode**, switch to Solar and configure the solar-specific settings (START, STOP, IMPORT) that appear.
+
+## Quick reference: menu visibility
+
+The LCD menu is dynamic. Which settings appear depends on your current MODE and PWR SHARE role. The table below shows all settings **in the order they appear on screen**, with their visibility conditions.
+
+**Legend:** Always = always visible | Smart/Solar = only in Smart or Solar mode | Solar = only in Solar mode | D/M = only when PWR SHARE is Disabled or Master (not shown on Nodes) | conditional = depends on another setting
+
+| # | Setting | Visible when | D/M only | Range | Default |
+|---|---------|-------------|----------|-------|---------|
+| 1 | [MODE](#mode) | Always | | Normal / Smart / Solar | Normal |
+| 2 | [CONFIG](#config) | Always | | Socket / Fixed | Socket |
+| 3 | [LOCK](#lock) | CONFIG = Socket | | Disabled / Solenoid / Motor | Disabled |
+| 4 | [PWR SHARE](#pwr-share) | Always | | Disabled / Master / Node 1-7 | Disabled |
+| 5 | [MAINS MET](#mains-met) | Smart/Solar | D/M | Disabled / Sensorbox / API / ... | Disabled |
+| 6 | [GRID](#grid) | MAINS MET = Sensorbox (with CTs) | D/M | 4Wire / 3Wire | 4Wire |
+| 7 | [SB2 WIFI](#sb2-wifi) | MAINS MET = Sensorbox v2 | D/M | Disabled / Enabled / Portal | Disabled |
+| 8 | [MAINS ADR](#mains-adr) | MAINS MET = Modbus meter | D/M | 10-247 | 10 |
+| 9 | [EV METER](#ev-meter) | Smart/Solar | | Disabled / API / ... | Disabled |
+| 10 | [EV ADR](#ev-adr) | EV METER = Modbus meter | | 10-247 | 12 |
+| 11 | [Custom meter settings](#custom-meter-settings) | Custom meter selected | D/M | (see below) | |
+| 12 | [MAINS](#mains) | MAINS MET configured | D/M | 10-200A | 25A |
+| 13 | [MIN](#min) | MAINS MET configured | D/M | 6-16A | 6A |
+| 14 | [MAX](#max) | Always | | 6-80A | 16A |
+| 15 | [CIRCUIT](#circuit) | Master, or (Disabled + Smart/Solar + EV METER) | | 10-160A | 25A |
+| 16 | [START](#start) | Solar | D/M | 0-48A | 4A |
+| 17 | [STOP](#stop) | Solar | D/M | Disabled / 1-60 min | 10 min |
+| 18 | [IMPORT](#import) | Solar | D/M | 0-48A | 0A |
+| 19 | [CONTACT 2](#contact-2) | Smart/Solar | | (see below) | Always On |
+| 20 | [SWITCH](#switch) | Always | | (see below) | Disabled |
+| 21 | [RCMON](#rcmon) | Always | | Disabled / Enabled | Disabled |
+| 22 | [RFID](#rfid) | Always | | (see below) | Disabled |
+| 23 | [WIFI](#wifi) | Always | | Disabled / SetupWifi / Enabled | Disabled |
+| 24 | [AUTOUPDAT](#autoupdat) | WIFI = Enabled | | Disabled / Enabled | Disabled |
+| 25 | [APP PIN](#app-pin) | WIFI = Enabled | | | |
+| 26 | [APP SERVR](#app-servr) | WIFI = Enabled | | Disabled / Enabled | Disabled |
+| 27 | [MAX TEMP](#max-temp) | Always | | 40-75 C | 65 C |
+| 28 | [CAPACITY](#capacity) | MAINS MET configured | D/M | Disabled / 10-600A | Disabled |
+| 29 | [CAP STOP](#cap-stop) | CAPACITY configured | D/M | Disabled / 1-60 min | Disabled |
+| 30 | [LCD PIN](#lcd-pin) | Always | | 0-9999 | 0 |
+| 31 | [PRIORITY](#priority) | PWR SHARE = Master | D/M | Modbus Adr / First Conn / Last Conn | Modbus Adr |
+| 32 | [ROTATION](#rotation) | PWR SHARE = Master | D/M | 0, 30-1440 min | 0 (off) |
+| 33 | [IDLE TMO](#idle-tmo) | PWR SHARE = Master | D/M | 30-300 s | 60 s |
+
+**"D/M only"** means the setting is hidden when PWR SHARE is set to Node 1-7. Only Disabled and Master see these settings.
+
+### What each role sees
+
+**Standalone (PWR SHARE = Disabled) or Master:**
+All settings in the table above, subject to MODE and meter conditions.
+
+**Node (PWR SHARE = Node 1-7):**
+Only these settings appear: MODE, CONFIG, LOCK, PWR SHARE, EV METER, EV ADR, MAX, CONTACT 2, SWITCH, RCMON, RFID, WIFI (and sub-items), MAX TEMP, LCD PIN. Additionally:
+- SWITCH: the **Grid Relay** option is not selectable on Nodes.
+- CONTACT 2: the **Auto** option is not selectable on Nodes.
+
+---
+
+# LCD menu settings reference
+
+Settings are listed below in the order they appear on the LCD screen.
+
 ## MODE
 By default, you are in normal EVSE mode. You can also choose smart mode or solar mode, but these modes require configuring a [MAINS MET](#mains-met) to function.
 
 - **Normal**: The EV will charge with the current set at [MAX](#max).
-- **Smart**: The EV will charge with a dynamic charge current, depending on [MAINSMET](#mains-met) data, [MAINS](#mains), [MAX](#max) and [MIN](#min) settings.
+- **Smart**: The EV will charge with a dynamic charge current, depending on [MAINS MET](#mains-met) data, [MAINS](#mains), [MAX](#max) and [MIN](#min) settings.
 - **Solar**: The EV will charge using solar power.
 
 ## CONFIG
@@ -24,21 +84,25 @@ Configure SmartEVSE with Type 2 Socket or fixed cable.
 - **Fixed**: The SmartEVSE is connected to a fixed cable, and MAX will determine your maximum charge current.
 
 ## LOCK
-Only appears when [CONFIG](#config) is set to **Socket**.
+> Visible when: CONFIG = Socket
 
 - **Disabled**: No lock is used.
 - **Solenoid**: Dostar, DUOSIDA DSIEC-ELB / ELM, or Ratio lock.
 - **Motor**: Signal wire reversed, DUOSIDA DSIEC-EL or Phoenix Contact.
 
 ## PWR SHARE
-Power Share (formerly LOAD BAL). 2 Upto 8 SmartEVSE’s can be connected via Modbus, and the available power will be shared.
+Power Share (formerly LOAD BAL). Up to 8 SmartEVSEs can be connected via Modbus, and the available power will be shared.
 
 - **Disabled**: Power sharing is not used (single SmartEVSE).
 - **Master**: Set the first SmartEVSE to Master. Only one Master should be set.
-- **Node1-7**: Set the other SmartEVSE’s to Node 1-7.
+- **Node 1-7**: Set the other SmartEVSEs to Node 1-7.
+
+Changing this setting controls which other settings are visible. See [quick reference table](#quick-reference-menu-visibility) and [Power Share setup](#multiple-smartevse-controllers-on-one-mains-supply-power-share).
 
 ## MAINS MET
-Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS kWh Meter.
+> Visible when: MODE = Smart or Solar, AND PWR SHARE = Disabled or Master
+
+Set the type of MAINS kWh Meter.
 
 - **Disabled**: No MAINS meter connected (only Normal mode possible).
 - **Sensorbox**: The Sensorbox sends measurement data to the SmartEVSE.
@@ -46,57 +110,123 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
 - **HmWzrd P1**: HomeWizard P1 meter (wifi based connection to the smart meter's P1 port).
 
-**Note**:  
-- Eastron1P is for single-phase Eastron meters.  
-- Eastron3P is for Eastron three-phase meters.  
+**Note**:
+- Eastron1P is for single-phase Eastron meters.
+- Eastron3P is for Eastron three-phase meters.
 - InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If MAINS MET is not **Disabled** and not **API**, these settings appear:
+Configuring a mains meter unlocks additional settings: GRID, SB2 WIFI, MAINS ADR, MAINS, MIN, CAPACITY, and (in Solar mode) START, STOP, IMPORT.
 
-- **MAINSADR**: Set the Modbus address for the kWh meter.
-- **GRID**: 3 or 4 wire (only appears when Sensorbox with CT’s is used).
-  - **4Wire**: Star connection with 3 phase wires and neutral.
-  - **3Wire**: Delta connection with 3 phase wires without neutral.
+## GRID
+> Visible when: MAINS MET = Sensorbox with CT's, AND PWR SHARE = Disabled or Master
+
+- **4Wire**: Star connection with 3 phase wires and neutral.
+- **3Wire**: Delta connection with 3 phase wires without neutral.
+
+## SB2 WIFI
+> Visible when: MAINS MET = Sensorbox v2, AND PWR SHARE = Disabled or Master
+
+Connect Sensorbox-2 to WiFi.
+
+- **Disabled**: Sensorbox-2 WiFi disabled.
+- **Enabled**: Connect Sensorbox-2 via WiFi.
+- **Portal**: WiFi configuration portal.
+
+## MAINS ADR
+> Visible when: MAINS MET = Modbus meter (not Disabled, API, Sensorbox, or HmWzrd P1), AND PWR SHARE = Disabled or Master
+
+Set the Modbus address for the mains kWh meter: 10-247.
 
 ## EV METER
-Set Type of EV kWh Meter (measures power and charged energy)
+> Visible when: MODE = Smart or Solar (any PWR SHARE role, including Nodes)
+
+Set the type of EV kWh Meter (measures power and charged energy).
 
 - **Disabled**: No EV meter connected.
 - **API**: EV meter data is fed through the REST API or MQTT API.
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
 
-**Note**:  
-- Eastron1P is for single-phase Eastron meters.  
-- Eastron3P is for Eastron three-phase meters.  
-- InvEastron is for Eastron’s three-phase meter fed from below (inverted).
+**Note**:
+- Eastron1P is for single-phase Eastron meters.
+- Eastron3P is for Eastron three-phase meters.
+- InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If EV METER is not **Disabled** and not **API**, this setting appears:
+## EV ADR
+> Visible when: EV METER = Modbus meter (not Disabled or API)
 
-- **EV ADR**: Set the Modbus address for the EV Meter.
+Set the Modbus address for the EV Meter: 10-247.
+
+## Custom meter settings
+> Visible when: MAINS MET or EV METER = Custom, AND PWR SHARE = Disabled or Master
+
+These settings configure a custom Modbus energy meter. All share the same configuration (one custom meter definition is used for both mains and EV if both are set to Custom).
+
+| Setting | Description | Range |
+|---------|-------------|-------|
+| BYTE ORD | Byte order | 0-3 |
+| DATA TYPE | Modbus data type | 0-4 |
+| FUNCTION | Modbus function (3=holding, 4=input) | 3-4 |
+| VOL REGI | Register for Voltage (V) | 0-65530 |
+| VOL DIVI | Divisor for Voltage | 0-7 |
+| CUR REGI | Register for Current (A) | 0-65530 |
+| CUR DIVI | Divisor for Current | 0-7 |
+| POW REGI | Register for Power (W) | 0-65534 |
+| POW DIVI | Divisor for Power | 0-7 |
+| ENE REGI | Register for Energy (kWh) | 0-65534 |
+| ENE DIVI | Divisor for Energy | 0-7 |
 
 ## MAINS
-Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
+> Visible when: MAINS MET configured (not Disabled), AND PWR SHARE = Disabled or Master
+
+Set max mains current: 10-200A per phase. This is the hard limit of your mains connection.
 
 ## MIN
-Only appears when a [MAINS MET](#mains-met) is configured. Set the min charge current for the EV (6-16A) per phase.
+> Visible when: MAINS MET configured (not Disabled), AND PWR SHARE = Disabled or Master
+
+Set the minimum charge current the EV will accept: 6-16A per phase.
 
 ## MAX
-Set the MAX charge current for the EV: (10-80A) per phase. If [CONFIG](#config) is set to **Fixed**, configure MAX to be lower than or equal to the maximum current that your fixed cable can carry.
+Set the MAX charge current for the EV: 6-80A per phase. Always visible regardless of mode or role.
+
+If [CONFIG](#config) is set to **Fixed**, configure MAX to be lower than or equal to the maximum current that your fixed cable can carry.
 
 ## CIRCUIT
-Only appears when an [EV METER](#ev-meter) is configured, in **Smart** or **Solar** mode. Set the max current the EVSE circuit can handle (power sharing): 10-200A.  
+> Visible when: PWR SHARE = Master, OR (PWR SHARE = Disabled AND MODE = Smart/Solar AND EV METER configured)
+
+Set the max current of the EVSE circuit: 10-160A per phase. When power sharing, this is the total current that will be split between connected and charging EVs.
 
 ## START
-Only shown when [MODE](#mode) is set to **Solar** and [PWR SHARE](#pwr-share) is set to **Disabled** or **Master**. Set the current at which the EV should start solar charging: -0 to -48A (sum of all phases).
+> Visible when: MODE = Solar, AND PWR SHARE = Disabled or Master
 
-## STOP  
-Only shown when [MODE](#mode) is set to **Solar** and [PWR SHARE](#pwr-share) is set to **Disabled** or **Master**. Stop charging when there is not enough solar power available. 1-60 minutes or
-  - **Disabled**: Never stop charging.  
- 
+Set the surplus energy current at which the EV should start solar charging: 0-48A (sum of all phases).
+
+## STOP
+> Visible when: MODE = Solar, AND PWR SHARE = Disabled or Master
+
+Stop charging when there is not enough solar power available.
+
+- **Disabled**: Never stop charging.
+- **1-60 min**: Stop after this many minutes below the threshold.
+
 ## IMPORT
-Only shown when [MODE](#mode) is set to **Solar** and [PWR SHARE](#pwr-share) is set to **Disabled** or **Master**. Allow additional grid power when solar charging: 0-20A (sum of all phases). Use this when there is not enough solar power but you want to use as much solar power as possible.
+> Visible when: MODE = Solar, AND PWR SHARE = Disabled or Master
+
+Allow additional grid power when solar charging: 0-48A (sum of all phases). Use this when there is not enough solar power but you want to use as much solar power as possible.
 
 **Important Note**: START and IMPORT are summed over all phases, and MIN is per phase!
+
+## CONTACT 2
+> Visible when: MODE = Smart or Solar
+
+Use a second contactor (C2) to switch phases L2 and L3.
+
+- **Not present**: The second contactor is not present, and SmartEVSE assumes 3-phase charging.
+- **Always Off**: C2 is always off, single-phase charging. WE RECOMMEND THIS SETTING IF YOU ARE SINGLE PHASE CHARGING IN SOLAR MODE, EVEN IF YOU DONT HAVE A second contactor INSTALLED!
+- **Always On**: C2 is always on, three-phase charging (default).
+- **Solar Off**: C2 is always on except in Solar Mode, where it is always off.
+- **Auto**: SmartEVSE starts charging at 3-phase, but in Solar Mode, it will switch off C2 when there is not enough current for 3 phases, continuing on 1 phase; if there is enough current it will switch on C2, continuing on 3 phases. In Smart mode we will charge 3P, since we assume you are switching to Smart mode because not enough sun is available for Solar mode. **Note: Auto is not available on Nodes (PWR SHARE = Node 1-7).**
+
+**Important**: Wire your C2 contactor according to the schematics in the [Hardware installation](installation.md).
 
 ## SWITCH
 Set the Function of an External Switch (Pin SW or Connector P2).
@@ -106,7 +236,7 @@ Set the Function of an External Switch (Pin SW or Connector P2).
 - **Access S**: A toggle switch is used to enable/disable access to the charging station.
 - **Sma-Sol B**: A momentary push button is used to switch between Smart and Solar modes.
 - **Sma-Sol S**: A toggle switch is used to switch between Smart and Solar modes.
-- **Grid Relay**: A relay from your energy provider is connected; when the relay is open, power usage is limited to 4.2kW (Energy Industry Act, par 14a).
+- **Grid Relay**: A relay from your energy provider is connected; when the relay is open, power usage is limited to 4.2kW (Energy Industry Act, par 14a). **Note: Grid Relay is not available on Nodes (PWR SHARE = Node 1-7).**
 - **Custom B**: A momentary push button can be used for external integrations.
 - **Custom S**: A toggle switch can be used for external integrations.
 
@@ -129,22 +259,22 @@ Use an RFID Card Reader to Enable/Disable Access to the EVSE. A maximum of 100 R
 - **Rmt/OCPP**: Authorize remotely over OCPP and bypass the SmartEVSE's local RFID storage.
 
 ## WIFI
-Enable Wifi connection to your network.
+Enable WiFi connection to your network.
 
-- **Disabled**: Wifi connection is disabled.
-- **SetupWifi** 
+- **Disabled**: WiFi connection is disabled.
+- **SetupWifi**
   - v3.9.0 or newer:
-  The SmartEVSE presents itself as a Wifi Acces Point with SSID "SmartEVSE-config"; the password is displayed at the top line of your LCD display. Connect with your phone to that access point, go to [http://192.168.4.1/](http://192.168.4.1/) and configure your Wifi SSID and password.
+  The SmartEVSE presents itself as a WiFi Access Point with SSID "SmartEVSE-config"; the password is displayed at the top line of your LCD display. Connect with your phone to that access point, go to [http://192.168.4.1/](http://192.168.4.1/) and configure your WiFi SSID and password.
   - v3.6.4 until v3.8.x:
-    - Connect your smartphone to the wifi network you want your SmartEVSE connected to.
-Note: If you have a multi AP setup, with the same SSID, you need to be connected to the desired AP, as the configuration is based on the BSSID, so it will choos the specific AP your phone is connected to.
+    - Connect your smartphone to the WiFi network you want your SmartEVSE connected to.
+Note: If you have a multi AP setup, with the same SSID, you need to be connected to the desired AP, as the configuration is based on the BSSID, so it will choose the specific AP your phone is connected to.
     - Download and run the ESPTouch app from your favorite app store [Android](https://play.google.com/store/apps/details?id=com.fyent.esptouch.android&hl=en_US:) (please ignore the strange Author name) or [Apple](https://apps.apple.com/us/app/espressif-esptouch/id1071176700) or  [Github](https://github.com/EspressifApp/EsptouchForAndroid) (for source code).
     - Choose EspTouch V2.
-    - Fill in the key (password) of the wifi network.
+    - Fill in the key (password) of the WiFi network.
     - Fill in **1** in device count for provisioning.
-    - On the SmartEVSE LCD screen, select **Wifi**, select **SetupWifi**
+    - On the SmartEVSE LCD screen, select **WiFi**, select **SetupWifi**
     - Press the middle button to start the configuration procedure.
-    - Once pressed, the bottom line shows you a 16 character key, first 8 are 01234567. note that from this point on, you have 120s TO FINISH this procedure!
+    - Once pressed, the bottom line shows you a 16 character key, first 8 are 01234567. Note that from this point on, you have 120s TO FINISH this procedure!
     - Fill in that key in the ESPTouch app, in the AES Key field
     - Leave Custom Data empty
     - Press **Confirm**, within 30 seconds the app will confirm a MAC address and an IP address.
@@ -159,23 +289,27 @@ Note: If you have a multi AP setup, with the same SSID, you need to be connected
       - 8 bits
       - no parity
       - 1 stopbit
-    - on the SmartEVSE LCD screen, select "Wifi", select "SetupWifi"
+    - on the SmartEVSE LCD screen, select "WiFi", select "SetupWifi"
     - press the middle button to start the configuration procedure
-    - on your terminal window you should see a request to enter your WiFi access point SSID and password. 
+    - on your terminal window you should see a request to enter your WiFi access point SSID and password.
     - the controller should now connect to WiFi.
   - v3.6.3 or older:
-  The SmartEVSE presents itself as a Wifi Acces Point with SSID "smartevse-xxxx". Connect with your phone to that access point, go to [http://192.168.4.1/](http://192.168.4.1/) and configure your Wifi SSID and key (password).
-- **Enabled**: Connect to your network via Wifi.
+  The SmartEVSE presents itself as a WiFi Access Point with SSID "smartevse-xxxx". Connect with your phone to that access point, go to [http://192.168.4.1/](http://192.168.4.1/) and configure your WiFi SSID and key (password).
+- **Enabled**: Connect to your network via WiFi.
 
 ## AUTOUPDAT
-Only appears when [WIFI](#wifi) is **Enabled**. Automatic update of the SmartEVSE firmware.
+> Visible when: WIFI = Enabled
+
+Automatic update of the SmartEVSE firmware.
 
 - **Disabled**: No automatic update.
-- **Enabled**: Checks daily for a new stable firmware version and installs it when no EV is connected.  
+- **Enabled**: Checks daily for a new stable firmware version and installs it when no EV is connected.
   **Note**: This will not work if your version is not in the format `vx.y.z` (e.g., v3.6.1). Locally compiled versions or RCx versions will not auto-update.
 
 ## APP PIN
-Only appears when [WIFI](#wifi) is **Enabled**. Generate a 6-digit pairing PIN for connecting the SmartEVSE mobile app.
+> Visible when: WIFI = Enabled
+
+Generate a 6-digit pairing PIN for connecting the SmartEVSE mobile app.
 
 - Press the middle button to generate a new PIN.
 - The PIN is displayed on the LCD screen and is valid for 2 minutes.
@@ -183,7 +317,9 @@ Only appears when [WIFI](#wifi) is **Enabled**. Generate a 6-digit pairing PIN f
 - The PIN is automatically cleared when you exit the menu or after the timeout expires.
 
 ## APP SERVR
-Only appears when [WIFI](#wifi) is **Enabled**. Enable or disable the connection to the SmartEVSE cloud server for mobile app integration.
+> Visible when: WIFI = Enabled
+
+Enable or disable the connection to the SmartEVSE cloud server for mobile app integration.
 
 - **Disabled**: No connection to the SmartEVSE server.
 - **Enabled**: Connect to `mqtt.smartevse.nl` for mobile app communication.
@@ -192,38 +328,102 @@ When enabled, the top row shows the current connection status:
 - **Connected to server**: Successfully connected to the SmartEVSE server.
 - **No server connection**: Not connected to the server.
 
-This feature uses a unique per-device key stored in the controller. If you somehow erased the controller completely this data will be lost, and the controller will not be able to connect to the server. 
+This feature uses a unique per-device key stored in the controller. If you somehow erased the controller completely this data will be lost, and the controller will not be able to connect to the server.
 
 ## MAX TEMP
-Maximum allowed temperature for your SmartEVSE: 40-75°C (default 65°C).  
-Charging will stop once the internal temperature reaches this threshold and resume once it drops to 55°C.
+Maximum allowed temperature for your SmartEVSE: 40-75 C (default 65 C).
+Charging will stop once the internal temperature reaches this threshold and resume once it drops to 55 C.
 
 ## CAPACITY
-Only appears when a [MAINSMET](#mains-met) is configured. Maximum allowed mains current summed over all phases: 10-600A. Used for the EU Capacity rate limiting.
+> Visible when: MAINS MET configured (not Disabled), AND PWR SHARE = Disabled or Master
+
+Maximum allowed mains current summed over all phases: 10-600A. Used for [EU Capacity Rate Limiting](#eu-capacity-rate-limiting).
+
+- **Disabled** (0): Capacity rate limiting not used.
+- **10-600A**: Limit the sum of all mains phase currents to this value.
 
 ## CAP STOP
-Only appears when [CAPACITY](#capacity) is configured. Timer in minutes. If CAPACITY is exceeded, charging will not immediately stop but will wait until the timer expires.  
-- If set to **Disabled**, charging stops immediately when CAPACITY is exceeded.
+> Visible when: CAPACITY is configured (not Disabled)
+
+Timer in minutes. If CAPACITY is exceeded, charging will not immediately stop but will wait until the timer expires.
+
+- **Disabled**: Charging stops immediately when CAPACITY is exceeded.
+- **1-60 min**: Wait this many minutes before stopping.
 
 ## LCD PIN
 Pin code so that you can use the buttons on the LCD menu on the web-interface.
 Left button increases the digit by one, Right button goes to next digit, Middle button ends entry.
 
-## CONTACT2
-Use a second contactor (C2) to switch phases L2 and L3. 
+## PRIORITY
+> Visible when: PWR SHARE = Master
 
-- **Not present**: The second contactor is not present, and SmartEVSE assumes 3-phase charging.
-- **Always Off**: C2 is always off, single-phase charging. WE RECOMMEND THIS SETTING IF YOU ARE SINGLE PHASE CHARGING IN SOLAR MODE, EVEN IF YOU DONT HAVE A second contactor INSTALLED!
-- **Always On**: C2 is always on, three-phase charging (default).
-- **Solar Off**: C2 is always on except in Solar Mode, where it is always off.
-- **Auto**: (only available when POWER SHARE Disabled or Master): SmartEVSE starts charging at 3-phase, but in Solar Mode, it will switch off C2 when there is not enough current for 3 phases, continuing on 1 phase; if there is enough current it will switch on C2, continuing on 3 phases. In Smart mode we will charge 3P, since we assume you are switching to Smart mode because not enough sun is available for Solar mode.
+Set the priority strategy for load sharing when there is not enough power for all connected EVSEs. See [Priority-Based Power Scheduling](priority-scheduling.md) for full details.
 
-**Important**: Wire your C2 contactor according to the schematics in the [Hardware installation](installation.md).
+- **Modbus Adr**: Lower Modbus address = higher priority (Master first, then Node 1, 2, ...).
+- **First Conn**: The car that plugged in first gets priority.
+- **Last Conn**: The most recently plugged-in car gets priority.
+
+## ROTATION
+> Visible when: PWR SHARE = Master
+
+How often to rotate which EVSE is actively charging. See [Priority-Based Power Scheduling](priority-scheduling.md) for full details.
+
+- **0**: Disabled — no rotation. The highest-priority EVSE charges until done.
+- **30–1440**: Rotate every N minutes.
+
+## IDLE TMO
+> Visible when: PWR SHARE = Master
+
+How many seconds to wait before deciding an EVSE is idle and moving to the next one. Also serves as anti-flap protection. See [Priority-Based Power Scheduling](priority-scheduling.md) for full details.
+
+- **30–300**: Seconds (default 60).
+
+---
+
+# Setup guides by role
+
+## Single SmartEVSE (standalone)
+
+1. Set **PWR SHARE** = Disabled
+2. Set **CONFIG** (Socket or Fixed) and **LOCK** if using a socket
+3. Set **MAX** to the maximum current your cable/installation supports
+4. Set **WIFI**, **SWITCH**, **RCMON**, **RFID** as needed for your hardware
+5. If you only need Normal mode, you are done
+6. For Smart/Solar: set **MODE**, then configure **MAINS MET** and the settings that appear (MAINS, MIN, etc.)
+7. For Solar mode: configure **START**, **STOP**, **IMPORT**
+8. For single-phase charging in Solar mode: set **CONTACT 2** = Always Off
+
+## Master setup (Power Share)
+
+1. Set **PWR SHARE** = Master
+2. Set **MODE** to Smart (or Solar) with a Sensorbox or configured kWh meter
+3. Configure **MAINS MET** and **MAINS** (maximum current of the mains connection per phase)
+4. Set **CIRCUIT** to the maximum current of the EVSE circuit per phase (shared between EVs)
+5. Set **MAX** for the EV connected to this SmartEVSE
+6. Set **MIN** to the lowest allowable charging current for all connected EVs
+7. Configure remaining hardware settings (WIFI, SWITCH, RCMON, RFID, etc.)
+8. Optionally configure **PRIORITY**, **ROTATION**, and **IDLE TMO** for [priority scheduling](priority-scheduling.md) — these control what happens when there isn't enough power for all EVSEs
+
+## Node setup (Power Share)
+
+Nodes have a reduced menu. Most metering and balancing settings are managed by the Master.
+
+1. Set **PWR SHARE** = Node 1-7 (unique number for each Node)
+2. Set **MAX** for the EV connected to this SmartEVSE
+3. Optionally configure **EV METER** if this Node has its own EV meter
+4. Configure hardware settings (CONFIG, LOCK, SWITCH, RCMON, RFID, WIFI, etc.)
+
+**Note**: The following restrictions apply to Nodes:
+- SWITCH: the Grid Relay option is not available
+- CONTACT 2: the Auto option is not available
+- Settings managed by the Master (MAINS MET, MAINS, MIN, CIRCUIT, START, STOP, IMPORT, CAPACITY, custom meter configuration) do not appear in the Node menu
+
+---
 
 # SINGLE PHASE CHARGING
 
 SmartEVSE calculates with currents per phase; a problem arises in Solar mode, because there Isum (the sum of the currents of all phases) has to be guarded; to calculate with it per phase you have to know the number of phases you are charging.
-We try to detect the number of phases you are charging with, with the help of the settings of the second contator C2 and the EVMeter, if present.
+We try to detect the number of phases you are charging with, with the help of the settings of the second contactor C2 and the EVMeter, if present.
 This detection can fail easily; not always an EVMeter is present, and even if there is, an EV could determine to start charging at one phase and later on add more phases (Teslas are known to do this); an EV could even decide during the charging process to stop charging on certain phases.
 We could introduce a setting "1phase/3phase" charging, but this setting would be EV dependent if you are on a 3 phase grid; so you would have to change the setting every time another EV connects to your SmartEVSE.
 
@@ -233,6 +433,18 @@ Currently the most reliable way to get the correct behaviour at Solar mode is:
 - if you are on a 1 phase grid, set CONTACT2 to "Always Off" since you will always be charging single phase
 
 If you are at Smart mode you just set CONTACT2 to the appropriate setting as documented above.
+
+# Multiple SmartEVSE controllers on one mains supply (Power Share)
+Up to eight SmartEVSE modules can share one mains supply.
+
+## Hardware connections
+- Connect the A, B and GND connections from the Master to the Node(s).
+- So A connects to A, B goes to B etc.
+- If you are using Smart/Solar mode, you should connect the A, B, +12V and GND wires from the sensorbox to the same screw terminals of the SmartEVSE! Make sure that the +12V wire from the sensorbox is connected to only -one- SmartEVSE.
+
+## Software configuration
+- Set one SmartEVSE PWR SHARE setting to MASTER, and the others to NODE 1-7. Make sure there is only one Master, and the Node numbers are unique.
+- See [Master setup](#master-setup-power-share) and [Node setup](#node-setup-power-share) above for step-by-step instructions.
 
 # OCPP (you want your company to pay for your electricity charges, or you want to exploit your SmartEVSE as a public charger)
 To charge a company or a user for your electricity cost, you need a Backend Provider (BP). The BP will monitor your charger usage and will bill the appropriate user and/or company, and will pay you your part.
@@ -283,19 +495,24 @@ Valid topics you can publish to are:
                Example: "112233445566" (6 bytes) or "11223344556677" (7 bytes)
                This will simulate an RFID card swipe and start/stop a charging session using all existing RFID checks
                (whitelist verification, OCPP authorization, etc.)
+/Set/PrioStrategy       0=Modbus Address, 1=First Connected, 2=Last Connected (Master only)
+/Set/RotationInterval   0=disabled, 30-1440 minutes (Master only)
+/Set/IdleTimeout        30-300 seconds (Master only)
 ```
+
+For details on the scheduling topics, see [Priority-Based Power Scheduling](priority-scheduling.md).
 Your mains kWh meter data can be fed with:
 ```
 mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/MainsMeter' -m L1:L2:L3
 ```
-...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A importing, -5 means 0.5A exporting.
-...These should be fed at least ervery 10 seconds.
+...where L1 - L3 are the currents in deci-Amperes. So 100 means 10.0A importing, -5 means 0.5A exporting.
+...These should be fed at least every 10 seconds.
 
 Your EV kWh meter data can be fed with:
 ```
 mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/EVMeter' -m L1:L2:L3:P:E
 ```
-...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A.
+...where L1 - L3 are the currents in deci-Amperes. So 100 means 10.0A.
 ...where P is the Power in W,
 ...where E is the Energy in Wh.
 
@@ -312,27 +529,6 @@ You can find test scripts in the [test directory](https://github.com/SmartEVSE/S
 
 The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
 
-# Multiple SmartEVSE controllers on one mains supply (Power Share)
-Up to eight SmartEVSE modules can share one mains supply.
-  - Hardware connections
-    - Connect the A, B and GND connections from the Master to the Node(s).
-    - So A connects to A, B goes to B etc.
-    - If you are using Smart/Solar mode, you should connect the A, B , +12V and GND wires from the sensorbox to the same screw terminals of the SmartEVSE! Make sure that the +12V wire from the sensorbox is connected to only -one– SmartEVSE.
-
-  - Software configuration
-    - Set one SmartEVSE PWR SHARE setting to MASTER, and the others to NODE 1-7. Make sure there is only one Master, and the Node numbers are unique.
-    - On the Master configure the following:
-      - MODE	  Set this to Smart if a Sensorbox (or configured kWh meter) is used to measure the current draw on the mains supply.
-      It will then dynamically vary the charge current for all connected EV’s.  If you are using a dedicated mains supply for the EV’s you can leave this set to Normal.
-      - MAINS Set to the maximum current of the MAINS connection (per phase).
-      If the sensorbox or other MainsMeter device measures a higher current than this value on one of the phases, it will immediately reduce the current to the EVSE’s
-      - CIRCUIT Set this to the maximum current of the EVSE circuit (per phase).
-      This will be split between the connected and charging EV’s.
-      - MAX 		 Set the maximum charging current for the EV connected to -this- SmartEVSE (per phase).
-      - MIN		 Set to the lowest allowable charging current for all connected EV’s.
-    - On the Nodes configure the following:
-      - MAX 		 Set the maximum charging current for the EV connected to -this- SmartEVSE (per phase).
-
 # Home Battery Integration
 In a normal EVSE setup, a sensorbox is used to read the P1 information to deduce if there is sufficient solar energy available. This however can give unwanted results when also using a home battery as this will result in one battery charging the other one.
 
@@ -344,7 +540,7 @@ The EVSE will use the battery current to neutralize the impact of a home battery
 
 **Regular updates from the consumer are required to keep this working as values cannot be older than 11 seconds.**
 
-**The battery currents are ONLY taken into account in Solar mode!!
+**The battery currents are ONLY taken into account in Solar mode!**
 
 ### Example
 * Home battery is charging at 2300W -> 10A
@@ -377,18 +573,13 @@ If you cannot (or do not want to) use MQTT to integrate your SmartEVSE with Home
 
 It's a lot of work, but you can have everything exactly your way. See examples in the integrations directory of our GitHub repository.
 
-
-
 # EU Capacity Rate Limiting
 
 In line with a EU directive, electricity providers can implement a "capacity rate" for consumers, encouraging more balanced energy consumption. This approach aims to smooth out usage patterns and reduce peak demand.
 
 For further details, please refer to [serkri#215](https://github.com/serkri/SmartEVSE-3/issues/215).
 
-
-
 * The menu item "Capacity" can be set from 10-600A. (sum of all phases)
 * This setting applies only in Smart or Solar mode.
 * Beyond existing limits (Mains, MaxCircuit), the charging current will be controlled to ensure that the total of all Mains phase currents does not exceed the Capacity setting.
 * If you are unfamiliar with this setting or do not fall under the applicable regulations, it is advisable to keep the setting at its default setting. (disabled)
-
