@@ -23,7 +23,7 @@ try:
             filelist.append('data/' + filename + '.gz')
             continue
     os.chdir('pack.tmp')
-    cmdstring = 'python ../pack.py ' + ' '.join(filelist)
+    cmdstring = sys.executable + ' ../pack.py ' + ' '.join(filelist)
     os.system(cmdstring + '>../src/packed_fs.c')
     os.chdir('..')
 except Exception as e:
