@@ -464,17 +464,17 @@ void GLCD(void) {
             } else if (SB2_WIFImode == 1) {         // Enable WiFi on Sensorbox 2
 
                 if (SB2.WiFiConnected) {
-                    sprintf(Str, "SB2: %u.%u.%u.%u",SB2.IP[0],SB2.IP[1],SB2.IP[2],SB2.IP[3]);
+                    snprintf(Str, sizeof(Str), "SB2: %u.%u.%u.%u",SB2.IP[0],SB2.IP[1],SB2.IP[2],SB2.IP[3]);
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else GLCD_write_buf_str(0,0, "Not connected to WiFi", GLCD_ALIGN_LEFT);
 
             } else if (SB2_WIFImode == 2) {         // Enable Portal on Sensorbox 2
                 if (SubMenu) {
-                    sprintf(Str, "O button starts portal");
+                    snprintf(Str, sizeof(Str), "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
                     // Show Portal Password
-                    sprintf(Str, "Portal PW: %s", SB2.APpassword);
+                    snprintf(Str, sizeof(Str), "Portal PW: %s", SB2.APpassword);
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
                 LCDTimer = 0;                                                       // reset timer, so it will not exit the menu when setting up WiFi
@@ -487,7 +487,7 @@ void GLCD(void) {
             else if (EnableC2 == ALWAYS_ON)  GLCD_write_buf_str(0, 0, "Three-phase Charging", GLCD_ALIGN_LEFT);
             else if (EnableC2 == AUTO)       GLCD_write_buf_str(0, 0, "Auto 3P <> 1P Charging", GLCD_ALIGN_LEFT);
         } else if (LCDNav == MENU_PAIRING && SubMenu) {
-            sprintf(Str, "SmartEVSE-%u", serialnr);
+            snprintf(Str, sizeof(Str), "SmartEVSE-%u", serialnr);
             GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
         } else if (LCDNav == MENU_APPSERVER && SubMenu) {
             if (MQTTclientSmartEVSE.connected) GLCD_write_buf_str(0, 0, "Connected to server", GLCD_ALIGN_LEFT);
@@ -498,20 +498,20 @@ void GLCD(void) {
             if (WIFImode == 1 ) {   // Wifi Enabled
 
                 if (WiFi.status() == WL_CONNECTED) {
-                    sprintf(Str, "%s",WiFi.localIP().toString().c_str());
+                    snprintf(Str, sizeof(Str), "%s",WiFi.localIP().toString().c_str());
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
-                    if (LocalTimeSet) sprintf(Str, "%02u:%02u",timeinfo.tm_hour, timeinfo.tm_min);
-                    else sprintf(Str, "--:--");
+                    if (LocalTimeSet) snprintf(Str, sizeof(Str), "%02u:%02u",timeinfo.tm_hour, timeinfo.tm_min);
+                    else snprintf(Str, sizeof(Str), "--:--");
                     GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
                 } else GLCD_write_buf_str(0,0, "Not connected to WiFi", GLCD_ALIGN_LEFT);
 
             // When Wifi Setup is selected, show password and SSID of the Access Point
             } else if (WIFImode == 2) {
                 if (SubMenu && WiFi.getMode() != WIFI_AP_STA) {           // Do not show if AP_STA mode is started
-                    sprintf(Str, "O button starts portal");
+                    snprintf(Str, sizeof(Str), "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
-                    sprintf(Str, "Portal PW: %s", APpassword.c_str());
+                    snprintf(Str, sizeof(Str), "Portal PW: %s", APpassword.c_str());
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
                 LCDTimer = 0;                                                   // reset timer, so we will not exit the menu while setting up WiFi
@@ -588,7 +588,7 @@ void GLCD(void) {
 #endif
         } else if (ErrorFlags & Test_IO) {                                      // Only used when testing the module
             GLCD_print_buf2(2, (const char *) "IO Test");
-            sprintf(Str, "FAILED! %u", TestState);
+            snprintf(Str, sizeof(Str), "FAILED! %u", TestState);
             GLCD_print_buf2(4, Str);
             return;
         } else if (ErrorFlags & BL_FLASH) {                                     // Bootloader update error
@@ -683,12 +683,12 @@ void GLCD(void) {
                 GLCD_print_buf2(2, (const char *) "LIMITED");
             else
                 GLCD_print_buf2(2, (const char *) "CHARGING");
-            sprintf(Str, "%u.%uA",Balanced[0] / 10, Balanced[0] % 10);
+            snprintf(Str, sizeof(Str), "%u.%uA",Balanced[0] / 10, Balanced[0] % 10);
             GLCD_print_buf2(4, Str);
         } else {                                                                // STATE A and STATE B
             if (AccessStatus == ON) {
                 GLCD_print_buf2(2, (const char *) "READY TO");
-                sprintf(Str, "CHARGE %u", ChargeDelay);
+                snprintf(Str, sizeof(Str), "CHARGE %u", ChargeDelay);
                 if (ChargeDelay) {
                     // BacklightTimer = BACKLIGHT;
                 } else Str[6] = '\0';
@@ -777,7 +777,7 @@ void GLCD(void) {
                             DelayedStartTimeTM = *localtime(&epoch);
                         }
                         if (!strftime(Str, sizeof(Str), StrFormat.c_str(), &DelayedStartTimeTM))
-                            sprintf(Str, "later...");
+                            snprintf(Str, sizeof(Str), "later...");
                         GLCD_print_buf2(4, Str);
                         //print current time
                         if (LocalTimeSet) {
@@ -818,7 +818,7 @@ void GLCD(void) {
             }              
             minutes = seconds / 60;
             seconds = seconds % 60;
-            sprintf(Str, "%02u:%02u", minutes, seconds);
+            snprintf(Str, sizeof(Str), "%02u:%02u", minutes, seconds);
             GLCD_write_buf_str(100, 0, Str, GLCD_ALIGN_LEFT);                   // print to buffer
         } else {
             for (x = 0; x < 8; x++) GLCDbuf[x + 92u] = 0;                       // remove the clock from the LCD buffer
@@ -840,7 +840,7 @@ void GLCD(void) {
                                                                                 // If current flow is < 0.3A don't show the blob
 
         if (EVMeter.Type) {                                                     // If we have a EV kWh meter configured, Show total charged energy in kWh on LCD.
-            sprintfl(Str, "%2d.%1dkWh", EVMeter.EnergyCharged, 3, 1);           // Will reset to 0.0kWh when charging cable reconnected, and state change from STATE B->C
+            sprintfl(Str, sizeof(Str),"%2d.%1dkWh", EVMeter.EnergyCharged, 3, 1);           // Will reset to 0.0kWh when charging cable reconnected, and state change from STATE B->C
             GLCD_write_buf_str(89, 1, Str,GLCD_ALIGN_LEFT);                     // print to buffer
         }
 
@@ -863,12 +863,12 @@ void GLCD(void) {
 
             if (LCDToggle && EVMeter.Type) {
                 if (EVMeter.PowerMeasured < 9950) {
-                    sprintfl(Str, "%1d.%1dkW", EVMeter.PowerMeasured, 3, 1);
+                    sprintfl(Str, sizeof(Str),"%1d.%1dkW", EVMeter.PowerMeasured, 3, 1);
                 } else {
-                    sprintfl(Str, "%dkW", EVMeter.PowerMeasured, 3, 0);
+                    sprintfl(Str, sizeof(Str),"%dkW", EVMeter.PowerMeasured, 3, 0);
                 }
             } else {
-                sprintfl(Str, "%uA", Balanced[0], 1, 0);
+                sprintfl(Str, sizeof(Str),"%uA", Balanced[0], 1, 0);
             }
             GLCD_write_buf_str(85, 2, Str, GLCD_ALIGN_CENTER);
         } else if (State == STATE_A) {
@@ -881,11 +881,11 @@ void GLCD(void) {
             GLCDy = 1;
             GLCD_write_buf(0x0B, 0);                                            // Sum symbol
 
-            sprintfl(Str, "%dA", Isum, 1, 0);
+            sprintfl(Str, sizeof(Str),"%dA", Isum, 1, 0);
             GLCD_write_buf_str(46, 2, Str, GLCD_ALIGN_RIGHT);                   // print to buffer
         } else {                                                                // Displayed only in Smart and Solar modes
             for (x = 0; x < 3; x++) {                                           // Display L1, L2 and L3 currents on LCD
-                sprintfl(Str, "%dA", MainsMeter.Irms[x], 1, 0);
+                sprintfl(Str, sizeof(Str),"%dA", MainsMeter.Irms[x], 1, 0);
                 GLCD_write_buf_str(46, x, Str, GLCD_ALIGN_RIGHT);               // print to buffer
             }
         }
@@ -912,15 +912,15 @@ void GLCD(void) {
         } else if (State != STATE_C) {
                 switch (Switching_Phases_C2) {
                     case NO_SWITCH:
-                        sprintf(Str, "READY %u", ChargeDelay);
+                        snprintf(Str, sizeof(Str), "READY %u", ChargeDelay);
                         if (!ChargeDelay) Str[5] = '\0';
                         break;
                     case GOING_TO_SWITCH_1P:
-                        sprintf(Str, "3P -> 1P %u", ChargeDelay);
+                        snprintf(Str, sizeof(Str), "3P -> 1P %u", ChargeDelay);
                         if (!ChargeDelay) Str[8] = '\0';
                         break;
                     case GOING_TO_SWITCH_3P:
-                        sprintf(Str, "1P -> 3P %u", ChargeDelay);
+                        snprintf(Str, sizeof(Str), "1P -> 3P %u", ChargeDelay);
                         if (!ChargeDelay) Str[8] = '\0';
                         break;
                 }
@@ -930,9 +930,9 @@ void GLCD(void) {
                 default:
                     LCDText = 0;
                     if (Mode != MODE_NORMAL) {
-                        if (Mode == MODE_SOLAR) sprintf(Str, "SOLAR");
-                            else sprintf(Str, "SMART");
-                            sprintf(Str+5," %uP", Nr_Of_Phases_Charging);
+                        if (Mode == MODE_SOLAR) snprintf(Str, sizeof(Str), "SOLAR");
+                            else snprintf(Str, sizeof(Str), "SMART");
+                            snprintf(Str+5, sizeof(Str)-5, " %uP", Nr_Of_Phases_Charging);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
@@ -948,20 +948,20 @@ void GLCD(void) {
                     break;
                 case 3:
                     if (EVMeter.Type) {
-                        sprintfl(Str, "%d.%01d kW", EVMeter.PowerMeasured, 3, 1);
+                        sprintfl(Str, sizeof(Str),"%d.%01d kW", EVMeter.PowerMeasured, 3, 1);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
                     // fall through
                 case 4:
                     if (EVMeter.Type) {
-                        sprintfl(Str, "%d.%02d kWh", EVMeter.EnergyCharged, 3, 2);
+                        sprintfl(Str, sizeof(Str),"%d.%02d kWh", EVMeter.EnergyCharged, 3, 2);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
                     // fall through
                 case 5:
-                    sprintf(Str, "%u.%u A", Balanced[0] / 10, Balanced[0] % 10);
+                    snprintf(Str, sizeof(Str), "%u.%u A", Balanced[0] / 10, Balanced[0] % 10);
                     GLCD_print_buf2(5, Str);
                     break;
             }
@@ -1002,7 +1002,7 @@ const char * getMenuItemOption(uint8_t nav) {
 
     switch (nav) {
         case MENU_MAX_TEMP:
-            sprintf(Str, "%2u C", value);
+            snprintf(Str, sizeof(Str), "%2u C", value);
             return Str;
         case MENU_C2:
             return StrEnableC2[value];
@@ -1014,28 +1014,28 @@ const char * getMenuItemOption(uint8_t nav) {
             else if (Mode == MODE_SOLAR) return StrSolar;
             else return StrNormal;
         case MENU_START:
-                sprintf(Str, "-%2u A", value);
+                snprintf(Str, sizeof(Str), "-%2u A", value);
                 return Str;
         case MENU_SUMMAINSTIME:
         case MENU_STOP:
             if (value) {
-                sprintf(Str, "%2u min", value);
+                snprintf(Str, sizeof(Str), "%2u min", value);
                 return Str;
             } else return StrDisabled;
         case MENU_LOADBL:
             return StrLoadBl[LoadBl];
         case MENU_SUMMAINS:
             if (value)
-                sprintf(Str, "%2u A", value);
+                snprintf(Str, sizeof(Str), "%2u A", value);
             else
-                sprintf(Str, "Disabled");
+                snprintf(Str, sizeof(Str), "Disabled");
             return Str;
         case MENU_MAINS:
         case MENU_MIN:
         case MENU_MAX:
         case MENU_CIRCUIT:
         case MENU_IMPORT:
-            sprintf(Str, "%2u A", value);
+            snprintf(Str, sizeof(Str), "%2u A", value);
             return Str;
         case MENU_LOCK:
             if (value == 1) return StrSolenoid;
@@ -1046,11 +1046,11 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_PAIRING:
             if (SubMenu) {
                 uint32_t tempPin = random(1, 1000000);                                 // generate random PIN 1-999999 when selecting sub menu
-                sprintf(Str, "%06u", tempPin);
+                snprintf(Str, sizeof(Str), "%06u", tempPin);
                 PairingPin = Str;
             } else {
                 PairingPin = "";
-                sprintf(Str, "Create PIN");
+                snprintf(Str, sizeof(Str), "Create PIN");
             }    
             return Str;
         case MENU_APPSERVER:        
@@ -1064,7 +1064,7 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_GRID:
             return StrGrid[value];
         case MENU_LCDPIN:
-            sprintf(Str, "%04u", value);
+            snprintf(Str, sizeof(Str), "%04u", value);
             return Str;
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
@@ -1072,8 +1072,8 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_EMCUSTOM_IREGISTER:
         case MENU_EMCUSTOM_PREGISTER:
         case MENU_EMCUSTOM_EREGISTER:
-            if(value < 0x1000) sprintf(Str, "%u (%02X)", value, value);     // This just fits on the LCD.
-            else sprintf(Str, "%u %X", value, value);
+            if(value < 0x1000) snprintf(Str, sizeof(Str), "%u (%02X)", value, value);     // This just fits on the LCD.
+            else snprintf(Str, sizeof(Str), "%u %X", value, value);
             return Str;
         case MENU_EMCUSTOM_ENDIANESS:
             switch(value) {
@@ -1100,7 +1100,7 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_EMCUSTOM_IDIVISOR:
         case MENU_EMCUSTOM_PDIVISOR:
         case MENU_EMCUSTOM_EDIVISOR:
-            sprintf(Str, "%lu", pow_10[value]);
+            snprintf(Str, sizeof(Str), "%lu", pow_10[value]);
             return Str;
         case MENU_RFIDREADER:
             return StrRFIDReader[value];
@@ -1392,9 +1392,9 @@ void GLCDMenu(uint8_t Buttons) {
                     GLCD_print_menu(2, MenuStr[LCDNav].LCD);                            // add navigation arrows on both sides
                     // Bottom row of the GLCD
                     GLCD_buffer_clr();
-                    sprintf(Str, "%i%cC", getItemValue(STATUS_TEMP), 0x0C);                              // ° Degree symbol
+                    snprintf(Str, sizeof(Str), "%i%cC", getItemValue(STATUS_TEMP), 0x0C);                              // ° Degree symbol
                     GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);                     // show the internal temperature
-                    sprintf(Str, "%.19s",(const char *) VERSION);
+                    snprintf(Str, sizeof(Str), "%.19s",(const char *) VERSION);
                     GLCD_write_buf_str(127, 0, Str, GLCD_ALIGN_RIGHT);// show software version in bottom right corner.
                     GLCD_sendbuf(7, 1);
                 }

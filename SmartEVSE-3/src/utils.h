@@ -35,7 +35,7 @@ uint8_t ease8InOutQuad(uint8_t i);
 
 #ifdef SMARTEVSE_VERSION //ESP32
 uint32_t MacId();
-void sprintfl(char *str, const char *Format, signed long Value, unsigned char Divisor, unsigned char Decimal);
+void sprintfl(char *str, size_t size, const char *Format, signed long Value, unsigned char Divisor, unsigned char Decimal);
 unsigned char triwave8(unsigned char in);
 unsigned char scale8(unsigned char i, unsigned char scale);
 unsigned char ease8InOutQuad(unsigned char i);
