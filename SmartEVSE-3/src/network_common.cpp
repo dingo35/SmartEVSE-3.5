@@ -1235,21 +1235,10 @@ static void handleButtonCommand(struct mg_connection *c, const char* data, size_
     serializeJson(response, json);
     mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
 
-    // Immediately send updated LCD image to all WebSocket clients
-    // This provides instant visual feedback for the button press
-    const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-    for (int i = wsLcdConnections.size() - 1; i >= 0; i--) {
-        mg_connection* conn = wsLcdConnections[i];
-        if (conn != nullptr && !conn->is_closing) {
-            mg_ws_send(conn, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
-        } else {
-            wsLcdConnections.erase(wsLcdConnections.begin() + i);
-        }
-    }
-
-    // Reset the timer to maintain 1-second intervals from now
+    // Schedule LCD image update after a short delay to allow button processing
+    // The timer will fire ~100ms after button press, giving the device time to update the LCD
     if (LCDImageTimer != nullptr) {
-        LCDImageTimer->expire = mg_millis() + LCDImageTimer->period_ms;
+        LCDImageTimer->expire = mg_millis() + 100;  // Update in 100ms
     }
 }
 

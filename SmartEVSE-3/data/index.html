@@ -558,69 +558,35 @@
                                       </div>
 <script>
     (() => {
-        const ONE_SECOND_MS = 1000;
-        const LCD = document.querySelector('#lcd');
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
         const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
         let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
         const PASSWORD_FIELD = document.querySelector('#lcd-password');
         const PASSWORD_SUBMIT = document.querySelector('#lcd-password-submit');
+        const MIN_BUTTON_PRESS_MS = 300;
+        const WS_RECONNECT_MS = 3000;
+        const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
+        let lcdSocket = null;
+        let reconnectTimer = null;
+        let activeFrameUrl = null;
+        const activePointers = new Map();
 
-        function updateLcdImage() {
-            let signal;
-            if (typeof AbortController !== 'undefined') {
-                if (updateLcdImage.controller) {
-                    updateLcdImage.controller.abort('timeout');
-                }
-                updateLcdImage.controller = new AbortController();
-                signal = updateLcdImage.controller.signal;
+        function setActivateText(text) {
+            if (LCD_ACTIVATE) {
+                LCD_ACTIVATE.textContent = text;
             }
-
-            fetch('lcd', {signal})
-                .then(response => {
-                    if (!response.ok) return;
-                    response.blob()
-                        .then(blob => LCD_SCREEN.src = URL.createObjectURL(blob));
-                });
         }
 
-        function createImageUpdater(updateFunc, minDelay) {
-            let lastExecuted = 0;
-            let timer;
-
-            return function (immediate = false) {
-                const now = Date.now();
-                clearTimeout(timer);
-
-                if (immediate || now - lastExecuted >= minDelay) {
-                    updateFunc();
-                    lastExecuted = now;
-                    timer = setTimeout(() => {
-                        lastExecuted = Date.now();
-                        updateFunc();
-                    }, minDelay);
-                    return;
-                }
-                timer = setTimeout(() => {
-                    lastExecuted = Date.now();
-                    updateFunc();
-                }, minDelay - (now - lastExecuted));
-            };
-        }
-
-        const updateLCD = createImageUpdater(updateLcdImage, ONE_SECOND_MS);
-
-        function sendButtonState(btnName, stateDown) {
-            if (!passwordVerified) {
-                alert("Please enter PIN code first")
-            } else {
-                fetch(`lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
-                    .then(() => {
-                        // Immediate LCD screen refresh on button up.
-                        !stateDown && updateLCD(true);
-                    });
+        function scheduleReconnect() {
+            if (reconnectTimer !== null) {
+                return;
             }
+            setActivateText('Reconnecting...');
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                connectLCDWebSocket();
+            }, WS_RECONNECT_MS);
         }
 
         function activateLCD() {
@@ -628,8 +594,80 @@
                 return;
             }
             LCD_ACTIVATE.remove();
-            setInterval(updateLCD, ONE_SECOND_MS);
             LCD_ACTIVATE = null;
+        }
+
+        function connectLCDWebSocket() {
+            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+
+            setActivateText('Connecting...');
+            lcdSocket = new WebSocket(WS_URL);
+            lcdSocket.binaryType = 'arraybuffer';
+
+            lcdSocket.onopen = () => {
+                activateLCD();
+            };
+
+            lcdSocket.onmessage = (event) => {
+                if (!(event.data instanceof ArrayBuffer)) {
+                    return;
+                }
+                const frameUrl = URL.createObjectURL(new Blob([event.data], {type: 'image/bmp'}));
+                if (activeFrameUrl) {
+                    URL.revokeObjectURL(activeFrameUrl);
+                }
+                activeFrameUrl = frameUrl;
+                LCD_SCREEN.src = frameUrl;
+            };
+
+            lcdSocket.onerror = () => {
+                if (lcdSocket && lcdSocket.readyState !== WebSocket.CLOSED) {
+                    lcdSocket.close();
+                }
+            };
+
+            lcdSocket.onclose = () => {
+                scheduleReconnect();
+            };
+        }
+
+        function sendButtonState(btnName, stateDown) {
+            if (!passwordVerified) {
+                alert("Please enter PIN code first");
+                return;
+            }
+
+            if (!lcdSocket || lcdSocket.readyState !== WebSocket.OPEN) {
+                connectLCDWebSocket();
+                return;
+            }
+
+            lcdSocket.send(JSON.stringify({
+                button: btnName,
+                state: stateDown ? 1 : 0
+            }));
+        }
+
+        function releasePointerButton(pointerId) {
+            const pointerInfo = activePointers.get(pointerId);
+            if (!pointerInfo || pointerInfo.released) {
+                return;
+            }
+
+            pointerInfo.released = true;
+            const elapsed = Date.now() - pointerInfo.pressTime;
+            const sendRelease = () => {
+                sendButtonState(pointerInfo.button, false);
+                activePointers.delete(pointerId);
+            };
+
+            if (elapsed < MIN_BUTTON_PRESS_MS) {
+                window.setTimeout(sendRelease, MIN_BUTTON_PRESS_MS - elapsed);
+            } else {
+                sendRelease();
+            }
         }
 
         function verifyPassword() {
@@ -647,17 +685,27 @@
 
         PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
 
-        ['mousedown', 'mouseup'].forEach(eventName => {
-            LCD_BUTTONS.addEventListener(eventName, event => {
-                activateLCD();
-                const btnName = event.target.dataset.name;
-                const stateDown = event.type === 'mousedown';
-                btnName && sendButtonState(btnName, stateDown);
+        LCD_BUTTONS.addEventListener('pointerdown', event => {
+            const button = event.target.closest('button[data-name]');
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            activePointers.set(event.pointerId, {
+                button: button.dataset.name,
+                pressTime: Date.now(),
+                released: false
+            });
+            sendButtonState(button.dataset.name, true);
+        });
+
+        ['pointerup', 'pointercancel'].forEach(eventName => {
+            window.addEventListener(eventName, event => {
+                releasePointerButton(event.pointerId);
             });
         });
 
-        LCD.addEventListener('mousedown', activateLCD, {once: true});
-        updateLcdImage();
+        connectLCDWebSocket();
     })();
 </script>
                                   </div>
