@@ -147,7 +147,8 @@ jobs:
         run: |
           python scripts/extract_traceability.py \
             --html traceability-report.html \
-            --markdown test-specification.md
+            --markdown test-specification.md \
+            --markdown-report traceability-report.md
       - name: Validate state transitions
         working-directory: SmartEVSE-3/test/native
         run: python scripts/validate_transitions.py
@@ -158,13 +159,14 @@ jobs:
           name: traceability-reports
           path: |
             SmartEVSE-3/test/native/traceability-report.html
+            SmartEVSE-3/test/native/traceability-report.md
             SmartEVSE-3/test/native/test-specification.md
       - name: Commit updated test specification
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add SmartEVSE-3/test/native/test-specification.md SmartEVSE-3/test/native/traceability-report.html
+          git add SmartEVSE-3/test/native/test-specification.md SmartEVSE-3/test/native/traceability-report.md SmartEVSE-3/test/native/traceability-report.html
           if git diff --cached --quiet; then
             echo "Reports are already up to date"
           else
