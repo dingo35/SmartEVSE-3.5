@@ -577,8 +577,10 @@
         const LOCKED_PRESS_ALERT_THRESHOLD = 3;
         const MIN_BUTTON_PRESS_MS = 300;
         const WS_RECONNECT_BASE_MS = 1000;
-        const WS_RECONNECT_MAX_MS = 30000;
+        const WS_RECONNECT_MAX_MS = 10000;
         const WS_RECONNECT_JITTER_MS = 400;
+        const WS_INITIAL_RETRY_MS = 750;
+        const WS_INITIAL_RETRY_JITTER_MS = 250;
         const WS_CONNECT_TIMEOUT_MS = 5000;
         const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
@@ -587,6 +589,7 @@
         let reconnectTimer = null;
         let connectTimeoutTimer = null;
         let reconnectAttempts = 0;
+        let hasConnectedOnce = false;
         let wsPausedByVisibility = false;
         let activeFrameUrl = null;
         const activePointers = new Map();
@@ -615,6 +618,15 @@
             return !wsPausedByVisibility;
         }
 
+        function requestImmediateReconnect() {
+            if (!shouldKeepWsActive()) {
+                return;
+            }
+            reconnectAttempts = 0;
+            clearReconnectTimer();
+            connectLCDWebSocket();
+        }
+
         function disconnectLCDWebSocket() {
             clearConnectTimeout();
             clearReconnectTimer();
@@ -630,8 +642,12 @@
             if (reconnectTimer !== null) {
                 return;
             }
-            const backoffMs = Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS);
-            const jitterMs = Math.floor(Math.random() * WS_RECONNECT_JITTER_MS);
+            const backoffMs = hasConnectedOnce
+                ? Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS)
+                : WS_INITIAL_RETRY_MS;
+            const jitterMs = hasConnectedOnce
+                ? Math.floor(Math.random() * WS_RECONNECT_JITTER_MS)
+                : Math.floor(Math.random() * WS_INITIAL_RETRY_JITTER_MS);
             const reconnectDelayMs = backoffMs + jitterMs;
             reconnectAttempts += 1;
             setActivateText(`Reconnecting in ${Math.ceil(reconnectDelayMs / 1000)}s...`);
@@ -708,6 +724,7 @@
             socket.onopen = () => {
                 clearConnectTimeout();
                 reconnectAttempts = 0;
+                hasConnectedOnce = true;
                 activateLCD();
             };
 
@@ -754,7 +771,7 @@
             }
 
             if (!lcdSocket || lcdSocket.readyState !== WebSocket.OPEN) {
-                connectLCDWebSocket();
+                requestImmediateReconnect();
                 return;
             }
 
@@ -836,9 +853,7 @@
         });
 
         window.addEventListener('online', () => {
-            reconnectAttempts = 0;
-            clearReconnectTimer();
-            connectLCDWebSocket();
+            requestImmediateReconnect();
         });
 
         window.addEventListener('offline', () => {
@@ -854,9 +869,8 @@
             }
 
             wsPausedByVisibility = false;
-            reconnectAttempts = 0;
             setActivateText('Reconnecting...');
-            connectLCDWebSocket();
+            requestImmediateReconnect();
         });
 
         const storedPin = getStoredPin();
@@ -871,7 +885,7 @@
             wsPausedByVisibility = true;
             setActivateText('Paused in background');
         } else {
-            connectLCDWebSocket();
+            requestImmediateReconnect();
         }
     })();
 </script>
