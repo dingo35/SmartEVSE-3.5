@@ -545,7 +545,6 @@
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
                                           <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
-                                          <div class="lcd-activate">Click to activate</div>
                                           <div class="lcd-display-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
@@ -556,12 +555,12 @@
                                               <button type="button" data-name="middle">Middle</button>
                                               <button type="button" data-name="right">Right</button>
                                           </div>
-                                          <form class="lcd-password" id="lcd-password-form" style="display: flex; align-items: center; gap: 10px;">
-                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 130px;">
+                                          <form class="lcd-password" id="lcd-password-form">
+                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 6em;">
                                               <button type="submit" id="lcd-password-submit">Unlock</button>
                                               <span id="lcd-lock-status" style="color: #e74a3b; font-weight: 700; white-space: nowrap;" title="Button lock status">Locked - Enter PIN</span>
                                           </form>
-                                          <div id="lcd-lock-hint" style="margin-top: 8px; color: #6e707e; font-size: 0.95rem;">
+                                          <div id="lcd-lock-hint">
                                               LCD buttons are locked. Enter your PIN to unlock them.
                                           </div>
                                       </div>
@@ -577,12 +576,18 @@
         const SESSION_STORAGE_PIN_KEY = 'lcdPinCode';
         const LOCKED_PRESS_ALERT_THRESHOLD = 3;
         const MIN_BUTTON_PRESS_MS = 300;
-        const WS_RECONNECT_MS = 3000;
+        const WS_RECONNECT_BASE_MS = 1000;
+        const WS_RECONNECT_MAX_MS = 30000;
+        const WS_RECONNECT_JITTER_MS = 400;
+        const WS_CONNECT_TIMEOUT_MS = 5000;
         const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
         let blockedButtonPressCount = 0;
         let lcdSocket = null;
         let reconnectTimer = null;
+        let connectTimeoutTimer = null;
+        let reconnectAttempts = 0;
+        let wsPausedByVisibility = false;
         let activeFrameUrl = null;
         const activePointers = new Map();
 
@@ -592,15 +597,48 @@
             }
         }
 
+        function clearConnectTimeout() {
+            if (connectTimeoutTimer !== null) {
+                window.clearTimeout(connectTimeoutTimer);
+                connectTimeoutTimer = null;
+            }
+        }
+
+        function clearReconnectTimer() {
+            if (reconnectTimer !== null) {
+                window.clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        }
+
+        function shouldKeepWsActive() {
+            return !wsPausedByVisibility;
+        }
+
+        function disconnectLCDWebSocket() {
+            clearConnectTimeout();
+            clearReconnectTimer();
+            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
+                lcdSocket.close();
+            }
+        }
+
         function scheduleReconnect() {
+            if (!shouldKeepWsActive()) {
+                return;
+            }
             if (reconnectTimer !== null) {
                 return;
             }
-            setActivateText('Reconnecting...');
+            const backoffMs = Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS);
+            const jitterMs = Math.floor(Math.random() * WS_RECONNECT_JITTER_MS);
+            const reconnectDelayMs = backoffMs + jitterMs;
+            reconnectAttempts += 1;
+            setActivateText(`Reconnecting in ${Math.ceil(reconnectDelayMs / 1000)}s...`);
             reconnectTimer = window.setTimeout(() => {
                 reconnectTimer = null;
                 connectLCDWebSocket();
-            }, WS_RECONNECT_MS);
+            }, reconnectDelayMs);
         }
 
         function activateLCD() {
@@ -648,19 +686,32 @@
         }
 
         function connectLCDWebSocket() {
+            if (!shouldKeepWsActive()) {
+                return;
+            }
             if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
                 return;
             }
 
             setActivateText('Connecting...');
-            lcdSocket = new WebSocket(WS_URL);
-            lcdSocket.binaryType = 'arraybuffer';
+            const socket = new WebSocket(WS_URL);
+            lcdSocket = socket;
+            socket.binaryType = 'arraybuffer';
 
-            lcdSocket.onopen = () => {
+            clearConnectTimeout();
+            connectTimeoutTimer = window.setTimeout(() => {
+                if (socket.readyState === WebSocket.CONNECTING) {
+                    socket.close();
+                }
+            }, WS_CONNECT_TIMEOUT_MS);
+
+            socket.onopen = () => {
+                clearConnectTimeout();
+                reconnectAttempts = 0;
                 activateLCD();
             };
 
-            lcdSocket.onmessage = (event) => {
+            socket.onmessage = (event) => {
                 if (!(event.data instanceof ArrayBuffer)) {
                     return;
                 }
@@ -672,14 +723,20 @@
                 LCD_SCREEN.src = frameUrl;
             };
 
-            lcdSocket.onerror = () => {
-                if (lcdSocket && lcdSocket.readyState !== WebSocket.CLOSED) {
-                    lcdSocket.close();
+            socket.onerror = () => {
+                if (socket.readyState !== WebSocket.CLOSED) {
+                    socket.close();
                 }
             };
 
-            lcdSocket.onclose = () => {
-                scheduleReconnect();
+            socket.onclose = () => {
+                clearConnectTimeout();
+                if (lcdSocket === socket) {
+                    lcdSocket = null;
+                }
+                if (shouldKeepWsActive()) {
+                    scheduleReconnect();
+                }
             };
         }
 
@@ -778,6 +835,30 @@
             });
         });
 
+        window.addEventListener('online', () => {
+            reconnectAttempts = 0;
+            clearReconnectTimer();
+            connectLCDWebSocket();
+        });
+
+        window.addEventListener('offline', () => {
+            setActivateText('Offline - waiting for network...');
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                wsPausedByVisibility = true;
+                setActivateText('Paused in background');
+                disconnectLCDWebSocket();
+                return;
+            }
+
+            wsPausedByVisibility = false;
+            reconnectAttempts = 0;
+            setActivateText('Reconnecting...');
+            connectLCDWebSocket();
+        });
+
         const storedPin = getStoredPin();
         if (storedPin) {
             PASSWORD_FIELD.value = storedPin;
@@ -786,7 +867,12 @@
             updateLockUi(false);
         }
 
-        connectLCDWebSocket();
+        if (document.hidden) {
+            wsPausedByVisibility = true;
+            setActivateText('Paused in background');
+        } else {
+            connectLCDWebSocket();
+        }
     })();
 </script>
                                   </div>

@@ -64,6 +64,37 @@
     outline: 2px dotted black;
 }
 
+#lcd .lcd-display-buttons button:focus,
+#lcd .lcd-display-buttons button:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+#lcd .lcd-password {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 350px;
+    margin: 10px 0 0 20px;
+}
+
+#lcd #lcd-password {
+    width: 130px;
+}
+
+#lcd #lcd-lock-status {
+    margin-left: auto;
+    text-align: right;
+}
+
+#lcd #lcd-lock-hint {
+    width: 350px;
+    margin: 8px 0 0 20px;
+    color: #6e707e;
+    font-size: .95rem;
+    line-height: 1.3;
+}
+
 #lcd .lcd-activate {
     position: absolute;
     display: grid;
