@@ -1,11 +1,15 @@
 #if defined(ESP32)
 
 #include <WiFi.h>
+#include <vector>
 #include "mbedtls/md_internal.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "utils.h"
 #include "network_common.h"
+#include "glcd.h"
+#include "esp32.h"
+#include <ArduinoJson.h>
 
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
@@ -53,6 +57,33 @@ bool MQTTSmartServer = false;               // Use mqtt.smartevse.nl server, can
 bool MQTTSmartServerChanged = false;        // Flag to trigger reconnect from network_loop()
 String MQTTprivatePassword;                 // mqtt.smartevse.nl pre calculated password (hash of ec_private key)
 #endif
+
+// WebSocket LCD image timer and connection tracking
+mg_timer *LCDImageTimer = nullptr;
+std::vector<mg_connection*> wsLcdConnections;
+
+static void stopLCDImageTimer(struct mg_mgr *manager) {
+    if (LCDImageTimer != nullptr && manager != nullptr) {
+        mg_timer_free(&manager->timers, LCDImageTimer);
+        LCDImageTimer = nullptr;
+        _LOG_V("Stopped LCD image timer\n");
+    }
+}
+
+static bool isTrackedLcdWsConnection(const mg_connection *connection) {
+    for (const auto *tracked : wsLcdConnections) {
+        if (tracked == connection) return true;
+    }
+    return false;
+}
+
+static void sendWsError(struct mg_connection *c, const char *reason) {
+    DynamicJsonDocument response(96);
+    response["error"] = reason;
+    String json;
+    serializeJson(response, json);
+    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+}
 
 mg_connection *HttpListener80, *HttpListener443;
 
@@ -1152,6 +1183,131 @@ static void timer_fn(void *arg) {
 }
 #endif
 
+// Timer function - sends LCD image to all connected websocket clients
+static void lcd_image_timer_fn(void *arg) {
+    struct mg_mgr *mgr = (struct mg_mgr *) arg;
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
+    // First remove stale/closing sockets.
+    for (size_t i = wsLcdConnections.size(); i > 0; --i) {
+        const size_t idx = i - 1;
+        mg_connection *c = wsLcdConnections[idx];
+        if (c == nullptr || c->is_closing) {
+            wsLcdConnections.erase(wsLcdConnections.begin() + idx);
+        }
+    }
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
+    // Generate BMP image from LCD buffer
+    const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+
+    // Send to all connected websocket clients
+    for (auto *c : wsLcdConnections) {
+        mg_ws_send(c, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
+    }
+}
+
+// Handle button command received via WebSocket
+// Expected JSON format: {"button":"left|middle|right", "state":0|1}
+static void handleButtonCommand(struct mg_connection *c, const char* data, size_t len) {
+    if (!LCDPasswordOK) {
+        _LOG_W("Rejected WebSocket button command: PIN not verified\n");
+        sendWsError(c, "unauthorized");
+        return;
+    }
+
+    DynamicJsonDocument doc(128);
+    DeserializationError error = deserializeJson(doc, data, len);
+
+    if (error) {
+        _LOG_W("Failed to parse button command JSON: %s\n", error.c_str());
+        sendWsError(c, "invalid_json");
+        return;
+    }
+
+    if (!doc.containsKey("button") || !doc.containsKey("state")) {
+        _LOG_W("Button command missing 'button' or 'state' field\n");
+        sendWsError(c, "missing_fields");
+        return;
+    }
+
+    if (!doc["button"].is<const char*>()) {
+        _LOG_W("Button command has invalid 'button' type\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+    const char *btnName = doc["button"].as<const char*>();
+    if (btnName == nullptr || btnName[0] == '\0') {
+        _LOG_W("Button command has empty 'button' value\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+
+    if (!(doc["state"].is<int>() || doc["state"].is<bool>())) {
+        _LOG_W("Button command has invalid 'state' type\n");
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const int state = doc["state"].as<int>();
+    if (state != 0 && state != 1) {
+        _LOG_W("Button command has invalid 'state' value: %d\n", state);
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const bool btnDown = state == 1;
+
+    // Button state bitmasks
+    static constexpr uint8_t RIGHT_MASK = 0b100;
+    static constexpr uint8_t MIDDLE_MASK = 0b010;
+    static constexpr uint8_t LEFT_MASK = 0b001;
+    static constexpr uint8_t ALL_BUTTONS_UP = 0b111;
+
+    uint8_t mask = 0;
+    if (strcmp(btnName, "right") == 0) {
+        mask = RIGHT_MASK;
+    } else if (strcmp(btnName, "middle") == 0) {
+        mask = MIDDLE_MASK;
+    } else if (strcmp(btnName, "left") == 0) {
+        mask = LEFT_MASK;
+    } else {
+        _LOG_W("Unknown button name: %s\n", btnName);
+        sendWsError(c, "unknown_button");
+        return;
+    }
+
+    // Update button state with mutex protection
+    xSemaphoreTake(buttonMutex, portMAX_DELAY);
+    if (btnDown) {
+        ButtonStateOverride = ALL_BUTTONS_UP & ~mask;
+    } else {
+        ButtonStateOverride = ALL_BUTTONS_UP | mask;
+    }
+    LastBtnOverrideTime = millis();
+    xSemaphoreGive(buttonMutex);
+
+    _LOG_V("WebSocket button command: %s = %s\n", btnName, btnDown ? "down" : "up");
+
+    // Send acknowledgment back to client
+    DynamicJsonDocument response(128);
+    response["button"][btnName] = btnDown ? "down" : "up";
+    String json;
+    serializeJson(response, json);
+    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+
+    // Schedule LCD image update after a short delay to allow button processing
+    // The timer will fire ~100ms after button press, giving the device time to update the LCD
+    if (LCDImageTimer != nullptr) {
+        LCDImageTimer->expire = mg_millis() + 100;  // Update in 100ms
+    }
+}
 
 // HTML web form for entering WIFI credentials in AP setup portal
 static const char *html_form = R"EOF(
@@ -1226,8 +1382,50 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         _LOG_A("Free HTTP port 443");
         HttpListener443 = nullptr;
     }
+    // Remove websocket connection from tracking list
+    for (auto it = wsLcdConnections.begin(); it != wsLcdConnections.end(); ++it) {
+        if (*it == c) {
+            wsLcdConnections.erase(it);
+            _LOG_V("Removed websocket LCD connection, remaining: %d\n", wsLcdConnections.size());
+
+            // Stop timer if no more connections
+            if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
+            break;
+        }
+    }
+    if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
+  } else if (ev == MG_EV_WS_OPEN) {
+    // Websocket connection opened - check if it's for /ws/lcd endpoint
+    struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+    if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
+        wsLcdConnections.push_back(c);
+        _LOG_V("New websocket LCD connection, total: %d\n", wsLcdConnections.size());
+
+        // Start timer if this is the first connection
+        if (wsLcdConnections.size() == 1 && LCDImageTimer == nullptr) {
+            LCDImageTimer = mg_timer_add(&mgr, 1000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, lcd_image_timer_fn, &mgr);
+            _LOG_V("Started LCD image timer\n");
+        }
+    }
+  } else if (ev == MG_EV_WS_MSG) {
+    // Websocket message received - handle button commands
+    struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
+    if (!isTrackedLcdWsConnection(c)) return;
+
+    // Check if this is a text message (button commands are JSON text)
+    if ((wm->flags & 0x0f) == WEBSOCKET_OP_TEXT) {
+        handleButtonCommand(c, (const char*)wm->data.buf, wm->data.len);
+    }
+    // Binary messages are ignored (only server sends binary BMP images)
   } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
+
+    // Check for websocket upgrade request for LCD image stream
+    if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
+        mg_ws_upgrade(c, hm, NULL);  // Upgrade HTTP to WebSocket
+        return;  // Don't process as regular HTTP
+    }
+
     static webServerRequest requestObj;  // Static to avoid heap allocation on every request
     webServerRequest* request = &requestObj;
     request->setMessage(hm);

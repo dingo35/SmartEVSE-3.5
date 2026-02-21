@@ -269,6 +269,7 @@ String PairingPin = "";
 SemaphoreHandle_t buttonMutex = xSemaphoreCreateMutex();
 uint8_t ButtonStateOverride = 0x07;                                         // Possibility to override the buttons via API
 uint32_t LastBtnOverrideTime = 0;                                           // Avoid UI buttons getting stuck
+bool LCDPasswordOK = false;                                                 // LCD web control PIN verification state
 extern uint8_t ChargeDelay;
 extern uint8_t NoCurrent;
 extern uint8_t ModbusRequest;
@@ -1509,7 +1510,6 @@ void DisconnectEvent(void){
 
 // handles URI, returns true if handled, false if not
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
-    static bool LCDPasswordOK = false;
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
     if (mg_http_match_uri(hm, "/settings")) {                            // REST API call?
       if (!memcmp("GET", hm->method.buf, hm->method.len)) {                     // if GET
@@ -3488,4 +3488,3 @@ void loop() {
 
 }
 #endif //ESP32
-
