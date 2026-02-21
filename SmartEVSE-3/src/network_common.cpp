@@ -62,6 +62,29 @@ String MQTTprivatePassword;                 // mqtt.smartevse.nl pre calculated 
 mg_timer *LCDImageTimer = nullptr;
 std::vector<mg_connection*> wsLcdConnections;
 
+static void stopLCDImageTimer(struct mg_mgr *manager) {
+    if (LCDImageTimer != nullptr && manager != nullptr) {
+        mg_timer_free(&manager->timers, LCDImageTimer);
+        LCDImageTimer = nullptr;
+        _LOG_V("Stopped LCD image timer\n");
+    }
+}
+
+static bool isTrackedLcdWsConnection(const mg_connection *connection) {
+    for (const auto *tracked : wsLcdConnections) {
+        if (tracked == connection) return true;
+    }
+    return false;
+}
+
+static void sendWsError(struct mg_connection *c, const char *reason) {
+    DynamicJsonDocument response(96);
+    response["error"] = reason;
+    String json;
+    serializeJson(response, json);
+    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+}
+
 mg_connection *HttpListener80, *HttpListener443;
 
 bool shouldReboot = false;
@@ -1162,41 +1185,84 @@ static void timer_fn(void *arg) {
 
 // Timer function - sends LCD image to all connected websocket clients
 static void lcd_image_timer_fn(void *arg) {
+    struct mg_mgr *mgr = (struct mg_mgr *) arg;
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
+    // First remove stale/closing sockets.
+    for (size_t i = wsLcdConnections.size(); i > 0; --i) {
+        const size_t idx = i - 1;
+        mg_connection *c = wsLcdConnections[idx];
+        if (c == nullptr || c->is_closing) {
+            wsLcdConnections.erase(wsLcdConnections.begin() + idx);
+        }
+    }
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
     // Generate BMP image from LCD buffer
     const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
 
     // Send to all connected websocket clients
-    // Iterate backwards to safely remove closed connections
-    for (int i = wsLcdConnections.size() - 1; i >= 0; i--) {
-        mg_connection* c = wsLcdConnections[i];
-        if (c != nullptr && !c->is_closing) {
-            // Send as binary websocket message
-            mg_ws_send(c, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
-        } else {
-            // Remove closed connection from list
-            wsLcdConnections.erase(wsLcdConnections.begin() + i);
-        }
+    for (auto *c : wsLcdConnections) {
+        mg_ws_send(c, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
     }
 }
 
 // Handle button command received via WebSocket
 // Expected JSON format: {"button":"left|middle|right", "state":0|1}
 static void handleButtonCommand(struct mg_connection *c, const char* data, size_t len) {
+    if (!LCDPasswordOK) {
+        _LOG_W("Rejected WebSocket button command: PIN not verified\n");
+        sendWsError(c, "unauthorized");
+        return;
+    }
+
     DynamicJsonDocument doc(128);
     DeserializationError error = deserializeJson(doc, data, len);
 
     if (error) {
         _LOG_W("Failed to parse button command JSON: %s\n", error.c_str());
+        sendWsError(c, "invalid_json");
         return;
     }
 
     if (!doc.containsKey("button") || !doc.containsKey("state")) {
         _LOG_W("Button command missing 'button' or 'state' field\n");
+        sendWsError(c, "missing_fields");
         return;
     }
 
-    const char* btnName = doc["button"];
-    const bool btnDown = doc["state"].as<int>() == 1;
+    if (!doc["button"].is<const char*>()) {
+        _LOG_W("Button command has invalid 'button' type\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+    const char *btnName = doc["button"].as<const char*>();
+    if (btnName == nullptr || btnName[0] == '\0') {
+        _LOG_W("Button command has empty 'button' value\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+
+    if (!(doc["state"].is<int>() || doc["state"].is<bool>())) {
+        _LOG_W("Button command has invalid 'state' type\n");
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const int state = doc["state"].as<int>();
+    if (state != 0 && state != 1) {
+        _LOG_W("Button command has invalid 'state' value: %d\n", state);
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const bool btnDown = state == 1;
 
     // Button state bitmasks
     static constexpr uint8_t RIGHT_MASK = 0b100;
@@ -1213,6 +1279,7 @@ static void handleButtonCommand(struct mg_connection *c, const char* data, size_
         mask = LEFT_MASK;
     } else {
         _LOG_W("Unknown button name: %s\n", btnName);
+        sendWsError(c, "unknown_button");
         return;
     }
 
@@ -1322,14 +1389,11 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             _LOG_V("Removed websocket LCD connection, remaining: %d\n", wsLcdConnections.size());
 
             // Stop timer if no more connections
-            if (wsLcdConnections.empty() && LCDImageTimer != nullptr) {
-                mg_timer_free(&mgr.timers, LCDImageTimer);
-                LCDImageTimer = nullptr;
-                _LOG_V("Stopped LCD image timer\n");
-            }
+            if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
             break;
         }
     }
+    if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
   } else if (ev == MG_EV_WS_OPEN) {
     // Websocket connection opened - check if it's for /ws/lcd endpoint
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;
@@ -1346,9 +1410,10 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   } else if (ev == MG_EV_WS_MSG) {
     // Websocket message received - handle button commands
     struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
+    if (!isTrackedLcdWsConnection(c)) return;
 
     // Check if this is a text message (button commands are JSON text)
-    if (wm->flags & WEBSOCKET_OP_TEXT) {
+    if ((wm->flags & 0x0f) == WEBSOCKET_OP_TEXT) {
         handleButtonCommand(c, (const char*)wm->data.buf, wm->data.len);
     }
     // Binary messages are ignored (only server sends binary BMP images)

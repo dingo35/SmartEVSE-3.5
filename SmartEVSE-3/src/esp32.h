@@ -120,6 +120,7 @@ extern uint8_t OldButtonState;                                                  
 extern SemaphoreHandle_t buttonMutex;                                           // Mutex for button state access
 extern uint8_t ButtonStateOverride;                                             // Override button state via API/WebSocket
 extern uint32_t LastBtnOverrideTime;                                            // Timestamp of last button override
+extern bool LCDPasswordOK;                                                      // LCD web control PIN verification state
 extern uint8_t ChargeDelay;                                                     // Delays charging in seconds.
 extern uint8_t TestState;
 extern AccessStatus_t AccessStatus;
