@@ -38,7 +38,17 @@
     display: flex;
 }
 
-#lcd .lcd-buttons button {
+.lcd-display-buttons {
+    position: absolute;
+    top: 156px;
+    left: 60px;
+    width: 270px;
+    height: 168px;
+    display: flex;
+}
+
+#lcd .lcd-buttons button,
+#lcd .lcd-display-buttons button {
     flex: 1;
     margin: 0;
     padding: 15px;

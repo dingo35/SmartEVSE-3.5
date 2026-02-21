@@ -546,27 +546,41 @@
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
                                           <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
                                           <div class="lcd-activate">Click to activate</div>
+                                          <div class="lcd-display-buttons">
+                                              <button type="button" data-name="left">Left</button>
+                                              <button type="button" data-name="middle">Middle</button>
+                                              <button type="button" data-name="right">Right</button>
+                                          </div>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
                                               <button type="button" data-name="right">Right</button>
                                           </div>
-                                          <div class="lcd-password" style="display: flex; align-items: center; gap: 10px;">
-                                              <input type="password" id="lcd-password" placeholder="Enter PIN" style="width: 150px; height: 25px; font-size: 14px;">
-                                              <button type="button" id="lcd-password-submit" style="width: 100px; height: 40px;">Submit</button>
+                                          <form class="lcd-password" id="lcd-password-form" style="display: flex; align-items: center; gap: 10px;">
+                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 130px;">
+                                              <button type="submit" id="lcd-password-submit">Unlock</button>
+                                              <span id="lcd-lock-status" style="color: #e74a3b; font-weight: 700; white-space: nowrap;" title="Button lock status">Locked - Enter PIN</span>
+                                          </form>
+                                          <div id="lcd-lock-hint" style="margin-top: 8px; color: #6e707e; font-size: 0.95rem;">
+                                              LCD buttons are locked. Enter your PIN to unlock them.
                                           </div>
                                       </div>
 <script>
     (() => {
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
-        const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
+        const LCD_BUTTON_CONTAINERS = document.querySelectorAll('#lcd .lcd-buttons, #lcd .lcd-display-buttons');
         let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
         const PASSWORD_FIELD = document.querySelector('#lcd-password');
-        const PASSWORD_SUBMIT = document.querySelector('#lcd-password-submit');
+        const PASSWORD_FORM = document.querySelector('#lcd-password-form');
+        const LOCK_STATUS = document.querySelector('#lcd-lock-status');
+        const LOCK_HINT = document.querySelector('#lcd-lock-hint');
+        const SESSION_STORAGE_PIN_KEY = 'lcdPinCode';
+        const LOCKED_PRESS_ALERT_THRESHOLD = 3;
         const MIN_BUTTON_PRESS_MS = 300;
         const WS_RECONNECT_MS = 3000;
         const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
+        let blockedButtonPressCount = 0;
         let lcdSocket = null;
         let reconnectTimer = null;
         let activeFrameUrl = null;
@@ -595,6 +609,42 @@
             }
             LCD_ACTIVATE.remove();
             LCD_ACTIVATE = null;
+        }
+
+        function getStoredPin() {
+            try {
+                return sessionStorage.getItem(SESSION_STORAGE_PIN_KEY);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function storePin(pin) {
+            try {
+                sessionStorage.setItem(SESSION_STORAGE_PIN_KEY, pin);
+            } catch (e) {
+                // Ignore storage issues (e.g. restricted browser mode)
+            }
+        }
+
+        function clearStoredPin() {
+            try {
+                sessionStorage.removeItem(SESSION_STORAGE_PIN_KEY);
+            } catch (e) {
+                // Ignore storage issues (e.g. restricted browser mode)
+            }
+        }
+
+        function updateLockUi(isUnlocked) {
+            if (isUnlocked) {
+                LOCK_STATUS.textContent = 'Unlocked';
+                LOCK_STATUS.style.color = '#1cc88a';
+                LOCK_HINT.textContent = 'Buttons are unlocked. You can use Left, Middle and Right.';
+            } else {
+                LOCK_STATUS.textContent = 'Locked - Enter PIN';
+                LOCK_STATUS.style.color = '#e74a3b';
+                LOCK_HINT.textContent = 'LCD buttons are locked. Enter your PIN to unlock them.';
+            }
         }
 
         function connectLCDWebSocket() {
@@ -635,7 +685,14 @@
 
         function sendButtonState(btnName, stateDown) {
             if (!passwordVerified) {
-                alert("Please enter PIN code first");
+                blockedButtonPressCount += 1;
+                updateLockUi(false);
+                PASSWORD_FIELD.focus();
+                PASSWORD_FIELD.select();
+                if (blockedButtonPressCount >= LOCKED_PRESS_ALERT_THRESHOLD) {
+                    alert("Buttons are locked. Enter your PIN first to unlock.");
+                    blockedButtonPressCount = 0;
+                }
                 return;
             }
 
@@ -670,33 +727,49 @@
             }
         }
 
-        function verifyPassword() {
-            const enteredPassword = PASSWORD_FIELD.value;
+        function verifyPassword(options = {}) {
+            const enteredPassword = options.password ?? PASSWORD_FIELD.value;
+            const showErrorAlert = options.showErrorAlert ?? true;
+            const rememberPin = options.rememberPin ?? true;
             $.post('/lcd-verify-password', { password: enteredPassword })
             .done(function(data) {
                 if (data.success) {
                     passwordVerified = true;
-                    alert("PIN verified. You can now use the buttons.");
+                    blockedButtonPressCount = 0;
+                    updateLockUi(true);
+                    if (rememberPin) {
+                        storePin(enteredPassword);
+                    }
                 } else {
-                    alert("Incorrect PIN. Please try again.");
+                    passwordVerified = false;
+                    updateLockUi(false);
+                    clearStoredPin();
+                    if (showErrorAlert) {
+                        alert("Incorrect PIN. Please try again.");
+                    }
                 }
             });
         }
 
-        PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
-
-        LCD_BUTTONS.addEventListener('pointerdown', event => {
-            const button = event.target.closest('button[data-name]');
-            if (!button) {
-                return;
-            }
+        PASSWORD_FORM.addEventListener('submit', event => {
             event.preventDefault();
-            activePointers.set(event.pointerId, {
-                button: button.dataset.name,
-                pressTime: Date.now(),
-                released: false
+            verifyPassword();
+        });
+
+        LCD_BUTTON_CONTAINERS.forEach(buttonContainer => {
+            buttonContainer.addEventListener('pointerdown', event => {
+                const button = event.target.closest('button[data-name]');
+                if (!button) {
+                    return;
+                }
+                event.preventDefault();
+                activePointers.set(event.pointerId, {
+                    button: button.dataset.name,
+                    pressTime: Date.now(),
+                    released: false
+                });
+                sendButtonState(button.dataset.name, true);
             });
-            sendButtonState(button.dataset.name, true);
         });
 
         ['pointerup', 'pointercancel'].forEach(eventName => {
@@ -704,6 +777,14 @@
                 releasePointerButton(event.pointerId);
             });
         });
+
+        const storedPin = getStoredPin();
+        if (storedPin) {
+            PASSWORD_FIELD.value = storedPin;
+            verifyPassword({ password: storedPin, showErrorAlert: false, rememberPin: false });
+        } else {
+            updateLockUi(false);
+        }
 
         connectLCDWebSocket();
     })();
