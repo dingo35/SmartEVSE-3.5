@@ -321,6 +321,17 @@ void evse_set_state(evse_ctx_t *ctx, uint8_t new_state) {
                 ctx->Node[0].IntTimer = 0;
                 ctx->Node[0].Phases = 0;
                 ctx->Node[0].MinCurrent = 0;
+                // When ending an active charging session (STATE_C or C1 → STATE_A),
+                // immediately clear authorization. Without this, AccessStatus stays ON
+                // for up to RFIDLOCKTIME seconds, causing the next RFID swipe to toggle
+                // it OFF (stopping a session that was never started) instead of ON
+                // (starting a new session). Also clears the RFID lock timer that was
+                // just re-armed by the PILOT_12V handler. The OCPP layer detects the
+                // AccessStatus→OFF change on the next tick and terminates the transaction.
+                if (ctx->State == STATE_C || ctx->State == STATE_C1) {
+                    ctx->AccessStatus = OFF;
+                    ctx->AccessTimer = 0;
+                }
             }
             break;
 

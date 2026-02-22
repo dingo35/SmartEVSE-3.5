@@ -337,6 +337,56 @@ void test_no_B_to_C_without_access(void) {
     TEST_ASSERT_NOT_EQUAL(STATE_C, ctx.State);
 }
 
+/*
+ * @feature Authorization & Access Control
+ * @req REQ-AUTH-019
+ * @scenario AccessStatus is cleared immediately when a charging session ends
+ * @given EVSE is in STATE_C with AccessStatus ON and RFID reader enabled (EnableOne)
+ * @when PILOT_12V is received (car disconnects — e.g. Tesla door handle)
+ * @then AccessStatus is OFF and AccessTimer is 0 immediately upon transition to STATE_A
+ */
+void test_access_status_cleared_on_session_end(void) {
+    setup_basic();
+    ctx.RFIDReader = 2;  // EnableOne
+    ctx.AccessStatus = ON;
+    ctx.ChargeCurrent = 130;
+    evse_set_state(&ctx, STATE_C);
+    TEST_ASSERT_EQUAL_INT(STATE_C, ctx.State);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // Car disconnects (CP → +12V)
+    evse_tick_10ms(&ctx, PILOT_12V);
+
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+    TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
+}
+
+/*
+ * @feature Authorization & Access Control
+ * @req REQ-AUTH-020
+ * @scenario AccessStatus is cleared immediately when session ends from STATE_C1
+ * @given EVSE is in STATE_C1 (winding down charge) with AccessStatus ON
+ * @when PILOT_12V is received (car disconnects during C1 wind-down)
+ * @then AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A
+ */
+void test_access_status_cleared_on_session_end_from_c1(void) {
+    setup_basic();
+    ctx.RFIDReader = 2;  // EnableOne
+    ctx.AccessStatus = ON;
+    ctx.ChargeCurrent = 130;
+    evse_set_state(&ctx, STATE_C1);
+    TEST_ASSERT_EQUAL_INT(STATE_C1, ctx.State);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // Car disconnects during C1 wind-down
+    evse_tick_10ms(&ctx, PILOT_12V);
+
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+    TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
+}
+
 // ---- Main ----
 int main(void) {
     TEST_SUITE_BEGIN("Authorization");
@@ -359,6 +409,8 @@ int main(void) {
     RUN_TEST(test_access_timer_cleared_when_not_in_A);
     RUN_TEST(test_no_A_to_B_without_access);
     RUN_TEST(test_no_B_to_C_without_access);
+    RUN_TEST(test_access_status_cleared_on_session_end);
+    RUN_TEST(test_access_status_cleared_on_session_end_from_c1);
 
     TEST_SUITE_RESULTS();
 }
