@@ -1,14 +1,19 @@
 #
-# SlimmeLezer WT32-ETH01 configuration with SmartEVSE REST support.
+# SlimmeLezer WT32-ETH01 configuration with SmartEVSE REST API integration
 # Extended from github://zuidwijk/slimmelezer-wt32-eth01/wt32.yaml@main
 #
-# Added:
-#   - SmartEVSE Integration switch (available in HA)
-#   - SmartEVSE API connectivity status sensor (available in HA)
-#   - Electricity tariff sensor (available in HA, useful for automations)
-#   - Send data to SmartEVSE using http post REST interface
+# This device reads P1 DSMR data from your smart meter and sends current data
+# to SmartEVSE to enable dynamic EV charging optimization based on grid/solar power.
 #
-# Please update 'smartevse_host' below to match your SmartEVSE
+# Added features:
+#   - SmartEVSE Integration toggle (available in Home Assistant)
+#   - SmartEVSE API connectivity status sensor
+#   - Electricity tariff sensor (for automations)
+#   - Signed current calculation (negative = power export/solar generation)
+#   - Automatic data push to SmartEVSE via REST API every 2 seconds
+#   - Error counter with automatic recovery
+#
+# Please update 'smartevse_host' below to match your SmartEVSE IP address
 #
 
 substitutions:
@@ -177,29 +182,32 @@ sensor:
       name: "Gas Consumed Belgium"
   - platform: uptime
     name: "SlimmeLezer Uptime"
-  - platform: template  # SmartEVSE addition
+  - platform: template  # SmartEVSE addition: Current with sign based on power direction
     name: "Signed Current Phase 1"
     id: signed_current_l1
     unit_of_measurement: "A"
     update_interval: 1s
     internal: true
     lambda: |-
+      # Negative current indicates power export/solar production
       return id(power_returned_l1).state > 0 ? -id(current_l1).state : id(current_l1).state;
-  - platform: template  # SmartEVSE addition
+  - platform: template  # SmartEVSE addition: Current with sign based on power direction
     name: "Signed Current Phase 2"
     id: signed_current_l2
     unit_of_measurement: "A"
     update_interval: 1s
     internal: true
     lambda: |-
+      # Negative current indicates power export/solar production
       return id(power_returned_l2).state > 0 ? -id(current_l2).state : id(current_l2).state;
-  - platform: template  # SmartEVSE addition
+  - platform: template  # SmartEVSE addition: Current with sign based on power direction
     name: "Signed Current Phase 3"
     id: signed_current_l3
     unit_of_measurement: "A"
     update_interval: 1s
     internal: true
     lambda: |-
+      # Negative current indicates power export/solar production
       return id(power_returned_l3).state > 0 ? -id(current_l3).state : id(current_l3).state;
 
 text_sensor:
@@ -228,6 +236,8 @@ switch:
   - platform: template
     name: "SmartEVSE Integration"
     optimistic: true
+    icon: "mdi:ev-station"
+    restore_mode: RESTORE_DEFAULT_ON
     turn_on_action:
       - globals.set:
           id: smartevse_integration
@@ -242,8 +252,6 @@ switch:
       - globals.set:
           id: smartevse_error
           value: "5"
-    icon: "mdi:ev-station"
-    restore_mode: RESTORE_DEFAULT_ON
 
 http_request:
   timeout: 1500ms
@@ -274,12 +282,16 @@ interval:
                 on_response:
                   then:
                     lambda: |-
+                      // Successful response: reset error counter
                       if (id(smartevse_error) != 0) {
                         id(smartevse_error) = 0;
+                        ESP_LOGD("smartevse", "SmartEVSE API request successful");
                       }
                 on_error:
                   then:
                     lambda: |-
+                      // Failed request: increment error counter (max 5)
                       if (id(smartevse_error) < 5) {
                         id(smartevse_error) += 1;
+                        ESP_LOGW("smartevse", "SmartEVSE API error: %d/5", id(smartevse_error));
                       }

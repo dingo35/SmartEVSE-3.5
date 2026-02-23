@@ -1,0 +1,85 @@
+# P1 DSMR to SmartEVSE Solar Charging Package
+# 
+# This package integrates P1 DSMR meter data with SmartEVSE to dynamically
+# adjust EV charging based on available solar/grid current.
+#
+# INSTALLATION:
+# 1. Create a 'packages' folder in your Home Assistant config directory
+#
+# 2. Place this file (HA_P1_DSMR_to_SmartEVSE_API.yaml) in that packages folder
+#
+# 3. Add the following to your Home Assistant configuration.yaml:
+#
+#    homeassistant:
+#      packages:
+#        p1_dsmr_smartevse: !include packages/HA_P1_DSMR_to_SmartEVSE_API.yaml
+#
+# 4. Update the IP address in the rest_command URL (192.168.x.x) to your SmartEVSE device IP
+# 5. Verify that your P1 DSMR sensor entities match the ones referenced below
+# 6. Restart Home Assistant or reload automations/templates
+#
+# CONFIGURATION:
+# - Update http://192.168.x.x in the rest_command URL to your SmartEVSE IP address
+# - Ensure sensor entities exist for: electricity_meter_current_phase_l1/l2/l3
+# - Ensure sensor entities exist for: electricity_meter_power_production_phase_l1/l2/l3
+#
+# The automation sends current data every second to SmartEVSE for real-time
+# charging optimization based on available power.
+
+rest_command:
+  dsmrtosmartevse:
+    url: >-
+      http://192.168.x.x/currents?L1={{ (states('sensor.nettocurrent_l1') | float * 10) | int }}
+      &L2={{ (states('sensor.nettocurrent_l2') | float * 10) | int }}
+      &L3={{ (states('sensor.nettocurrent_l3') | float * 10) | int }}
+    method: POST
+    headers:
+      accept: application/json
+      Content-Type: application/json
+    payload: '{}'
+
+template:
+  - sensor:
+      - name: "nettocurrent_l1"
+        unit_of_measurement: A
+        device_class: current
+        state: >
+          {% set solarl1 = states('sensor.electricity_meter_power_production_phase_l1') | float(0) %}
+          {% set currentl1 = states('sensor.electricity_meter_current_phase_l1') | float(0) %}
+          {{ currentl1 * -1 if solarl1 > 0 else currentl1 }}
+        availability: >
+          {{ states('sensor.electricity_meter_power_production_phase_l1') | is_number and 
+            states('sensor.electricity_meter_current_phase_l1') | is_number }}
+      - name: "nettocurrent_l2"
+        unit_of_measurement: A
+        device_class: current
+        state: >
+          {% set solarl2 = states('sensor.electricity_meter_power_production_phase_l2') | float(0) %}
+          {% set currentl2 = states('sensor.electricity_meter_current_phase_l2') | float(0) %}
+          {{ currentl2 * -1 if solarl2 > 0 else currentl2 }}
+        availability: >
+          {{ states('sensor.electricity_meter_power_production_phase_l2') | is_number and 
+            states('sensor.electricity_meter_current_phase_l2') | is_number }}
+      - name: "nettocurrent_l3"
+        unit_of_measurement: A
+        device_class: current
+        state: >
+          {% set solarl3 = states('sensor.electricity_meter_power_production_phase_l3') | float(0) %}
+          {% set currentl3 = states('sensor.electricity_meter_current_phase_l3') | float(0) %}
+          {{ currentl3 * -1 if solarl3 > 0 else currentl3 }}
+        availability: >
+          {{ states('sensor.electricity_meter_power_production_phase_l3') | is_number and 
+            states('sensor.electricity_meter_current_phase_l3') | is_number }}
+
+automation:
+  - id: 'xxxxxxxxxxxxxx'
+    alias: P1toSmartevse
+    description: ''
+    trigger:
+      - platform: time_pattern
+        seconds: /1
+    condition: []
+    action:
+      - service: rest_command.dsmrtosmartevse
+        data: {}
+    mode: single

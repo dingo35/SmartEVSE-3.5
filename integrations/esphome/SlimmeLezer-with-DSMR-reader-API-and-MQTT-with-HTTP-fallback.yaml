@@ -1,0 +1,371 @@
+# SlimmeLezer + DSMR reader API + SmartEVSE MQTT with HTTP fallback
+#
+# PURPOSE:
+# - Read DSMR (P1) data from a SlimmeLezer (ESP8266) device.
+# - Push readings to a DSMR reader API endpoint.
+# - Send mains currents to SmartEVSE via MQTT when available.
+# - Fall back to SmartEVSE HTTP API when MQTT is offline.
+#
+# SETUP CHECKLIST:
+# 1) Fill in secrets: wifi_ssid, wifi_password, api_key, mqtt_broker, mqtt_username, mqtt_password.
+# 2) Set dsmr_reader_url and dsmr_reader_token secrets for your DSMR reader API.
+# 3) Update the SmartEVSE HTTP fallback IP (currently 192.168.xx.xx) in the last interval block.
+# 4) Adjust the SmartEVSE MQTT topic to match your charger.
+# 5) Verify UART RX pin and baud rate match your P1 wiring.
+#
+substitutions:
+  devicename: slimmelezer
+  friendly_name: Slimme Lezer based on https://www.zuidwijk.com/product/slimmelezer-plus/
+  device_description: "DIY P1 module to read your smart meter"
+
+################ Generics ################
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_name}
+  comment: "${device_description}"
+
+esp8266:
+  board: d1_mini
+  restore_from_flash: true
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+  - platform: web_server
+    id: web_server_ota
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    timezone: Europe/Amsterdam
+
+button:
+  - platform: restart
+    name: Restart
+    entity_category: diagnostic
+  - platform: safe_mode
+    name: Safe Mode Boot
+    entity_category: diagnostic
+
+web_server:
+
+logger:
+  # Must be 0 to disable the serial logging. This cannot work
+  # the same time uart on pin 13 / D7 is working.
+  baud_rate: 0
+  level: info
+
+################ Components ################
+dsmr:
+  id: dsmr_instance
+
+http_request:
+  timeout: 2s
+  esp8266_disable_ssl_support: true
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discover_ip: true
+  discovery: false
+  reboot_timeout: 0s
+  topic_prefix: null # do not send sensors to mqtt automatically
+  on_connect:
+    - lambda: |-
+        id(mqtt_connected).publish_state(true);
+    - logger.log:
+        format: "MQTT Connected"
+        level: INFO
+  on_disconnect:
+    - lambda: |-
+        id(mqtt_connected).publish_state(false);
+    - logger.log:
+        format: "MQTT Disconnected"
+        level: INFO
+
+uart:
+  - id: uart_bus
+    baud_rate: 115200
+    rx_pin: D7
+
+################ Sensors ################
+sensor:
+  - platform: dsmr
+    energy_delivered_tariff1:
+      id: dsmr_electricity_delivered_1
+      name: "Energy Consumed Tariff 1"
+      state_class: total_increasing
+      internal: true
+    energy_returned_tariff1:
+      id: dsmr_electricity_returned_1
+      name: "Energy Produced Tariff 1"
+      state_class: total_increasing
+      internal: true
+    energy_delivered_tariff2:
+      id: dsmr_electricity_delivered_2
+      name: "Energy Consumed Tariff 2"
+      state_class: total_increasing
+      internal: true
+    energy_returned_tariff2:
+      id: dsmr_electricity_returned_2
+      name: "Energy Produced Tariff 2"
+      state_class: total_increasing
+      internal: true
+    power_delivered:
+      accuracy_decimals: 3
+      id: dsmr_electricity_currently_delivered
+      name: "Power Consumed"
+    power_returned:
+      accuracy_decimals: 3
+      id: dsmr_electricity_currently_returned
+      name: "Power Produced"
+    voltage_l1:
+      id: dsmr_phase_voltage_l1
+      name: "Voltage Phase 1"
+    voltage_l2:
+      id: dsmr_phase_voltage_l2
+      name: "Voltage Phase 2"
+    voltage_l3:
+      id: dsmr_phase_voltage_l3
+      name: "Voltage Phase 3"
+    current_l1:
+      id: dsmr_phase_power_current_l1
+      name: "Current Phase 1"
+      internal: true
+    current_l2:
+      id: dsmr_phase_power_current_l2
+      name: "Current Phase 2"
+      internal: true
+    current_l3:
+      id: dsmr_phase_power_current_l3
+      name: "Current Phase 3"
+      internal: true
+    power_delivered_l1:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_delivered_l1
+      name: "Power Consumed Phase 1"
+    power_delivered_l2:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_delivered_l2
+      name: "Power Consumed Phase 2"
+    power_delivered_l3:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_delivered_l3
+      name: "Power Consumed Phase 3"
+    power_returned_l1:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_returned_l1
+      name: "Power Produced Phase 1"
+    power_returned_l2:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_returned_l2
+      name: "Power Produced Phase 2"
+    power_returned_l3:
+      accuracy_decimals: 3
+      id: dsmr_phase_currently_returned_l3
+      name: "Power Produced Phase 3"
+    gas_delivered:
+      id: dsmr_extra_device_delivered
+      name: "Gas Consumed"
+      state_class: total_increasing
+
+  - platform: template
+    id: template_current_l1
+    name: "Current Phase 1 (template)"
+    icon: mdi:current-ac
+    update_interval: 2s
+    lambda: |-
+      float l1 = id(dsmr_phase_currently_returned_l1).state > 0 ? - id(dsmr_phase_power_current_l1).state : id(dsmr_phase_power_current_l1).state;
+      return l1;
+  - platform: template
+    id: template_current_l2
+    name: "Current Phase 2 (template)"
+    icon: mdi:current-ac
+    update_interval: 2s
+    lambda: |-
+      float l2 = id(dsmr_phase_currently_returned_l2).state > 0 ? - id(dsmr_phase_power_current_l2).state : id(dsmr_phase_power_current_l2).state;
+      return l2;
+  - platform: template
+    id: template_current_l3
+    name: "Current Phase 3 (template)"
+    icon: mdi:current-ac
+    update_interval: 2s
+    lambda: |-
+      float l3 = id(dsmr_phase_currently_returned_l3).state > 0 ? - id(dsmr_phase_power_current_l3).state : id(dsmr_phase_power_current_l3).state;
+      return l3;
+
+  - platform: uptime
+    name: Uptime
+    update_interval: 300s
+  - platform: wifi_signal
+    name: WiFi signaal
+    update_interval: 300s
+
+text_sensor:
+  - platform: dsmr
+    timestamp:
+      id: dsmr_timestamp
+      internal: true
+  - platform: template
+    id: dsmr_timestamp_formatted
+    internal: true
+    update_interval: 2s
+    lambda: |-
+      esphome::optional<std::string> result;
+      std::string input = id(dsmr_timestamp).state;
+      if (!input.empty()) {
+        std::string year = "20" + input.substr(0, 2);
+        std::string month = input.substr(2, 2);
+        std::string day = input.substr(4, 2);
+        std::string hour = input.substr(6, 2);
+        std::string minute = input.substr(8, 2);
+        std::string second = input.substr(10, 2);
+        std::string indicator = input.substr(12, 1);
+        std::string timezone = "+00:00";
+        if (indicator == "W") {
+          timezone = "+01:00";
+        } else if (indicator == "S") {
+          timezone = "+02:00";
+        }
+        result = year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second + timezone;
+      }
+      return result;
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: Connected SSID
+    bssid:
+      name: Connected BSSID
+    mac_address:
+      name: Mac Address
+  - platform: version
+    name: Version
+
+binary_sensor:
+  - platform: template
+    id: power_failure_l1
+    name: "Power Failure Phase 1"
+    lambda: |-
+      return id(dsmr_phase_voltage_l1).state < 200.0;
+  - platform: template
+    id: power_failure_l2
+    name: "Power Failure Phase 2"
+    lambda: |-
+      return id(dsmr_phase_voltage_l2).state < 200.0;
+  - platform: template
+    id: power_failure_l3
+    name: "Power Failure Phase 3"
+    lambda: |-
+      return id(dsmr_phase_voltage_l3).state < 200.0;
+  - platform: template
+    id: mqtt_connected
+    name: "MQTT Connected"
+    device_class: connectivity
+    entity_category: diagnostic
+  - platform: status
+    name: Status
+
+
+switch:
+  - platform: template
+    name: "Enable MQTT"
+    entity_category: "config"
+    lambda: |-
+      if (id(mqtt_connected).state) {
+        return true;
+      } else {
+        return false;
+      }
+    turn_on_action:
+      - mqtt.enable:
+    turn_off_action:
+      - mqtt.disable:
+
+################ Actions ################
+interval:
+  - interval: 10sec
+    then:
+      - http_request.post:
+          url: !secret dsmr_reader_url
+          # Example: http://x.x.x.x/api/v2/datalogger/dsmrreading
+          request_headers:
+            Authorization: !secret dsmr_reader_token
+            # Example: Authorization: Token ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890
+            Content-Type: application/json
+          json: |-
+            root["electricity_currently_delivered"] = id(dsmr_electricity_currently_delivered).state;
+            root["electricity_currently_returned"] = id(dsmr_electricity_currently_returned).state;
+            root["electricity_delivered_1"] = id(dsmr_electricity_delivered_1).state;
+            root["electricity_delivered_2"] = id(dsmr_electricity_delivered_2).state;
+            root["electricity_returned_1"] = id(dsmr_electricity_returned_1).state;
+            root["electricity_returned_2"] = id(dsmr_electricity_returned_2).state;
+            root["extra_device_delivered"] = id(dsmr_extra_device_delivered).state;
+            root["extra_device_timestamp"] = id(dsmr_timestamp_formatted).state;
+            root["phase_currently_delivered_l1"] = id(dsmr_phase_currently_delivered_l1).state;
+            root["phase_currently_delivered_l2"] = id(dsmr_phase_currently_delivered_l2).state;
+            root["phase_currently_delivered_l3"] = id(dsmr_phase_currently_delivered_l3).state;
+            root["phase_currently_returned_l1"] = id(dsmr_phase_currently_returned_l1).state;
+            root["phase_currently_returned_l2"] = id(dsmr_phase_currently_returned_l2).state;
+            root["phase_currently_returned_l3"] = id(dsmr_phase_currently_returned_l3).state;
+            root["phase_power_current_l1"] = id(dsmr_phase_power_current_l1).state;
+            root["phase_power_current_l2"] = id(dsmr_phase_power_current_l2).state;
+            root["phase_power_current_l3"] = id(dsmr_phase_power_current_l3).state;
+            root["phase_voltage_l1"] = id(dsmr_phase_voltage_l1).state;
+            root["phase_voltage_l2"] = id(dsmr_phase_voltage_l2).state;
+            root["phase_voltage_l3"] = id(dsmr_phase_voltage_l3).state;
+            root["timestamp"] = id(dsmr_timestamp_formatted).state;
+
+  - interval: 2sec
+    then:
+      - if:
+          condition:
+            mqtt.connected:
+          then:
+            # Preferred path: publish mains currents via MQTT
+            - mqtt.publish:
+                topic: "SmartEVSE-6360/Set/MainsMeter"
+                # Payload format: "L1:L2:L3" where each value is in 0.1A units (int)
+                # Example: "-12:0:34" means -1.2A, 0.0A, 3.4A
+                payload: !lambda |-
+                  char payload[32];
+                  float l1 = id(template_current_l1).state;
+                  float l2 = id(template_current_l2).state;
+                  float l3 = id(template_current_l3).state;
+                  int v1 = static_cast<int>(std::round(l1 * 10.0f));
+                  int v2 = static_cast<int>(std::round(l2 * 10.0f));
+                  int v3 = static_cast<int>(std::round(l3 * 10.0f));
+                  snprintf(payload, sizeof(payload), "%d:%d:%d", v1, v2, v3);
+                  return std::string(payload);
+          else:
+            # Fallback path: SmartEVSE HTTP API when MQTT is unavailable
+            - logger.log:
+                format: "MQTT not connected, falling back to HTTP"
+                level: INFO
+                tag: MainsMeter
+            - http_request.post:
+                request_headers:
+                  Content-Length: 0
+                url: !lambda |-
+                  std::string url;
+
+                  float l1 = id(template_current_l1).state;
+                  float l2 = id(template_current_l2).state;
+                  float l3 = id(template_current_l3).state;
+
+                  url.append("http://192.168.xx.xx/currents?L1=");
+                  url.append(to_string(l1*10));
+                  url.append("&L2=");
+                  url.append(to_string(l2*10));
+                  url.append("&L3=");
+                  url.append(to_string(l3*10));
+                  return url.c_str();

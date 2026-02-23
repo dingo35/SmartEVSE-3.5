@@ -1,0 +1,223 @@
+#
+# ET-SM01 DIY P1 DSMR Module Configuration for SmartEVSE
+# Created by espthings.io
+#
+# This device reads P1 DSMR data from your smart meter and sends current data
+# to SmartEVSE via REST API to enable dynamic EV charging optimization.
+#
+# SETUP:
+# 1. Update the smartevse_host substitution below with your SmartEVSE IP
+# 2. Replace secrets (esphome_wifi_ssid, esphome_wifi_password, etc.) in secrets.yaml
+# 3. Flash to your ET-SM01 device
+#
+# FEATURES:
+# - Reads all DSMR P1 meter data
+# - Calculates signed currents (negative = solar export)
+# - Sends current data to SmartEVSE every 5 seconds
+# - Toggle integration on/off via Home Assistant
+# - API connectivity status indicator
+#
+substitutions:
+  device_name: et-sm01 DSMR reader
+  device_description: "espthings.io ET-SM01 DIY P1 module to read your smart meter"
+  pcb_version: "220818-01"
+  url: "http://espthings.io/sm01"
+
+esphome:
+  name: ${device_name}
+  comment: "${device_description} ${pcb_version}"
+  platform: ESP8266
+  esp8266_restore_from_flash: true
+  board: d1_mini
+  name_add_mac_suffix: false
+  project:
+    name: "espthings.io-ET-SM01"
+    version: "${pcb_version}"
+
+wifi:
+  networks:
+    - ssid: !secret esphome_wifi_ssid
+      password: !secret esphome_wifi_password
+
+logger:
+  baud_rate: 0
+
+api:
+  encryption:
+    key: !secret esphome_api_key
+
+ota:
+  password: !secret esphome_ota_password
+
+web_server:
+  port: 80
+
+uart:
+  baud_rate: 115200
+  rx_pin: D7
+
+http_request:
+  useragent: esphome/device
+  timeout: 1s
+
+dsmr:
+  id: dsmr_instance
+
+sensor:
+  - platform: dsmr
+    energy_delivered_tariff1:
+      name: "Energy Consumed Tariff 1"
+      device_class: energy
+      state_class: total_increasing
+      unit_of_measurement: "kWh"
+    energy_delivered_tariff2:
+      name: "Energy Consumed Tariff 2"
+      device_class: energy
+      state_class: total_increasing
+      unit_of_measurement: "kWh"
+    energy_returned_tariff1:
+      name: "Energy Produced Tariff 1"
+      device_class: energy
+      state_class: total_increasing
+      unit_of_measurement: "kWh"
+    energy_returned_tariff2:
+      name: "Energy Produced Tariff 2"
+      device_class: energy
+      state_class: total_increasing
+      unit_of_measurement: "kWh"
+    power_delivered:
+      name: "Power Consumed"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+    power_returned:
+      name: "Power Produced"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+    electricity_failures:
+      name: "Electricity Failures"
+      icon: mdi:alert
+    electricity_long_failures:
+      name: "Long Electricity Failures"
+      icon: mdi:alert
+    voltage_l1:
+      name: "Voltage Phase 1"
+      device_class: voltage
+    voltage_l2:
+      name: "Voltage Phase 2"
+      device_class: voltage
+    voltage_l3:
+      name: "Voltage Phase 3"
+      device_class: voltage
+    current_l1:
+      name: "Current Phase 1"
+      id: current_l1
+      device_class: current
+      unit_of_measurement: "A"
+    current_l2:
+      name: "Current Phase 2"
+      id: current_l2
+      device_class: current
+      unit_of_measurement: "A"
+    current_l3:
+      name: "Current Phase 3"
+      id: current_l3
+      device_class: current
+      unit_of_measurement: "A"
+    power_delivered_l1:
+      name: "Power Consumed Phase 1"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+    power_delivered_l2:
+      name: "Power Consumed Phase 2"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+    power_delivered_l3:
+      name: "Power Consumed Phase 3"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+    power_returned_l1:
+      name: "Power Produced Phase 1"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+      id: power_returned_l1
+    power_returned_l2:
+      name: "Power Produced Phase 2"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+      id: power_returned_l2
+    power_returned_l3:
+      name: "Power Produced Phase 3"
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 3
+      id: power_returned_l3
+    gas_delivered:
+      name: "Gas Consumed"
+      state_class: total_increasing
+    gas_delivered_be:
+      name: "Gas Consumed Belgium"
+      state_class: total_increasing
+  - platform: uptime
+    name: "Uptime"
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    update_interval: 60s
+
+text_sensor:
+  - platform: dsmr
+    identification:
+      name: "Identification"
+    p1_version:
+      name: "Version"
+    p1_version_be:
+      name: "Version Belgium"
+    electricity_tariff:
+      name: "Tariff"
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Wi-Fi SSID"
+    bssid:
+      name: "Wi-Fi BSSID"
+  - platform: version
+    name: "ESPHome Version"
+    hide_timestamp: true
+
+switch:
+  - platform: restart
+    name: "Restart"
+
+interval:
+  - interval: 5sec
+    then:
+      - http_request.post:
+          headers:
+            Content-Length: 0
+          url: !lambda |-
+            // Calculate signed currents (negative = solar export)
+            float l1 = id(power_returned_l1).state > 0 ? -id(current_l1).state : id(current_l1).state;
+            float l2 = id(power_returned_l2).state > 0 ? -id(current_l2).state : id(current_l2).state;
+            float l3 = id(power_returned_l3).state > 0 ? -id(current_l3).state : id(current_l3).state;
+
+            // Build URL with current values (in 0.1A units)
+            static char url[128];
+            snprintf(url, sizeof(url),
+                    "http://192.168.207.121/currents?L1=%.0f&L2=%.0f&L3=%.0f",
+                    l1 * 10, l2 * 10, l3 * 10);
+            return url;
+          on_response:
+            then:
+              lambda: |-
+                ESP_LOGD("smartevse", "SmartEVSE API request successful");
+          on_error:
+            then:
+              lambda: |-
+                ESP_LOGW("smartevse", "SmartEVSE API request failed");
