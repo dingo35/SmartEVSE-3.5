@@ -1,6 +1,6 @@
 # SmartEVSE-3 Test Specification
 
-**38 features** | **525 scenarios** | **525 with requirement IDs**
+**38 features** | **528 scenarios** | **528 with requirement IDs**
 
 ---
 
@@ -219,6 +219,26 @@
 - **Then** The state does NOT transition to STATE_C
 
 > Test: `test_no_B_to_C_without_access` in `test_authorization.c:318`
+
+### AccessStatus is cleared immediately when a charging session ends
+
+**Requirement:** `REQ-AUTH-019`
+
+- **Given** EVSE is in STATE_C with AccessStatus ON and RFID reader enabled (EnableOne)
+- **When** PILOT_12V is received (car disconnects — e.g. Tesla door handle)
+- **Then** AccessStatus is OFF and AccessTimer is 0 immediately upon transition to STATE_A
+
+> Test: `test_access_status_cleared_on_session_end` in `test_authorization.c:340`
+
+### AccessStatus is cleared immediately when session ends from STATE_C1
+
+**Requirement:** `REQ-AUTH-020`
+
+- **Given** EVSE is in STATE_C1 (winding down charge) with AccessStatus ON
+- **When** PILOT_12V is received (car disconnects during C1 wind-down)
+- **Then** AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A
+
+> Test: `test_access_status_cleared_on_session_end_from_c1` in `test_authorization.c:365`
 
 ---
 
@@ -516,7 +536,7 @@
 - **When** Temperature exceeds maxTemp, then cools below hysteresis
 - **Then** C → C1 → B1 (TEMP_HIGH), cooldown clears error
 
-> Test: `test_e2e_temp_error_during_charge` in `test_e2e_charging.c:279`
+> Test: `test_e2e_temp_error_during_charge` in `test_e2e_charging.c:283`
 
 ### Meter communication lost during STATE_C
 
@@ -526,7 +546,7 @@
 - **When** Meter timeout reaches 0
 - **Then** CT_NOCOMM set, power unavailable, C → C1
 
-> Test: `test_e2e_ct_nocomm_during_charge` in `test_e2e_charging.c:318`
+> Test: `test_e2e_ct_nocomm_during_charge` in `test_e2e_charging.c:322`
 
 ### TEMP_HIGH + CT_NOCOMM simultaneously during charge
 
@@ -536,7 +556,7 @@
 - **When** Temperature spikes AND meter fails at same time
 - **Then** Both errors set, both must clear for full recovery
 
-> Test: `test_e2e_multiple_errors_during_charge` in `test_e2e_charging.c:355`
+> Test: `test_e2e_multiple_errors_during_charge` in `test_e2e_charging.c:359`
 
 ### 6V pilot without DiodeCheck does not transition to STATE_C
 
@@ -546,7 +566,7 @@
 - **When** 55 ticks of 6V pilot
 - **Then** State stays STATE_B (DiodeCheck blocks B→C)
 
-> Test: `test_e2e_no_charge_without_diode` in `test_e2e_charging.c:393`
+> Test: `test_e2e_no_charge_without_diode` in `test_e2e_charging.c:397`
 
 ### ChargeDelay > 0 blocks A→B transition, sends to B1
 
@@ -556,7 +576,7 @@
 - **When** Car connects (9V)
 - **Then** Goes to B1 (not B), must wait for delay to expire
 
-> Test: `test_e2e_charge_delay_blocks_charging` in `test_e2e_charging.c:420`
+> Test: `test_e2e_charge_delay_blocks_charging` in `test_e2e_charging.c:424`
 
 ### StateTimer is properly reset between charge sessions
 
@@ -566,7 +586,7 @@
 - **When** Car stops (9V → B), then requests charge again (6V)
 - **Then** Debounce starts from 0, requiring full 500ms
 
-> Test: `test_e2e_state_timer_reset_on_c_to_b` in `test_e2e_charging.c:446`
+> Test: `test_e2e_state_timer_reset_on_c_to_b` in `test_e2e_charging.c:450`
 
 ### Power unavailable during charge suspends charging
 
@@ -576,7 +596,17 @@
 - **When** evse_set_power_unavailable is called
 - **Then** C → C1 (PWM off) → B1 (contactors open after C1Timer)
 
-> Test: `test_e2e_power_unavailable_c_to_c1_to_b1` in `test_e2e_charging.c:488`
+> Test: `test_e2e_power_unavailable_c_to_c1_to_b1` in `test_e2e_charging.c:492`
+
+### Reconnect after Tesla-style disconnect requires fresh RFID swipe
+
+**Requirement:** `REQ-E2E-013`
+
+- **Given** EVSE charging in STATE_C, RFIDReader=EnableOne, AccessStatus=ON
+- **When** Car disconnects (CP → 12V), then reconnects within RFIDLOCKTIME seconds
+- **Then** Auto A→B is blocked (AccessStatus cleared on disconnect); new RFID swipe restarts session
+
+> Test: `test_e2e_rfid_reconnect_after_tesla_disconnect` in `test_e2e_charging.c:522`
 
 ---
 

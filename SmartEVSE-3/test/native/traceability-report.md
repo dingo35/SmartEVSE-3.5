@@ -1,6 +1,6 @@
 # SmartEVSE-3 Traceability Report
 
-**38 features** | **525 scenarios** | **525 with requirement IDs** | **100% coverage**
+**38 features** | **528 scenarios** | **528 with requirement IDs** | **100% coverage**
 
 ---
 
@@ -8,9 +8,9 @@
 
 | Feature | Scenarios | With Req ID | Coverage |
 |---------|-----------|-------------|----------|
-| Authorization & Access Control | 17 | 17 | 100% |
+| Authorization & Access Control | 19 | 19 | 100% |
 | Dual-EVSE Load Balancing | 23 | 23 | 100% |
-| End-to-End Charging | 12 | 12 | 100% |
+| End-to-End Charging | 13 | 13 | 100% |
 | Error Handling & Safety | 29 | 29 | 100% |
 | Fidelity: DisconnectTimeCounter | 3 | 3 | 100% |
 | Fidelity: PilotDisconnectTime | 2 | 2 | 100% |
@@ -46,7 +46,7 @@
 | IEC 61851-1 State Transitions | 29 | 29 | 100% |
 | 10ms Tick Processing | 20 | 20 | 100% |
 | 1-Second Tick Processing | 20 | 20 | 100% |
-| **TOTAL** | **525** | **525** | **100%** |
+| **TOTAL** | **528** | **528** | **100%** |
 
 ## Authorization & Access Control
 
@@ -69,9 +69,11 @@
 | `REQ-AUTH-016` | Access timer is cleared when EVSE is not in STATE_A | `test_access_timer_cleared_when_not_in_A` | `test_authorization.c:284` |
 | `REQ-AUTH-017` | No STATE_A to STATE_B transition without authorization | `test_no_A_to_B_without_access` | `test_authorization.c:303` |
 | `REQ-AUTH-018` | No STATE_B to STATE_C transition after access revoked mid-session | `test_no_B_to_C_without_access` | `test_authorization.c:318` |
+| `REQ-AUTH-019` | AccessStatus is cleared immediately when a charging session ends | `test_access_status_cleared_on_session_end` | `test_authorization.c:340` |
+| `REQ-AUTH-020` | AccessStatus is cleared immediately when session ends from STATE_C1 | `test_access_status_cleared_on_session_end_from_c1` | `test_authorization.c:365` |
 
 <details>
-<summary>Detailed steps (17 scenarios)</summary>
+<summary>Detailed steps (19 scenarios)</summary>
 
 ### Setting access to ON stores the authorization status
 **Requirement:** `REQ-AUTH-001`
@@ -194,6 +196,20 @@
 - **Given** The EVSE is in STATE_B with DiodeCheck passed but AccessStatus revoked to OFF
 - **When** A 6V pilot signal is sustained for 500ms
 - **Then** The state does NOT transition to STATE_C
+
+### AccessStatus is cleared immediately when a charging session ends
+**Requirement:** `REQ-AUTH-019`
+
+- **Given** EVSE is in STATE_C with AccessStatus ON and RFID reader enabled (EnableOne)
+- **When** PILOT_12V is received (car disconnects — e.g. Tesla door handle)
+- **Then** AccessStatus is OFF and AccessTimer is 0 immediately upon transition to STATE_A
+
+### AccessStatus is cleared immediately when session ends from STATE_C1
+**Requirement:** `REQ-AUTH-020`
+
+- **Given** EVSE is in STATE_C1 (winding down charge) with AccessStatus ON
+- **When** PILOT_12V is received (car disconnects during C1 wind-down)
+- **Then** AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A
 
 </details>
 
@@ -404,16 +420,17 @@
 | `REQ-E2E-003` | OCPP grants access mid-session, car starts charging | `test_e2e_ocpp_authorization_flow` | `test_e2e_charging.c:152` |
 | `REQ-E2E-004` | OCPP denied — car connects but stays in STATE_A | `test_e2e_ocpp_denied_stays_in_a` | `test_e2e_charging.c:200` |
 | `REQ-E2E-005` | Two full charge cycles — verify no stale state leaks | `test_e2e_reconnect_after_disconnect` | `test_e2e_charging.c:224` |
-| `REQ-E2E-006` | Temperature spike during STATE_C, recovery after cooldown | `test_e2e_temp_error_during_charge` | `test_e2e_charging.c:279` |
-| `REQ-E2E-007` | Meter communication lost during STATE_C | `test_e2e_ct_nocomm_during_charge` | `test_e2e_charging.c:318` |
-| `REQ-E2E-008` | TEMP_HIGH + CT_NOCOMM simultaneously during charge | `test_e2e_multiple_errors_during_charge` | `test_e2e_charging.c:355` |
-| `REQ-E2E-009` | 6V pilot without DiodeCheck does not transition to STATE_C | `test_e2e_no_charge_without_diode` | `test_e2e_charging.c:393` |
-| `REQ-E2E-010` | ChargeDelay > 0 blocks A→B transition, sends to B1 | `test_e2e_charge_delay_blocks_charging` | `test_e2e_charging.c:420` |
-| `REQ-E2E-011` | StateTimer is properly reset between charge sessions | `test_e2e_state_timer_reset_on_c_to_b` | `test_e2e_charging.c:446` |
-| `REQ-E2E-012` | Power unavailable during charge suspends charging | `test_e2e_power_unavailable_c_to_c1_to_b1` | `test_e2e_charging.c:488` |
+| `REQ-E2E-006` | Temperature spike during STATE_C, recovery after cooldown | `test_e2e_temp_error_during_charge` | `test_e2e_charging.c:283` |
+| `REQ-E2E-007` | Meter communication lost during STATE_C | `test_e2e_ct_nocomm_during_charge` | `test_e2e_charging.c:322` |
+| `REQ-E2E-008` | TEMP_HIGH + CT_NOCOMM simultaneously during charge | `test_e2e_multiple_errors_during_charge` | `test_e2e_charging.c:359` |
+| `REQ-E2E-009` | 6V pilot without DiodeCheck does not transition to STATE_C | `test_e2e_no_charge_without_diode` | `test_e2e_charging.c:397` |
+| `REQ-E2E-010` | ChargeDelay > 0 blocks A→B transition, sends to B1 | `test_e2e_charge_delay_blocks_charging` | `test_e2e_charging.c:424` |
+| `REQ-E2E-011` | StateTimer is properly reset between charge sessions | `test_e2e_state_timer_reset_on_c_to_b` | `test_e2e_charging.c:450` |
+| `REQ-E2E-012` | Power unavailable during charge suspends charging | `test_e2e_power_unavailable_c_to_c1_to_b1` | `test_e2e_charging.c:492` |
+| `REQ-E2E-013` | Reconnect after Tesla-style disconnect requires fresh RFID swipe | `test_e2e_rfid_reconnect_after_tesla_disconnect` | `test_e2e_charging.c:522` |
 
 <details>
-<summary>Detailed steps (12 scenarios)</summary>
+<summary>Detailed steps (13 scenarios)</summary>
 
 ### Complete standalone charge cycle with DiodeCheck
 **Requirement:** `REQ-E2E-001`
@@ -498,6 +515,13 @@
 - **Given** EVSE charging in STATE_C
 - **When** evse_set_power_unavailable is called
 - **Then** C → C1 (PWM off) → B1 (contactors open after C1Timer)
+
+### Reconnect after Tesla-style disconnect requires fresh RFID swipe
+**Requirement:** `REQ-E2E-013`
+
+- **Given** EVSE charging in STATE_C, RFIDReader=EnableOne, AccessStatus=ON
+- **When** Car disconnects (CP → 12V), then reconnects within RFIDLOCKTIME seconds
+- **Then** Auto A→B is blocked (AccessStatus cleared on disconnect); new RFID swipe restarts session
 
 </details>
 

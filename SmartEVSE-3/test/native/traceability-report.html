@@ -125,12 +125,12 @@ footer {
 <h1>SmartEVSE-3 Traceability Report</h1>
 <div class="summary">
 <div class="stat"><div class="number">38</div><div class="label">Features</div></div>
-<div class="stat"><div class="number">525</div><div class="label">Test Scenarios</div></div>
-<div class="stat"><div class="number">525</div><div class="label">With Requirements</div></div>
+<div class="stat"><div class="number">528</div><div class="label">Test Scenarios</div></div>
+<div class="stat"><div class="number">528</div><div class="label">With Requirements</div></div>
 <div class="stat"><div class="number">100%</div><div class="label">Requirement Coverage</div></div>
 </div>
 <div class="feature-section">
-<div class="feature-title">Authorization &amp; Access Control (17 scenarios)</div>
+<div class="feature-title">Authorization &amp; Access Control (19 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -257,6 +257,20 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The EVSE is in STATE_B with DiodeCheck passed but AccessStatus revoked to OFF</li><li class="step-when"><span class="step-keyword">When</span> A 6V pilot signal is sustained for 500ms</li><li class="step-then"><span class="step-keyword">Then</span> The state does NOT transition to STATE_C</li></ul></td>
 <td><code>test_no_B_to_C_without_access</code></td>
 <td><span class="file-ref">test_authorization.c:318</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-019</span></td>
+<td>AccessStatus is cleared immediately when a charging session ends</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE is in STATE_C with AccessStatus ON and RFID reader enabled (EnableOne)</li><li class="step-when"><span class="step-keyword">When</span> PILOT_12V is received (car disconnects — e.g. Tesla door handle)</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus is OFF and AccessTimer is 0 immediately upon transition to STATE_A</li></ul></td>
+<td><code>test_access_status_cleared_on_session_end</code></td>
+<td><span class="file-ref">test_authorization.c:340</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-020</span></td>
+<td>AccessStatus is cleared immediately when session ends from STATE_C1</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE is in STATE_C1 (winding down charge) with AccessStatus ON</li><li class="step-when"><span class="step-keyword">When</span> PILOT_12V is received (car disconnects during C1 wind-down)</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A</li></ul></td>
+<td><code>test_access_status_cleared_on_session_end_from_c1</code></td>
+<td><span class="file-ref">test_authorization.c:365</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -434,7 +448,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">End-to-End Charging (12 scenarios)</div>
+<div class="feature-title">End-to-End Charging (13 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -483,49 +497,56 @@ footer {
 <td>Temperature spike during STATE_C, recovery after cooldown</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charging in STATE_C</li><li class="step-when"><span class="step-keyword">When</span> Temperature exceeds maxTemp, then cools below hysteresis</li><li class="step-then"><span class="step-keyword">Then</span> C → C1 → B1 (TEMP_HIGH), cooldown clears error</li></ul></td>
 <td><code>test_e2e_temp_error_during_charge</code></td>
-<td><span class="file-ref">test_e2e_charging.c:279</span></td>
+<td><span class="file-ref">test_e2e_charging.c:283</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-007</span></td>
 <td>Meter communication lost during STATE_C</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charging in Smart mode with MainsMeter</li><li class="step-when"><span class="step-keyword">When</span> Meter timeout reaches 0</li><li class="step-then"><span class="step-keyword">Then</span> CT_NOCOMM set, power unavailable, C → C1</li></ul></td>
 <td><code>test_e2e_ct_nocomm_during_charge</code></td>
-<td><span class="file-ref">test_e2e_charging.c:318</span></td>
+<td><span class="file-ref">test_e2e_charging.c:322</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-008</span></td>
 <td>TEMP_HIGH + CT_NOCOMM simultaneously during charge</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charging in Smart mode</li><li class="step-when"><span class="step-keyword">When</span> Temperature spikes AND meter fails at same time</li><li class="step-then"><span class="step-keyword">Then</span> Both errors set, both must clear for full recovery</li></ul></td>
 <td><code>test_e2e_multiple_errors_during_charge</code></td>
-<td><span class="file-ref">test_e2e_charging.c:355</span></td>
+<td><span class="file-ref">test_e2e_charging.c:359</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-009</span></td>
 <td>6V pilot without DiodeCheck does not transition to STATE_C</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_B, DiodeCheck=0</li><li class="step-when"><span class="step-keyword">When</span> 55 ticks of 6V pilot</li><li class="step-then"><span class="step-keyword">Then</span> State stays STATE_B (DiodeCheck blocks B→C)</li></ul></td>
 <td><code>test_e2e_no_charge_without_diode</code></td>
-<td><span class="file-ref">test_e2e_charging.c:393</span></td>
+<td><span class="file-ref">test_e2e_charging.c:397</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-010</span></td>
 <td>ChargeDelay &gt; 0 blocks A→B transition, sends to B1</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Standalone EVSE with ChargeDelay=10</li><li class="step-when"><span class="step-keyword">When</span> Car connects (9V)</li><li class="step-then"><span class="step-keyword">Then</span> Goes to B1 (not B), must wait for delay to expire</li></ul></td>
 <td><code>test_e2e_charge_delay_blocks_charging</code></td>
-<td><span class="file-ref">test_e2e_charging.c:420</span></td>
+<td><span class="file-ref">test_e2e_charging.c:424</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-011</span></td>
 <td>StateTimer is properly reset between charge sessions</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_C with accumulated StateTimer</li><li class="step-when"><span class="step-keyword">When</span> Car stops (9V → B), then requests charge again (6V)</li><li class="step-then"><span class="step-keyword">Then</span> Debounce starts from 0, requiring full 500ms</li></ul></td>
 <td><code>test_e2e_state_timer_reset_on_c_to_b</code></td>
-<td><span class="file-ref">test_e2e_charging.c:446</span></td>
+<td><span class="file-ref">test_e2e_charging.c:450</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-E2E-012</span></td>
 <td>Power unavailable during charge suspends charging</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charging in STATE_C</li><li class="step-when"><span class="step-keyword">When</span> evse_set_power_unavailable is called</li><li class="step-then"><span class="step-keyword">Then</span> C → C1 (PWM off) → B1 (contactors open after C1Timer)</li></ul></td>
 <td><code>test_e2e_power_unavailable_c_to_c1_to_b1</code></td>
-<td><span class="file-ref">test_e2e_charging.c:488</span></td>
+<td><span class="file-ref">test_e2e_charging.c:492</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-013</span></td>
+<td>Reconnect after Tesla-style disconnect requires fresh RFID swipe</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charging in STATE_C, RFIDReader=EnableOne, AccessStatus=ON</li><li class="step-when"><span class="step-keyword">When</span> Car disconnects (CP → 12V), then reconnects within RFIDLOCKTIME seconds</li><li class="step-then"><span class="step-keyword">Then</span> Auto A→B is blocked (AccessStatus cleared on disconnect); new RFID swipe restarts session</li></ul></td>
+<td><code>test_e2e_rfid_reconnect_after_tesla_disconnect</code></td>
+<td><span class="file-ref">test_e2e_charging.c:522</span></td>
 </tr>
 </tbody></table>
 </div>
