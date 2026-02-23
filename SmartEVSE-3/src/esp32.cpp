@@ -2193,9 +2193,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         DynamicJsonDocument doc(8000);
         testPowerDayBuffer(); //TODO DEBUG
         JsonArray dayHistory = doc.createNestedArray("power_day");
-        for (int i = 0; i < DAY_POINTS; i++) {
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&now);
+        int i,idx = tm_info->tm_hour * 4 + tm_info->tm_min / 15;
+        idx++; //go to the next time period; since powerDay is circular, this would be the oldest entry
+        for (int x = idx; x < DAY_POINTS + idx; x++) {
+            if (x < DAY_POINTS)
+                i = x;
+            else
+                i = x - DAY_POINTS;
+
             JsonObject sample = dayHistory.createNestedObject();
-            char buf[9];
+            char buf[20]; //buffer needs to be this large to prevent compiler warning
             sprintf(buf, "%02d:%02d", (i * 15) / 60, (i * 15) % 60);
             sample["time"] = String(buf);
             sample["power"] = powerDay[i];
