@@ -252,8 +252,12 @@ void test_e2e_reconnect_after_disconnect(void) {
     // Verify state is clean
     TEST_ASSERT_EQUAL_INT(0, ctx.ChargeDelay);
     TEST_ASSERT_EQUAL_INT(0, ctx.ErrorFlags & LESS_6A);
+    // AccessStatus is cleared on session end — user must re-authorize
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
 
     // === SECOND SESSION ===
+    // Re-authorize (RFID swipe / switch) before reconnecting
+    ctx.AccessStatus = ON;
     evse_tick_10ms(&ctx, PILOT_9V);
     TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
     TEST_ASSERT_EQUAL_INT(0, ctx.DiodeCheck);  // Must be reset
@@ -511,6 +515,63 @@ void test_e2e_power_unavailable_c_to_c1_to_b1(void) {
     TEST_ASSERT_FALSE(ctx.contactor1_state);
 }
 
+// ===================================================================
+// Scenario M: RFID reconnect after Tesla-style mid-session disconnect
+// ===================================================================
+
+/*
+ * @feature End-to-End Charging
+ * @req REQ-E2E-013
+ * @scenario Reconnect after Tesla-style disconnect requires fresh RFID swipe
+ * @given EVSE charging in STATE_C, RFIDReader=EnableOne, AccessStatus=ON
+ * @when Car disconnects (CP → 12V), then reconnects within RFIDLOCKTIME seconds
+ * @then Auto A→B is blocked (AccessStatus cleared on disconnect); new RFID swipe restarts session
+ */
+void test_e2e_rfid_reconnect_after_tesla_disconnect(void) {
+    setup_standalone();
+    ctx.RFIDReader = 2;  // EnableOne: RFID lock timer is active
+
+    // Session pre-authorized (RFID was swiped)
+    ctx.AccessStatus = ON;
+
+    // Car connects → auto A→B (AccessStatus already ON)
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
+
+    // DiodeCheck + charge current → STATE_C
+    evse_tick_10ms(&ctx, PILOT_DIODE);
+    ctx.ChargeCurrent = ctx.MaxCurrent * 10;
+    for (int i = 0; i < 55; i++) {
+        evse_tick_10ms(&ctx, PILOT_6V);
+    }
+    TEST_ASSERT_EQUAL_INT(STATE_C, ctx.State);
+
+    // Tesla door handle: CP → +12V (electrically equivalent to unplugging)
+    evse_tick_10ms(&ctx, PILOT_12V);
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+
+    // AccessStatus must be cleared immediately — no 60-second RFID lock window
+    // after an active charging session ends. Without this fix, AccessStatus would
+    // stay ON for RFIDLOCKTIME seconds and the next RFID swipe would toggle it OFF
+    // (stopping a session that was never properly started).
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+    TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
+
+    // Reconnect immediately (within what would have been RFIDLOCKTIME).
+    // Without the fix, AccessStatus=ON would cause auto A→B here. With the fix,
+    // AccessStatus=OFF, so the state must remain A.
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);  // Must NOT auto-transition
+
+    // User swipes RFID to authorize the new session
+    evse_set_access(&ctx, ON);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // Now the car can start charging: auto A→B fires on next 9V tick
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("End-to-End Charging Flows");
 
@@ -524,6 +585,7 @@ int main(void) {
 
     /* Reconnect */
     RUN_TEST(test_e2e_reconnect_after_disconnect);
+    RUN_TEST(test_e2e_rfid_reconnect_after_tesla_disconnect);
 
     /* Error scenarios */
     RUN_TEST(test_e2e_temp_error_during_charge);
