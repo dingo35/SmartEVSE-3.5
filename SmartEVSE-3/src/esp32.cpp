@@ -1613,6 +1613,51 @@ void DisconnectEvent(void){
 #endif //MODEM
 
 
+//graph
+#define DAY_POINTS 96 // 24h * 4 (za 15-min intervale)
+float powerDay[DAY_POINTS];
+int lastDay = -1;
+
+
+void addPowerDaySample(float power) {
+  time_t now = time(NULL);
+  struct tm *tm_info = localtime(&now);
+
+  // Reset buffer at midnight
+  if (lastDay != tm_info->tm_mday) {
+    //initPowerDayBuffer
+    for (int i = 0; i < DAY_POINTS; i++) {
+        powerDay[i] = 0.0;
+    }
+    lastDay = tm_info->tm_mday;
+  }
+
+  // Write down if the current minute is divisible by 15 (e.g. 11:30:00 to 11:30:59)
+  if (tm_info->tm_min % 15 == 0) {
+    int idx = tm_info->tm_hour * 4 + tm_info->tm_min / 15;
+    if (idx >= 0 && idx < DAY_POINTS) {
+      powerDay[idx] = power;
+    }
+  }
+}
+
+//TODO DEBUG fill powerday sample with values
+void testPowerDayBuffer() {
+  for (int i = 0; i < DAY_POINTS; i++) {
+    if (i % 4 == 0) {
+        powerDay[i] = 5.0;
+    } else if (i % 4 == 1) {
+        powerDay[i] = 6.0;
+    } else if (i % 4 == 2) {
+        powerDay[i] = 7.0;
+    } else if (i % 4 == 3) {
+        powerDay[i] = 8.0;
+    }
+  }
+  //powerDayIndex = 0;
+}
+
+
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
 
@@ -2144,6 +2189,22 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         request_write_settings();
         return true;
       }
+    } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        DynamicJsonDocument doc(8000);
+        testPowerDayBuffer(); //TODO DEBUG
+        JsonArray dayHistory = doc.createNestedArray("power_day");
+        for (int i = 0; i < DAY_POINTS; i++) {
+            JsonObject sample = dayHistory.createNestedObject();
+            char buf[9];
+            sprintf(buf, "%02d:%02d", (i * 15) / 60, (i * 15) % 60);
+            sample["time"] = String(buf);
+            sample["power"] = powerDay[i];
+        }
+
+        String json;
+        serializeJson(doc, json);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        return true;
     } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
         
