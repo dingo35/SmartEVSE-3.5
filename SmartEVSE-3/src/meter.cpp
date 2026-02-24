@@ -414,14 +414,13 @@ void Meter::UpdateCapacity() {
     time_t now;
     time(&now);
     // only process if time is valid
-    if (LocalTimeSet && now != 0) {
+    if (LocalTimeSet && now != 0 && Address == MainsMeter.Address) {
         if (CapacityMode == FLANDERS) {
     //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
-    #define CapacityPeriodSeconds 900  // 15 minutes
     #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
     #define CapacitySafety 100         // stay 100W under the Capacity ceiling
     #define AssumedVoltage 230         // TODO take this from the meter measurements
-    #define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
+    //#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
                                        // so you better use it by changing the power limit to the new ceiling
             static time_t LastPeriod = 0;
             static int8_t LastMonth = 0;
@@ -552,6 +551,19 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             }
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
+            // store daily history
+            time_t now = time(NULL);
+            struct tm *tm_info = localtime(&now);
+            static int8_t prev_idx = 255;
+            int8_t idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
+
+            if (idx == prev_idx) { //still in same period
+                if (PowerMeasured > PowerMeasured_Period[idx])
+                    PowerMeasured_Period[idx] = PowerMeasured; //Wh
+            } else { //new period started
+                    PowerMeasured_Period[idx] = PowerMeasured; //Wh
+                    prev_idx = idx;
+            }
 #ifndef SMARTEVSE_VERSION //CH32
             printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
 #endif
