@@ -411,21 +411,21 @@ void Meter::UpdateEnergies() {
 
 void Meter::UpdateCapacity() {
     extern uint16_t MaxSumMains;
-    if (CapacityMode == FLANDERS) {
-//Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
-#define CapacityPeriodSeconds 900  // 15 minutes
-#define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
-#define CapacitySafety 100         // stay 100W under the Capacity ceiling
-#define AssumedVoltage 230         // TODO take this from the meter measurements
-#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
-                                   // so you better use it by changing the power limit to the new ceiling
-        static time_t LastPeriod = 0;
-        static int8_t LastMonth = 0;
-        static int32_t CurrentPeriodStartEnergy = Import_active_energy;
-        time_t now;
-        time(&now);
-        // only process if time is valid
-        if (LocalTimeSet && now != 0) {
+    time_t now;
+    time(&now);
+    // only process if time is valid
+    if (LocalTimeSet && now != 0) {
+        if (CapacityMode == FLANDERS) {
+    //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
+    #define CapacityPeriodSeconds 900  // 15 minutes
+    #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+    #define CapacitySafety 100         // stay 100W under the Capacity ceiling
+    #define AssumedVoltage 230         // TODO take this from the meter measurements
+    #define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
+                                       // so you better use it by changing the power limit to the new ceiling
+            static time_t LastPeriod = 0;
+            static int8_t LastMonth = 0;
+            static int32_t CurrentPeriodStartEnergy = Import_active_energy;
             time_t CurrentPeriod = now / CapacityPeriodSeconds;
             if (CurrentPeriod != LastPeriod) {
                 // fires once per period utc interval
@@ -478,13 +478,7 @@ void Meter::UpdateCapacity() {
                 Baseload = MainsMeter.Imeasured - TotalCurrent;                         // Calculate Baseload (load without any active EVSE)
     */
             }
-        }
-    } else if (CapacityMode == INTERVAL) {
-        time_t now;
-        time(&now);
-
-        // Only proceed if we have valid local time
-        if (LocalTimeSet && now != 0) {
+        } else if (CapacityMode == INTERVAL) {
             tm* t = localtime(&now);
 
             // ────────────────────────────────────────────────────────────────
@@ -524,8 +518,7 @@ void Meter::UpdateCapacity() {
             _LOG_V("INTERVAL mode: time %02u:%02u → MaxSumMains = %u A\n",
                    t->tm_hour, t->tm_min, MaxSumMains);
         }
-        // If time is invalid → silently skip update (MaxSumMains keeps previous value)
-    }
+    }    // If time is invalid → silently skip update (MaxSumMains keeps previous value)
 }
 
 void Meter::setTimeout(uint8_t NewTimeout) {
