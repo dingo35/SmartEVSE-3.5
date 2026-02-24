@@ -109,6 +109,7 @@ class Meter {
 
     void UpdateEnergies();
     void UpdateCapacity();
+    void UpdatePower();
     void ResponseToMeasurement(struct ModBus MB);
     void CalcImeasured(void);
     void setTimeout(uint8_t Timeout);
