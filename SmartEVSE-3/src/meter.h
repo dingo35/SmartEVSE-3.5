@@ -99,7 +99,10 @@ class Meter {
                                                                                 // cleared when charging, reset to 1 when disconnected (state A)
     // capacity variables
     int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
-    int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month
+    int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month, in Wh
+#define CapacityPeriodSeconds 900  // 15 minutes
+#define DAY_POINTS 24*3600/CapacityPeriodSeconds
+    int16_t PowerMeasured_Period[DAY_POINTS];                                   // the peak of the power per period(15min)
 
     // constructor
     Meter(uint8_t type, uint8_t address, uint8_t timeout);
