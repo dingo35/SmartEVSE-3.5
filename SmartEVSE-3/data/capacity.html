@@ -188,7 +188,7 @@
                     url: endpoint,
                     success: function(data) {
                         $('#version').text(data.version).attr('data-version', data.version);
-                        $('#serialnr').append(data.serialnr);
+                        $('#serialnr').text(data.serialnr);
 
                         if (data.settings.intervals && Array.isArray(data.settings.intervals)) {
                             intervals = data.settings.intervals;
