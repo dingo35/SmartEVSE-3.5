@@ -428,7 +428,9 @@ void Meter::UpdateCapacity() {
             static int32_t CurrentPeriodStartEnergy = Import_active_energy;
             time_t CurrentPeriod = now / CapacityPeriodSeconds;
             if (CurrentPeriod != LastPeriod) {
-                // fires once per period utc interval
+                // fires once per period utc interval, now configured 15 minutes
+
+                // check if previous period was this months record, and if so, register it
                 LastPeriod = CurrentPeriod;
                 int32_t PreviousPeriodEnergy = Import_active_energy - CurrentPeriodStartEnergy; //Wh
                 uint16_t AveragePower = PreviousPeriodEnergy * 3600 / CapacityPeriodSeconds; // average Power use in previous period in W
@@ -437,20 +439,20 @@ void Meter::UpdateCapacity() {
                 tm* t = localtime(&now);
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
                 if (LastMonth != CurrentMonth) {      // we started a new month
-                    Peak_Period_Power = CapacityMinimumPower;
+                    Peak_Period_Power_Month = CapacityMinimumPower;
                     MaxSumMains = (CapacityMinimumPower - CapacitySafety) / 230;
-                } else if (AveragePower > Peak_Period_Power) { //this period is this months record, lets register it
-                    Peak_Period_Power = AveragePower;
+                } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
+                    Peak_Period_Power_Month = AveragePower;
                     //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
                     //TODO for now we wait until the next measurement comes in
                 }
-                _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power is %i.\n", AveragePower, Peak_Period_Power);
+                _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power_Month is %i.\n", AveragePower, Peak_Period_Power_Month);
             } else {
                 //we are in the middle of a period
                 //calculate time remaining
                 time_t TimeRemaining = CapacityPeriodSeconds - (now % CapacityPeriodSeconds); //in seconds
                 int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
-                int32_t Energy_Capacity_This_Period = Peak_Period_Power * CapacityPeriodSeconds / 3600;
+                int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
                 int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
                 MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
