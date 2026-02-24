@@ -673,6 +673,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                     MainsMeter.Export_active_energy = 0;
                     MainsMeter.UpdateEnergies();
                     MainsMeter.UpdateCapacity();
+                    MainsMeter.UpdatePower();
                 }
             }
 #else //v4
@@ -2149,7 +2150,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         JsonArray dayHistory = doc.createNestedArray("power_day");
         time_t now = time(NULL);
         struct tm *tm_info = localtime(&now);
-        int i,idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
+        uint8_t i, idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
         idx++; //go to the next time period; since PowerMeasured_Period is circular, this would be the oldest entry
         for (int x = idx; x < DAY_POINTS + idx; x++) {
             if (x < DAY_POINTS)

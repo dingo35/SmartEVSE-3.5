@@ -522,6 +522,23 @@ void Meter::UpdateCapacity() {
     }    // If time is invalid → silently skip update (MaxSumMains keeps previous value)
 }
 
+
+void Meter::UpdatePower() {
+    // store daily history
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    static uint8_t prev_idx = 255;
+    uint8_t idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
+    if (idx == prev_idx) { //still in same period
+        if (PowerMeasured > PowerMeasured_Period[idx])
+            PowerMeasured_Period[idx] = PowerMeasured; //Wh
+    } else { //new period started
+            PowerMeasured_Period[idx] = PowerMeasured; //Wh
+            prev_idx = idx;
+    }
+}
+
+    
 void Meter::setTimeout(uint8_t NewTimeout) {
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
     if (Address == MainsMeter.Address) {
@@ -551,19 +568,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             }
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
-            // store daily history
-            time_t now = time(NULL);
-            struct tm *tm_info = localtime(&now);
-            static int8_t prev_idx = 255;
-            int8_t idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
-
-            if (idx == prev_idx) { //still in same period
-                if (PowerMeasured > PowerMeasured_Period[idx])
-                    PowerMeasured_Period[idx] = PowerMeasured; //Wh
-            } else { //new period started
-                    PowerMeasured_Period[idx] = PowerMeasured; //Wh
-                    prev_idx = idx;
-            }
+            UpdatePower();
 #ifndef SMARTEVSE_VERSION //CH32
             printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
 #endif
