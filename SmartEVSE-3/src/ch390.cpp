@@ -662,24 +662,11 @@ static esp_err_t ch390_phy_negotiate(esp_eth_phy_t *phy) {
 
     // Read current BMCR
     p->eth->phy_reg_read(p->eth, p->addr, PHY_BMCR, &bmcr);
-    _LOG_D("CH390: negotiate start BMCR=0x%04X\n", (uint16_t)bmcr);
 
     // Enable auto-negotiation and restart
     bmcr |= BMCR_ANEG_EN | BMCR_ANEG_RST;
     p->eth->phy_reg_write(p->eth, p->addr, PHY_BMCR, bmcr);
-
-    // Wait for completion (up to 5 seconds)
-    uint32_t bmsr;
-    for (int i = 0; i < 500; i++) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        p->eth->phy_reg_read(p->eth, p->addr, PHY_BMSR, &bmsr);
-        if (bmsr & BMSR_ANEG_DONE) break;
-        if (i % 100 == 99) {
-            _LOG_D("CH390: waiting for autoneg... BMSR=0x%04X\n", (uint16_t)bmsr);
-        }
-    }
-    _LOG_I("CH390: negotiate done BMSR=0x%04X link=%s\n", (uint16_t)bmsr,
-                  (bmsr & BMSR_LINK) ? "UP" : "DOWN");
+    _LOG_I("CH390: auto-negotiation started (non-blocking)\n");
 
     // Read BMCR to determine resolved speed/duplex (reference reads BMCR, not ANLPAR)
     p->eth->phy_reg_read(p->eth, p->addr, PHY_BMCR, &bmcr);
@@ -819,7 +806,7 @@ bool ch390_detect(void) {
     spi_device_interface_config_t dev = {};
     dev.command_bits = 1;
     dev.address_bits = 7;
-    dev.mode = 0;
+    dev.mode = 3;  // CPOL=1, CPHA=1 (mode 3)
     dev.clock_speed_hz = 1000000; // 1 MHz for safe probing
     dev.spics_io_num = CH390_CS;
     dev.queue_size = 1;
