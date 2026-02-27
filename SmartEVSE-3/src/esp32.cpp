@@ -521,6 +521,15 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
 }
 
 
+void setLCDbacklight(uint8_t pwm) {
+    if (EthPresent) {
+        etherlcd_set_backlight(pwm);
+    } else {
+        ledcWrite(LCD_CHANNEL, pwm);
+    }
+}
+
+
 void getButtonState() {
     // Sample the three < o > buttons.
     // As the buttons are shared with the SPI lines going to the LCD,
@@ -531,24 +540,30 @@ void getButtonState() {
         ButtonState = ButtonStateOverride;
     else {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-        pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
-        pinMode(PIN_LCD_SDO_B3, INPUT);
-        pinMode(PIN_LCD_A0_B2, INPUT);
+        if (EthPresent) {
+            // Buttons are read from CH32V003 via SPI register
+            ButtonState = etherlcd_read_buttons() & 0x07;
+        } else {
+            pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
+            pinMode(PIN_LCD_SDO_B3, INPUT);
+            pinMode(PIN_LCD_A0_B2, INPUT);
 
-        // sample buttons                                                         < o >
-        ButtonState = (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |  // > (right)
-                      (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
-                      (digitalRead(PIN_IO0_B1)     ? 1 : 0);   // < (left)
+            // sample buttons                                                         < o >
+            ButtonState = (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |  // > (right)
+                          (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
+                          (digitalRead(PIN_IO0_B1)     ? 1 : 0);   // < (left)
 
-        pinMode(PIN_LCD_SDO_B3, OUTPUT);
-        pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
+            pinMode(PIN_LCD_SDO_B3, OUTPUT);
+            pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
+            pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
+        }
 #else
         pinMode(PIN_LCD_A0_B2, INPUT_PULLUP);                  // Switch the shared pin for the middle button to input
         ButtonState = (digitalRead(BUTTON3)        ? 4 : 0) |  // > (right)
                       (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
                       (digitalRead(BUTTON1)        ? 1 : 0);   // < (left)
-#endif
         pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
+#endif
     }
     xSemaphoreGive(buttonMutex);
 }
@@ -3131,8 +3146,10 @@ void setup() {
     // Must run before any LCD pin setup — the shared SPI pins (14, 25, 26, 33)
     // must be free for the IDF SPI driver to claim via the GPIO matrix.
     if (ch390_detect()) {
-        _LOG_A("CH390D Ethernet detected, LCD disabled\n");
+        _LOG_A("CH390D Ethernet detected\n");
         ch390_eth_init();
+        // Ethernet+LCD board has a CH32V003 that controlls A0/RST/backlight/buttons
+        etherlcd_init();
     } else {
         // No Ethernet add-on — configure shared pins for LCD use
         pinMode(PIN_LCD_RST, OUTPUT);           // LCD reset (GPIO 5)
@@ -3191,7 +3208,7 @@ void setup() {
     ledcSetup(BLUE_CHANNEL, 5000, 8);           // B channel 4, 5kHz, 8 bit
     if (!EthPresent) {
         ledcSetup(LCD_CHANNEL, 5000, 8);        // LCD channel 5, 5kHz, 8 bit
-    }
+    }  // When EthPresent, backlight PWM is handled by CH32V003
 
     // attach the channels to the GPIO to be controlled
     ledcAttachPin(PIN_CP_OUT, CP_CHANNEL);      
@@ -3203,15 +3220,13 @@ void setup() {
     ledcAttachPin(PIN_LEDB, BLUE_CHANNEL);
     if (!EthPresent) {
         ledcAttachPin(PIN_LCD_LED, LCD_CHANNEL);
-    }
+    }  // When EthPresent, PIN_LCD_LED is used as ETH_CS
 
     SetCPDuty(1024);                            // channel 0, duty cycle 100%
     ledcWrite(RED_CHANNEL, 255);
     ledcWrite(GREEN_CHANNEL, 0);
     ledcWrite(BLUE_CHANNEL, 255);
-    if (!EthPresent) {
-        ledcWrite(LCD_CHANNEL, 0);
-    }
+    setLCDbacklight(0);
 
     // Setup PIN interrupt on rising edge
     // the timer interrupt will be reset in the ISR.
@@ -3338,7 +3353,7 @@ extern void Timer20ms(void * parameter);
         _LOG_A("LittleFS Mount Failed\n");
     }
         
-    if (!EthPresent) getButtonState();
+    getButtonState();
 /*     * @param Buttons: < o >
  *          Value: 1 2 4
  *            Bit: 0:Pressed / 1:Released         */
@@ -3349,9 +3364,8 @@ extern void Timer20ms(void * parameter);
     }
 
     BacklightTimer = BACKLIGHT;
-    if (!EthPresent) {
-        GLCD_init();
-    }
+    GLCD_init();
+ 
 
 #if SMARTEVSE_VERSION >=40 //v4
 

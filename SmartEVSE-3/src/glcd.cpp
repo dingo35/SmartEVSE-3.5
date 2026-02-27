@@ -98,12 +98,29 @@ extern uint8_t RCMTestCounter;
 
 void st7565_command(unsigned char data) {
     _A0_0;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
 }
 
 void st7565_data(unsigned char data) {
     _A0_1;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    if (EthPresent) {
+        etherlcd_lcd_transfer_buf(buf, len);
+    } else {
+        SPI.writeBytes(buf, len);
+    }
 }
 #else //SMARTEVSE_VERSION
 
@@ -118,6 +135,13 @@ void st7565_data(unsigned char data) {
     _A0_1;
     digitalWrite(LCD_CS, LOW);
     LCD_SPI2.transfer(data);
+    digitalWrite(LCD_CS, HIGH);
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    digitalWrite(LCD_CS, LOW);
+    LCD_SPI2.writeBytes(buf, len);
     digitalWrite(LCD_CS, HIGH);
 }
 #endif //SMARTEVSE_VERSION
@@ -145,13 +169,11 @@ void goto_xy(unsigned char x, unsigned char y) {
 }
 
 void glcd_clrln(unsigned char ln, unsigned char data) {
-    unsigned char i;
+    uint8_t linebuf[128];
+    memset(linebuf, data, 128);
     goto_xy(0, ln);
-    for (i = 0; i < 128; i++) {
-        st7565_data(data);                                                      // put data on data port
-        // Also update the buffer that mirrors the LCD.
-        GLCDbuf2[i + activeRow * 128] = data;
-    }
+    st7565_data_buf(linebuf, 128);
+    memcpy(&GLCDbuf2[activeRow * 128], linebuf, 128);
 }
 
 /*
@@ -178,17 +200,15 @@ void GLCD_buffer_clr(void) {
 }
 
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
-    unsigned char i, y = 0;
+    unsigned char y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
-        // Sends one chunk of 8 pixels height and 128 pixels wide.
-        for (i = 0; i < 128; i++) {
-            const uint8_t data = GLCDbuf[x++];
-            st7565_data(data);                                              // put data on data port
-            GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
-        }
+        // Send entire 128-byte row in one bulk SPI transfer.
+        st7565_data_buf(&GLCDbuf[x], 128);
+        memcpy(&GLCDbuf2[activeRow * 128], &GLCDbuf[x], 128);              // Also update buffer copy
+        x += 128;
     } while (++y < Rows);
 }
 
@@ -422,9 +442,6 @@ unsigned char MenuNavCharArray(unsigned char Buttons, unsigned char Value, unsig
 // uses buffer
 void GLCDHelp(void)                                                             // Display/Scroll helptext on LCD 
 {
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-  if (EthPresent) return;                                                       // SPI bus used by Ethernet
-#endif
   if (ScrollTimer + 5000 < millis()) {
     unsigned int x = strlen(MenuStr[LCDNav].Desc);
     GLCD_print_buf2_left(MenuStr[LCDNav].Desc + LCDpos);
@@ -440,9 +457,6 @@ void GLCDHelp(void)                                                             
 
 // called once a second
 void GLCD(void) {
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-    if (EthPresent) return;                                                     // SPI bus used by Ethernet
-#endif
     unsigned char x;
     unsigned int seconds, minutes;
     static unsigned char energy_mains = 20; // X position
@@ -1216,9 +1230,6 @@ uint8_t getMenuItems (void) {
  *            Bit: 0:Pressed / 1:Released
  */
 void GLCDMenu(uint8_t Buttons) {
-#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-    if (EthPresent) return;                                                     // SPI bus used by Ethernet
-#endif
     static unsigned long ButtonTimer = 0;
     static uint8_t ButtonRelease = 0;                                           // keeps track of LCD Menu Navigation
     static uint16_t value, ButtonRepeat = 0;
@@ -1444,7 +1455,6 @@ void GLCDMenu(uint8_t Buttons) {
 
 void GLCD_init(void) {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-    if (EthPresent) return;                                                     // SPI bus used by Ethernet
     delay(200);                                                                 // transients on the line could have garbled the LCD, wait 200ms then re-init.
 #endif
     _A0_0;                                                                      // A0=0
