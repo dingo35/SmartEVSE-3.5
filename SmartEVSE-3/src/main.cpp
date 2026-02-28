@@ -1756,6 +1756,33 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
 
     if (EVMeter.Type) {
         if ( EVMeter.Timeout == 0 && !(ErrorFlags & EV_NOCOMM) && Mode != MODE_NORMAL) {
+
+            uint8_t wait_retry = 0;
+            // Reconfigure meter on timeout - some meters require changing internal settings
+            switch(EVMeter.Type) {
+                case EM_ABB_EV3:              
+                     // in case of ABB EV3 the parity may be wrong - default parity is even
+                    _LOG_V("EV3 does not respond, try to change the default parity from even to none\n");
+    
+                    // Change parity of UART to even
+                    Serial1.begin(MODBUS_BAUDRATE, SERIAL_8E1, PIN_RS485_RX, PIN_RS485_TX); 
+                    delay(10);                          
+                    MBclient.clearQueue();        // Clear modbus request queue
+                    ModbusWriteSingleRequest(EVMeter.Address, 0x0414, 0x0001);  // Send message to change default parity of meter
+                    while (MBclient.pendingRequests() != 0 && wait_retry<10){ // Wait for the queue to empty
+                        _LOG_V("Waiting for the message to sent\n");
+                        delay(20);                
+                        wait_retry++;
+                    }
+
+                    // Change partity of UART back to none
+                    Serial1.begin(MODBUS_BAUDRATE, SERIAL_8N1, PIN_RS485_RX, PIN_RS485_TX);
+                    delay(10);        
+                    break;
+                default:
+                    break;
+            }
+
             setErrorFlags(EV_NOCOMM);
             setStatePowerUnavailable();
             _LOG_W("Error, EV Meter communication error!\n");
@@ -2070,7 +2097,12 @@ void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export) {
             // Note:
             // - Sinotimer uses 16-bit values, except for this measurement it uses 32bit int format
             // fallthrough
-        case EM_ABB:
+        case EM_ABB_B23:
+            // Note:
+            // - ABB uses 64bit values for this register (size 2)
+            Count = 2;
+            break;
+         case EM_ABB_EV3:
             // Note:
             // - ABB uses 64bit values for this register (size 2)
             Count = 2;
@@ -2559,7 +2591,7 @@ void ModbusRequestLoop() {
                         case EM_EASTRON1P:
                         case EM_EASTRON3P:
                         case EM_EASTRON3P_INV:
-                        case EM_ABB:
+                        case EM_ABB_B23:
                         case EM_FINDER_7M:
                         case EM_SCHNEIDER:
                             updated = 0;
