@@ -198,7 +198,7 @@
                         renderTable();
 
                         if (data.settings.capacity_mode !== undefined) {
-                            document.getElementById("capacity_mode").value = data.settings.capacity_mode;
+                            $('#capacity_mode').val(data.settings.capacity_mode).selectmenu('refresh');
                         }
 
                         if (data.settings.current_max_sum_mains !== undefined) {
