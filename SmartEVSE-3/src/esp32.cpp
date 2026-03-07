@@ -157,6 +157,9 @@ struct SettingsCache {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
+    // Last known good total_increasing energy (Wh) - never publish less than this to avoid breaking HA statistics
+    int32_t lastKnownEVImportWh;
+    int32_t lastKnownMainsImportWh;
     bool valid;  // True once cache is populated from read_settings()
 };
 static SettingsCache settingsCache = {};
@@ -183,6 +186,12 @@ static SettingsCache settingsCache = {};
 #define PREFS_PUT_BOOL_IF_CHANGED(key, value, cacheVar) \
     if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
         preferences.putBool(key, value); \
+        settingsCache.cacheVar = (value); \
+    }
+
+#define PREFS_PUT_LONG_IF_CHANGED(key, value, cacheVar) \
+    if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
+        preferences.putLong(key, value); \
         settingsCache.cacheVar = (value); \
     }
 
@@ -693,6 +702,10 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 EVMeter.Import_active_energy = WH;
                 EVMeter.Export_active_energy = 0;
                 EVMeter.UpdateEnergies();
+                if (WH > settingsCache.lastKnownEVImportWh) {
+                    settingsCache.lastKnownEVImportWh = WH;
+                    request_write_settings();
+                }
             }
         }
     } else if (topic == MQTTprefix + "/Set/HomeBatteryCurrent") {
@@ -989,6 +1002,22 @@ void SetupMQTTClient() {
     MQTTclient.announce("Cable Lock", "select", optional_payload);
 }
 
+/**
+ * Returns value to publish for a total_increasing energy (Wh).
+ * Never returns less than lastKnown once lastKnown > 0, to avoid corrupting HA statistics
+ * when the meter reports 0 due to startup race or comm glitch.
+ */
+static int32_t energyValueToPublish(int32_t currentWh, int32_t &lastKnownWh) {
+    if (lastKnownWh > 0 && currentWh < lastKnownWh) {
+        return lastKnownWh;
+    }
+    if (currentWh > lastKnownWh) {
+        lastKnownWh = currentWh;
+        request_write_settings();
+    }
+    return currentWh;
+}
+
 void mqttPublishData() {
     lastMqttUpdate = 0;
 
@@ -996,14 +1025,14 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
+            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", energyValueToPublish(MainsMeter.Import_active_energy, settingsCache.lastKnownMainsImportWh), false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
         }
         if (EVMeter.Type) {
             MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
+            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", energyValueToPublish(EVMeter.Import_active_energy, settingsCache.lastKnownEVImportWh), false, 0);
             MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
         }
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
@@ -1098,7 +1127,7 @@ void mqttSmartEVSEPublishData() {
     if (EVMeter.Type) {
         MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVChargePower", String(EVMeter.PowerMeasured), false, 0);
         MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVEnergyCharged", String(EVMeter.EnergyCharged), true, 0);
-        MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVImportActiveEnergy", String(EVMeter.Import_active_energy), false, 0);
+        MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVImportActiveEnergy", String(energyValueToPublish(EVMeter.Import_active_energy, settingsCache.lastKnownEVImportWh)), false, 0);
     }
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/PairingPin", PairingPin, true, 0);
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
@@ -1235,6 +1264,9 @@ void read_settings() {
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
 #endif //ENABLE_OCPP
 
+        settingsCache.lastKnownEVImportWh = preferences.getLong("LastEVImpWh", 0);
+        settingsCache.lastKnownMainsImportWh = preferences.getLong("LastMainsImpWh", 0);
+
         preferences.end();                                  
 
         // Populate settings cache with values just read from NVS
@@ -1290,6 +1322,7 @@ void read_settings() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
+        // lastKnownEVImportWh, lastKnownMainsImportWh already set above from NVS
         settingsCache.valid = true;
         _LOG_D("Settings cache populated from NVS\n");
 
@@ -1361,6 +1394,10 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
     PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin, LCDPin);
     PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer, MQTTSmartServer);
+
+    // Last known energy values - written when changed by energyValueToPublish/MQTT/REST
+    preferences.putLong("LastEVImpWh", settingsCache.lastKnownEVImportWh);
+    preferences.putLong("LastMainsImpWh", settingsCache.lastKnownMainsImportWh);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
@@ -1679,10 +1716,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
-        doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
+        doc["ev_meter"]["import_active_energy"] = energyValueToPublish(EVMeter.Import_active_energy, settingsCache.lastKnownEVImportWh); // Wh
         doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy; // Wh
 
-        doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
+        doc["mains_meter"]["import_active_energy"] = energyValueToPublish(MainsMeter.Import_active_energy, settingsCache.lastKnownMainsImportWh); // Wh
         doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
             doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
@@ -2196,7 +2233,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
             if(request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam("import_active_power")) {
 
-                EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
+                int32_t newWh = request->getParam("import_active_energy")->value().toInt();
+                EVMeter.Import_active_energy = newWh;
+                if (newWh > settingsCache.lastKnownEVImportWh) {
+                    settingsCache.lastKnownEVImportWh = newWh;
+                    request_write_settings();
+                }
                 EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
 #if SMARTEVSE_VERSION < 40 //v3
                 EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
