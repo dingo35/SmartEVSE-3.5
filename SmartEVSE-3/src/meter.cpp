@@ -409,6 +409,9 @@ void Meter::UpdateEnergies() {
 #endif //SMARTEVSE_VERSION
 }
 
+
+#define CapacitySafety 100         // stay 100W under the Capacity ceiling
+#define AssumedVoltage 230         // TODO take this from the meter measurements
 void Meter::UpdateCapacity() {
     extern uint16_t MaxSumMains;
     time_t now;
@@ -418,8 +421,6 @@ void Meter::UpdateCapacity() {
         if (CapacityMode == FLANDERS) {
     //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
     #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
-    #define CapacitySafety 100         // stay 100W under the Capacity ceiling
-    #define AssumedVoltage 230         // TODO take this from the meter measurements
     //#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
                                        // so you better use it by changing the power limit to the new ceiling
             static time_t LastPeriod = 0;
@@ -439,7 +440,7 @@ void Meter::UpdateCapacity() {
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
                 if (LastMonth != CurrentMonth) {      // we started a new month
                     Peak_Period_Power_Month = CapacityMinimumPower;
-                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / 230;
+                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / AssumedVoltage;
                 } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
                     Peak_Period_Power_Month = AveragePower;
                     //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
@@ -501,14 +502,14 @@ void Meter::UpdateCapacity() {
                 }
 
                 if (prev != NULL) {
-                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / 230;
+                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / AssumedVoltage;
                 } else {
                     // Before first interval → use last rule minus safety
                     const CapacityNode* last = first_interval;
                     while (last->next) {
                         last = last->next;
                     }
-                    MaxSumMains = (last->max_power_watts - CapacitySafety) / 230;
+                    MaxSumMains = (last->max_power_watts - CapacitySafety) / AssumedVoltage;
                 }
             } else {
                 // No schedule → silently skip (MaxSumMains unchanged)
@@ -516,8 +517,7 @@ void Meter::UpdateCapacity() {
             }
             // ────────────────────────────────────────────────────────────────
 
-            _LOG_V("INTERVAL mode: time %02u:%02u → MaxSumMains = %u A\n",
-                   t->tm_hour, t->tm_min, MaxSumMains);
+            _LOG_V("INTERVAL mode: time %02u:%02u → MaxSumMains = %u A\n", t->tm_hour, t->tm_min, MaxSumMains);
         }
     }    // If time is invalid → silently skip update (MaxSumMains keeps previous value)
 }
