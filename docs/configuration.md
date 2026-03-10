@@ -198,8 +198,25 @@ This feature uses a unique per-device key stored in the controller. If you someh
 Maximum allowed temperature for your SmartEVSE: 40-75°C (default 65°C).  
 Charging will stop once the internal temperature reaches this threshold and resume once it drops to 55°C.
 
+## CAPACITY MODE
+In line with a EU directive, electricity providers can implement a "capacity rate" for consumers, encouraging more balanced energy consumption. This approach aims to smooth out usage patterns and reduce peak demand.
+If you are unsure how to configure this, it is recommended to leave the setting at its default value, "Disabled".
+
+Only appears when a [MAINSMET](#mains-met) is configured; it only applies to Smart or Solar mode.
+In addition to other limits (Mains, MaxCircuit), the charging current will be restricted to ensure that the total current across all phases does not exceed the maximum current (Fixed) or power (Interval, Flanders) setting.
+
+These settings can also be set at the `http://<your-smartevse>/capacity.html` webpage, that can also be reached through the "Capacity" button on the web dashboard.
+The possible settings are:
+- **Disabled**: No capacity rate limiting is exercised. For most users this is the normal setting.
+- **Fixed**: In addition to other limits (Mains, MaxCircuit), the charging current will be restricted to ensure that the total current across all phases does not exceed the maximum current, as specified in the [CAPACITY](#capacity) setting.
+- **Interval**: The power summed over all three phases will be limited according to the interval settings, which you can specify on the `http://<your-smartevse>/capacity.html` webpage.
+- **Flanders**: The power summed over all three phases will be limited to stay under 2500W ceiling, but if other users "up" the ceiling, SmartEVSE will obey the new ceiling; SmartEVSE tries to minimize cost obeying these rules, currently used in Flanders (Belgium), as specified [here](https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief).
+
+For debugging and monitoring purposes you can navigate to `http://<your-smartevse>/power_day` , which will show you the recorded power usage of the MAINSMeter for the last 24 hours, in 15 minute intervals. For this to work your MainsMeter has to report its total power of the phases to the SmartEVSE, either by MQTT or modbus.
+Please note this is the power as reported by your MAINSMeter, so it is not the power given out by your SmartEVSE !!
+
 ## CAPACITY
-Only appears when a [MAINSMET](#mains-met) is configured. Maximum allowed mains current summed over all phases: 10-600A. Used for the EU Capacity rate limiting.
+Only appears when a [CAPACITYMODE](#capacity-mode) is configured to "Fixed". Maximum allowed mains current summed over all phases: 10-600A. Used for the EU Capacity rate limiting.
 
 ## CAP STOP
 Only appears when [CAPACITY](#capacity) is configured. Timer in minutes. If CAPACITY is exceeded, charging will not immediately stop but will wait until the timer expires.  
@@ -376,19 +393,3 @@ If you cannot (or do not want to) use MQTT to integrate your SmartEVSE with Home
 ## By manually configuring your configuration.yaml
 
 It's a lot of work, but you can have everything exactly your way. See examples in the integrations directory of our GitHub repository.
-
-
-
-# EU Capacity Rate Limiting
-
-In line with a EU directive, electricity providers can implement a "capacity rate" for consumers, encouraging more balanced energy consumption. This approach aims to smooth out usage patterns and reduce peak demand.
-
-For further details, please refer to [serkri#215](https://github.com/serkri/SmartEVSE-3/issues/215).
-
-
-
-* The menu item "Capacity" can be set from 10-600A. (sum of all phases)
-* This setting applies only in Smart or Solar mode.
-* Beyond existing limits (Mains, MaxCircuit), the charging current will be controlled to ensure that the total of all Mains phase currents does not exceed the Capacity setting.
-* If you are unfamiliar with this setting or do not fall under the applicable regulations, it is advisable to keep the setting at its default setting. (disabled)
-
