@@ -619,15 +619,6 @@ void GLCD(void) {
             }
             return;
 #endif
-        } else if (ErrorFlags & Test_IO) {                                      // Only used when testing the module
-            GLCD_print_buf2(2, (const char *) "IO Test");
-            sprintf(Str, "FAILED! %u", TestState);
-            GLCD_print_buf2(4, Str);
-            return;
-        } else if (ErrorFlags & BL_FLASH) {                                     // Bootloader update error
-            GLCD_print_buf2(2, (const char *) "BOOTLOADER");
-            GLCD_print_buf2(4, (const char *) "UPDATE ERR");
-            return;
         }
     }   // end of ERROR()                                                       // more specific error handling in the code below
 
