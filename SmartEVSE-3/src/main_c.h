@@ -58,8 +58,6 @@ extern volatile uint8_t ModbusRxLen;
                                                                                 // RCM_TEST = false, RCM_TRIPPED = true:  RCM is tripped
                                                                                 // RCM_TEST = false, RCM_TRIPPED = false: no RCM problems
 //#endif
-#define Test_IO 64
-#define BL_FLASH 128
 
 extern uint8_t ErrorFlags;
 extern void clearErrorFlags(uint8_t flags);
