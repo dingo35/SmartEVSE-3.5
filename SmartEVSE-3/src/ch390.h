@@ -20,8 +20,8 @@
 // Reuses LCD SPI pins. When CH390D is detected, LCD is disabled.
 #define CH390_SCK       26      // was SPI_SCK  (PIN_LCD_CLK)
 #define CH390_MOSI      33      // was SPI_MOSI (PIN_LCD_SDO_B3)
-#define CH390_MISO      25      // was PIN_LCD_A0_B2
-#define CH390_CS        14      // was PIN_LCD_LED
+#define CH390_MISO      14      // was PIN_LCD_LED
+#define CH390_CS        25      // was PIN_LCD_A0_B2
 #define CH390_INT        5      // INT pin directly connected to ESP32 GPIO5
 
 // ---------- Chip identification ----------

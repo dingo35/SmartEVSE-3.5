@@ -808,6 +808,8 @@ bool ch390_detect(void) {
     dev.address_bits = 7;
     dev.mode = 3;  // CPOL=1, CPHA=1 (mode 3)
     dev.clock_speed_hz = 1000000; // 1 MHz for safe probing
+    dev.cs_ena_pretrans = 1;      // 62ns CS settling through Pi filter
+    dev.input_delay_ns = 10;      // Compensate for round-trip through Pi filter
     dev.spics_io_num = CH390_CS;
     dev.queue_size = 1;
     dev.flags = SPI_DEVICE_HALFDUPLEX;  // CH390D uses separate read/write phases
@@ -832,9 +834,9 @@ bool ch390_detect(void) {
         pid_h == CH390_PID_H && pid_l == CH390_PID_L) {
         _LOG_I("CH390D detected!\n");
 
-        // Increase SPI clock to 10 MHz for normal operation
+        // Increase SPI clock to 12 MHz for normal operation
         spi_bus_remove_device(s_spi);
-        dev.clock_speed_hz = 10000000;
+        dev.clock_speed_hz = 12000000;
         spi_bus_add_device(s_spi_host, &dev, &s_spi);
 
         EthPresent = true;
