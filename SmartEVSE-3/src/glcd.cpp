@@ -571,10 +571,13 @@ void GLCD(void) {
     if (ErrorFlags) {                                                           // We switch backlight on, as we exit after displaying the error
         if (ErrorFlags & ~LESS_6A) BacklightTimer = BACKLIGHT;                  // Backlight timer is set to 120 seconds, except while waiting for enough (solar) power
 
-        if (ErrorFlags & (CT_NOCOMM | EV_NOCOMM)) {                             // No serial communication for 10 seconds
+        if (ErrorFlags & (CT_NOCOMM | EV_NOCOMM | CIRCUIT_NOCOMM)) {                             // No serial communication for 10 seconds
             if (ErrorFlags & EV_NOCOMM) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "EV METER");
+            } else if (ErrorFlags & CIRCUIT_NOCOMM) {
+                GLCD_print_buf2(0, (const char *) "CAN'T READ");
+                GLCD_print_buf2(2, (const char *) "CIRCUIT METER");
             } else if (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD_P1) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "MAINS METER");
@@ -1087,6 +1090,7 @@ const char * getMenuItemOption(uint8_t nav) {
             else return StrDisabled;
         case MENU_MAINSMETER:
         case MENU_EVMETER:
+        case MENU_CIRCUITMETER:
             return (const char*)EMConfig[value].Desc;
         case MENU_GRID:
             return StrGrid[value];
@@ -1095,6 +1099,7 @@ const char * getMenuItemOption(uint8_t nav) {
             return Str;
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
+        case MENU_CIRCUITMETERADDRESS:
         case MENU_EMCUSTOM_UREGISTER:
         case MENU_EMCUSTOM_IREGISTER:
         case MENU_EMCUSTOM_PREGISTER:
@@ -1171,13 +1176,19 @@ uint8_t getMenuItems (void) {
             } else if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) { // - - ? Other?
                 MenuItems[m++] = MENU_MAINSMETERADDRESS;                        // - - - Address of Mains electric meter (9 - 247)
             }
+            MenuItems[m++] = MENU_CIRCUITMETER;                                 // - - Type of Circuit electric meter (0: Disabled / Constants EM_*)
+            if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {             // - ? Circuit meter configured?
+                MenuItems[m++] = MENU_CIRCUITMETERADDRESS;                      // - - Address of Circuit electric meter (9 - 247)
+            }
+            if (CircuitMeter.Type || LoadBl == 1)                               // old MaxCircuit behaviour without a CircuitMeter present: we will guard the max the Master gives out!
+                MenuItems[m++] = MENU_CIRCUIT;                                          // - Max current of the EVSE circuit (A)
         }
         MenuItems[m++] = MENU_EVMETER;                                          // - Type of EV electric meter (0: Disabled / Constants EM_*)
         if (EVMeter.Type && EVMeter.Type != EM_API) {                           // - ? EV meter configured?
             MenuItems[m++] = MENU_EVMETERADDRESS;                               // - - Address of EV electric meter (9 - 247)
         }
         if (LoadBl < 2) {                                                       // - ? Load Balancing Disabled/Master?
-            if (MainsMeter.Type == EM_CUSTOM || EVMeter.Type == EM_CUSTOM) { // ? Custom electric meter used?
+            if (MainsMeter.Type == EM_CUSTOM || EVMeter.Type == EM_CUSTOM || CircuitMeter.Type == EM_CUSTOM) { // ? Custom electric meter used?
                 MenuItems[m++] = MENU_EMCUSTOM_ENDIANESS;                       // - - Byte order of custom electric meter
                 MenuItems[m++] = MENU_EMCUSTOM_DATATYPE;                        // - - Data type of custom electric meter
                 MenuItems[m++] = MENU_EMCUSTOM_FUNCTION;                        // - - Modbus Function of custom electric meter
@@ -1197,11 +1208,6 @@ uint8_t getMenuItems (void) {
         }
     }
     MenuItems[m++] = MENU_MAX;                                                  // Max Charge current (A)
-    if (LoadBl == 1 || (LoadBl == 0 && Mode != MODE_NORMAL && EVMeter.Type)) {  // ? Load balancing Master?
-                                                                                // Also, when not in Normal Mode and that EV meter is present, MaxCircuit will limit
-                                                                                // the total current (subpanel configuration)
-        MenuItems[m++] = MENU_CIRCUIT;                                          // - Max current of the EVSE circuit (A)
-    }
     if (Mode == MODE_SOLAR && LoadBl < 2) {                                     // ? Solar mode and Load Balancing Disabled/Master?
         MenuItems[m++] = MENU_START;                                            // - Start Surplus Current (A)
         MenuItems[m++] = MENU_STOP;                                             // - Stop time (min)
@@ -1307,6 +1313,7 @@ void GLCDMenu(uint8_t Buttons) {
                         } while (value == EM_UNUSED_SLOT4);
                         setItemValue(LCDNav, value);
                         break;
+                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox, HomeWizard P1 or unused slots here
                     case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1 or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);

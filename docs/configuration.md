@@ -58,6 +58,22 @@ If MAINS MET is not **Disabled** and not **API**, these settings appear:
   - **4Wire**: Star connection with 3 phase wires and neutral.
   - **3Wire**: Delta connection with 3 phase wires without neutral.
 
+## CIRCT MET
+Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
+
+- **Disabled**: No EV meter connected.
+- **API**: EV meter data is fed through the REST API or MQTT API.
+- **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+
+**Note**:
+- Eastron1P is for single-phase Eastron meters.
+- Eastron3P is for Eastron three-phase meters.
+- InvEastron is for Eastron’s three-phase meter fed from below (inverted).
+
+If CIRCT MET is not **Disabled** and not **API**, this setting appears:
+
+- **CIRCT ADR**: Set the Modbus address for the Circuit Meter.
+
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
 
@@ -84,7 +100,7 @@ Only appears when a [MAINS MET](#mains-met) is configured. Set the min charge cu
 Set the MAX charge current for the EV: (10-80A) per phase. If [CONFIG](#config) is set to **Fixed**, configure MAX to be lower than or equal to the maximum current that your fixed cable can carry.
 
 ## CIRCUIT
-Only appears when an [EV METER](#ev-meter) is configured, in **Smart** or **Solar** mode. Set the max current the EVSE circuit can handle (power sharing): 10-200A.  
+Only appears when [PWR SHARE](#pwr-share) is set to **Master** or a [CIRCT MET](#circuit-met) is configured, in **Smart** or **Solar** mode. Set the max current the EVSE circuit can handle (power sharing): 10-200A. When no [CIRCT MET](#circuit-met) is configured, it will only limit the total current the **Master** is using for itself and other connected SmartEVSEs.
 
 ## START
 Only shown when [MODE](#mode) is set to **Solar** and [PWR SHARE](#pwr-share) is set to **Disabled** or **Master**. Set the current at which the EV should start solar charging: -0 to -48A (sum of all phases).

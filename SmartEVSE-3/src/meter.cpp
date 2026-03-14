@@ -558,6 +558,8 @@ void Meter::setTimeout(uint8_t NewTimeout) {
         Serial1.printf("@MainsMeterTimeout:%u\n", NewTimeout);
     } else if (Address == EVMeter.Address) {
         Serial1.printf("@EVMeterTimeout:%u\n", NewTimeout);
+    } else if (Address == CircuitMeter.Address) {
+        Serial1.printf("@CircuitMeterTimeout:%u\n", NewTimeout);
     }
 #else
     Timeout = NewTimeout;
@@ -573,6 +575,11 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                     setTimeout(COMM_TIMEOUT);
                 }
                 CalcIsum();
+            } else if (Address == CircuitMeter.Address) {
+                if (receiveCurrentMeasurement(MB)) {
+                    setTimeout(COMM_TIMEOUT);
+                }
+                CalcImeasured();
             } else if (Address == EVMeter.Address) {
                 if (receiveCurrentMeasurement(MB)) {
                     setTimeout(COMM_EVTIMEOUT);

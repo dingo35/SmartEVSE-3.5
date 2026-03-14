@@ -58,6 +58,7 @@ extern volatile uint8_t ModbusRxLen;
                                                                                 // RCM_TEST = false, RCM_TRIPPED = true:  RCM is tripped
                                                                                 // RCM_TEST = false, RCM_TRIPPED = false: no RCM problems
 //#endif
+#define CIRCUIT_NOCOMM 64
 
 extern uint8_t ErrorFlags;
 extern void clearErrorFlags(uint8_t flags);

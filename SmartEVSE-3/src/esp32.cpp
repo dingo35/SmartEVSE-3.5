@@ -143,7 +143,7 @@ struct SettingsCache {
     uint8_t Switch, RCmon;
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress;
+    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
@@ -276,7 +276,6 @@ uint32_t LastBtnOverrideTime = 0;                                           // A
 bool LCDPasswordOK = false;                                                 // LCD web control PIN verification state
 extern uint8_t ChargeDelay;
 extern uint8_t NoCurrent;
-extern uint8_t ModbusRequest;
 extern uint16_t CardOffset;
 
 extern uint8_t ConfigChanged;
@@ -737,6 +736,26 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 EVMeter.UpdateEnergies();
             }
         }
+    } else if (topic == MQTTprefix + "/Set/CircuitMeter") {
+        if (CircuitMeter.Type != EM_API)
+            return;
+
+        int32_t L1, L2, L3;
+        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+
+        // We expect 3 values
+        if ((n == 3) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+#if SMARTCircuitSE_VERSION < 40 //v3
+                // RMS currents
+                CircuitMeter.Irms[0] = L1;
+                CircuitMeter.Irms[1] = L2;
+                CircuitMeter.Irms[2] = L3;
+                CircuitMeter.CalcImeasured();
+                CircuitMeter.Timeout = COMM_TIMEOUT;
+#else //v4
+                Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+        }
     } else if (topic == MQTTprefix + "/Set/HomeBatteryCurrent") {
         if (LoadBl >= 2)
             return;
@@ -916,6 +935,11 @@ void SetupMQTTClient() {
         MQTTclient.announce("EV Current L2", "sensor", optional_payload);
         MQTTclient.announce("EV Current L3", "sensor", optional_payload);
     }
+    if (CircuitMeter.Type) {
+        MQTTclient.announce("Circuit Current L1", "sensor", optional_payload);
+        MQTTclient.announce("Circuit Current L2", "sensor", optional_payload);
+        MQTTclient.announce("Circuit Current L3", "sensor", optional_payload);
+    }
     if (homeBatteryLastUpdate) {
         MQTTclient.announce("Home Battery Current", "sensor", optional_payload);
     }
@@ -1055,6 +1079,11 @@ void mqttPublishData() {
                 MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
             if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
                 MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
+        }
+        if (CircuitMeter.Type) {
+            MQTTclient.publish(MQTTprefix + "/CircuitCurrentL1", CircuitMeter.Irms[0], false, 0);
+            MQTTclient.publish(MQTTprefix + "/CircuitCurrentL2", CircuitMeter.Irms[1], false, 0);
+            MQTTclient.publish(MQTTprefix + "/CircuitCurrentL3", CircuitMeter.Irms[2], false, 0);
         }
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
@@ -1215,7 +1244,7 @@ void validate_settings(void) {
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
     EVMeter.setTimeout(COMM_TIMEOUT);                                             // Short Delay, to clear the error message for ~10 seconds.
-
+    CircuitMeter.setTimeout(COMM_TIMEOUT);
 }
 
 
@@ -1334,6 +1363,8 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
+        CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1400,6 +1431,8 @@ void read_settings() {
         settingsCache.MainsMeterAddress = MainsMeter.Address;
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
+        settingsCache.CircuitMeterType = CircuitMeter.Type;
+        settingsCache.CircuitMeterAddress = CircuitMeter.Address;
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1471,6 +1504,8 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address, CircuitMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
     PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister, EMIRegister);
     PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor, EMIDivisor);
@@ -1850,6 +1885,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
         if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
+        if (CircuitMeter.Type) {
+            doc["circuit_meter"]["currents"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
+            doc["circuit_meter"]["currents"]["L1"] = CircuitMeter.Irms[0];
+            doc["circuit_meter"]["currents"]["L2"] = CircuitMeter.Irms[1];
+            doc["circuit_meter"]["currents"]["L3"] = CircuitMeter.Irms[2];
+        }
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
             doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
         }
@@ -2850,6 +2891,15 @@ void ocppInit() {
         if (ErrorFlags & CT_NOCOMM) {
             MicroOcpp::ErrorData error = "PowerMeterFailure";
             error.info = "Communication with mains meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & CIRCUIT_NOCOMM) {
+            MicroOcpp::ErrorData error = "CircuitMeterFailure";
+            error.info = "Communication with circuit meter lost";
             return error;
         }
         return nullptr;
