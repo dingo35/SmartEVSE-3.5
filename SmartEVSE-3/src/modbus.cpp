@@ -735,6 +735,8 @@ void HandleModbusResponse(void) {
         case 0x04: // (Read input register)
             if (MainsMeter.Type && MainsMeter.Type!=EM_API && MB.Address == MainsMeter.Address) {
                 MainsMeter.ResponseToMeasurement(MB);
+            } else if (CircuitMeter.Type && MB.Address == CircuitMeter.Address) {
+                CircuitMeter.ResponseToMeasurement(MB);
             } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
                 EVMeter.ResponseToMeasurement(MB);
             } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
@@ -780,6 +782,19 @@ ModbusMessage MBNodeRequest(ModbusMessage request) {
 ModbusMessage MBEVMeterResponse(ModbusMessage request) {
     ModbusDecode( (uint8_t*)request.data(), request.size());
     EVMeter.ResponseToMeasurement(MB);
+    // As this is a response to an earlier request, do not send response.
+
+    return NIL_RESPONSE;
+}
+
+
+// Monitor Circuit EV Meter responses, and update Enery and Power and Current measurements
+// Both the Master and Nodes will receive their own EV meter measurements here.
+// Does not send any data back.
+//
+ModbusMessage MBCircuitMeterResponse(ModbusMessage request) {
+    ModbusDecode( (uint8_t*)request.data(), request.size());
+    CircuitMeter.ResponseToMeasurement(MB);
     // As this is a response to an earlier request, do not send response.
 
     return NIL_RESPONSE;
@@ -853,6 +868,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
 
             if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+            if (CircuitMeter.Type && CircuitMeter.Type != EM_API) MBserver.registerWorker(CircuitMeter.Address, ANY_FUNCTION_CODE, &MBCircuitMeterResponse);
 
             // Start ModbusRTU Node background task
             MBserver.begin(Serial1);

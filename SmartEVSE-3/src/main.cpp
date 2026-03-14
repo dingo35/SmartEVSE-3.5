@@ -167,6 +167,8 @@ uint16_t maxTemp = MAX_TEMPERATURE;
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
+Meter CircuitMeter(CIRCUIT_METER, CIRCUIT_METER_ADDRESS, COMM_TIMEOUT);
+
 uint8_t Nr_Of_Phases_Charging = 3;                                          // Nr of phases we are charging with. Set to 1 or 3, depending on the CONTACT 2 setting, and the MODE we are in.
 Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // Switching between 1P and 3P with the second contactor output, depends on the CONTACT 2 setting, and the MODE.
 
@@ -319,7 +321,6 @@ extern void DisconnectEvent(void);
 extern char EVCCID[32];
 extern char RequiredEVCCID[32];
 extern bool CPDutyOverride;
-extern uint8_t ModbusRequest;
 extern unsigned char ease8InOutQuad(unsigned char i);
 extern unsigned char triwave8(unsigned char in);
 
@@ -1065,7 +1066,7 @@ uint8_t Pilot() {
 // only runs on CH32 for SmartEVSEv4
 char IsCurrentAvailable(void) {
     uint8_t n, ActiveEVSE = 0;
-    int Baseload, Baseload_EV, TotalCurrent = 0;
+    int Baseload, Baseload_Circuit, TotalCurrent = 0;
 //TODO debug:
 //    printf("@MSG: BalancedStates=%s,%s,%s,%s,%s,%s,%s,%s.\n", StrStateName[BalancedState[0]],StrStateName[BalancedState[1]],StrStateName[BalancedState[2]],StrStateName[BalancedState[3]],StrStateName[BalancedState[4]],StrStateName[BalancedState[5]],StrStateName[BalancedState[6]],StrStateName[BalancedState[7]]);
     for (n = 0; n < NR_EVSES; n++) if (BalancedState[n] == STATE_C)             // must be in STATE_C
@@ -1098,20 +1099,20 @@ char IsCurrentAvailable(void) {
     ActiveEVSE++;                                                           // Do calculations with one more EVSE
     if (ActiveEVSE > NR_EVSES) ActiveEVSE = NR_EVSES;
     Baseload = MainsMeter.Imeasured - TotalCurrent;                         // Calculate Baseload (load without any active EVSE)
-    Baseload_EV = EVMeter.Imeasured - TotalCurrent;                         // Load on the EV subpanel excluding any active EVSE
-    if (Baseload_EV < 0) Baseload_EV = 0;                                   // so Baseload_EV = 0 when no EVMeter installed
+    Baseload_Circuit = CircuitMeter.Imeasured - TotalCurrent;               // Load on the Circuit subpanel excluding any active EVSE
+    if (Baseload_Circuit < 0) Baseload_Circuit = 0;                         // so Baseload_Circuit = 0 when no CircuitMeter installed
 
     // Check if the lowest charge current(6A) x ActiveEV's + baseload would be higher then the MaxMains.
     if (Mode != MODE_NORMAL && (ActiveEVSE * (MinCurrent * 10) + Baseload) > (MaxMains * 10)) {
         printf("@MSG: No current available MaxMains line %d. ActiveEVSE=%u, Baseload=%d.%dA, MinCurrent=%uA, MaxMains=%uA.\n", __LINE__, ActiveEVSE, Baseload/10, abs(Baseload%10), MinCurrent, MaxMains);
         return 0;                                                           // Not enough current available!, return with error
     }
-    if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
-        && ((ActiveEVSE * (MinCurrent * 10) + Baseload_EV) > (MaxCircuit * 10))) { // MaxCircuit is exceeded
-        printf("@MSG: No current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_EV=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_EV/10, abs(Baseload_EV%10), MinCurrent, MaxCircuit);
+    if (((LoadBl == 0 && CircuitMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
+        && ((ActiveEVSE * (MinCurrent * 10) + Baseload_Circuit) > (MaxCircuit * 10))) { // MaxCircuit is exceeded
+        printf("@MSG: No current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_Circuit=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_Circuit/10, abs(Baseload_Circuit%10), MinCurrent, MaxCircuit);
         return 0;                                                           // Not enough current available!, return with error
     } //else
-        //printf("@MSG: Current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_EV=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_EV/10, abs(Baseload_EV%10), MinCurrent, MaxCircuit);
+        //printf("@MSG: Current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_Circuit=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_Circuit/10, abs(Baseload_Circuit%10), MinCurrent, MaxCircuit);
 
     // When PowerSharing is disabled (LoadBl == 0) set correct nr of Phases
     // When using PowerSharing, we do not know the configuration of the nodes, assume 1 Phase
@@ -1152,7 +1153,7 @@ char IsCurrentAvailable(void) {
 // only runs on the Master or when loadbalancing Disabled
 void CalcBalancedCurrent(char mod) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
-    int Average, MaxBalanced, Idifference, Baseload_EV;
+    int Average, MaxBalanced, Idifference, Baseload_Circuit;
     int ActiveEVSE = 0;
     signed int IsumImport = 0;
     int ActiveMax = 0, TotalCurrent = 0, Baseload;
@@ -1191,11 +1192,11 @@ void CalcBalancedCurrent(char mod) {
             TotalCurrent += Balanced[n];                                        // Calculate total of all set charge currents
     }
 
-    _LOG_V("Checkpoint 1 Isetbalanced=%d.%d A Imeasured=%d.%d A MaxCircuit=%d Imeasured_EV=%d.%d A, Battery Current = %d.%d A, mode=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), MainsMeter.Imeasured/10, abs(MainsMeter.Imeasured%10), MaxCircuit, EVMeter.Imeasured/10, abs(EVMeter.Imeasured%10), homeBatteryCurrent/10, abs(homeBatteryCurrent%10), Mode);
+    _LOG_V("Checkpoint 1 Isetbalanced=%d.%d A Imeasured=%d.%d A MaxCircuit=%d Imeasured_Circuit=%d.%d A, Battery Current = %d.%d A, mode=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), MainsMeter.Imeasured/10, abs(MainsMeter.Imeasured%10), MaxCircuit, CircuitMeter.Imeasured/10, abs(CircuitMeter.Imeasured%10), homeBatteryCurrent/10, abs(homeBatteryCurrent%10), Mode);
 
-    Baseload_EV = EVMeter.Imeasured - TotalCurrent;                             // Calculate Baseload (load without any active EVSE)
-    if (Baseload_EV < 0)
-        Baseload_EV = 0;
+    Baseload_Circuit = CircuitMeter.Imeasured - TotalCurrent;                   // Calculate Baseload (load without any active EVSE)
+    if (Baseload_Circuit < 0)
+        Baseload_Circuit = 0;
     Baseload = MainsMeter.Imeasured - TotalCurrent;                             // Calculate Baseload (load without any active EVSE)
 
     // ############### now calculate IsetBalanced #################
@@ -1203,7 +1204,7 @@ void CalcBalancedCurrent(char mod) {
     if (Mode == MODE_NORMAL)                                                    // Normal Mode
     {
         if (LoadBl == 1)                                                        // Load Balancing = Master? MaxCircuit is max current for all active EVSE's;
-            IsetBalanced = (MaxCircuit * 10 ) - Baseload_EV;
+            IsetBalanced = (MaxCircuit * 10 ) - Baseload_Circuit;
                                                                                 // limiting is per phase so no Nr_Of_Phases_Charging here!
         else
             IsetBalanced = ChargeCurrent;                                       // No Load Balancing in Normal Mode. Set current to ChargeCurrent (fix: v2.05)
@@ -1237,9 +1238,9 @@ void CalcBalancedCurrent(char mod) {
        
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
-        if ((LoadBl == 0 && EVMeter.Type) || (LoadBl == 1 && EVMeter.Type))     // Conditions in which MaxCircuit has to be considered;
+        if (LoadBl <= 1 && CircuitMeter.Type)                                   // Conditions in which MaxCircuit has to be considered;
                                                                                 // mode = Smart/Solar so don't test for that
-            Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - EVMeter.Imeasured);
+            Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - CircuitMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
         int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);// /Nr_Of_Phases_Charging;
@@ -1301,7 +1302,7 @@ void CalcBalancedCurrent(char mod) {
             if (mod && ActiveEVSE) {                                            // if we have an ActiveEVSE and mod=1, we must be Master, so MaxCircuit has to be
                                                                                 // taken into account
 
-                IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_EV ); //assume the current should be available on all 3 phases
+                IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_Circuit ); //assume the current should be available on all 3 phases
                 if (MaxSumMains)
                     IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum)/3); //assume the current should be available on all 3 phases
                 _LOG_V("Checkpoint 3 Smart Isetbalanced=%d.%d A, IsumImport=%d.%d, Isum=%d.%d, ImportCurrent=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), IsumImport/10, abs(IsumImport%10), Isum/10, abs(Isum%10), ImportCurrent);
@@ -1318,8 +1319,8 @@ void CalcBalancedCurrent(char mod) {
     if (MainsMeter.Type && Mode != MODE_NORMAL)
         IsetBalanced = min((int) IsetBalanced, (MaxMains * 10) - Baseload); //limiting is per phase so no Nr_Of_Phases_Charging here!
     // guard MaxCircuit
-    if ((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1)    // Conditions in which MaxCircuit has to be considered
-        IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10) - Baseload_EV); //limiting is per phase so no Nr_Of_Phases_Charging here!
+    if ((LoadBl == 0 && CircuitMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1)     // Conditions in which MaxCircuit has to be considered
+        IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10) - Baseload_Circuit); //limiting is per phase so no Nr_Of_Phases_Charging here!
     // guard GridRelay
     if (GridRelayOpen) {
         int Phases = Force_Single_Phase_Charging() ? 1 : 3;
@@ -1385,8 +1386,8 @@ void CalcBalancedCurrent(char mod) {
                 if (IsetBalanced > (MaxMains * 10) - Baseload)
                     hardShortage = true;
             // guard MaxCircuit
-            if (((LoadBl == 0 && EVMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
-                && (IsetBalanced > (MaxCircuit * 10) - Baseload_EV))
+            if (((LoadBl == 0 && CircuitMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1) // Conditions in which MaxCircuit has to be considered
+                && (IsetBalanced > (MaxCircuit * 10) - Baseload_Circuit))
                     hardShortage = true;
             if (!MaxSumMainsTime && LimitedByMaxSumMains)                       // if we don't use the Capacity timer, we want a hard stop
                 hardShortage = true;
@@ -1770,11 +1771,24 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         }
     } else
         EVMeter.setTimeout(COMM_EVTIMEOUT);
-    
+
+    if (CircuitMeter.Type) {
+        if ( CircuitMeter.Timeout == 0 && !(ErrorFlags & CIRCUIT_NOCOMM) && Mode != MODE_NORMAL) {
+            setErrorFlags(CIRCUIT_NOCOMM);
+            setStatePowerUnavailable();
+            _LOG_W("Error, Circuit Meter communication error!\n");
+        } else {
+            if (CircuitMeter.Timeout) CircuitMeter.Timeout--;
+        }
+    } else
+        CircuitMeter.setTimeout(COMM_TIMEOUT);
+
     // Clear communication error, if present
     if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout) clearErrorFlags(CT_NOCOMM);
 
     if ((ErrorFlags & EV_NOCOMM) && EVMeter.Timeout) clearErrorFlags(EV_NOCOMM);
+
+    if ((ErrorFlags & CIRCUIT_NOCOMM) && CircuitMeter.Timeout) clearErrorFlags(CIRCUIT_NOCOMM);
 
     if (TempEVSE > maxTemp && !(ErrorFlags & TEMP_HIGH))                // Temperature too High?
     {
@@ -2255,6 +2269,11 @@ bool ReadIrms(char *SerialBuf) {
                     EVMeter.Irms[x] = Irms[x];
                 EVMeter.setTimeout(COMM_EVTIMEOUT);
                 EVMeter.CalcImeasured();
+            } else if (Address == CircuitMeter.Address) {
+                for (int x = 0; x < 3; x++)
+                    CircuitMeter.Irms[x] = Irms[x];
+                CircuitMeter.setTimeout(COMM_TIMEOUT);
+                CircuitMeter.CalcImeasured();
             }
             return true; //success
         } else {
@@ -2280,6 +2299,8 @@ bool ReadPowerMeasured(char *SerialBuf) {
                 MainsMeter.PowerMeasured = PowerMeasured;
             } else if (Address == EVMeter.Address) {
                 EVMeter.PowerMeasured = PowerMeasured;
+            } else if (Address == CircuitMeter.Address) {
+                CircuitMeter.PowerMeasured = PowerMeasured;
             }
             return true; //success
         } else {
@@ -2367,6 +2388,8 @@ void CheckSerialComm(void) {
     SET_ON_RECEIVE(MainsMAddress:, MainsMeter.Address)
     SET_ON_RECEIVE(EVMeterType:, EVMeter.Type)
     SET_ON_RECEIVE(EVMeterAddress:, EVMeter.Address)
+    SET_ON_RECEIVE(CircuitMeterType:, CircuitMeter.Type)
+    SET_ON_RECEIVE(CircuitMeterAddress:, CircuitMeter.Address)
     //code from validate_settings for v4:
     if (LoadBl < 2) {
         Node[0].EVMeter = EVMeter.Type;
@@ -2388,6 +2411,7 @@ void CheckSerialComm(void) {
     SET_ON_RECEIVE(maxTemp:, maxTemp)
     SET_ON_RECEIVE(MainsMeterTimeout:, MainsMeter.Timeout)
     SET_ON_RECEIVE(EVMeterTimeout:, EVMeter.Timeout)
+    SET_ON_RECEIVE(CircuitMeterTimeout:, CircuitMeter.Timeout)
     SET_ON_RECEIVE(ConfigChanged:, ConfigChanged)
 
     SET_ON_RECEIVE(ModemStage:, ModemStage)
@@ -2642,11 +2666,22 @@ void ModbusRequestLoop() {
                 // fall through
             case 21:
                 // Request active energy if Mainsmeter is configured
-                    if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX ) { // EM_API, EM_HOMEWIZARD_P1 and Sensorbox do not support energy postings
+                if ((MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX ) || // EM_API, EM_HOMEWIZARD_P1 and Sensorbox do not support energy postings
+                    (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX )) {
                     energytimer++; //this ticks approx every second?!?
                     if (energytimer == 30) {
                         _LOG_D("ModbusRequest %u: Request MainsMeter Import Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 0);
+                        break;
+                    }
+                    if (energytimer == 15) {
+                        _LOG_D("ModbusRequest %u: Request CircuitMeter Import Active Energy Measurement\n", ModbusRequest);
+                        requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 0);
+                        break;
+                    }
+                    if (energytimer == 45) {
+                        _LOG_D("ModbusRequest %u: Request CircuitMeter Export Active Energy Measurement\n", ModbusRequest);
+                        requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 1);
                         break;
                     }
                     if (energytimer >= 60) {
@@ -2658,6 +2693,38 @@ void ModbusRequestLoop() {
                 }
                 ModbusRequest++;
                 // fall through
+            case 22:                                                         // Sensorbox or kWh meter that measures -all- currents
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD_P1) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
+                    _LOG_D("ModbusRequest %u: Request CircuitMeter Current Measurement\n", ModbusRequest);
+                    requestCurrentMeasurement(CircuitMeter.Type, CircuitMeter.Address);
+                    break;
+                }
+                ModbusRequest++;
+                // fall through
+// CircuitMeter only reports currents right now, since that is its main function!
+/*            case 23:                                                         // Circuit kWh meter, Power measurement (momentary power in Watt)
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD_P1) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
+                    updated = 1;
+                    switch(CircuitMeter.Type) {
+                        //these meters all have their power measured via receiveCurrentMeasurement already
+                        case EM_EASTRON1P:
+                        case EM_EASTRON3P:
+                        case EM_EASTRON3P_INV:
+                        case EM_ABB:
+                        case EM_FINDER_7M:
+                        case EM_SCHNEIDER:
+                            updated = 0;
+                            break;
+                        default:
+                            _LOG_D("ModbusRequest %u: Request CircuitMeter PowerMeasurement\n", ModbusRequest);
+                            requestPowerMeasurement(CircuitMeter.Type, CircuitMeter.Address, CircuitMeter.PRegister);
+                            break;
+                    }
+                    if (updated) break;  // do not break when Circuitmeter is one of the above types
+                }
+                ModbusRequest++;
+                // fall through
+*/
             default:
                 // slave never gets here
                 // what about normal mode with no meters attached?
@@ -2701,9 +2768,9 @@ static unsigned int LedPwm = 0;                                                /
 
     // RGB LED
 #ifndef SMARTEVSE_VERSION //CH32
-    if ((ErrorFlags & (CT_NOCOMM | EV_NOCOMM | TEMP_HIGH) ) || (((ErrorFlags & RCM_TRIPPED) != (ErrorFlags & RCM_TEST)) && !RCMTestCounter)) {
+    if ((ErrorFlags & (CT_NOCOMM | EV_NOCOMM | CIRCUIT_NOCOMM | TEMP_HIGH) ) || (((ErrorFlags & RCM_TRIPPED) != (ErrorFlags & RCM_TEST)) && !RCMTestCounter)) {
 #else //v3 ESP32
-    if (ErrorFlags & (RCM_TRIPPED | CT_NOCOMM | EV_NOCOMM | TEMP_HIGH) ) {
+    if (ErrorFlags & (RCM_TRIPPED | CT_NOCOMM | EV_NOCOMM | CIRCUIT_NOCOMM | TEMP_HIGH) ) {
 #endif
             LedCount += 20;                                                 // Very rapid flashing, RCD tripped or no Serial Communication.
             if (LedCount > 128) LedPwm = ERROR_LED_BRIGHTNESS;              // Red LED 50% of time on, full brightness
@@ -2838,6 +2905,8 @@ void SendConfigToCH32() {
     Serial1.printf("@MainsMAddress:%u\n", MainsMeter.Address);
     Serial1.printf("@EVMeterType:%u\n", EVMeter.Type);
     Serial1.printf("@EVMeterAddress:%u\n", EVMeter.Address);
+    Serial1.printf("@CircuitMeterType:%u\n", CircuitMeter.Type);
+    Serial1.printf("@CircuitMeterAddress:%u\n", CircuitMeter.Address);
     Serial1.printf("@EMEndianness:%u\n", EMConfig[EM_CUSTOM].Endianness);
     Serial1.printf("@EMIRegister:%u\n", EMConfig[EM_CUSTOM].IRegister);
     Serial1.printf("@EMIDivisor:%u\n", EMConfig[EM_CUSTOM].IDivisor);
@@ -2987,6 +3056,8 @@ void Handle_ESP32_Message(char *SerialBuf, uint8_t *CommState) {
                 MainsMeter.X = temp; \
             } else if (Address == EVMeter.Address) { \
                 EVMeter.X = temp; \
+            } else if (Address == CircuitMeter.Address) { \
+                CircuitMeter.X = temp; \
             } \
         } else { \
             _LOG_A("Received corrupt %s, n=%d, message from WCH:%s.\n", #X, n, SerialBuf); \
@@ -3407,6 +3478,8 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_MAINSMETERADDRESS, MainsMeter.Address)
         SETITEM(MENU_EVMETER, EVMeter.Type)
         SETITEM(MENU_EVMETERADDRESS, EVMeter.Address)
+        SETITEM(MENU_CIRCUITMETER, CircuitMeter.Type)
+        SETITEM(MENU_CIRCUITMETERADDRESS, CircuitMeter.Address)
         SETITEM(MENU_EMCUSTOM_ENDIANESS, EMConfig[EM_CUSTOM].Endianness)
         SETITEM(MENU_EMCUSTOM_FUNCTION, EMConfig[EM_CUSTOM].Function)
         SETITEM(MENU_EMCUSTOM_UREGISTER, EMConfig[EM_CUSTOM].URegister)
@@ -3552,6 +3625,10 @@ uint16_t getItemValue(uint8_t nav) {
             return EVMeter.Type;
         case MENU_EVMETERADDRESS:
             return EVMeter.Address;
+        case MENU_CIRCUITMETER:
+            return CircuitMeter.Type;
+        case MENU_CIRCUITMETERADDRESS:
+            return CircuitMeter.Address;
         case MENU_EMCUSTOM_ENDIANESS:
             return EMConfig[EM_CUSTOM].Endianness;
         case MENU_EMCUSTOM_DATATYPE:
