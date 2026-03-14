@@ -56,9 +56,11 @@ If you have other current-users on a Subpanel, use this wiring and the added con
             |            |                    |
                 [group breaker 16A]   [subpanel breaker 16A]
                                               |
-                                       [kWh meter "EV"]
+                                       [kWh meter "Circuit"]
                                               |
                                         ----------------
+                                        |              |
+                                        |          [kWh meter "EV"]
                                         |              |
                             [washer breaker 16A]  [smartevse breaker 16A]
 

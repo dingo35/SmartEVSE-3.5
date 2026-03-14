@@ -102,6 +102,8 @@
 #define MAINS_METER_ADDRESS 10
 #define EV_METER 0
 #define EV_METER_ADDRESS 12
+#define CIRCUIT_METER 0
+#define CIRCUIT_METER_ADDRESS 13
 #define MIN_METER_ADDRESS 10
 #define MIN_EV_METER_ADDRESS 11
 #define MAX_METER_ADDRESS 247
@@ -266,31 +268,33 @@ void setPilot(bool On);
 #define MENU_IMPORT 19                                                          // 0x0207: Allow grid power when solar charging
 #define MENU_MAINSMETER 20                                                      // 0x0208: Type of Mains electric meter
 #define MENU_MAINSMETERADDRESS 21                                               // 0x0209: Address of Mains electric meter
-#define MENU_EMCUSTOM_ENDIANESS 22                                              // 0x020D: Byte order of custom electric meter
-#define MENU_EMCUSTOM_DATATYPE 23                                               // 0x020E: Data type of custom electric meter
-#define MENU_EMCUSTOM_FUNCTION 24                                               // 0x020F: Modbus Function (3/4) of custom electric meter
-#define MENU_EMCUSTOM_UREGISTER 25                                              // 0x0210: Register for Voltage (V) of custom electric meter
-#define MENU_EMCUSTOM_UDIVISOR 26                                               // 0x0211: Divisor for Voltage (V) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_IREGISTER 27                                              // 0x0212: Register for Current (A) of custom electric meter
-#define MENU_EMCUSTOM_IDIVISOR 28                                               // 0x0213: Divisor for Current (A) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_PREGISTER 29                                              // 0x0214: Register for Power (W) of custom electric meter
-#define MENU_EMCUSTOM_PDIVISOR 30                                               // 0x0215: Divisor for Power (W) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_EREGISTER 31                                              // 0x0216: Register for Energy (kWh) of custom electric meter
-#define MENU_EMCUSTOM_EDIVISOR 32                                               // 0x0217: Divisor for Energy (kWh) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_READMAX 33                                                // 0x0218: Maximum register read (ToDo)
-#define MENU_WIFI 34                                                            // 0x0219: WiFi mode
-#define MENU_AUTOUPDATE 35
-#define MENU_C2 36
-#define MENU_MAX_TEMP 37
-#define MENU_CAPACITY_MODE 38
-#define MENU_SUMMAINS 39
-#define MENU_SUMMAINSTIME 40
-#define MENU_LCDPIN 41
-#define MENU_PAIRING 42
-#define MENU_APPSERVER 43
-#define MENU_OFF 44                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 45                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 46
+#define MENU_CIRCUITMETER 22
+#define MENU_CIRCUITMETERADDRESS 23
+#define MENU_EMCUSTOM_ENDIANESS 24                                              // 0x020D: Byte order of custom electric meter
+#define MENU_EMCUSTOM_DATATYPE 25                                               // 0x020E: Data type of custom electric meter
+#define MENU_EMCUSTOM_FUNCTION 26                                               // 0x020F: Modbus Function (3/4) of custom electric meter
+#define MENU_EMCUSTOM_UREGISTER 27                                              // 0x0210: Register for Voltage (V) of custom electric meter
+#define MENU_EMCUSTOM_UDIVISOR 28                                               // 0x0211: Divisor for Voltage (V) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_IREGISTER 29                                              // 0x0212: Register for Current (A) of custom electric meter
+#define MENU_EMCUSTOM_IDIVISOR 30                                               // 0x0213: Divisor for Current (A) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_PREGISTER 31                                              // 0x0214: Register for Power (W) of custom electric meter
+#define MENU_EMCUSTOM_PDIVISOR 32                                               // 0x0215: Divisor for Power (W) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_EREGISTER 33                                              // 0x0216: Register for Energy (kWh) of custom electric meter
+#define MENU_EMCUSTOM_EDIVISOR 34                                               // 0x0217: Divisor for Energy (kWh) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_READMAX 35                                                // 0x0218: Maximum register read (ToDo)
+#define MENU_WIFI 36                                                            // 0x0219: WiFi mode
+#define MENU_AUTOUPDATE 37
+#define MENU_C2 38
+#define MENU_MAX_TEMP 39
+#define MENU_CAPACITY_MODE 40
+#define MENU_SUMMAINS 41
+#define MENU_SUMMAINSTIME 42
+#define MENU_LCDPIN 43
+#define MENU_PAIRING 44
+#define MENU_APPSERVER 45
+#define MENU_OFF 46                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 47                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 48
 
 #define MENU_STATE 50
 
