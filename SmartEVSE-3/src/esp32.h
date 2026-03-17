@@ -117,6 +117,10 @@ extern uint8_t LCDTimer;
 extern uint16_t BacklightTimer;                                                 // remaining seconds the LCD backlight is active
 extern uint8_t ButtonState;                                                     // Holds latest push Buttons state (LSB 2:0)
 extern uint8_t OldButtonState;                                                  // Holds previous push Buttons state (LSB 2:0)
+extern SemaphoreHandle_t buttonMutex;                                           // Mutex for button state access
+extern uint8_t ButtonStateOverride;                                             // Override button state via API/WebSocket
+extern uint32_t LastBtnOverrideTime;                                            // Timestamp of last button override
+extern bool LCDPasswordOK;                                                      // LCD web control PIN verification state
 extern uint8_t ChargeDelay;                                                     // Delays charging in seconds.
 extern uint8_t TestState;
 extern AccessStatus_t AccessStatus;
