@@ -56,6 +56,7 @@ uint8_t lastMqttUpdate = 0;
 bool MQTTtls = false;
 bool MQTTSmartServer = false;               // Use mqtt.smartevse.nl server, can be set from the LCD menu
 bool MQTTSmartServerChanged = false;        // Flag to trigger reconnect from network_loop()
+bool WIFImodeChanged = false;               // Flag to trigger handleWIFImode() from network_loop()
 String MQTTprivatePassword;                 // mqtt.smartevse.nl pre calculated password (hash of ec_private key)
 #endif
 
@@ -1924,6 +1925,18 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
 
 void handleWIFImode() {
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
+    // Ethernet takes priority: when cable is connected, disable WiFi
+    if (EthConnected) {
+        if (WiFi.getMode() != WIFI_OFF) {
+            _LOG_A("Ethernet connected, stopping WiFi..\n");
+            WiFi.softAPdisconnect(true);
+            WiFi.disconnect(true);
+        }
+        return;
+    }
+#endif
+
     if (WIFImode == 2 && WiFi.getMode() != WIFI_AP_STA) {
         _LOG_A("Start Portal...\n");
 
@@ -2114,6 +2127,13 @@ void WiFiSetup(void) {
 void network_loop() {
     static unsigned long lastCheck_net = 0;
 
+    // Handle deferred WiFi mode changes (triggered by Ethernet events on the
+    // sys_evt task, which has too little stack for WiFi.softAP / WiFi.begin)
+    if (WIFImodeChanged) {
+        WIFImodeChanged = false;
+        handleWIFImode();
+    }
+
 #if MQTT && MQTT_ESP && SMARTEVSE_VERSION
     // Handle SmartEVSE MQTT server setting change (set by LCD menu)
     // This runs in main loop context where MQTT operations are safe
@@ -2130,7 +2150,7 @@ void network_loop() {
         time_t now;
         time(&now);                     // get seconds since Epoch
         localtime_r(&now, &timeinfo);   // convert seconds to localtime
-        if (!LocalTimeSet && WIFImode == 1) {
+        if (!LocalTimeSet && (WIFImode == 1 || EthHasIP)) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
     }

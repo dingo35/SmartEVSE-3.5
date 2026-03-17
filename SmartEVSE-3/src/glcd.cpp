@@ -32,6 +32,7 @@
 #include "utils.h"
 #include "meter.h"
 #include "network_common.h"
+#include "ch390.h"
 #include "font.cpp"
 #include "font2.cpp"
 
@@ -219,7 +220,10 @@ void GLCD_font_condense(unsigned char c, unsigned char *start, unsigned char *en
         if(font[c][1] == 0) *start = 2;
         else *start = 1;
     }
-    if(font[c][4] == 0) *end = 4;
+    if(font[c][4] == 0) {
+        if(font[c][3] == 0) *end = 3;
+        else *end = 4;
+    }
 }
 
 unsigned char GLCD_text_length(const char *str) {
@@ -513,9 +517,19 @@ void GLCD(void) {
             if (MQTTclientSmartEVSE.connected) GLCD_write_buf_str(0, 0, "Connected to server", GLCD_ALIGN_LEFT);
             else GLCD_write_buf_str(0, 0, "No server connection", GLCD_ALIGN_LEFT);
         } else {
-            // When connected to Wifi, display IP and time in top row
+            // Display IP and time in top row (Ethernet takes priority over WiFi)
             uint8_t WIFImode = getItemValue(MENU_WIFI);
-            if (WIFImode == 1 ) {   // Wifi Enabled
+            if (EthHasIP) {
+                if (LCDNav == MENU_WIFI && WIFImode != 0) {
+                    GLCD_write_buf_str(0,0, "Disconnect Eth first", GLCD_ALIGN_LEFT);
+                } else {
+                    sprintf(Str, "%s", ch390_get_ip());
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+                    if (LocalTimeSet) sprintf(Str, "%02u:%02u",timeinfo.tm_hour, timeinfo.tm_min);
+                    else sprintf(Str, "--:--");
+                    GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
+                }
+            } else if (WIFImode == 1 ) {   // Wifi Enabled
 
                 if (WiFi.status() == WL_CONNECTED) {
                     sprintf(Str, "%s",WiFi.localIP().toString().c_str());

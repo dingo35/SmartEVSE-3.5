@@ -863,13 +863,15 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         _LOG_I("Ethernet Link Up - MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         EthConnected = true;
-        // DHCP lifecycle is managed by esp_eth_stop/start via the
-        // esp_eth_netif_glue layer (esp_netif_action_start/connected).
+        // Defer WiFi handling to network_loop() — event task stack is too small
+        WIFImodeChanged = true;
         break;
     case ETHERNET_EVENT_DISCONNECTED:
         _LOG_I("Ethernet Link Down\n");
         EthConnected = false;
         EthHasIP = false;
+        // Defer WiFi re-enable to network_loop() — event task stack is too small
+        WIFImodeChanged = true;
         break;
     case ETHERNET_EVENT_START:
         _LOG_I("Ethernet Started\n");
