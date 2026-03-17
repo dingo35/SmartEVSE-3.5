@@ -100,7 +100,7 @@ extern portMUX_TYPE rtc_spinlock;   //TODO: Will be placed in the appropriate po
 
 extern struct tm timeinfo;
 
-
+extern uint8_t PIN_RS485_RX;
 extern uint8_t Mode;                                                            // EVSE mode
 extern uint8_t LoadBl;                                                          // Load Balance Setting (Disable, Master or Node)
 extern uint8_t Grid;
