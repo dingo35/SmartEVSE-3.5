@@ -135,6 +135,11 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->ChargeDelay = 0;
     ctx->NoCurrent = 0;
 
+    // Stop/start cycling prevention
+    ctx->NoCurrentThreshold = NOCURRENT_THRESHOLD_DEFAULT;
+    ctx->SolarChargeDelay = SOLAR_CHARGE_DELAY_DEFAULT;
+    ctx->SolarMinRunTime = SOLAR_MIN_RUN_TIME_DEFAULT;
+
     // Phase switching
     ctx->EnableC2 = NOT_PRESENT;
     ctx->Nr_Of_Phases_Charging = 3;
@@ -886,6 +891,16 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 }
             }
 
+            // Issue #17: NoCurrent threshold triggers LESS_6A
+            // Solar min run time guard: don't trigger during initial charge
+            if (ctx->NoCurrent >= ctx->NoCurrentThreshold) {
+                bool minRunTimePassed = true;
+                if (ctx->Mode == MODE_SOLAR && ctx->Node[0].IntTimer < ctx->SolarMinRunTime)
+                    minRunTimePassed = false;
+                if (minRunTimePassed)
+                    evse_set_error_flags(ctx, LESS_6A);
+            }
+
         } else {
             // ---- No shortage (lines 1399-1440) ----
 
@@ -924,7 +939,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 ctx->SolarStopTimer = 0;
                 ctx->PhaseSwitchTimer = 0;
                 ctx->MaxSumMainsTimer = 0;
-                ctx->NoCurrent = 0;
+                // Issue #17: decay NoCurrent gradually instead of instant reset
+                if (ctx->NoCurrent > 0) ctx->NoCurrent--;
             }
         }
 
@@ -1478,9 +1494,13 @@ void evse_tick_1s(evse_ctx_t *ctx) {
     }
 
     // LESS_6A active: enforce power unavailable + charge delay (lines 1780-1787)
+    // Issue #17: solar mode uses shorter delay to resume faster
     if (ctx->ErrorFlags & LESS_6A) {
         evse_set_power_unavailable(ctx);
-        ctx->ChargeDelay = CHARGEDELAY;
+        if (ctx->Mode == MODE_SOLAR)
+            ctx->ChargeDelay = ctx->SolarChargeDelay;
+        else
+            ctx->ChargeDelay = CHARGEDELAY;
     }
 
     // Priority scheduling tick

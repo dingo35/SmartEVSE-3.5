@@ -293,10 +293,10 @@ void test_shortage_increments_nocurrent(void) {
 /*
  * @feature Load Balancing
  * @req REQ-LB-012
- * @scenario No current shortage clears NoCurrent counter
+ * @scenario No current shortage decays NoCurrent counter
  * @given Two EVSEs in MODE_SMART with low mains load and high MaxMains
  * @when evse_calc_balanced_current is called with sufficient capacity
- * @then NoCurrent counter is cleared to 0
+ * @then NoCurrent counter decays by 1 (gradual recovery)
  */
 void test_no_shortage_clears_nocurrent(void) {
     setup_master_two_evse();
@@ -308,7 +308,7 @@ void test_no_shortage_clears_nocurrent(void) {
     ctx.IsetBalanced = 200;
     evse_calc_balanced_current(&ctx, 0);
     if (ctx.IsetBalanced >= (int32_t)(2 * ctx.MinCurrent * 10)) {
-        TEST_ASSERT_EQUAL_INT(0, ctx.NoCurrent);
+        TEST_ASSERT_EQUAL_INT(4, ctx.NoCurrent);
     }
 }
 

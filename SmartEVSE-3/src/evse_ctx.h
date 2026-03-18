@@ -190,6 +190,15 @@ typedef enum {
 #ifndef SOLAR_FINE_DEADBAND_DEFAULT
 #define SOLAR_FINE_DEADBAND_DEFAULT 5 /* 0.5A in deciamps (was effectively 3) */
 #endif
+#ifndef NOCURRENT_THRESHOLD_DEFAULT
+#define NOCURRENT_THRESHOLD_DEFAULT    10 /* 10 ticks (~100ms) before LESS_6A (was 3) */
+#endif
+#ifndef SOLAR_CHARGE_DELAY_DEFAULT
+#define SOLAR_CHARGE_DELAY_DEFAULT     15 /* 15s charge delay after solar stop (was 60s) */
+#endif
+#ifndef SOLAR_MIN_RUN_TIME_DEFAULT
+#define SOLAR_MIN_RUN_TIME_DEFAULT     60 /* 60s min charge time before NoCurrent can trigger LESS_6A */
+#endif
 #ifndef PHASE_SWITCH_HOLDDOWN_DEFAULT
 #define PHASE_SWITCH_HOLDDOWN_DEFAULT  300 /* 5 min on 1P before allowing 3P upgrade */
 #endif
@@ -295,6 +304,11 @@ typedef struct {
     uint8_t ErrorFlags;
     uint8_t ChargeDelay;
     uint8_t NoCurrent;
+
+    // --- Stop/start cycling prevention (Issue #17) ---
+    uint8_t  NoCurrentThreshold;    /* NoCurrent ticks before triggering LESS_6A */
+    uint8_t  SolarChargeDelay;      /* Shorter charge delay for solar mode (seconds) */
+    uint16_t SolarMinRunTime;       /* Min charge time before NoCurrent can trigger LESS_6A (seconds) */
 
     // --- Timers ---
     uint16_t SolarStopTimer;

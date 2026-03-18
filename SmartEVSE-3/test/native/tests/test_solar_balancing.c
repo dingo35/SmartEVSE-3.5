@@ -374,10 +374,10 @@ void test_soft_shortage_starts_maxsummains_timer(void) {
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-016
- * @scenario No shortage condition clears SolarStopTimer and NoCurrent
+ * @scenario No shortage condition clears SolarStopTimer and decays NoCurrent
  * @given The EVSE is in MODE_SMART with low mains load and high MaxMains
  * @when evse_calc_balanced_current is called with no shortage detected
- * @then SolarStopTimer and NoCurrent are both reset to 0
+ * @then SolarStopTimer is reset to 0 and NoCurrent decays by 1
  */
 void test_no_shortage_clears_timers(void) {
     setup_solar_charging();
@@ -389,7 +389,7 @@ void test_no_shortage_clears_timers(void) {
     ctx.IsetBalanced = 200;
     evse_calc_balanced_current(&ctx, 0);
     TEST_ASSERT_EQUAL_INT(0, ctx.SolarStopTimer);
-    TEST_ASSERT_EQUAL_INT(0, ctx.NoCurrent);
+    TEST_ASSERT_EQUAL_INT(4, ctx.NoCurrent);
 }
 
 /* ---- IsetBalanced capped at 800 ---- */
@@ -749,6 +749,195 @@ void test_solar_fine_deadband_triggers_above(void) {
     TEST_ASSERT_TRUE(ctx.IsetBalanced < 150);
 }
 
+/* ==== Issue #17: Stop/Start Cycling Prevention ==== */
+
+static void setup_solar_shortage(void) {
+    setup_solar_charging();
+    ctx.MainsMeterType = 1;
+    ctx.MainsMeterImeasured = 300;  /* Overloaded */
+    ctx.MaxMains = 10;               /* Low limit */
+    ctx.NoCurrent = 0;
+    ctx.NoCurrentThreshold = 10;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+}
+
+/* ---- NoCurrent threshold increased ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-032
+ * @scenario NoCurrent below threshold does not trigger LESS_6A
+ * @given The EVSE is in MODE_SMART with NoCurrent=5 and NoCurrentThreshold=10
+ * @when evse_calc_balanced_current is called with hard shortage
+ * @then NoCurrent increments but LESS_6A is not set (below threshold)
+ */
+void test_nocurrent_below_threshold_no_less6a(void) {
+    setup_solar_shortage();
+    ctx.Mode = MODE_SMART;
+    ctx.NoCurrent = 5;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_GREATER_THAN(5, ctx.NoCurrent);
+    TEST_ASSERT_FALSE(ctx.ErrorFlags & LESS_6A);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-033
+ * @scenario NoCurrent reaching threshold triggers LESS_6A
+ * @given The EVSE is in MODE_SMART with NoCurrent=9 and NoCurrentThreshold=10
+ * @when evse_calc_balanced_current is called with hard shortage
+ * @then NoCurrent reaches 10 and LESS_6A is set
+ */
+void test_nocurrent_at_threshold_triggers_less6a(void) {
+    setup_solar_shortage();
+    ctx.Mode = MODE_SMART;
+    ctx.NoCurrent = 9;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_GREATER_OR_EQUAL(10, ctx.NoCurrent);
+    TEST_ASSERT_TRUE(ctx.ErrorFlags & LESS_6A);
+}
+
+/* ---- NoCurrent decay ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-034
+ * @scenario NoCurrent decays gradually when shortage resolves (not instant reset)
+ * @given The EVSE is in MODE_SMART with NoCurrent=8 and no shortage
+ * @when evse_calc_balanced_current is called with surplus
+ * @then NoCurrent decrements by 1 (not reset to 0)
+ */
+void test_nocurrent_decays_gradually(void) {
+    setup_smart_charging();
+    ctx.NoCurrent = 8;
+    ctx.MainsMeterImeasured = 50;
+    ctx.MaxMains = 40;
+    ctx.IsetBalanced = 200;
+    ctx.IsetBalanced_ema = 200;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Should decay by 1, not reset to 0 */
+    TEST_ASSERT_EQUAL_INT(7, ctx.NoCurrent);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-035
+ * @scenario NoCurrent at 0 stays at 0 when no shortage
+ * @given The EVSE is in MODE_SMART with NoCurrent=0 and no shortage
+ * @when evse_calc_balanced_current is called
+ * @then NoCurrent stays at 0
+ */
+void test_nocurrent_stays_zero(void) {
+    setup_smart_charging();
+    ctx.NoCurrent = 0;
+    ctx.MainsMeterImeasured = 50;
+    ctx.MaxMains = 40;
+    ctx.IsetBalanced = 200;
+    ctx.IsetBalanced_ema = 200;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(0, ctx.NoCurrent);
+}
+
+/* ---- Solar minimum run time ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-036
+ * @scenario Solar min run time prevents LESS_6A during initial charging
+ * @given The EVSE is solar charging with IntTimer < SolarMinRunTime and hard shortage
+ * @when NoCurrent exceeds threshold
+ * @then LESS_6A is NOT set (protected by min run time)
+ */
+void test_solar_min_run_time_prevents_less6a(void) {
+    setup_solar_shortage();
+    ctx.Mode = MODE_SOLAR;
+    ctx.SolarMinRunTime = 60;
+    ctx.Node[0].IntTimer = 30;  /* Only 30s into charge, min is 60 */
+    ctx.NoCurrent = 15;         /* Well above threshold */
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_FALSE(ctx.ErrorFlags & LESS_6A);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-037
+ * @scenario Solar min run time expired allows LESS_6A
+ * @given The EVSE is solar charging with IntTimer >= SolarMinRunTime and hard shortage
+ * @when NoCurrent exceeds threshold
+ * @then LESS_6A is set (min run time has passed)
+ */
+void test_solar_min_run_time_expired_allows_less6a(void) {
+    setup_solar_shortage();
+    ctx.Mode = MODE_SOLAR;
+    ctx.SolarMinRunTime = 60;
+    ctx.Node[0].IntTimer = 120;  /* 120s into charge, past min 60 */
+    ctx.NoCurrent = 15;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_TRUE(ctx.ErrorFlags & LESS_6A);
+}
+
+/* ---- Solar-specific charge delay ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-038
+ * @scenario Solar mode uses shorter charge delay when LESS_6A active
+ * @given The EVSE is in MODE_SOLAR with LESS_6A error active and SolarChargeDelay=15
+ * @when evse_tick_1s is called
+ * @then ChargeDelay is set to SolarChargeDelay (15) not CHARGEDELAY (60)
+ */
+void test_solar_charge_delay_shorter(void) {
+    evse_init(&ctx, NULL);
+    ctx.Mode = MODE_SOLAR;
+    ctx.State = STATE_C;
+    ctx.SolarChargeDelay = 15;
+    ctx.MainsMeterType = 1;
+    ctx.MainsMeterImeasured = 300;  /* High load so LESS_6A won't auto-recover */
+    ctx.MaxMains = 10;
+    evse_set_error_flags(&ctx, LESS_6A);
+    evse_tick_1s(&ctx);
+    TEST_ASSERT_EQUAL_INT(15, ctx.ChargeDelay);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-039
+ * @scenario Smart mode still uses full charge delay when LESS_6A active
+ * @given The EVSE is in MODE_SMART with LESS_6A error active and no current available
+ * @when evse_tick_1s is called
+ * @then ChargeDelay is set to CHARGEDELAY (60)
+ */
+void test_smart_charge_delay_unchanged(void) {
+    evse_init(&ctx, NULL);
+    ctx.Mode = MODE_SMART;
+    ctx.State = STATE_C;
+    ctx.MainsMeterType = 1;
+    ctx.MainsMeterImeasured = 300;  /* High load so current not available */
+    ctx.MaxMains = 10;              /* Low limit prevents auto-recovery */
+    evse_set_error_flags(&ctx, LESS_6A);
+    evse_tick_1s(&ctx);
+    TEST_ASSERT_EQUAL_INT(CHARGEDELAY, ctx.ChargeDelay);
+}
+
+/* ---- Cycling prevention defaults ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-040
+ * @scenario Cycling prevention defaults initialized correctly
+ * @given A freshly initialized EVSE context
+ * @when evse_init is called
+ * @then NoCurrentThreshold=10, SolarChargeDelay=15, SolarMinRunTime=60
+ */
+void test_cycling_prevention_defaults(void) {
+    evse_ctx_t fresh;
+    evse_init(&fresh, NULL);
+    TEST_ASSERT_EQUAL_INT(10, fresh.NoCurrentThreshold);
+    TEST_ASSERT_EQUAL_INT(15, fresh.SolarChargeDelay);
+    TEST_ASSERT_EQUAL_INT(60, fresh.SolarMinRunTime);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Solar Balancing");
@@ -786,6 +975,17 @@ int main(void) {
     RUN_TEST(test_symmetric_ramp_decrease);
     RUN_TEST(test_solar_fine_deadband_expanded);
     RUN_TEST(test_solar_fine_deadband_triggers_above);
+
+    /* Issue #17: Stop/Start Cycling Prevention */
+    RUN_TEST(test_nocurrent_below_threshold_no_less6a);
+    RUN_TEST(test_nocurrent_at_threshold_triggers_less6a);
+    RUN_TEST(test_nocurrent_decays_gradually);
+    RUN_TEST(test_nocurrent_stays_zero);
+    RUN_TEST(test_solar_min_run_time_prevents_less6a);
+    RUN_TEST(test_solar_min_run_time_expired_allows_less6a);
+    RUN_TEST(test_solar_charge_delay_shorter);
+    RUN_TEST(test_smart_charge_delay_unchanged);
+    RUN_TEST(test_cycling_prevention_defaults);
 
     TEST_SUITE_RESULTS();
 }
