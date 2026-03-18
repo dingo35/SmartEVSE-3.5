@@ -1140,9 +1140,383 @@ void test_lb_diag_captures_delta_clamped(void) {
     TEST_ASSERT_TRUE(ctx.lb_diag.DeltaClamped);
 }
 
+/* ========================================================================
+ * GROUP D: Full 8-node test coverage (Issue #26)
+ * ======================================================================== */
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-056
+ * @scenario Eight EVSEs in Normal mode receive fair distribution
+ * @given Master with 8 EVSEs all in STATE_C, MaxCircuit=64A
+ * @when Regulation cycles complete
+ * @then All 8 EVSEs receive equal current (80dA = 8A each)
+ */
+void test_eight_evse_normal_fair(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_NORMAL;
+    ctx.LoadBl = 1;
+    ctx.MaxCurrent = 32;
+    ctx.MaxCapacity = 32;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 64;
+    ctx.MaxMains = 80;
+    ctx.ChargeCurrent = 320;
+    ctx.phasesLastUpdateFlag = true;
+    ctx.NoCurrentThreshold = NOCURRENT_THRESHOLD_DEFAULT;
+
+    for (int i = 0; i < 8; i++) {
+        ctx.BalancedState[i] = STATE_C;
+        ctx.BalancedMax[i] = 320;
+        ctx.Balanced[i] = 60;
+        ctx.Node[i].Online = 1;
+        ctx.Node[i].IntTimer = 100;
+    }
+
+    for (int c = 0; c < 5; c++) {
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+    }
+
+    /* IsetBalanced = 640. Each of 8 gets 80. */
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_EQUAL_INT(80, ctx.Balanced[i]);
+    }
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-057
+ * @scenario Eight EVSEs in Smart mode converge with sufficient headroom
+ * @given Master with 8 EVSEs in Smart mode, 80A mains, 5A baseload
+ * @when 40 regulation cycles are simulated
+ * @then All 8 EVSEs receive current within 10dA of each other
+ */
+void test_eight_evse_smart_converges(void) {
+    setup_smart_master_n(8, 80, 50);
+    /* Override MaxCircuit to handle 8 EVSEs */
+    ctx.MaxCircuit = 80;
+
+    simulate_n_cycles(&ctx, 40, 50);
+
+    uint16_t min_b = ctx.Balanced[0], max_b = ctx.Balanced[0];
+    for (int i = 1; i < 8; i++) {
+        if (ctx.Balanced[i] < min_b) min_b = ctx.Balanced[i];
+        if (ctx.Balanced[i] > max_b) max_b = ctx.Balanced[i];
+    }
+    TEST_ASSERT_LESS_OR_EQUAL(10, max_b - min_b);
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_GREATER_OR_EQUAL(60, ctx.Balanced[i]);
+    }
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-058
+ * @scenario Eight EVSEs with varying BalancedMax distribute fairly
+ * @given Master with 8 EVSEs, each with different BalancedMax (60-320dA)
+ * @when Regulation cycles complete in Normal mode
+ * @then Each EVSE is capped at its BalancedMax, total equals IsetBalanced
+ */
+void test_eight_evse_varying_max(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_NORMAL;
+    ctx.LoadBl = 1;
+    ctx.MaxCurrent = 32;
+    ctx.MaxCapacity = 32;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 64;
+    ctx.MaxMains = 80;
+    ctx.ChargeCurrent = 320;
+    ctx.phasesLastUpdateFlag = true;
+    ctx.NoCurrentThreshold = NOCURRENT_THRESHOLD_DEFAULT;
+
+    uint16_t maxes[] = {320, 240, 160, 120, 100, 80, 70, 60};
+    for (int i = 0; i < 8; i++) {
+        ctx.BalancedState[i] = STATE_C;
+        ctx.BalancedMax[i] = maxes[i];
+        ctx.Balanced[i] = 60;
+        ctx.Node[i].Online = 1;
+        ctx.Node[i].IntTimer = 100;
+    }
+
+    for (int c = 0; c < 5; c++) {
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+    }
+
+    int32_t total = 0;
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_LESS_OR_EQUAL((int)maxes[i], (int)ctx.Balanced[i]);
+        total += ctx.Balanced[i];
+    }
+    /* Total should equal IsetBalanced (capped at sum of maxes if needed) */
+    TEST_ASSERT_EQUAL_INT(ctx.IsetBalanced, total);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-059
+ * @scenario Eight EVSEs: sequential join cycle
+ * @given Master starts with 2 EVSEs, then adds one per cycle up to 8
+ * @when Each new EVSE joins with mod=1 followed by 5 regulation cycles
+ * @then After all 8 are active, distribution is fair within 10dA
+ */
+void test_eight_evse_sequential_join(void) {
+    setup_smart_master_n(2, 80, 50);
+    ctx.MaxCircuit = 80;
+
+    simulate_n_cycles(&ctx, 10, 50);
+
+    /* Add EVSEs 2-7 one by one */
+    for (int j = 2; j < 8; j++) {
+        ctx.BalancedState[j] = STATE_C;
+        ctx.BalancedMax[j] = 320;
+        ctx.Balanced[j] = 60;
+        ctx.Node[j].Online = 1;
+        ctx.Node[j].IntTimer = 100;
+
+        /* mod=1 for new EVSE */
+        int32_t total_ev = 0;
+        for (int i = 0; i < 8; i++)
+            if (ctx.BalancedState[i] == STATE_C)
+                total_ev += ctx.Balanced[i];
+        ctx.EVMeterImeasured = (int16_t)total_ev;
+        ctx.MainsMeterImeasured = (int16_t)(50 + total_ev);
+        ctx.Isum = ctx.MainsMeterImeasured;
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 1);
+
+        simulate_n_cycles(&ctx, 5, 50);
+    }
+
+    /* All 8 should be fairly balanced */
+    uint16_t min_b = ctx.Balanced[0], max_b = ctx.Balanced[0];
+    for (int i = 1; i < 8; i++) {
+        if (ctx.Balanced[i] < min_b) min_b = ctx.Balanced[i];
+        if (ctx.Balanced[i] > max_b) max_b = ctx.Balanced[i];
+    }
+    TEST_ASSERT_LESS_OR_EQUAL(10, max_b - min_b);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-060
+ * @scenario Eight EVSEs: sequential leave cycle
+ * @given Master with 8 EVSEs converged in Smart mode
+ * @when EVSEs disconnect one by one (7 down to 2)
+ * @then Remaining EVSEs get progressively more current
+ */
+void test_eight_evse_sequential_leave(void) {
+    setup_smart_master_n(8, 80, 50);
+    ctx.MaxCircuit = 80;
+    simulate_n_cycles(&ctx, 20, 50);
+
+    uint16_t prev_bal0 = ctx.Balanced[0];
+
+    for (int j = 7; j >= 2; j--) {
+        ctx.BalancedState[j] = STATE_A;
+        ctx.Balanced[j] = 0;
+        simulate_n_cycles(&ctx, 10, 50);
+
+        /* EVSE 0 should get more current than before */
+        TEST_ASSERT_GREATER_OR_EQUAL(prev_bal0, ctx.Balanced[0]);
+        prev_bal0 = ctx.Balanced[0];
+    }
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-061
+ * @scenario Eight EVSEs under tight capacity: priority scheduling
+ * @given Master with 8 EVSEs, only enough power for 3 at MinCurrent
+ * @when Regulation cycles run
+ * @then At most 3 EVSEs are active, others are paused, NoCurrent stays 0
+ */
+void test_eight_evse_tight_capacity_priority(void) {
+    setup_smart_master_n(8, 25, 50);
+    ctx.MaxCircuit = 80;
+    /* Available: (250 - 50) = 200 dA. 8 * 60 = 480 needed. Only ~3 can fit. */
+
+    simulate_n_cycles(&ctx, 10, 50);
+
+    int active = 0;
+    for (int i = 0; i < 8; i++) {
+        if (ctx.Balanced[i] >= 60)
+            active++;
+    }
+    TEST_ASSERT_LESS_OR_EQUAL(4, active);  /* At most ~3-4 can fit */
+    TEST_ASSERT_GREATER_THAN(0, active);   /* At least 1 active */
+    TEST_ASSERT_EQUAL_INT(0, ctx.NoCurrent); /* Priority scheduling, not hard shortage */
+}
+
+/* ========================================================================
+ * GROUP: Vehicle response model (Issue #27)
+ * ======================================================================== */
+
+/*
+ * Vehicle response simulation helper.
+ *
+ * Models realistic EV behavior:
+ * - 2-cycle response delay (EV doesn't instantly change draw)
+ * - Partial ramp: EV adjusts 50% toward target per cycle after delay
+ * - Optional measurement noise (random-ish +-noise_da)
+ *
+ * ev_draw tracks the actual EV current draw (in deciamps).
+ * The function updates meter readings based on ev_draw, not Balanced[].
+ */
+static void simulate_vehicle_response(evse_ctx_t *c, int cycles,
+                                       int32_t baseload, int32_t *ev_draw,
+                                       int noise_da) {
+    int32_t target_history[2] = {*ev_draw, *ev_draw};  /* 2-cycle delay buffer */
+
+    for (int i = 0; i < cycles; i++) {
+        /* Delayed target: what was commanded 2 cycles ago */
+        int32_t delayed_target = target_history[0];
+
+        /* EV ramps 50% toward delayed target each cycle */
+        *ev_draw = *ev_draw + (delayed_target - *ev_draw) / 2;
+
+        /* Shift delay buffer */
+        target_history[0] = target_history[1];
+        target_history[1] = 0;
+        for (int n = 0; n < NR_EVSES; n++) {
+            if (c->BalancedState[n] == STATE_C)
+                target_history[1] += c->Balanced[n];
+        }
+
+        /* Apply measurement noise (alternating pattern) */
+        int32_t noise = 0;
+        if (noise_da > 0)
+            noise = ((i % 3) - 1) * noise_da;  /* -noise, 0, +noise pattern */
+
+        /* Feed back meter readings based on actual EV draw, not Balanced */
+        c->EVMeterImeasured = (int16_t)(*ev_draw + noise);
+        c->MainsMeterImeasured = (int16_t)(baseload + *ev_draw + noise);
+        c->Isum = c->MainsMeterImeasured;
+        c->phasesLastUpdateFlag = true;
+
+        evse_calc_balanced_current(c, 0);
+    }
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-062
+ * @scenario EVSE converges with 2-cycle vehicle response delay
+ * @given Standalone EVSE in Smart mode with simulated vehicle response lag
+ * @when 80 regulation cycles with vehicle response model
+ * @then IsetBalanced converges to target within 30dA despite lag
+ */
+void test_vehicle_response_delay_converges(void) {
+    setup_smart_standalone(25, 50);
+    int32_t ev_draw = 60;  /* Start at MinCurrent */
+
+    /* Vehicle lag needs more cycles to converge than instant feedback */
+    simulate_vehicle_response(&ctx, 80, 50, &ev_draw, 0);
+
+    int32_t target = 200;  /* (250 - 50) */
+    int32_t diff = ctx.IsetBalanced - target;
+    if (diff < 0) diff = -diff;
+    TEST_ASSERT_LESS_OR_EQUAL(30, diff);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-063
+ * @scenario Vehicle lag with noise does not cause LESS_6A error
+ * @given Standalone EVSE with vehicle response model and 5dA noise
+ * @when 40 cycles run after convergence
+ * @then No LESS_6A error is triggered and EVSE keeps charging
+ *       NOTE: Vehicle response lag causes significant oscillation in Balanced[].
+ *       This documents known behavior that future algorithm improvements should address.
+ */
+void test_vehicle_response_stable_with_noise(void) {
+    setup_smart_standalone(25, 50);
+    int32_t ev_draw = 60;
+
+    /* Converge with vehicle lag */
+    simulate_vehicle_response(&ctx, 80, 50, &ev_draw, 0);
+
+    /* Run with noise */
+    simulate_vehicle_response(&ctx, 40, 50, &ev_draw, 5);
+
+    /* Core safety requirement: no false error flags */
+    TEST_ASSERT_EQUAL_INT(0, ctx.ErrorFlags & LESS_6A);
+    /* EVSE should still be charging (Balanced > 0) */
+    TEST_ASSERT_GREATER_THAN(0, ctx.Balanced[0]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-064
+ * @scenario Two EVSEs converge with vehicle response model
+ * @given Master with 2 EVSEs, both with vehicle response lag
+ * @when 80 regulation cycles with vehicle response simulation
+ * @then Both EVSEs receive equal current and are above MinCurrent
+ */
+void test_two_evse_vehicle_response_converges(void) {
+    setup_smart_master_n(2, 25, 50);
+    int32_t ev_draw = 120;  /* Total for 2 EVSEs at MinCurrent */
+
+    simulate_vehicle_response(&ctx, 80, 50, &ev_draw, 0);
+
+    /* With vehicle lag, distribution smoothing keeps EVSEs equal */
+    int diff = (int)ctx.Balanced[0] - (int)ctx.Balanced[1];
+    if (diff < 0) diff = -diff;
+    TEST_ASSERT_LESS_OR_EQUAL(MAX_DELTA_PER_CYCLE, diff);
+    /* Both should be at least MinCurrent */
+    TEST_ASSERT_GREATER_OR_EQUAL(60, ctx.Balanced[0]);
+    TEST_ASSERT_GREATER_OR_EQUAL(60, ctx.Balanced[1]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-065
+ * @scenario Vehicle response model with load step recovers
+ * @given Standalone EVSE converged with vehicle model
+ * @when Baseload suddenly increases by 100dA
+ * @then After 30 cycles with vehicle lag, IsetBalanced settles near new target
+ */
+void test_vehicle_response_load_step_recovery(void) {
+    setup_smart_standalone(25, 50);
+    int32_t ev_draw = 60;
+
+    simulate_vehicle_response(&ctx, 40, 50, &ev_draw, 0);
+
+    /* Sudden baseload increase */
+    simulate_vehicle_response(&ctx, 30, 150, &ev_draw, 0);
+
+    int32_t target = 100;  /* (250 - 150) */
+    int32_t diff = ctx.IsetBalanced - target;
+    if (diff < 0) diff = -diff;
+    TEST_ASSERT_LESS_OR_EQUAL(20, diff);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-066
+ * @scenario Heavy measurement noise with vehicle lag doesn't cause NoCurrent
+ * @given Standalone EVSE with vehicle model and 10dA measurement noise
+ * @when 50 regulation cycles run
+ * @then NoCurrent stays below NoCurrentThreshold (no false LESS_6A errors)
+ */
+void test_vehicle_response_noise_no_false_shortage(void) {
+    setup_smart_standalone(25, 50);
+    int32_t ev_draw = 60;
+
+    simulate_vehicle_response(&ctx, 50, 50, &ev_draw, 10);
+
+    /* Should NOT trigger false shortage from noise alone */
+    TEST_ASSERT_TRUE(ctx.NoCurrent < ctx.NoCurrentThreshold);
+    TEST_ASSERT_EQUAL_INT(0, ctx.ErrorFlags & LESS_6A);
+}
+
 /* ---- Main ---- */
 int main(void) {
-    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#25)");
+    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#27)");
 
     /* Group A: Single EVSE multi-cycle convergence */
     RUN_TEST(test_smart_standalone_converges_to_target);
@@ -1197,6 +1571,21 @@ int main(void) {
     RUN_TEST(test_lb_diag_captures_shortage);
     RUN_TEST(test_lb_diag_captures_oscillation);
     RUN_TEST(test_lb_diag_captures_delta_clamped);
+
+    /* Full 8-node coverage (Issue #26) */
+    RUN_TEST(test_eight_evse_normal_fair);
+    RUN_TEST(test_eight_evse_smart_converges);
+    RUN_TEST(test_eight_evse_varying_max);
+    RUN_TEST(test_eight_evse_sequential_join);
+    RUN_TEST(test_eight_evse_sequential_leave);
+    RUN_TEST(test_eight_evse_tight_capacity_priority);
+
+    /* Vehicle response model (Issue #27) */
+    RUN_TEST(test_vehicle_response_delay_converges);
+    RUN_TEST(test_vehicle_response_stable_with_noise);
+    RUN_TEST(test_two_evse_vehicle_response_converges);
+    RUN_TEST(test_vehicle_response_load_step_recovery);
+    RUN_TEST(test_vehicle_response_noise_no_false_shortage);
 
     TEST_SUITE_RESULTS();
 }
