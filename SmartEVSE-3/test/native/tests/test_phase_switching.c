@@ -543,6 +543,112 @@ void test_phase_timer_defaults(void) {
     TEST_ASSERT_EQUAL_INT(PHASE_SWITCH_SEVERE_DEFAULT, fresh.PhaseSwitchSevereTime);
 }
 
+/* ==== Issue #20: Post-Phase-Switch Settling ==== */
+
+/* ---- Phase switch resets IntTimer ---- */
+
+/*
+ * @feature Phase Switching
+ * @req REQ-PH-024
+ * @scenario Phase switch completion resets IntTimer for startup protection
+ * @given The EVSE was charging on 3P with IntTimer=500 and switches to 1P
+ * @when STATE_C is entered with Switching_Phases_C2 = GOING_TO_SWITCH_1P
+ * @then Node[0].IntTimer is reset to 0 (new startup period begins)
+ */
+void test_phase_switch_resets_inttimer(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.EnableC2 = AUTO;
+    ctx.Mode = MODE_SOLAR;
+    ctx.Nr_Of_Phases_Charging = 3;
+    ctx.Node[0].IntTimer = 500;  /* Deep into charge session */
+    ctx.Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+    evse_set_state(&ctx, STATE_C);
+    TEST_ASSERT_EQUAL_INT(0, ctx.Node[0].IntTimer);
+    TEST_ASSERT_EQUAL_INT(1, ctx.Nr_Of_Phases_Charging);
+}
+
+/*
+ * @feature Phase Switching
+ * @req REQ-PH-025
+ * @scenario 3P upgrade also resets IntTimer
+ * @given The EVSE was charging on 1P with IntTimer=300 and switches to 3P
+ * @when STATE_C is entered with Switching_Phases_C2 = GOING_TO_SWITCH_3P
+ * @then Node[0].IntTimer is reset to 0
+ */
+void test_3p_upgrade_resets_inttimer(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.EnableC2 = ALWAYS_ON;
+    ctx.Mode = MODE_SOLAR;
+    ctx.Nr_Of_Phases_Charging = 1;
+    ctx.Node[0].IntTimer = 300;
+    ctx.Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+    evse_set_state(&ctx, STATE_C);
+    TEST_ASSERT_EQUAL_INT(0, ctx.Node[0].IntTimer);
+    TEST_ASSERT_EQUAL_INT(3, ctx.Nr_Of_Phases_Charging);
+}
+
+/*
+ * @feature Phase Switching
+ * @req REQ-PH-026
+ * @scenario Normal STATE_C entry (no phase switch) does not reset IntTimer
+ * @given The EVSE enters STATE_C without a phase switch (Switching_Phases_C2 = NO_SWITCH)
+ * @when evse_set_state is called with STATE_C
+ * @then Node[0].IntTimer is NOT reset (keeps previous value)
+ */
+void test_no_switch_preserves_inttimer(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_SOLAR;
+    ctx.Node[0].IntTimer = 200;
+    ctx.Switching_Phases_C2 = NO_SWITCH;
+    evse_set_state(&ctx, STATE_C);
+    TEST_ASSERT_EQUAL_INT(200, ctx.Node[0].IntTimer);
+}
+
+/* ---- SolarStopTimer suppressed during startup ---- */
+
+/*
+ * @feature Phase Switching
+ * @req REQ-PH-027
+ * @scenario SolarStopTimer suppressed during startup period after phase switch
+ * @given The EVSE just completed a phase switch (IntTimer=5, < SOLARSTARTTIME)
+ * @when evse_calc_balanced_current detects a shortage in solar mode
+ * @then SolarStopTimer is NOT started (suppressed during startup settling)
+ */
+void test_solar_stop_suppressed_during_startup(void) {
+    setup_solar_3p_charging();
+    ctx.EnableC2 = NOT_PRESENT;  /* Non-AUTO to test the SolarStopTimer path */
+    ctx.Node[0].IntTimer = 5;    /* In startup */
+    ctx.Isum = 400;
+    ctx.MainsMeterImeasured = 300;
+    ctx.SolarStopTimer = 0;
+    evse_calc_balanced_current(&ctx, 0);
+    /* During startup, SolarStopTimer should NOT be started */
+    TEST_ASSERT_EQUAL_INT(0, ctx.SolarStopTimer);
+}
+
+/*
+ * @feature Phase Switching
+ * @req REQ-PH-028
+ * @scenario SolarStopTimer allowed after startup period
+ * @given The EVSE is past startup (IntTimer > SOLARSTARTTIME) with shortage
+ * @when evse_calc_balanced_current detects a shortage in solar mode
+ * @then SolarStopTimer IS started (startup protection expired)
+ */
+void test_solar_stop_allowed_after_startup(void) {
+    setup_solar_3p_charging();
+    ctx.EnableC2 = NOT_PRESENT;
+    ctx.Node[0].IntTimer = SOLARSTARTTIME + 10;  /* Past startup */
+    ctx.Isum = 400;
+    ctx.MainsMeterImeasured = 300;
+    ctx.SolarStopTimer = 0;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Past startup: SolarStopTimer should start */
+    TEST_ASSERT_GREATER_THAN(0, ctx.SolarStopTimer);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Phase Switching");
@@ -570,6 +676,13 @@ int main(void) {
     RUN_TEST(test_phase_timer_independent_of_solar_stop);
     RUN_TEST(test_phase_timer_countdown_in_tick_1s);
     RUN_TEST(test_phase_timer_defaults);
+
+    /* Issue #20: Post-Phase-Switch Settling */
+    RUN_TEST(test_phase_switch_resets_inttimer);
+    RUN_TEST(test_3p_upgrade_resets_inttimer);
+    RUN_TEST(test_no_switch_preserves_inttimer);
+    RUN_TEST(test_solar_stop_suppressed_during_startup);
+    RUN_TEST(test_solar_stop_allowed_after_startup);
 
     TEST_SUITE_RESULTS();
 }

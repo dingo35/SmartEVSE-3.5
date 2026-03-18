@@ -397,10 +397,13 @@ void evse_set_state(evse_ctx_t *ctx, uint8_t new_state) {
             ctx->ActivationMode = 255;                   // line 879
 
             // Phase switching on contactor entry (lines 890-909)
+            // Issue #20: reset IntTimer on phase switch for startup protection
             if (ctx->Switching_Phases_C2 == GOING_TO_SWITCH_1P) {
                 ctx->Nr_Of_Phases_Charging = 1;
+                ctx->Node[0].IntTimer = 0;
             } else if (ctx->Switching_Phases_C2 == GOING_TO_SWITCH_3P) {
                 ctx->Nr_Of_Phases_Charging = 3;
+                ctx->Node[0].IntTimer = 0;
             }
 
             record_contactor1(ctx, true);                // CONTACTOR1_ON
@@ -846,7 +849,9 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                             ctx->PhaseSwitchHoldDown = ctx->PhaseSwitchHoldDownTime;
                         }
                     } else {
-                        if (ctx->SolarStopTimer == 0)
+                        // Issue #20: suppress SolarStopTimer during startup settling
+                        if (ctx->SolarStopTimer == 0 &&
+                            ctx->Node[0].IntTimer >= SOLARSTARTTIME)
                             ctx->SolarStopTimer = ctx->StopTime * 60;
                     }
                 } else {
