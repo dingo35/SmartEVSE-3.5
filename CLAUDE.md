@@ -138,6 +138,19 @@ Read `CODING_STANDARDS.md` for the full reference. Key rules:
 # Run all native tests (must pass before any PR)
 cd SmartEVSE-3/test/native && make clean test
 
+# Run with sanitizers (catches memory bugs)
+cd SmartEVSE-3/test/native && make clean test \
+  CFLAGS_EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+# Static analysis (matches CI cppcheck config exactly)
+cppcheck --enable=warning,style,performance \
+  --error-exitcode=1 \
+  --suppress=missingIncludeSystem \
+  --inline-suppr \
+  -I SmartEVSE-3/src \
+  -I SmartEVSE-3/test/native/include \
+  SmartEVSE-3/src/evse_state_machine.c
+
 # Build ESP32 firmware
 pio run -e release -d SmartEVSE-3/
 
@@ -147,10 +160,6 @@ pio run -e ch32 -d SmartEVSE-3/
 # Regenerate test specification
 cd SmartEVSE-3/test/native && python3 scripts/extract_traceability.py \
   --markdown test-specification.md --html traceability-report.html
-
-# Run with sanitizers (catches memory bugs)
-cd SmartEVSE-3/test/native && make clean test \
-  CFLAGS_EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
 ```
 
 ### Pre-Push Verification — HARD RULE
@@ -162,14 +171,40 @@ and other firmware files that depend on the ESP32 toolchain.
 
 Before every `git push`, run ALL of the following in order:
 
-1. `cd SmartEVSE-3/test/native && make clean test` — all native tests pass
-2. `pio run -e release -d SmartEVSE-3/` — ESP32 firmware compiles
-3. `pio run -e ch32 -d SmartEVSE-3/` — CH32 firmware compiles (if applicable)
+```bash
+# 1. Native tests
+cd SmartEVSE-3/test/native && make clean test
 
-Do not skip any step. Do not assume "tests pass, so it's fine." The firmware
-build catches an entire class of errors (type mismatches, missing symbols,
-Arduino/ESP-IDF API misuse) that native tests cannot reach. Skipping firmware
-builds has caused CI failures on PRs that were trivially preventable.
+# 2. Memory sanitizers
+make clean test CFLAGS_EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+# 3. Static analysis (matches CI cppcheck config)
+cppcheck --enable=warning,style,performance \
+  --error-exitcode=1 \
+  --suppress=missingIncludeSystem \
+  --inline-suppr \
+  -I SmartEVSE-3/src \
+  -I SmartEVSE-3/test/native/include \
+  SmartEVSE-3/src/evse_state_machine.c
+
+# 4. ESP32 firmware build
+pio run -e release -d SmartEVSE-3/
+
+# 5. CH32 firmware build
+pio run -e ch32 -d SmartEVSE-3/
+```
+
+Do not skip any step. Do not assume "tests pass, so it's fine."
+
+- **Steps 1-2** catch logic errors, memory bugs, and undefined behavior.
+- **Step 3** catches uninitialized variables, style issues, and performance
+  problems that compilers miss. This mirrors the CI `static-analysis` job.
+  Install cppcheck locally: `brew install cppcheck` (macOS) or
+  `apt install cppcheck` (Linux).
+- **Steps 4-5** catch type mismatches, missing symbols, and Arduino/ESP-IDF
+  API misuse that native tests cannot reach.
+
+Skipping steps has caused CI failures on PRs that were trivially preventable.
 
 ## Multi-Agent Workflow
 
