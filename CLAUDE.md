@@ -153,6 +153,24 @@ cd SmartEVSE-3/test/native && make clean test \
   CFLAGS_EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
 ```
 
+### Pre-Push Verification — HARD RULE
+
+**Never push or create a PR without running the full verification sequence.**
+Native tests alone are NOT sufficient — they only compile pure C modules and
+cannot detect type errors, missing includes, or linking issues in `esp32.cpp`
+and other firmware files that depend on the ESP32 toolchain.
+
+Before every `git push`, run ALL of the following in order:
+
+1. `cd SmartEVSE-3/test/native && make clean test` — all native tests pass
+2. `pio run -e release -d SmartEVSE-3/` — ESP32 firmware compiles
+3. `pio run -e ch32 -d SmartEVSE-3/` — CH32 firmware compiles (if applicable)
+
+Do not skip any step. Do not assume "tests pass, so it's fine." The firmware
+build catches an entire class of errors (type mismatches, missing symbols,
+Arduino/ESP-IDF API misuse) that native tests cannot reach. Skipping firmware
+builds has caused CI failures on PRs that were trivially preventable.
+
 ## Multi-Agent Workflow
 
 When multiple AI agents work on this codebase simultaneously, one agent MUST act
