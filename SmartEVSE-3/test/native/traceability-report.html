@@ -124,13 +124,13 @@ footer {
 <body>
 <h1>SmartEVSE-3 Traceability Report</h1>
 <div class="summary">
-<div class="stat"><div class="number">38</div><div class="label">Features</div></div>
-<div class="stat"><div class="number">528</div><div class="label">Test Scenarios</div></div>
-<div class="stat"><div class="number">528</div><div class="label">With Requirements</div></div>
+<div class="stat"><div class="number">39</div><div class="label">Features</div></div>
+<div class="stat"><div class="number">539</div><div class="label">Test Scenarios</div></div>
+<div class="stat"><div class="number">539</div><div class="label">With Requirements</div></div>
 <div class="stat"><div class="number">100%</div><div class="label">Requirement Coverage</div></div>
 </div>
 <div class="feature-section">
-<div class="feature-title">Authorization &amp; Access Control (19 scenarios)</div>
+<div class="feature-title">Authorization &amp; Access Control (22 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -271,6 +271,95 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE is in STATE_C1 (winding down charge) with AccessStatus ON</li><li class="step-when"><span class="step-keyword">When</span> PILOT_12V is received (car disconnects during C1 wind-down)</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A</li></ul></td>
 <td><code>test_access_status_cleared_on_session_end_from_c1</code></td>
 <td><span class="file-ref">test_authorization.c:365</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-021</span></td>
+<td>AccessStatus cleared on Tesla-style disconnect (C → B → A)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE is in STATE_C with AccessStatus ON and RFID reader enabled</li><li class="step-when"><span class="step-keyword">When</span> Car transitions to STATE_B (CP → 9V), then to STATE_A (CP → 12V)</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A</li></ul></td>
+<td><code>test_access_status_cleared_on_tesla_disconnect_c_b_a</code></td>
+<td><span class="file-ref">test_authorization.c:390</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-022</span></td>
+<td>AccessStatus cleared on solar-stop disconnect (C1 → B1 → A)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE is in STATE_B1 (transitioned from C1 after solar stop) with AccessStatus ON</li><li class="step-when"><span class="step-keyword">When</span> Pilot disconnect timer expires, then car disconnects (CP → 12V)</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A</li></ul></td>
+<td><code>test_access_status_cleared_on_disconnect_from_b1</code></td>
+<td><span class="file-ref">test_authorization.c:420</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-023</span></td>
+<td>Tesla disconnect then new car + RFID swipe starts session correctly</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE charged Car A in STATE_C, RFIDReader=EnableOne, AccessStatus=ON</li><li class="step-when"><span class="step-keyword">When</span> Car A does Tesla-style disconnect (C→B→A), Car B plugs in, user swipes RFID</li><li class="step-then"><span class="step-keyword">Then</span> Car B is blocked until RFID swipe, then RFID swipe sets AccessStatus ON and charging starts</li></ul></td>
+<td><code>test_tesla_disconnect_then_new_car_rfid_starts_session</code></td>
+<td><span class="file-ref">test_authorization.c:452</span></td>
+</tr>
+</tbody></table>
+</div>
+<div class="feature-section">
+<div class="feature-title">Bridge Transaction Integrity (8 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-SM-100</span></td>
+<td>Bridge lock/unlock API is callable</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The test environment (native build, no FreeRTOS)</li><li class="step-when"><span class="step-keyword">When</span> evse_bridge_lock and evse_bridge_unlock are called</li><li class="step-then"><span class="step-keyword">Then</span> They complete without error (no-ops in native builds)</li></ul></td>
+<td><code>test_bridge_lock_unlock_callable</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-024</span></td>
+<td>AccessTimer counts down to zero over 60 sequential tick_1s calls</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A with AccessStatus ON and AccessTimer armed to 60</li><li class="step-when"><span class="step-keyword">When</span> tick_1s is called 60 times (simulating 60 seconds with no concurrent interference)</li><li class="step-then"><span class="step-keyword">Then</span> AccessTimer reaches 0 and AccessStatus is set to OFF</li></ul></td>
+<td><code>test_access_timer_full_countdown</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:54</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-025</span></td>
+<td>AccessTimer countdown survives interleaved tick_10ms calls</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A with AccessTimer=2, pilot at 12V</li><li class="step-when"><span class="step-keyword">When</span> tick_10ms and tick_1s are called in alternating sequence</li><li class="step-then"><span class="step-keyword">Then</span> AccessTimer still reaches 0 and AccessStatus is cleared</li></ul></td>
+<td><code>test_access_timer_survives_interleaved_ticks</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:83</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-026</span></td>
+<td>AccessTimer is not re-armed after expiry</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A after AccessTimer just expired (AccessStatus=OFF, AccessTimer=0)</li><li class="step-when"><span class="step-keyword">When</span> tick_10ms runs with PILOT_12V</li><li class="step-then"><span class="step-keyword">Then</span> AccessTimer stays 0 (re-arm requires AccessStatus==ON)</li></ul></td>
+<td><code>test_access_timer_not_rearmed_after_expiry</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:123</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-027</span></td>
+<td>OCPP setAccess(ON) triggers A→B transition on next tick_10ms</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A with AccessStatus=OFF, car plugged in (pilot 9V)</li><li class="step-when"><span class="step-keyword">When</span> setAccess(ON) is called, then tick_10ms runs</li><li class="step-then"><span class="step-keyword">Then</span> State transitions from A to B (AccessStatus=ON enables the transition)</li></ul></td>
+<td><code>test_set_access_on_enables_a_to_b</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:153</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-028</span></td>
+<td>AccessStatus ON persists through multiple tick_10ms cycles</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_B with AccessStatus=ON (car connected, authorized)</li><li class="step-when"><span class="step-keyword">When</span> tick_10ms is called repeatedly with PILOT_9V</li><li class="step-then"><span class="step-keyword">Then</span> AccessStatus remains ON (not corrupted by tick processing)</li></ul></td>
+<td><code>test_access_status_persists_through_ticks</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:181</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-029</span></td>
+<td>Full OCPP charge cycle: authorize → charge → disconnect → new authorize</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE idle in STATE_A, OCPP mode, car not connected</li><li class="step-when"><span class="step-keyword">When</span> First user charges and disconnects, then second user plugs in and authorizes</li><li class="step-then"><span class="step-keyword">Then</span> Second user&#x27;s authorization succeeds and A→B transition occurs</li></ul></td>
+<td><code>test_ocpp_full_cycle_two_users</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:205</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-AUTH-030</span></td>
+<td>AccessTimer full countdown with interleaved 10ms ticks (real timing)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A, AccessStatus=ON, AccessTimer=60, pilot 12V</li><li class="step-when"><span class="step-keyword">When</span> 60 rounds of (100x tick_10ms + 1x tick_1s) simulate real-world timing</li><li class="step-then"><span class="step-keyword">Then</span> AccessTimer reaches 0 and AccessStatus transitions to OFF</li></ul></td>
+<td><code>test_access_timer_real_world_timing</code></td>
+<td><span class="file-ref">test_bridge_transaction.c:277</span></td>
 </tr>
 </tbody></table>
 </div>
