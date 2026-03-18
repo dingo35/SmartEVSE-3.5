@@ -1031,6 +1031,22 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         ctx->NoCurrent = 0;
     }
 
+    // Issue #19: populate solar debug snapshot
+    ctx->solar_debug.IsetBalanced = ctx->IsetBalanced;
+    ctx->solar_debug.IsetBalanced_ema = ctx->IsetBalanced_ema;
+    ctx->solar_debug.Idifference = Idifference;
+    ctx->solar_debug.IsumImport = IsumImport;
+    ctx->solar_debug.Isum = ctx->Isum;
+    ctx->solar_debug.MainsMeterImeasured = ctx->MainsMeterImeasured;
+    ctx->solar_debug.Balanced0 = ctx->Balanced[0];
+    ctx->solar_debug.SolarStopTimer = ctx->SolarStopTimer;
+    ctx->solar_debug.PhaseSwitchTimer = ctx->PhaseSwitchTimer;
+    ctx->solar_debug.PhaseSwitchHoldDown = ctx->PhaseSwitchHoldDown;
+    ctx->solar_debug.NoCurrent = ctx->NoCurrent;
+    ctx->solar_debug.SettlingTimer = ctx->SettlingTimer;
+    ctx->solar_debug.Nr_Of_Phases_Charging = ctx->Nr_Of_Phases_Charging;
+    ctx->solar_debug.ErrorFlags = ctx->ErrorFlags;
+
     // Reset measurement flag (line 1505)
     ctx->phasesLastUpdateFlag = false;
 }

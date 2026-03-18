@@ -1124,6 +1124,30 @@ void test_ramp_rate_zero_no_limit(void) {
     TEST_ASSERT_TRUE(ctx.Balanced[0] != 60 || ctx.IsetBalanced != 100);
 }
 
+/* ==== Issue #19: Solar Debug Telemetry ==== */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-049
+ * @scenario Debug snapshot is populated after evse_calc_balanced_current
+ * @given The EVSE is solar charging with known meter readings
+ * @when evse_calc_balanced_current is called
+ * @then solar_debug snapshot contains matching values
+ */
+void test_solar_debug_snapshot_populated(void) {
+    setup_solar_charging();
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.Isum = -30;
+    ctx.MainsMeterImeasured = 70;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(ctx.IsetBalanced, ctx.solar_debug.IsetBalanced);
+    TEST_ASSERT_EQUAL_INT(ctx.Isum, ctx.solar_debug.Isum);
+    TEST_ASSERT_EQUAL_INT(ctx.MainsMeterImeasured, ctx.solar_debug.MainsMeterImeasured);
+    TEST_ASSERT_EQUAL_INT(ctx.Balanced[0], ctx.solar_debug.Balanced0);
+    TEST_ASSERT_EQUAL_INT(ctx.Nr_Of_Phases_Charging, ctx.solar_debug.Nr_Of_Phases_Charging);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Solar Balancing");
@@ -1182,6 +1206,9 @@ int main(void) {
     RUN_TEST(test_settling_timer_countdown);
     RUN_TEST(test_slow_ev_defaults);
     RUN_TEST(test_ramp_rate_zero_no_limit);
+
+    /* Issue #19: Solar Debug Telemetry */
+    RUN_TEST(test_solar_debug_snapshot_populated);
 
     TEST_SUITE_RESULTS();
 }

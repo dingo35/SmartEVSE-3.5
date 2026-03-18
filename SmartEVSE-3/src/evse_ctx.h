@@ -247,6 +247,26 @@ typedef struct evse_hal {
     void (*on_state_change)(uint8_t old_state, uint8_t new_state);
 } evse_hal_t;
 
+// ---- Solar debug snapshot (Issue #19) ----
+// Populated by evse_calc_balanced_current() each cycle.
+// Network layer can publish via MQTT/WebSocket without impacting 10ms tick.
+typedef struct {
+    int32_t  IsetBalanced;          /* Raw calculated value */
+    int32_t  IsetBalanced_ema;      /* EMA-smoothed value */
+    int32_t  Idifference;           /* Grid headroom */
+    int32_t  IsumImport;            /* Isum - ImportCurrent */
+    int16_t  Isum;                  /* Grid import (positive) / export (negative) */
+    int16_t  MainsMeterImeasured;   /* Measured mains current */
+    uint16_t Balanced0;             /* Distributed current for EVSE 0 */
+    uint16_t SolarStopTimer;        /* Solar stop countdown */
+    uint16_t PhaseSwitchTimer;      /* Phase switch countdown */
+    uint16_t PhaseSwitchHoldDown;   /* Hold-down countdown */
+    uint8_t  NoCurrent;             /* Shortage counter */
+    uint8_t  SettlingTimer;         /* Settling window countdown */
+    uint8_t  Nr_Of_Phases_Charging; /* Current phase count */
+    uint8_t  ErrorFlags;            /* Active error flags */
+} evse_solar_debug_t;
+
 // ---- The full EVSE state context ----
 typedef struct {
     // --- Core state ---
@@ -383,6 +403,9 @@ typedef struct {
 
     // --- HAL ---
     evse_hal_t hal;
+
+    // --- Solar debug snapshot (Issue #19) ---
+    evse_solar_debug_t solar_debug;
 
     // --- Test instrumentation (for assertions) ---
 #ifdef EVSE_TESTING
