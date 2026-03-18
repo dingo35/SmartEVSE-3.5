@@ -90,6 +90,18 @@ const char *http_api_validate_idle_timeout(int value, int load_bl) {
     return NULL;
 }
 
+const char *http_api_validate_mqtt_heartbeat(int value) {
+    if (value < 10 || value > 300)
+        return "Value not allowed!";
+    return NULL;
+}
+
+const char *http_api_validate_mqtt_change_only(int value) {
+    if (value < 0 || value > 1)
+        return "Value not allowed!";
+    return NULL;
+}
+
 /*
  * http_api_validate_settings() — Validate all fields in an HTTP POST /settings request.
  *
@@ -232,6 +244,26 @@ int http_api_validate_settings(const http_settings_request_t *req,
         const char *err = http_api_validate_idle_timeout(req->idle_timeout, load_bl);
         if (err) {
             errors[count].field = "idle_timeout";
+            errors[count].error = err;
+            count++;
+        }
+    }
+
+    /* --- MQTT publish settings --- */
+
+    if (req->has_mqtt_heartbeat && count < max_errors) {
+        const char *err = http_api_validate_mqtt_heartbeat(req->mqtt_heartbeat);
+        if (err) {
+            errors[count].field = "mqtt_heartbeat";
+            errors[count].error = err;
+            count++;
+        }
+    }
+
+    if (req->has_mqtt_change_only && count < max_errors) {
+        const char *err = http_api_validate_mqtt_change_only(req->mqtt_change_only);
+        if (err) {
+            errors[count].field = "mqtt_change_only";
             errors[count].error = err;
             count++;
         }

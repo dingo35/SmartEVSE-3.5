@@ -819,6 +819,88 @@ void test_empty_payload_mode_rejected(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/Mode", "", &cmd));
 }
 
+// ---- MQTT Heartbeat ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat set to valid value via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "60"
+ * @then Command type is MQTT_CMD_MQTT_HEARTBEAT with mqtt_heartbeat = 60
+ */
+void test_mqtt_heartbeat_valid(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "60", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_HEARTBEAT, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(60, cmd.mqtt_heartbeat);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat below minimum (9) is rejected
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "9"
+ * @then The parser returns false
+ */
+void test_mqtt_heartbeat_too_low(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "9", &cmd));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat above maximum (301) is rejected
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "301"
+ * @then The parser returns false
+ */
+void test_mqtt_heartbeat_too_high(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "301", &cmd));
+}
+
+// ---- MQTT ChangeOnly ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly enabled via MQTT with payload "1"
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "1"
+ * @then Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = true
+ */
+void test_mqtt_change_only_enable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "1", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_CHANGE_ONLY, cmd.cmd);
+    TEST_ASSERT_TRUE(cmd.mqtt_change_only);
+}
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly disabled via MQTT with payload "0"
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "0"
+ * @then Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = false
+ */
+void test_mqtt_change_only_disable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "0", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_CHANGE_ONLY, cmd.cmd);
+    TEST_ASSERT_FALSE(cmd.mqtt_change_only);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly rejects invalid payload
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "2"
+ * @then The parser returns false
+ */
+void test_mqtt_change_only_invalid(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "2", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -942,6 +1024,16 @@ int main(void) {
     RUN_TEST(test_current_override_negative);
     RUN_TEST(test_mains_meter_extra_fields_ignored);
     RUN_TEST(test_empty_payload_mode_rejected);
+
+    // MQTTHeartbeat
+    RUN_TEST(test_mqtt_heartbeat_valid);
+    RUN_TEST(test_mqtt_heartbeat_too_low);
+    RUN_TEST(test_mqtt_heartbeat_too_high);
+
+    // MQTTChangeOnly
+    RUN_TEST(test_mqtt_change_only_enable);
+    RUN_TEST(test_mqtt_change_only_disable);
+    RUN_TEST(test_mqtt_change_only_invalid);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

@@ -240,5 +240,29 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    /* MQTT publish settings */
+    if (match_topic(prefix, topic, "/Set/MQTTHeartbeat")) {
+        out->cmd = MQTT_CMD_MQTT_HEARTBEAT;
+        int val = atoi(payload);
+        if (val >= 10 && val <= 300) {
+            out->mqtt_heartbeat = (uint16_t)val;
+            return true;
+        }
+        return false;
+    }
+
+    if (match_topic(prefix, topic, "/Set/MQTTChangeOnly")) {
+        out->cmd = MQTT_CMD_MQTT_CHANGE_ONLY;
+        if (strcmp(payload, "1") == 0 || strcmp(payload, "ON") == 0) {
+            out->mqtt_change_only = true;
+            return true;
+        }
+        if (strcmp(payload, "0") == 0 || strcmp(payload, "OFF") == 0) {
+            out->mqtt_change_only = false;
+            return true;
+        }
+        return false;
+    }
+
     return false;
 }

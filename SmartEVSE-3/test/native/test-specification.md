@@ -1,6 +1,6 @@
 # SmartEVSE-3 Test Specification
 
-**38 features** | **528 scenarios** | **528 with requirement IDs**
+**39 features** | **549 scenarios** | **549 with requirement IDs**
 
 ---
 
@@ -30,20 +30,21 @@
 22. [MQTT Input Validation](#mqtt-input-validation)
 23. [MQTT Meter Parsing](#mqtt-meter-parsing)
 24. [MQTT Color Parsing](#mqtt-color-parsing)
-25. [Multi-Node Load Balancing](#multi-node-load-balancing)
-26. [OCPP Current Limiting](#ocpp-current-limiting)
-27. [Operating Modes](#operating-modes)
-28. [Phase Switching](#phase-switching)
-29. [Power Availability](#power-availability)
-30. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
-31. [Serial Message Parsing](#serial-message-parsing)
-32. [Serial Input Validation](#serial-input-validation)
-33. [Battery Current Calculation](#battery-current-calculation)
-34. [Current Sum Calculation](#current-sum-calculation)
-35. [Solar Balancing](#solar-balancing)
-36. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
-37. [10ms Tick Processing](#10ms-tick-processing)
-38. [1-Second Tick Processing](#1-second-tick-processing)
+25. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
+26. [Multi-Node Load Balancing](#multi-node-load-balancing)
+27. [OCPP Current Limiting](#ocpp-current-limiting)
+28. [Operating Modes](#operating-modes)
+29. [Phase Switching](#phase-switching)
+30. [Power Availability](#power-availability)
+31. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
+32. [Serial Message Parsing](#serial-message-parsing)
+33. [Serial Input Validation](#serial-input-validation)
+34. [Battery Current Calculation](#battery-current-calculation)
+35. [Current Sum Calculation](#current-sum-calculation)
+36. [Solar Balancing](#solar-balancing)
+37. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
+38. [10ms Tick Processing](#10ms-tick-processing)
+39. [1-Second Tick Processing](#1-second-tick-processing)
 
 ## Authorization & Access Control
 
@@ -2516,6 +2517,36 @@
 
 > Test: `test_idle_timeout_max` in `test_mqtt_parser.c:708`
 
+### MQTTHeartbeat set to valid value via MQTT
+
+**Requirement:** `REQ-MQTT-023`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTHeartbeat with payload "60"
+- **Then** Command type is MQTT_CMD_MQTT_HEARTBEAT with mqtt_heartbeat = 60
+
+> Test: `test_mqtt_heartbeat_valid` in `test_mqtt_parser.c:824`
+
+### MQTTChangeOnly enabled via MQTT with payload "1"
+
+**Requirement:** `REQ-MQTT-024`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTChangeOnly with payload "1"
+- **Then** Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = true
+
+> Test: `test_mqtt_change_only_enable` in `test_mqtt_parser.c:864`
+
+### MQTTChangeOnly disabled via MQTT with payload "0"
+
+**Requirement:** `REQ-MQTT-024`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTChangeOnly with payload "0"
+- **Then** Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = false
+
+> Test: `test_mqtt_change_only_disable` in `test_mqtt_parser.c:878`
+
 ---
 
 ## MQTT Input Validation
@@ -2724,19 +2755,89 @@
 
 > Test: `test_idle_timeout_zero` in `test_mqtt_parser.c:739`
 
+### Max sum mains at lower boundary (10) is accepted
+
+**Requirement:** `REQ-MQTT-005`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CurrentMaxSumMains with payload "10"
+- **Then** Command is accepted with max_sum_mains = 10
+
+> Test: `test_max_sum_mains_boundary_10` in `test_mqtt_parser.c:750`
+
+### Max sum mains at upper boundary (600) is accepted
+
+**Requirement:** `REQ-MQTT-005`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CurrentMaxSumMains with payload "600"
+- **Then** Command is accepted with max_sum_mains = 600
+
+> Test: `test_max_sum_mains_boundary_600` in `test_mqtt_parser.c:764`
+
+### Negative current override is accepted (atoi converts, no range check)
+
+**Requirement:** `REQ-MQTT-004`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CurrentOverride with payload "-10"
+- **Then** Command is accepted (parser does not reject; dispatch layer validates)
+
+> Test: `test_current_override_negative` in `test_mqtt_parser.c:778`
+
+### Empty payload is rejected for Mode command
+
+**Requirement:** `REQ-MQTT-002`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/Mode with empty payload ""
+- **Then** The parser returns false
+
+> Test: `test_empty_payload_mode_rejected` in `test_mqtt_parser.c:810`
+
+### MQTTHeartbeat below minimum (9) is rejected
+
+**Requirement:** `REQ-MQTT-023`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTHeartbeat with payload "9"
+- **Then** The parser returns false
+
+> Test: `test_mqtt_heartbeat_too_low` in `test_mqtt_parser.c:838`
+
+### MQTTHeartbeat above maximum (301) is rejected
+
+**Requirement:** `REQ-MQTT-023`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTHeartbeat with payload "301"
+- **Then** The parser returns false
+
+> Test: `test_mqtt_heartbeat_too_high` in `test_mqtt_parser.c:850`
+
+### MQTTChangeOnly rejects invalid payload
+
+**Requirement:** `REQ-MQTT-024`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MQTTChangeOnly with payload "2"
+- **Then** The parser returns false
+
+> Test: `test_mqtt_change_only_invalid` in `test_mqtt_parser.c:892`
+
 ### Unrecognized topic returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:750`
+> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:906`
 
 ### Wrong prefix returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_wrong_prefix` in `test_mqtt_parser.c:759`
+> Test: `test_wrong_prefix` in `test_mqtt_parser.c:915`
 
 ---
 
@@ -2787,6 +2888,16 @@
 
 > Test: `test_ev_meter_command` in `test_mqtt_parser.c:355`
 
+### Mains meter with extra trailing fields after L1:L2:L3 is accepted
+
+**Requirement:** `REQ-MQTT-007`
+
+- **Given** A valid MQTT prefix
+- **When** Payload is "100:200:300:extra"
+- **Then** L1=100, L2=200, L3=300 (extra data ignored by sscanf)
+
+> Test: `test_mains_meter_extra_fields_ignored` in `test_mqtt_parser.c:794`
+
 ---
 
 ## MQTT Color Parsing
@@ -2818,6 +2929,110 @@
 
 
 > Test: `test_color_custom_command` in `test_mqtt_parser.c:461`
+
+---
+
+## MQTT Change-Only Publishing
+
+### First integer publish always goes through
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** An empty cache with heartbeat 60s
+- **When** An integer value is checked for slot MQTT_SLOT_ESP_TEMP
+- **Then** mqtt_should_publish_int returns true (first time)
+
+> Test: `test_int_first_publish` in `test_mqtt_publish.c:1`
+
+### Unchanged integer is suppressed
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** A cache with MQTT_SLOT_ESP_TEMP previously published as 42
+- **When** The same value 42 is checked at now_s=110 (before heartbeat)
+- **Then** mqtt_should_publish_int returns false
+
+> Test: `test_int_unchanged_suppressed` in `test_mqtt_publish.c:29`
+
+### Changed integer value triggers publish
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** A cache with MQTT_SLOT_ESP_TEMP previously published as 42
+- **When** A different value 43 is checked
+- **Then** mqtt_should_publish_int returns true
+
+> Test: `test_int_changed_publishes` in `test_mqtt_publish.c:43`
+
+### Heartbeat forces re-publish of unchanged integer
+
+**Requirement:** `REQ-MQTT-021`
+
+- **Given** A cache with MQTT_SLOT_ESP_TEMP published at t=100 with heartbeat 60s
+- **When** The same value is checked at t=160 (heartbeat elapsed)
+- **Then** mqtt_should_publish_int returns true
+
+> Test: `test_int_heartbeat_republish` in `test_mqtt_publish.c:57`
+
+### First string publish always goes through
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** An empty cache with heartbeat 60s
+- **When** A string value "Normal" is checked for slot MQTT_SLOT_MODE
+- **Then** mqtt_should_publish_str returns true
+
+> Test: `test_str_first_publish` in `test_mqtt_publish.c:74`
+
+### Changed string value triggers publish
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** A cache with MQTT_SLOT_MODE previously published as "Normal"
+- **When** A different string "Solar" is checked
+- **Then** mqtt_should_publish_str returns true
+
+> Test: `test_str_changed_publishes` in `test_mqtt_publish.c:87`
+
+### mqtt_cache_force_all marks all entries stale
+
+**Requirement:** `REQ-MQTT-022`
+
+- **Given** A cache with MQTT_SLOT_ESP_TEMP published (unchanged value)
+- **When** mqtt_cache_force_all is called then the same value is checked
+- **Then** mqtt_should_publish_int returns true (forced)
+
+> Test: `test_force_all_triggers_publish` in `test_mqtt_publish.c:104`
+
+### CRC16 produces consistent non-zero hashes
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** Known string inputs
+- **When** mqtt_crc16 is called
+- **Then** Different strings produce different hashes and same strings produce same hash
+
+> Test: `test_crc16_consistency` in `test_mqtt_publish.c:122`
+
+### Out-of-range slot is rejected
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** A valid cache
+- **When** mqtt_should_publish_int is called with slot >= MQTT_CACHE_MAX_SLOTS
+- **Then** Returns false (no crash, no publish)
+
+> Test: `test_invalid_slot_rejected` in `test_mqtt_publish.c:143`
+
+### MQTT_SLOT_COUNT fits within MQTT_CACHE_MAX_SLOTS
+
+**Requirement:** `REQ-MQTT-020`
+
+- **Given** The enum definition
+- **When** MQTT_SLOT_COUNT is compared to MQTT_CACHE_MAX_SLOTS
+- **Then** MQTT_SLOT_COUNT is less than or equal to MQTT_CACHE_MAX_SLOTS
+
+> Test: `test_slot_count_within_bounds` in `test_mqtt_publish.c:159`
 
 ---
 
