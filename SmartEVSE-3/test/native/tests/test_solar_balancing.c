@@ -40,15 +40,15 @@ static void setup_solar_charging(void) {
     ctx.Node[0].IntTimer = SOLARSTARTTIME + 1; /* Past startup */
 }
 
-/* ---- 3P shortage starts SolarStopTimer ---- */
+/* ---- 3P shortage starts PhaseSwitchTimer ---- */
 
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-001
- * @scenario 3-phase solar shortage starts SolarStopTimer
+ * @scenario 3-phase solar shortage starts PhaseSwitchTimer
  * @given The EVSE is solar charging on 3 phases with EnableC2=AUTO and high mains load
  * @when evse_calc_balanced_current is called with large import (Isum=200)
- * @then SolarStopTimer is set to a value greater than 0
+ * @then PhaseSwitchTimer is set to a value greater than 0
  */
 void test_solar_3p_shortage_starts_timer(void) {
     setup_solar_charging();
@@ -56,19 +56,19 @@ void test_solar_3p_shortage_starts_timer(void) {
     ctx.Nr_Of_Phases_Charging = 3;
     ctx.MainsMeterImeasured = 300;   /* Very high load */
     ctx.Isum = 200;                  /* Large import */
-    ctx.SolarStopTimer = 0;
+    ctx.PhaseSwitchTimer = 0;
     evse_calc_balanced_current(&ctx, 0);
-    /* Shortage detected in 3P + AUTO: SolarStopTimer should start */
-    TEST_ASSERT_GREATER_THAN(0, ctx.SolarStopTimer);
+    /* Shortage detected in 3P + AUTO: PhaseSwitchTimer should start */
+    TEST_ASSERT_GREATER_THAN(0, ctx.PhaseSwitchTimer);
 }
 
-/* ---- SolarStopTimer<=2 triggers 1P switch ---- */
+/* ---- PhaseSwitchTimer<=2 triggers 1P switch ---- */
 
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-002
- * @scenario SolarStopTimer reaching 2 or below triggers 3P to 1P phase switch
- * @given The EVSE is solar charging on 3 phases with EnableC2=AUTO and SolarStopTimer=2
+ * @scenario PhaseSwitchTimer reaching 2 or below triggers 3P to 1P phase switch
+ * @given The EVSE is solar charging on 3 phases with EnableC2=AUTO and PhaseSwitchTimer=2
  * @when evse_calc_balanced_current is called with ongoing shortage
  * @then Switching_Phases_C2 is set to GOING_TO_SWITCH_1P
  */
@@ -78,44 +78,46 @@ void test_solar_3p_timer_triggers_1p_switch(void) {
     ctx.Nr_Of_Phases_Charging = 3;
     ctx.MainsMeterImeasured = 300;
     ctx.Isum = 200;
-    ctx.SolarStopTimer = 2;  /* Will be decremented to trigger */
+    ctx.PhaseSwitchTimer = 2;  /* Will trigger */
     evse_calc_balanced_current(&ctx, 0);
     /* Timer <=2 should set GOING_TO_SWITCH_1P and go to C1 */
     TEST_ASSERT_EQUAL_INT(GOING_TO_SWITCH_1P, ctx.Switching_Phases_C2);
 }
 
-/* ---- 1P surplus starts timer for 3P switch ---- */
+/* ---- 1P surplus starts PhaseSwitchTimer for 3P switch ---- */
 
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-003
- * @scenario 1-phase solar surplus near MaxCurrent starts timer for 3P upgrade
+ * @scenario 1-phase solar surplus near MaxCurrent starts PhaseSwitchTimer for 3P upgrade
  * @given The EVSE is solar charging on 1 phase with IsetBalanced near MaxCurrent and good surplus
  * @when evse_calc_balanced_current is called with export (Isum=-100)
- * @then SolarStopTimer is set to 63 (countdown to 3P switch)
+ * @then PhaseSwitchTimer is set to 63 (countdown to 3P switch)
  */
 void test_solar_1p_surplus_starts_timer(void) {
     setup_solar_charging();
     ctx.EnableC2 = AUTO;
     ctx.Nr_Of_Phases_Charging = 1;
     ctx.IsetBalanced = 155;           /* Near MaxCurrent*10 */
+    ctx.IsetBalanced_ema = 155;
     ctx.Isum = -100;                  /* Good surplus */
     ctx.MainsMeterImeasured = -50;
-    ctx.SolarStopTimer = 0;
+    ctx.PhaseSwitchTimer = 0;
+    ctx.PhaseSwitchHoldDown = 0;      /* Hold-down expired */
     evse_calc_balanced_current(&ctx, 0);
     /* 1P at max with surplus: timer should start at 63 */
-    if (ctx.SolarStopTimer > 0) {
-        TEST_ASSERT_EQUAL_INT(63, ctx.SolarStopTimer);
+    if (ctx.PhaseSwitchTimer > 0) {
+        TEST_ASSERT_EQUAL_INT(63, ctx.PhaseSwitchTimer);
     }
 }
 
-/* ---- SolarStopTimer<=3 triggers 3P switch ---- */
+/* ---- PhaseSwitchTimer<=3 triggers 3P switch ---- */
 
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-004
- * @scenario SolarStopTimer reaching 3 or below on 1P triggers switch to 3P
- * @given The EVSE is solar charging on 1 phase with SolarStopTimer=3 and large surplus
+ * @scenario PhaseSwitchTimer reaching 3 or below on 1P triggers switch to 3P
+ * @given The EVSE is solar charging on 1 phase with PhaseSwitchTimer=3 and large surplus
  * @when evse_calc_balanced_current is called
  * @then Switching_Phases_C2 is set to GOING_TO_SWITCH_3P
  */
@@ -124,35 +126,39 @@ void test_solar_1p_timer_triggers_3p_switch(void) {
     ctx.EnableC2 = AUTO;
     ctx.Nr_Of_Phases_Charging = 1;
     ctx.IsetBalanced = 160;
+    ctx.IsetBalanced_ema = 160;
     ctx.Isum = -200;                  /* Large surplus */
     ctx.MainsMeterImeasured = -100;
-    ctx.SolarStopTimer = 3;           /* Will be at <=3 */
+    ctx.PhaseSwitchTimer = 3;         /* Will be at <=3 */
+    ctx.PhaseSwitchHoldDown = 0;      /* Hold-down expired */
     evse_calc_balanced_current(&ctx, 0);
     /* Timer <=3 should switch to 3P */
     TEST_ASSERT_EQUAL_INT(GOING_TO_SWITCH_3P, ctx.Switching_Phases_C2);
 }
 
-/* ---- Insufficient surplus resets timer ---- */
+/* ---- Insufficient surplus resets PhaseSwitchTimer ---- */
 
 /*
  * @feature Solar Balancing
  * @req REQ-SOLAR-005
- * @scenario Insufficient surplus resets SolarStopTimer to prevent false 3P upgrade
+ * @scenario Insufficient surplus resets PhaseSwitchTimer to prevent false 3P upgrade
  * @given The EVSE is solar charging on 1 phase with IsetBalanced well below MaxCurrent
  * @when evse_calc_balanced_current is called with minimal surplus (Isum=-10)
- * @then SolarStopTimer is reset to 0
+ * @then PhaseSwitchTimer is reset to 0
  */
 void test_solar_insufficient_surplus_resets_timer(void) {
     setup_solar_charging();
     ctx.EnableC2 = AUTO;
     ctx.Nr_Of_Phases_Charging = 1;
     ctx.IsetBalanced = 100;            /* Well below MaxCurrent*10 */
+    ctx.IsetBalanced_ema = 100;
     ctx.Isum = -10;                    /* Minimal surplus */
     ctx.MainsMeterImeasured = 0;
-    ctx.SolarStopTimer = 30;
+    ctx.PhaseSwitchTimer = 30;
+    ctx.PhaseSwitchHoldDown = 0;
     evse_calc_balanced_current(&ctx, 0);
     /* Not enough surplus to upgrade: timer reset */
-    TEST_ASSERT_EQUAL_INT(0, ctx.SolarStopTimer);
+    TEST_ASSERT_EQUAL_INT(0, ctx.PhaseSwitchTimer);
 }
 
 /* ---- Solar startup forces MinCurrent ---- */

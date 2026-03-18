@@ -190,6 +190,12 @@ typedef enum {
 #ifndef SOLAR_FINE_DEADBAND_DEFAULT
 #define SOLAR_FINE_DEADBAND_DEFAULT 5 /* 0.5A in deciamps (was effectively 3) */
 #endif
+#ifndef PHASE_SWITCH_HOLDDOWN_DEFAULT
+#define PHASE_SWITCH_HOLDDOWN_DEFAULT  300 /* 5 min on 1P before allowing 3P upgrade */
+#endif
+#ifndef PHASE_SWITCH_SEVERE_DEFAULT
+#define PHASE_SWITCH_SEVERE_DEFAULT     30 /* 30s for severe shortage (fast switch) */
+#endif
 #ifndef RFIDLOCKTIME
 #define RFIDLOCKTIME       60
 #endif
@@ -303,6 +309,12 @@ typedef struct {
     uint8_t Switching_Phases_C2;
     bool    phasesLastUpdateFlag;
     bool    LimitedByMaxSumMains;
+
+    // --- Phase switching timers (Issue #16) ---
+    uint16_t PhaseSwitchTimer;          /* Countdown for 3P↔1P switching (separate from SolarStopTimer) */
+    uint16_t PhaseSwitchHoldDown;       /* Min time on 1P before allowing 3P upgrade (countdown) */
+    uint16_t PhaseSwitchHoldDownTime;   /* Configurable hold-down duration (seconds) */
+    uint16_t PhaseSwitchSevereTime;     /* Timer for severe shortage (seconds) */
 
     // --- Modem ---
     bool    ModemEnabled;

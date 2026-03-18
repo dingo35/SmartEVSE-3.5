@@ -144,6 +144,12 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->phasesLastUpdateFlag = true;    // Start as true for first calculation
     ctx->LimitedByMaxSumMains = false;
 
+    // Phase switching timers
+    ctx->PhaseSwitchTimer = 0;
+    ctx->PhaseSwitchHoldDown = 0;
+    ctx->PhaseSwitchHoldDownTime = PHASE_SWITCH_HOLDDOWN_DEFAULT;
+    ctx->PhaseSwitchSevereTime = PHASE_SWITCH_SEVERE_DEFAULT;
+
     // Modem
     ctx->ModemEnabled = false;
     ctx->ModemStage = 0;
@@ -801,6 +807,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             ctx->IsetBalanced = ActiveEVSE * ctx->MinCurrent * 10;  // line 1336
 
             // Solar shortage: 3P->1P switching (lines 1337-1370)
+            // Issue #16: tiered timer + separate PhaseSwitchTimer
             if (ctx->Mode == MODE_SOLAR) {
                 // cppcheck-suppress knownConditionTrueFalse
                 if (ActiveEVSE && IsumImport > 0 &&
@@ -810,23 +817,27 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
 
                     if (ctx->Nr_Of_Phases_Charging > 1 && ctx->EnableC2 == AUTO &&
                         ctx->State == STATE_C) {
-                        if (ctx->SolarStopTimer == 0) {
-                            if (IsumImport < (int32_t)(10 * ctx->MinCurrent))
-                                ctx->SolarStopTimer = ctx->StopTime * 60;
-                            if (ctx->SolarStopTimer == 0)
-                                ctx->SolarStopTimer = 30;
+                        if (ctx->PhaseSwitchTimer == 0) {
+                            // Tiered timer: severe shortage = short, mild = long
+                            if (IsumImport >= (int32_t)(10 * ctx->MinCurrent))
+                                ctx->PhaseSwitchTimer = ctx->PhaseSwitchSevereTime;
+                            else
+                                ctx->PhaseSwitchTimer = ctx->StopTime * 60;
+                            if (ctx->PhaseSwitchTimer == 0)
+                                ctx->PhaseSwitchTimer = 30;
                         }
-                        if (ctx->SolarStopTimer <= 2) {
+                        if (ctx->PhaseSwitchTimer <= 2) {
                             ctx->Switching_Phases_C2 = GOING_TO_SWITCH_1P;
                             evse_set_state(ctx, STATE_C1);
-                            ctx->SolarStopTimer = 0;
+                            ctx->PhaseSwitchTimer = 0;
+                            ctx->PhaseSwitchHoldDown = ctx->PhaseSwitchHoldDownTime;
                         }
                     } else {
                         if (ctx->SolarStopTimer == 0)
                             ctx->SolarStopTimer = ctx->StopTime * 60;
                     }
                 } else {
-                    ctx->SolarStopTimer = 0;
+                    ctx->PhaseSwitchTimer = 0;
                 }
             }
 
@@ -890,25 +901,28 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             }
 
             // Solar 1P->3P upgrade (lines 1404-1432)
+            // Issue #16: hold-down guard + separate PhaseSwitchTimer
             if (ctx->Mode == MODE_SOLAR && ctx->Nr_Of_Phases_Charging == 1 &&
                 ctx->EnableC2 == AUTO &&
+                ctx->PhaseSwitchHoldDown == 0 &&  // Hold-down must be expired
                 ctx->IsetBalanced + 8 >= (int32_t)(ctx->MaxCurrent * 10) &&
                 ctx->State == STATE_C) {
 
                 int spareCurrent = (3 * ((int)ctx->MinCurrent + 1) - (int)ctx->MaxCurrent);
                 if (spareCurrent < 0) spareCurrent = 3;
                 if (-ctx->Isum > (10 * spareCurrent)) {
-                    if (ctx->SolarStopTimer == 0) ctx->SolarStopTimer = 63;
-                    if (ctx->SolarStopTimer <= 3) {
+                    if (ctx->PhaseSwitchTimer == 0) ctx->PhaseSwitchTimer = 63;
+                    if (ctx->PhaseSwitchTimer <= 3) {
                         ctx->Switching_Phases_C2 = GOING_TO_SWITCH_3P;
                         evse_set_state(ctx, STATE_C1);
-                        ctx->SolarStopTimer = 0;
+                        ctx->PhaseSwitchTimer = 0;
                     }
                 } else {
-                    ctx->SolarStopTimer = 0;
+                    ctx->PhaseSwitchTimer = 0;
                 }
             } else {
                 ctx->SolarStopTimer = 0;
+                ctx->PhaseSwitchTimer = 0;
                 ctx->MaxSumMainsTimer = 0;
                 ctx->NoCurrent = 0;
             }
@@ -965,6 +979,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     // No active EVSEs: reset timers (lines 1497-1502)
     if (!saveActiveEVSE) {
         ctx->SolarStopTimer = 0;
+        ctx->PhaseSwitchTimer = 0;
         ctx->MaxSumMainsTimer = 0;
         ctx->NoCurrent = 0;
     }
@@ -1354,6 +1369,16 @@ void evse_tick_1s(evse_ctx_t *ctx) {
             if (ctx->State == STATE_C) evse_set_state(ctx, STATE_C1);
             evse_set_error_flags(ctx, LESS_6A);
         }
+    }
+
+    // PhaseSwitchTimer countdown (Issue #16)
+    if (ctx->PhaseSwitchTimer > 0) {
+        ctx->PhaseSwitchTimer--;
+    }
+
+    // PhaseSwitchHoldDown countdown (Issue #16)
+    if (ctx->PhaseSwitchHoldDown > 0) {
+        ctx->PhaseSwitchHoldDown--;
     }
 
     // Pilot disconnect timer countdown (line 1682)
