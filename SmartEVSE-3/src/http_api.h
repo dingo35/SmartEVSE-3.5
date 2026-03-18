@@ -86,6 +86,12 @@ const char *http_api_validate_mqtt_heartbeat(int value);
 // Validate mqtt_change_only (0 or 1).
 const char *http_api_validate_mqtt_change_only(int value);
 
+// Map internal EVSE state + error flags to an IEC 61851-1 state letter (A-F).
+// Hard errors (CT_NOCOMM, TEMP_HIGH, EV_NOCOMM, RCM_TRIPPED, etc.) override to 'E'.
+// Soft errors (LESS_6A, NO_SUN) are temporary and do NOT override the state.
+// NOSTATE or unrecognized values return 'F' (not available).
+char evse_state_to_iec61851(int state, int error_flags);
+
 #ifdef __cplusplus
 }
 #endif

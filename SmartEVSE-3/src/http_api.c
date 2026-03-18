@@ -6,10 +6,52 @@
  */
 
 #include "http_api.h"
+#include "evse_ctx.h"
 
 #ifndef MIN_CURRENT
 #define MIN_CURRENT 6
 #endif
+
+/* Soft error flags that do not indicate an EVSE fault — these are
+ * temporary operational conditions (current too low, no solar surplus)
+ * and should not map to IEC 61851 state E. */
+#define SOFT_ERROR_MASK (LESS_6A | NO_SUN)
+
+char evse_state_to_iec61851(int state, int error_flags) {
+    /* Hard errors override the state-based mapping */
+    if (error_flags & ~SOFT_ERROR_MASK)
+        return 'E';
+
+    switch (state) {
+    case STATE_A:
+        return 'A';
+
+    case STATE_B:
+    case STATE_B1:
+    case STATE_COMM_B:
+    case STATE_COMM_B_OK:
+    case STATE_ACTSTART:
+    case STATE_MODEM_REQUEST:
+    case STATE_MODEM_WAIT:
+    case STATE_MODEM_DONE:
+        return 'B';
+
+    case STATE_C:
+    case STATE_C1:
+    case STATE_COMM_C:
+    case STATE_COMM_C_OK:
+        return 'C';
+
+    case STATE_D:
+        return 'D';
+
+    case STATE_MODEM_DENIED:
+        return 'E';
+
+    default:
+        return 'F';
+    }
+}
 
 bool http_api_parse_color(int r_val, int g_val, int b_val,
                           uint8_t *r_out, uint8_t *g_out, uint8_t *b_out) {

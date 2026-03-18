@@ -7,6 +7,7 @@
 
 #include "test_framework.h"
 #include "http_api.h"
+#include "evse_ctx.h"
 #include <string.h>
 
 // ---- Color Parsing ----
@@ -639,6 +640,153 @@ void test_validate_settings_scheduling_slave(void) {
     TEST_ASSERT_EQUAL_INT(3, count);
 }
 
+// ---- IEC 61851 State Mapping ----
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_A maps to IEC 61851 state A (standby)
+ * @given The EVSE is in STATE_A with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'A'
+ */
+void test_iec61851_state_a(void) {
+    TEST_ASSERT_EQUAL_INT('A', evse_state_to_iec61851(STATE_A, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_B maps to IEC 61851 state B (vehicle detected)
+ * @given The EVSE is in STATE_B with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'B'
+ */
+void test_iec61851_state_b(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_C maps to IEC 61851 state C (charging)
+ * @given The EVSE is in STATE_C with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'C'
+ */
+void test_iec61851_state_c(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_D maps to IEC 61851 state D (ventilation required)
+ * @given The EVSE is in STATE_D with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'D'
+ */
+void test_iec61851_state_d(void) {
+    TEST_ASSERT_EQUAL_INT('D', evse_state_to_iec61851(STATE_D, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario STATE_B1 maps to IEC 61851 state B (connected, EVSE not ready)
+ * @given The EVSE is in STATE_B1 (no PWM signal) with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'B' because the vehicle is connected
+ */
+void test_iec61851_state_b1(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B1, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario STATE_C1 maps to IEC 61851 state C (charge stopping)
+ * @given The EVSE is in STATE_C1 (stopping) with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'C' because charging session is still active
+ */
+void test_iec61851_state_c1(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C1, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario Communication and modem states map to B (connected)
+ * @given The EVSE is in various communication/modem states
+ * @when evse_state_to_iec61851 is called for each
+ * @then All return 'B' because the vehicle is connected but not yet charging
+ */
+void test_iec61851_comm_modem_states(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_COMM_B, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_COMM_B_OK, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_COMM_C, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_COMM_C_OK, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_ACTSTART, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_REQUEST, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_WAIT, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_DONE, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Modem denied maps to E (error)
+ * @given The EVSE is in STATE_MODEM_DENIED
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'E' because access was denied
+ */
+void test_iec61851_modem_denied(void) {
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_MODEM_DENIED, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Hard error flags override state to E (error)
+ * @given The EVSE is in STATE_C (charging) with RCM_TRIPPED error
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'E' because a hard error takes priority
+ */
+void test_iec61851_hard_error_overrides_state(void) {
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, RCM_TRIPPED));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_B, CT_NOCOMM));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, TEMP_HIGH));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, EV_NOCOMM));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Soft errors (LESS_6A, NO_SUN) do NOT override state
+ * @given The EVSE is in STATE_C with LESS_6A or STATE_A with NO_SUN
+ * @when evse_state_to_iec61851 is called
+ * @then It returns the state-based letter, not 'E'
+ */
+void test_iec61851_soft_errors_no_override(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C, LESS_6A));
+    TEST_ASSERT_EQUAL_INT('A', evse_state_to_iec61851(STATE_A, NO_SUN));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B, LESS_6A | NO_SUN));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-023
+ * @scenario NOSTATE and unknown values map to F (not available)
+ * @given The EVSE is in NOSTATE or an unrecognized state value
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'F' indicating EVSE not available
+ */
+void test_iec61851_nostate_and_unknown(void) {
+    TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(NOSTATE, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(99, NO_ERROR));
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("HTTP API");
 
@@ -718,6 +866,19 @@ int main(void) {
     RUN_TEST(test_validate_settings_slave_restrictions);
     RUN_TEST(test_validate_settings_scheduling_valid);
     RUN_TEST(test_validate_settings_scheduling_slave);
+
+    // IEC 61851 state mapping
+    RUN_TEST(test_iec61851_state_a);
+    RUN_TEST(test_iec61851_state_b);
+    RUN_TEST(test_iec61851_state_c);
+    RUN_TEST(test_iec61851_state_d);
+    RUN_TEST(test_iec61851_state_b1);
+    RUN_TEST(test_iec61851_state_c1);
+    RUN_TEST(test_iec61851_comm_modem_states);
+    RUN_TEST(test_iec61851_modem_denied);
+    RUN_TEST(test_iec61851_hard_error_overrides_state);
+    RUN_TEST(test_iec61851_soft_errors_no_override);
+    RUN_TEST(test_iec61851_nostate_and_unknown);
 
     TEST_SUITE_RESULTS();
 }
