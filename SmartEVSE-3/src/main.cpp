@@ -356,9 +356,11 @@ Button::Button(void) {
 //since in v4 ESP32 only a copy of ErrorFlags is available, we need to have functions so v4 ESP32 can set CH32 ErrorFlags
 void setErrorFlags(uint8_t flags) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_set_error_flags(&g_evse_ctx, flags);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 #else
     ErrorFlags |= flags;
 #endif
@@ -369,9 +371,11 @@ void setErrorFlags(uint8_t flags) {
 
 void clearErrorFlags(uint8_t flags) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_clear_error_flags(&g_evse_ctx, flags);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 #else
     ErrorFlags &= ~flags;
 #endif
@@ -563,9 +567,11 @@ void setOverrideCurrent(uint16_t Current) { //c
  *  Check if we can switch to 1 or 3 phase charging, depending on the Enable C2 setting 
  */
 void CheckSwitchingPhases(void) {
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_check_switching_phases(&g_evse_ctx);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
     _LOG_D("NrPhasesCharging:%u\n",Nr_Of_Phases_Charging);
 }
 
@@ -673,8 +679,11 @@ void setSolarStopTimer(uint16_t Timer) {
  * 1P car will always charge 1P undetermined by CONTACTOR2
  */
 uint8_t Force_Single_Phase_Charging() {
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
-    return evse_force_single_phase(&g_evse_ctx);
+    uint8_t result = evse_force_single_phase(&g_evse_ctx);
+    evse_bridge_unlock();
+    return result;
 }
 #endif
 
@@ -726,9 +735,11 @@ void SetCurrent(uint16_t current) {
 
 void setStatePowerUnavailable(void) {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_set_power_unavailable(&g_evse_ctx);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 #else //v4 ESP32
     printf("@setStatePowerUnavailable\n");
 #endif
@@ -785,9 +796,11 @@ void setState(uint8_t NewState) { //c
 #endif
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
     // Core state machine logic via module; callback handles all post-actions
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_set_state(&g_evse_ctx, NewState);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 #endif
 }
 
@@ -824,9 +837,11 @@ void setAccess(AccessStatus_t Access) { //c
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     // Bridge to module; state transitions trigger callback automatically
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_set_access(&g_evse_ctx, Access);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 #else
     AccessStatus = Access;
     if (Access == OFF || Access == PAUSE) {
@@ -924,9 +939,11 @@ uint8_t Pilot() {
 // only runs on the Master or when loadbalancing Disabled
 // only runs on CH32 for SmartEVSEv4
 char IsCurrentAvailable(void) {
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     int result = evse_is_current_available(&g_evse_ctx);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
     return (char)result;
 }
 #else //v4 ESP32
@@ -948,9 +965,11 @@ void CalcBalancedCurrent(char mod) {
     uint16_t oldSolarStopTimer = SolarStopTimer;
 
     // Core logic via module; state transitions trigger callback automatically
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_calc_balanced_current(&g_evse_ctx, (int)mod);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 
     // SolarStopTimer side effects (SEND_TO_ESP32, SEND_TO_CH32, MQTT)
     if (SolarStopTimer != oldSolarStopTimer) {
@@ -1126,9 +1145,11 @@ void Timer1S_singlerun(void) {
     uint16_t oldSolarStopTimer = SolarStopTimer;
     uint8_t  oldErrorFlags = ErrorFlags;
 
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_tick_1s(&g_evse_ctx);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 
     timer1s_check_error_transitions(oldErrorFlags, oldSolarStopTimer);
 #if MODEM
@@ -2457,9 +2478,11 @@ void Timer10ms_singlerun(void) {
     uint8_t oldState = State;
     uint8_t oldDiodeCheck = g_evse_ctx.DiodeCheck;
 
+    evse_bridge_lock();
     evse_sync_globals_to_ctx();
     evse_tick_10ms(&g_evse_ctx, pilot);
     evse_sync_ctx_to_globals();
+    evse_bridge_unlock();
 
     timer10ms_ev_metering(oldState, pilot);
 

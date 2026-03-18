@@ -1,50 +1,51 @@
 # SmartEVSE-3 Test Specification
 
-**39 features** | **549 scenarios** | **549 with requirement IDs**
+**40 features** | **560 scenarios** | **560 with requirement IDs**
 
 ---
 
 ## Table of Contents
 
 1. [Authorization & Access Control](#authorization-&-access-control)
-2. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
-3. [End-to-End Charging](#end-to-end-charging)
-4. [Error Handling & Safety](#error-handling-&-safety)
-5. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
-6. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
-7. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
-8. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
-9. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
-10. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
-11. [Fidelity: Config field](#fidelity:-config-field)
-12. [HTTP API Color Parsing](#http-api-color-parsing)
-13. [HTTP API Input Validation](#http-api-input-validation)
-14. [HTTP API Validation](#http-api-validation)
-15. [HTTP API Settings Validation](#http-api-settings-validation)
-16. [LED Status Indication](#led-status-indication)
-17. [LED Color Configuration](#led-color-configuration)
-18. [Load Balancing](#load-balancing)
-19. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
-20. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
-21. [MQTT Command Parsing](#mqtt-command-parsing)
-22. [MQTT Input Validation](#mqtt-input-validation)
-23. [MQTT Meter Parsing](#mqtt-meter-parsing)
-24. [MQTT Color Parsing](#mqtt-color-parsing)
-25. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
-26. [Multi-Node Load Balancing](#multi-node-load-balancing)
-27. [OCPP Current Limiting](#ocpp-current-limiting)
-28. [Operating Modes](#operating-modes)
-29. [Phase Switching](#phase-switching)
-30. [Power Availability](#power-availability)
-31. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
-32. [Serial Message Parsing](#serial-message-parsing)
-33. [Serial Input Validation](#serial-input-validation)
-34. [Battery Current Calculation](#battery-current-calculation)
-35. [Current Sum Calculation](#current-sum-calculation)
-36. [Solar Balancing](#solar-balancing)
-37. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
-38. [10ms Tick Processing](#10ms-tick-processing)
-39. [1-Second Tick Processing](#1-second-tick-processing)
+2. [Bridge Transaction Integrity](#bridge-transaction-integrity)
+3. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
+4. [End-to-End Charging](#end-to-end-charging)
+5. [Error Handling & Safety](#error-handling-&-safety)
+6. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
+7. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
+8. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
+9. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
+10. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
+11. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
+12. [Fidelity: Config field](#fidelity:-config-field)
+13. [HTTP API Color Parsing](#http-api-color-parsing)
+14. [HTTP API Input Validation](#http-api-input-validation)
+15. [HTTP API Validation](#http-api-validation)
+16. [HTTP API Settings Validation](#http-api-settings-validation)
+17. [LED Status Indication](#led-status-indication)
+18. [LED Color Configuration](#led-color-configuration)
+19. [Load Balancing](#load-balancing)
+20. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
+21. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
+22. [MQTT Command Parsing](#mqtt-command-parsing)
+23. [MQTT Input Validation](#mqtt-input-validation)
+24. [MQTT Meter Parsing](#mqtt-meter-parsing)
+25. [MQTT Color Parsing](#mqtt-color-parsing)
+26. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
+27. [Multi-Node Load Balancing](#multi-node-load-balancing)
+28. [OCPP Current Limiting](#ocpp-current-limiting)
+29. [Operating Modes](#operating-modes)
+30. [Phase Switching](#phase-switching)
+31. [Power Availability](#power-availability)
+32. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
+33. [Serial Message Parsing](#serial-message-parsing)
+34. [Serial Input Validation](#serial-input-validation)
+35. [Battery Current Calculation](#battery-current-calculation)
+36. [Current Sum Calculation](#current-sum-calculation)
+37. [Solar Balancing](#solar-balancing)
+38. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
+39. [10ms Tick Processing](#10ms-tick-processing)
+40. [1-Second Tick Processing](#1-second-tick-processing)
 
 ## Authorization & Access Control
 
@@ -240,6 +241,120 @@
 - **Then** AccessStatus is OFF and AccessTimer is 0 on transition to STATE_A
 
 > Test: `test_access_status_cleared_on_session_end_from_c1` in `test_authorization.c:365`
+
+### AccessStatus cleared on Tesla-style disconnect (C → B → A)
+
+**Requirement:** `REQ-AUTH-021`
+
+- **Given** EVSE is in STATE_C with AccessStatus ON and RFID reader enabled
+- **When** Car transitions to STATE_B (CP → 9V), then to STATE_A (CP → 12V)
+- **Then** AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A
+
+> Test: `test_access_status_cleared_on_tesla_disconnect_c_b_a` in `test_authorization.c:390`
+
+### AccessStatus cleared on solar-stop disconnect (C1 → B1 → A)
+
+**Requirement:** `REQ-AUTH-022`
+
+- **Given** EVSE is in STATE_B1 (transitioned from C1 after solar stop) with AccessStatus ON
+- **When** Pilot disconnect timer expires, then car disconnects (CP → 12V)
+- **Then** AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A
+
+> Test: `test_access_status_cleared_on_disconnect_from_b1` in `test_authorization.c:420`
+
+### Tesla disconnect then new car + RFID swipe starts session correctly
+
+**Requirement:** `REQ-AUTH-023`
+
+- **Given** EVSE charged Car A in STATE_C, RFIDReader=EnableOne, AccessStatus=ON
+- **When** Car A does Tesla-style disconnect (C→B→A), Car B plugs in, user swipes RFID
+- **Then** Car B is blocked until RFID swipe, then RFID swipe sets AccessStatus ON and charging starts
+
+> Test: `test_tesla_disconnect_then_new_car_rfid_starts_session` in `test_authorization.c:452`
+
+---
+
+## Bridge Transaction Integrity
+
+### Bridge lock/unlock API is callable
+
+**Requirement:** `REQ-SM-100`
+
+- **Given** The test environment (native build, no FreeRTOS)
+- **When** evse_bridge_lock and evse_bridge_unlock are called
+- **Then** They complete without error (no-ops in native builds)
+
+> Test: `test_bridge_lock_unlock_callable` in `test_bridge_transaction.c:1`
+
+### AccessTimer counts down to zero over 60 sequential tick_1s calls
+
+**Requirement:** `REQ-AUTH-024`
+
+- **Given** EVSE in STATE_A with AccessStatus ON and AccessTimer armed to 60
+- **When** tick_1s is called 60 times (simulating 60 seconds with no concurrent interference)
+- **Then** AccessTimer reaches 0 and AccessStatus is set to OFF
+
+> Test: `test_access_timer_full_countdown` in `test_bridge_transaction.c:54`
+
+### AccessTimer countdown survives interleaved tick_10ms calls
+
+**Requirement:** `REQ-AUTH-025`
+
+- **Given** EVSE in STATE_A with AccessTimer=2, pilot at 12V
+- **When** tick_10ms and tick_1s are called in alternating sequence
+- **Then** AccessTimer still reaches 0 and AccessStatus is cleared
+
+> Test: `test_access_timer_survives_interleaved_ticks` in `test_bridge_transaction.c:83`
+
+### AccessTimer is not re-armed after expiry
+
+**Requirement:** `REQ-AUTH-026`
+
+- **Given** EVSE in STATE_A after AccessTimer just expired (AccessStatus=OFF, AccessTimer=0)
+- **When** tick_10ms runs with PILOT_12V
+- **Then** AccessTimer stays 0 (re-arm requires AccessStatus==ON)
+
+> Test: `test_access_timer_not_rearmed_after_expiry` in `test_bridge_transaction.c:123`
+
+### OCPP setAccess(ON) triggers A→B transition on next tick_10ms
+
+**Requirement:** `REQ-AUTH-027`
+
+- **Given** EVSE in STATE_A with AccessStatus=OFF, car plugged in (pilot 9V)
+- **When** setAccess(ON) is called, then tick_10ms runs
+- **Then** State transitions from A to B (AccessStatus=ON enables the transition)
+
+> Test: `test_set_access_on_enables_a_to_b` in `test_bridge_transaction.c:153`
+
+### AccessStatus ON persists through multiple tick_10ms cycles
+
+**Requirement:** `REQ-AUTH-028`
+
+- **Given** EVSE in STATE_B with AccessStatus=ON (car connected, authorized)
+- **When** tick_10ms is called repeatedly with PILOT_9V
+- **Then** AccessStatus remains ON (not corrupted by tick processing)
+
+> Test: `test_access_status_persists_through_ticks` in `test_bridge_transaction.c:181`
+
+### Full OCPP charge cycle: authorize → charge → disconnect → new authorize
+
+**Requirement:** `REQ-AUTH-029`
+
+- **Given** EVSE idle in STATE_A, OCPP mode, car not connected
+- **When** First user charges and disconnects, then second user plugs in and authorizes
+- **Then** Second user's authorization succeeds and A→B transition occurs
+
+> Test: `test_ocpp_full_cycle_two_users` in `test_bridge_transaction.c:205`
+
+### AccessTimer full countdown with interleaved 10ms ticks (real timing)
+
+**Requirement:** `REQ-AUTH-030`
+
+- **Given** EVSE in STATE_A, AccessStatus=ON, AccessTimer=60, pilot 12V
+- **When** 60 rounds of (100x tick_10ms + 1x tick_1s) simulate real-world timing
+- **Then** AccessTimer reaches 0 and AccessStatus transitions to OFF
+
+> Test: `test_access_timer_real_world_timing` in `test_bridge_transaction.c:277`
 
 ---
 

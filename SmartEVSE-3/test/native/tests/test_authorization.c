@@ -387,6 +387,103 @@ void test_access_status_cleared_on_session_end_from_c1(void) {
     TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
 }
 
+/*
+ * @feature Authorization & Access Control
+ * @req REQ-AUTH-021
+ * @scenario AccessStatus cleared on Tesla-style disconnect (C → B → A)
+ * @given EVSE is in STATE_C with AccessStatus ON and RFID reader enabled
+ * @when Car transitions to STATE_B (CP → 9V), then to STATE_A (CP → 12V)
+ * @then AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A
+ */
+void test_access_status_cleared_on_tesla_disconnect_c_b_a(void) {
+    setup_basic();
+    ctx.RFIDReader = 2;  // EnableOne
+    ctx.AccessStatus = ON;
+    ctx.ChargeCurrent = 130;
+    evse_set_state(&ctx, STATE_C);
+    TEST_ASSERT_EQUAL_INT(STATE_C, ctx.State);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // Tesla stops drawing current: CP → 9V → STATE_B
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
+
+    // Cable pulled out: CP → 12V → STATE_A
+    evse_tick_10ms(&ctx, PILOT_12V);
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+
+    // AccessStatus must be cleared — old_state was STATE_B, not STATE_C
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+    TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
+}
+
+/*
+ * @feature Authorization & Access Control
+ * @req REQ-AUTH-022
+ * @scenario AccessStatus cleared on solar-stop disconnect (C1 → B1 → A)
+ * @given EVSE is in STATE_B1 (transitioned from C1 after solar stop) with AccessStatus ON
+ * @when Pilot disconnect timer expires, then car disconnects (CP → 12V)
+ * @then AccessStatus is OFF and AccessTimer is 0 upon reaching STATE_A
+ */
+void test_access_status_cleared_on_disconnect_from_b1(void) {
+    setup_basic();
+    ctx.RFIDReader = 1;  // EnableAll
+    ctx.AccessStatus = ON;
+    ctx.ChargeCurrent = 130;
+    evse_set_state(&ctx, STATE_B1);
+    TEST_ASSERT_EQUAL_INT(STATE_B1, ctx.State);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // B1 entry sets PilotDisconnected=true with PilotDisconnectTime=5.
+    // We must wait for the pilot disconnect period to expire before
+    // PILOT_12V is processed. Simulate by clearing PilotDisconnected.
+    ctx.PilotDisconnected = false;
+    ctx.PilotDisconnectTime = 0;
+
+    // Cable pulled out from B1 state: CP → 12V → STATE_A
+    evse_tick_10ms(&ctx, PILOT_12V);
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+
+    // AccessStatus must be cleared — old_state was STATE_B1
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+    TEST_ASSERT_EQUAL_INT(0, ctx.AccessTimer);
+}
+
+/*
+ * @feature Authorization & Access Control
+ * @req REQ-AUTH-023
+ * @scenario Tesla disconnect then new car + RFID swipe starts session correctly
+ * @given EVSE charged Car A in STATE_C, RFIDReader=EnableOne, AccessStatus=ON
+ * @when Car A does Tesla-style disconnect (C→B→A), Car B plugs in, user swipes RFID
+ * @then Car B is blocked until RFID swipe, then RFID swipe sets AccessStatus ON and charging starts
+ */
+void test_tesla_disconnect_then_new_car_rfid_starts_session(void) {
+    setup_basic();
+    ctx.RFIDReader = 2;  // EnableOne
+    ctx.AccessStatus = ON;
+    ctx.ChargeCurrent = 130;
+    evse_set_state(&ctx, STATE_C);
+
+    // Tesla disconnect: C → B → A (two-step, the realistic path)
+    evse_tick_10ms(&ctx, PILOT_9V);   // C → B
+    TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
+    evse_tick_10ms(&ctx, PILOT_12V);  // B → A
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);
+    TEST_ASSERT_EQUAL_INT(OFF, ctx.AccessStatus);
+
+    // New car plugs in — must NOT auto-transition to STATE_B
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_A, ctx.State);  // Blocked: AccessStatus is OFF
+
+    // User swipes RFID → sets AccessStatus to ON
+    evse_set_access(&ctx, ON);
+    TEST_ASSERT_EQUAL_INT(ON, ctx.AccessStatus);
+
+    // Now A → B transition fires
+    evse_tick_10ms(&ctx, PILOT_9V);
+    TEST_ASSERT_EQUAL_INT(STATE_B, ctx.State);
+}
+
 // ---- Main ----
 int main(void) {
     TEST_SUITE_BEGIN("Authorization");
@@ -411,6 +508,9 @@ int main(void) {
     RUN_TEST(test_no_B_to_C_without_access);
     RUN_TEST(test_access_status_cleared_on_session_end);
     RUN_TEST(test_access_status_cleared_on_session_end_from_c1);
+    RUN_TEST(test_access_status_cleared_on_tesla_disconnect_c_b_a);
+    RUN_TEST(test_access_status_cleared_on_disconnect_from_b1);
+    RUN_TEST(test_tesla_disconnect_then_new_car_rfid_starts_session);
 
     TEST_SUITE_RESULTS();
 }

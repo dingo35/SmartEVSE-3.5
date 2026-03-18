@@ -5,6 +5,39 @@ Smart Electric Vehicle Charge Controller
 
 ![Image of SmartEVSE](/pictures/SmartEVSEv3.png)
 
+# About this fork
+
+This repository is a fork of [dingo35/SmartEVSE-3.5](https://github.com/dingo35/SmartEVSE-3.5)
+maintained as a testbed for **IT/OT software engineering with AI-assisted development**
+(multi-agent software engineering using [Claude Code](https://claude.ai/claude-code)).
+
+The upstream SmartEVSE firmware is a monolithic embedded C++/Arduino codebase where the
+state machine, load balancing, MQTT, HTTP, and hardware control all live in a single
+~3,000-line `main.cpp`. This makes the safety-critical logic impossible to test without
+real hardware.
+
+This fork restructures the architecture to enable **native host testing** of the core
+logic:
+
+- **Pure C state machine** (`evse_state_machine.c`) — extracted from `main.cpp`, zero
+  platform dependencies, compiles with plain `gcc` on any host
+- **Context struct** (`evse_ctx_t`) — all state in one place instead of ~70 scattered
+  globals
+- **Bridge layer** (`evse_bridge.cpp`) — synchronizes the existing globals with the
+  context struct so consumer files (`glcd.cpp`, `modbus.cpp`, `network_common.cpp`, etc.)
+  continue to work unchanged. Protected by a FreeRTOS mutex on ESP32
+- **HAL callbacks** — hardware operations (contactors, CP duty, pilot signal) are
+  abstracted behind function pointers, replaced with no-ops in test builds
+- **539 native tests** across 23 suites with full Specification-by-Example (SbE)
+  traceability — covering state transitions, load balancing, solar mode, OCPP, MQTT,
+  HTTP API, error handling, phase switching, and more
+
+The purpose is to demonstrate how AI agents (Claude Code) can be used as collaborative
+software engineering partners on real-world embedded/OT systems — performing root cause
+analysis, architectural refactoring, test-driven development, and bug fixing on
+safety-critical code. All changes in this fork were developed through human-AI
+collaboration using the multi-agent workflow described in [CLAUDE.md](CLAUDE.md).
+
 # What is it?
 
 It's an open source EVSE (Electric Vehicle Supply Equipment). It supports 1-3 phase charging, fixed charging cable or charging socket. Locking actuator support (5 different types). And it can directly drive a mains contactor for supplying power to the EV. It features a display from which all module parameters can be configured.<br>
@@ -77,9 +110,9 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 19 |
-| Test scenarios | 410 |
-| Features covered | 31 |
+| Test suites | 23 |
+| Test scenarios | 539 |
+| Features covered | 39 |
 | Requirement traceability | 100% |
 
 **Test areas** include IEC 61851-1 state transitions, load balancing (single and

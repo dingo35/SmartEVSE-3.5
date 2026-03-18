@@ -29,6 +29,7 @@ evse_ctx_t g_evse_ctx;
 // ---- Spinlock for sync functions ----
 #ifdef SMARTEVSE_VERSION
 static portMUX_TYPE evse_sync_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t evse_ctx_mutex = NULL;
 #endif
 
 // ---- External references to firmware globals ----
@@ -466,8 +467,27 @@ void evse_sync_ctx_to_globals(void) {
 #endif
 }
 
+// ---- Transaction-level lock for bridge callers ----
+// Wraps the full sync_to → operate → sync_from cycle so concurrent tasks
+// (Timer10ms, Timer1S, loop/OCPP) cannot corrupt g_evse_ctx mid-transaction.
+void evse_bridge_lock(void) {
+#ifdef SMARTEVSE_VERSION
+    xSemaphoreTake(evse_ctx_mutex, portMAX_DELAY);
+#endif
+}
+
+void evse_bridge_unlock(void) {
+#ifdef SMARTEVSE_VERSION
+    xSemaphoreGive(evse_ctx_mutex);
+#endif
+}
+
 // ---- Initialization ----
 void evse_bridge_init(void) {
+#ifdef SMARTEVSE_VERSION
+    evse_ctx_mutex = xSemaphoreCreateMutex();
+    configASSERT(evse_ctx_mutex);
+#endif
     evse_hal_t hal = {
         .set_cp_duty      = hal_set_cp_duty,
         .contactor1       = hal_contactor1,
