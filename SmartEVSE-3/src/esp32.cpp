@@ -901,7 +901,7 @@ void SetupMQTTClient() {
         //set the parameters for and MQTTclient.announce other sensor entities:
         optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W") + MQTTclient.jsna("state_class","measurement");
         MQTTclient.announce("EV Charge Power", "sensor", optional_payload);
-        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
+        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total");
         MQTTclient.announce("EV Energy Charged", "sensor", optional_payload);
         optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
         MQTTclient.announce("EV Total Energy Charged", "sensor", optional_payload);
@@ -936,7 +936,7 @@ void SetupMQTTClient() {
     optional_payload += String(R"(, "options" : ["On", "Off"])");
     MQTTclient.announce("Custom Button", "select", optional_payload);
 
-    optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
+    optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","measurement");
     MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
     //set the parameters for and MQTTclient.announce diagnostic sensor entities:
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
@@ -947,7 +947,7 @@ void SetupMQTTClient() {
     MQTTclient.announce("WiFi RSSI", "sensor", optional_payload);
     optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","temperature") + MQTTclient.jsna("unit_of_measurement","°C") + MQTTclient.jsna("state_class","measurement");
     MQTTclient.announce("ESP Temp", "sensor", optional_payload);
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
     MQTTclient.announce("ESP Uptime", "sensor", optional_payload);
 
 #if MODEM
@@ -972,6 +972,9 @@ void SetupMQTTClient() {
     optional_payload = MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CurrentOverride")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", MaxCurrent ) + MQTTclient.jsna("mode","slider");
     optional_payload += MQTTclient.jsna("value_template", R"({{ value | int / 10 if value | is_number else none }})") + MQTTclient.jsna("command_template", R"({{ value | int * 10 }})");
     MQTTclient.announce("Charge Current Override", "number", optional_payload);
+
+    optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CurrentMaxSumMains")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "600") + MQTTclient.jsna("mode","box");
+    MQTTclient.announce("Current Max Sum Mains", "number", optional_payload);
 
     //set the parameters for and MQTTclient.announce Cable Lock:
     optional_payload = MQTTclient.jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
@@ -1005,15 +1008,22 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
+            // Zero-value guard: suppress energy publishing when meter has not yet reported valid data
+            // Publishing 0 for total_increasing sensors corrupts HA long-term statistics
+            if (MainsMeter.Import_active_energy > 0)
+                MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
+            if (MainsMeter.Export_active_energy > 0)
+                MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
         }
         if (EVMeter.Type) {
             MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
+            // Zero-value guard for EV meter energy values
+            if (EVMeter.Import_active_energy > 0)
+                MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
+            if (EVMeter.Export_active_energy > 0)
+                MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
         }
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
@@ -1072,6 +1082,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/LoadBl", LoadBl, true, 0);
         MQTTclient.publish(MQTTprefix + "/PairingPin", PairingPin, true, 0);
         MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+        MQTTclient.publish(MQTTprefix + "/CurrentMaxSumMains", MaxSumMains, true, 0);
         if (LoadBl == 1) {
             static const char *StrPrioStrategy[] = {"ModbusAddr", "FirstConn", "LastConn"};
             MQTTclient.publish(MQTTprefix + "/PrioStrategy", PrioStrategy <= 2 ? StrPrioStrategy[PrioStrategy] : "N/A", true, 0);

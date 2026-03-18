@@ -745,6 +745,80 @@ void test_idle_timeout_zero(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/IdleTimeout", "0", &cmd));
 }
 
+// ---- Boundary and edge case tests (Issue #59) ----
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-005
+ * @scenario Max sum mains at lower boundary (10) is accepted
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentMaxSumMains with payload "10"
+ * @then Command is accepted with max_sum_mains = 10
+ */
+void test_max_sum_mains_boundary_10(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentMaxSumMains", "10", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_SUM_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(10, cmd.max_sum_mains);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-005
+ * @scenario Max sum mains at upper boundary (600) is accepted
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentMaxSumMains with payload "600"
+ * @then Command is accepted with max_sum_mains = 600
+ */
+void test_max_sum_mains_boundary_600(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentMaxSumMains", "600", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_SUM_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(600, cmd.max_sum_mains);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-004
+ * @scenario Negative current override is accepted (atoi converts, no range check)
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentOverride with payload "-10"
+ * @then Command is accepted (parser does not reject; dispatch layer validates)
+ */
+void test_current_override_negative(void) {
+    /* The parser uses atoi() then casts to uint16_t — no explicit rejection.
+     * The dispatch layer in esp32.cpp checks against MinCurrent/MaxCurrent.
+     * This test documents the current behavior. */
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentOverride", "-10", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CURRENT_OVERRIDE, cmd.cmd);
+}
+
+/*
+ * @feature MQTT Meter Parsing
+ * @req REQ-MQTT-007
+ * @scenario Mains meter with extra trailing fields after L1:L2:L3 is accepted
+ * @given A valid MQTT prefix
+ * @when Payload is "100:200:300:extra"
+ * @then L1=100, L2=200, L3=300 (extra data ignored by sscanf)
+ */
+void test_mains_meter_extra_fields_ignored(void) {
+    int32_t L1, L2, L3;
+    TEST_ASSERT_TRUE(mqtt_parse_mains_meter("100:200:300:extra", &L1, &L2, &L3));
+    TEST_ASSERT_EQUAL_INT(100, L1);
+    TEST_ASSERT_EQUAL_INT(200, L2);
+    TEST_ASSERT_EQUAL_INT(300, L3);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-002
+ * @scenario Empty payload is rejected for Mode command
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/Mode with empty payload ""
+ * @then The parser returns false
+ */
+void test_empty_payload_mode_rejected(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/Mode", "", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -861,6 +935,13 @@ int main(void) {
     RUN_TEST(test_idle_timeout_too_low);
     RUN_TEST(test_idle_timeout_too_high);
     RUN_TEST(test_idle_timeout_zero);
+
+    // Boundary and edge cases (Issue #59)
+    RUN_TEST(test_max_sum_mains_boundary_10);
+    RUN_TEST(test_max_sum_mains_boundary_600);
+    RUN_TEST(test_current_override_negative);
+    RUN_TEST(test_mains_meter_extra_fields_ignored);
+    RUN_TEST(test_empty_payload_mode_rejected);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);
