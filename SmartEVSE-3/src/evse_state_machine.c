@@ -738,7 +738,6 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // Issue #22: adaptive gain — increase divisor when oscillation detected
         if (!mod && ctx->SettlingTimer == 0) {
             if (ctx->phasesLastUpdateFlag) {
-                int32_t absIdiff = Idifference < 0 ? -Idifference : Idifference;
                 int divisor = ctx->RampRateDivisor > 0 ? ctx->RampRateDivisor : 1;
 
                 // Issue #22: Oscillation detection — sign flip of Idifference
@@ -758,17 +757,24 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 // Issue #22: Adaptive gain — boost divisor by OscillationCount
                 divisor += ctx->OscillationCount;
 
-                if (ctx->Mode == MODE_SMART && absIdiff < ctx->SmartDeadBand) {
+                // Issue #23: EMA filter on Idifference (alpha=25%)
+                // Smooth measurement noise before applying gain.
+                // new = old*3/4 + raw/4
+                ctx->IdiffFiltered = (ctx->IdiffFiltered * 3 + Idifference) / 4;
+                int32_t filteredIdiff = ctx->IdiffFiltered;
+                int32_t absFiltered = filteredIdiff < 0 ? -filteredIdiff : filteredIdiff;
+
+                if (ctx->Mode == MODE_SMART && absFiltered < ctx->SmartDeadBand) {
                     // Within dead band: no adjustment
-                } else if (Idifference > 0) {
+                } else if (filteredIdiff > 0) {
                     if (ctx->Mode == MODE_SMART)
-                        ctx->IsetBalanced += (Idifference / divisor);
+                        ctx->IsetBalanced += (filteredIdiff / divisor);
                     // Solar increase is handled below in fine regulation
                 } else {
                     if (ctx->Mode == MODE_SMART)
-                        ctx->IsetBalanced += (Idifference / divisor);  // Symmetric ramp
+                        ctx->IsetBalanced += (filteredIdiff / divisor);  // Symmetric ramp
                     else
-                        ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety
+                        ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety (raw, not filtered)
                 }
 
                 ctx->IsetBalancedPrev = ctx->IsetBalanced;

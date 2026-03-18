@@ -796,9 +796,116 @@ void test_normal_mode_no_adaptive_gain(void) {
     TEST_ASSERT_EQUAL_INT(0, ctx.OscillationCount);
 }
 
+/* ========================================================================
+ * GROUP: EMA filter on Idifference (Issue #23)
+ * ======================================================================== */
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-043
+ * @scenario EMA filter smooths Idifference spikes
+ * @given Standalone EVSE in Smart mode converged at stable load
+ * @when A single large Idifference spike occurs (sudden mains change)
+ * @then The filtered Idifference used for regulation is less than the raw spike
+ */
+void test_ema_filter_smooths_spike(void) {
+    setup_smart_standalone(25, 50);
+    simulate_n_cycles(&ctx, 20, 50);  /* Converge with stable load */
+
+    /* Record converged state */
+    int32_t converged_iset = ctx.IsetBalanced;
+
+    /* Inject a large spike: baseload drops from 50 to 0 (sudden 5A freed) */
+    int32_t total_ev = ctx.Balanced[0];
+    ctx.EVMeterImeasured = (int16_t)total_ev;
+    ctx.MainsMeterImeasured = (int16_t)(0 + total_ev);  /* 0 baseload */
+    ctx.Isum = ctx.MainsMeterImeasured;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Without EMA, raw Idifference ~50 dA would cause step of 50/divisor.
+     * With EMA (25% alpha), first-cycle filtered value = 3/4 * old + 1/4 * 50 ≈ 12.
+     * IsetBalanced should increase by less than 50/divisor. */
+    int32_t step = ctx.IsetBalanced - converged_iset;
+    TEST_ASSERT_TRUE(step > 0);        /* Still moves in right direction */
+    TEST_ASSERT_TRUE(step < 50);       /* But dampened vs raw spike */
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-044
+ * @scenario EMA filter preserves convergence (no regression)
+ * @given Standalone EVSE in Smart mode with EMA filtering active
+ * @when 30 regulation cycles run
+ * @then IsetBalanced converges to target within 10 dA (may be slower but still converges)
+ */
+void test_ema_filter_still_converges(void) {
+    setup_smart_standalone(25, 50);
+
+    simulate_n_cycles(&ctx, 30, 50);
+
+    int32_t target = 200;  /* (250 - 50) = 200 */
+    int32_t diff = ctx.IsetBalanced - target;
+    if (diff < 0) diff = -diff;
+    TEST_ASSERT_LESS_OR_EQUAL(10, diff);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-045
+ * @scenario EMA filter reduces peak-to-peak swing under noisy measurements
+ * @given Standalone EVSE in Smart mode converged
+ * @when 40 cycles with +-30dA measurement noise are simulated
+ * @then Peak-to-peak IsetBalanced swing is at most 30dA (~50% of raw 60dA noise)
+ */
+void test_ema_filter_reduces_noise_swing(void) {
+    setup_smart_standalone(25, 50);
+    simulate_n_cycles(&ctx, 30, 50);  /* Converge */
+
+    int32_t min_iset = ctx.IsetBalanced, max_iset = ctx.IsetBalanced;
+    for (int i = 0; i < 40; i++) {
+        int32_t noise = (i % 2 == 0) ? 30 : -30;
+        int32_t total_ev = ctx.Balanced[0];
+        ctx.EVMeterImeasured = (int16_t)total_ev;
+        ctx.MainsMeterImeasured = (int16_t)(50 + noise + total_ev);
+        ctx.Isum = ctx.MainsMeterImeasured;
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+
+        if (ctx.IsetBalanced < min_iset) min_iset = ctx.IsetBalanced;
+        if (ctx.IsetBalanced > max_iset) max_iset = ctx.IsetBalanced;
+    }
+
+    /* EMA + adaptive gain: swing ~30dA vs raw ~60dA (50% reduction) */
+    TEST_ASSERT_LESS_OR_EQUAL(30, max_iset - min_iset);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-046
+ * @scenario EMA filter tracks sustained load change within 10 cycles
+ * @given Standalone EVSE in Smart mode converged at 5A baseload
+ * @when Baseload increases permanently by 100dA (10A)
+ * @then After 10 cycles, IsetBalanced has moved at least 50% toward new target
+ */
+void test_ema_filter_tracks_sustained_change(void) {
+    setup_smart_standalone(25, 50);
+    simulate_n_cycles(&ctx, 30, 50);  /* Converge: target ~200 */
+
+    int32_t before = ctx.IsetBalanced;
+
+    /* Permanent load increase: baseload 50 -> 150 */
+    simulate_n_cycles(&ctx, 10, 150);
+
+    /* New target: (250 - 150) = 100. Should have moved at least halfway. */
+    int32_t expected_move = before - 100;  /* Total move needed */
+    int32_t actual_move = before - ctx.IsetBalanced;
+    TEST_ASSERT_GREATER_OR_EQUAL(expected_move / 2, actual_move);
+}
+
 /* ---- Main ---- */
 int main(void) {
-    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#22)");
+    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#23)");
 
     /* Group A: Single EVSE multi-cycle convergence */
     RUN_TEST(test_smart_standalone_converges_to_target);
@@ -834,6 +941,12 @@ int main(void) {
     RUN_TEST(test_oscillation_count_decays_when_stable);
     RUN_TEST(test_adaptive_gain_dampens_noisy_load);
     RUN_TEST(test_normal_mode_no_adaptive_gain);
+
+    /* EMA filter on Idifference (Issue #23) */
+    RUN_TEST(test_ema_filter_smooths_spike);
+    RUN_TEST(test_ema_filter_still_converges);
+    RUN_TEST(test_ema_filter_reduces_noise_swing);
+    RUN_TEST(test_ema_filter_tracks_sustained_change);
 
     TEST_SUITE_RESULTS();
 }

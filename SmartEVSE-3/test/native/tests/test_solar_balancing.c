@@ -671,6 +671,7 @@ void test_symmetric_ramp_increase(void) {
     ctx.IsetBalanced_ema = 100;
     /* Idifference = MaxMains*10 - MainsMeterImeasured = 250 - 210 = 40 */
     ctx.MainsMeterImeasured = 210;
+    ctx.IdiffFiltered = 40; /* Pre-seed EMA to match expected Idifference */
     int32_t before = ctx.IsetBalanced;
     evse_calc_balanced_current(&ctx, 0);
     /* Should increase by 40/4 = 10 */
@@ -694,6 +695,7 @@ void test_symmetric_ramp_decrease(void) {
     ctx.Balanced[0] = 140;  /* Larger draw so guard rail > 90 after decrease */
     /* Idifference = 250 - 290 = -40 */
     ctx.MainsMeterImeasured = 290;
+    ctx.IdiffFiltered = -40; /* Pre-seed EMA to match expected Idifference */
     int32_t before = ctx.IsetBalanced;
     evse_calc_balanced_current(&ctx, 0);
     /* Should decrease by 40/4 = 10, not full 40 */

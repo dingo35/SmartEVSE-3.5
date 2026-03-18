@@ -390,6 +390,9 @@ typedef struct {
     int32_t  IdiffPrev;             /* Previous cycle's Idifference (for sign-flip detection) */
     uint8_t  OscillationCount;      /* Consecutive sign flips detected (0 = stable) */
 
+    // --- Idifference EMA filter (Plan 02, Issue #23) ---
+    int32_t  IdiffFiltered;         /* EMA-smoothed Idifference: new = old*3/4 + raw/4 */
+
     // --- Safety ---
     int8_t  TempEVSE;
     uint16_t maxTemp;
