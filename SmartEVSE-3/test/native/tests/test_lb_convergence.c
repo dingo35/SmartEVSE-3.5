@@ -625,9 +625,180 @@ void test_two_evse_stability_no_oscillation(void) {
     TEST_ASSERT_LESS_OR_EQUAL(5, max1 - min1);
 }
 
+/* ========================================================================
+ * GROUP: Adaptive gain / oscillation dampening (Issue #22)
+ * ======================================================================== */
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-038
+ * @scenario Oscillation detection increments OscillationCount on sign flip
+ * @given Standalone EVSE in Smart mode with alternating positive/negative Idifference
+ * @when Regulation cycles produce sign flips in Idifference
+ * @then OscillationCount increments, indicating detected oscillation
+ */
+void test_oscillation_detected_on_sign_flip(void) {
+    setup_smart_standalone(25, 50);
+    ctx.RampRateDivisor = 1;
+
+    /* Cycle 1: large headroom (Idifference positive) */
+    ctx.MainsMeterImeasured = 100;  /* Mains low -> headroom */
+    ctx.EVMeterImeasured = 60;
+    ctx.Isum = 100;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Cycle 2: sudden overload (Idifference negative) */
+    ctx.MainsMeterImeasured = 280;  /* Mains high -> shortage */
+    ctx.EVMeterImeasured = 200;
+    ctx.Isum = 280;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Cycle 3: headroom again (sign flip back) */
+    ctx.MainsMeterImeasured = 100;
+    ctx.EVMeterImeasured = 60;
+    ctx.Isum = 100;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* After sign flips, OscillationCount should have incremented */
+    TEST_ASSERT_GREATER_THAN(0, ctx.OscillationCount);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-039
+ * @scenario Adaptive gain increases effective divisor during oscillation
+ * @given Standalone EVSE in Smart mode with OscillationCount > 0
+ * @when Regulation cycle runs with positive Idifference
+ * @then IsetBalanced increases by less than Idifference/RampRateDivisor
+ *       (adaptive gain reduces the step size)
+ */
+void test_adaptive_gain_reduces_step_during_oscillation(void) {
+    setup_smart_standalone(25, 50);
+    ctx.RampRateDivisor = 2;
+    ctx.IsetBalanced = 100;
+    ctx.IsetBalancedPrev = 100;
+
+    /* Manually set oscillation state */
+    ctx.OscillationCount = 3;
+
+    /* Apply a regulation cycle with headroom */
+    ctx.MainsMeterImeasured = 100;  /* headroom = 250 - 100 = 150 */
+    ctx.EVMeterImeasured = 60;
+    ctx.Isum = 100;
+    ctx.phasesLastUpdateFlag = true;
+
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* With Idifference ~150 and base divisor=2, non-adaptive step = 75.
+     * Adaptive gain should use higher effective divisor, so step < 75. */
+    int32_t step = ctx.IsetBalanced - before;
+    TEST_ASSERT_TRUE(step > 0);       /* Still increases */
+    TEST_ASSERT_TRUE(step < 75);      /* But less than non-adaptive */
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-040
+ * @scenario OscillationCount decays when no sign flip occurs
+ * @given Standalone EVSE in Smart mode with OscillationCount = 5
+ * @when Multiple consecutive regulation cycles have same-sign Idifference
+ * @then OscillationCount decays back toward 0
+ */
+void test_oscillation_count_decays_when_stable(void) {
+    setup_smart_standalone(25, 50);
+
+    /* Start with elevated oscillation count */
+    ctx.OscillationCount = 5;
+    ctx.IdiffPrev = 50;  /* Previous Idifference was positive */
+
+    /* Run several stable cycles with consistent positive headroom */
+    for (int i = 0; i < 10; i++) {
+        int32_t total_ev = ctx.Balanced[0];
+        ctx.EVMeterImeasured = (int16_t)total_ev;
+        ctx.MainsMeterImeasured = (int16_t)(50 + total_ev);
+        ctx.Isum = ctx.MainsMeterImeasured;
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+    }
+
+    /* After 10 stable cycles, OscillationCount should have decayed */
+    TEST_ASSERT_TRUE(ctx.OscillationCount < 5);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-041
+ * @scenario Adaptive gain improves convergence under alternating load
+ * @given Standalone EVSE in Smart mode with alternating baseload (simulating noisy grid)
+ * @when 40 regulation cycles are simulated with alternating +-20dA baseload noise
+ * @then IsetBalanced peak-to-peak oscillation is less than 30dA (dampened)
+ */
+void test_adaptive_gain_dampens_noisy_load(void) {
+    setup_smart_standalone(25, 50);
+
+    /* Converge first with stable load */
+    simulate_n_cycles(&ctx, 20, 50);
+
+    /* Now introduce alternating load noise */
+    int32_t min_iset = ctx.IsetBalanced, max_iset = ctx.IsetBalanced;
+    for (int i = 0; i < 40; i++) {
+        int32_t noise = (i % 2 == 0) ? 20 : -20;
+        int32_t total_ev = ctx.Balanced[0];
+        ctx.EVMeterImeasured = (int16_t)total_ev;
+        ctx.MainsMeterImeasured = (int16_t)(50 + noise + total_ev);
+        ctx.Isum = ctx.MainsMeterImeasured;
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+
+        if (ctx.IsetBalanced < min_iset) min_iset = ctx.IsetBalanced;
+        if (ctx.IsetBalanced > max_iset) max_iset = ctx.IsetBalanced;
+    }
+
+    /* Adaptive gain should dampen the oscillation.
+     * Without it, +-20dA noise / divisor=1 would cause ~40dA swing. */
+    TEST_ASSERT_LESS_OR_EQUAL(30, max_iset - min_iset);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-042
+ * @scenario Normal mode is unaffected by adaptive gain
+ * @given Standalone EVSE in Normal mode
+ * @when Regulation cycles run
+ * @then OscillationCount remains 0 (adaptive gain only applies to Smart/Solar)
+ */
+void test_normal_mode_no_adaptive_gain(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_NORMAL;
+    ctx.LoadBl = 0;
+    ctx.MaxCurrent = 16;
+    ctx.MaxCapacity = 16;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 16;
+    ctx.ChargeCurrent = 160;
+    ctx.phasesLastUpdateFlag = true;
+    ctx.State = STATE_C;
+    ctx.BalancedState[0] = STATE_C;
+    ctx.BalancedMax[0] = 160;
+    ctx.Balanced[0] = 160;
+    ctx.NoCurrentThreshold = NOCURRENT_THRESHOLD_DEFAULT;
+
+    for (int i = 0; i < 10; i++) {
+        ctx.phasesLastUpdateFlag = true;
+        evse_calc_balanced_current(&ctx, 0);
+    }
+
+    TEST_ASSERT_EQUAL_INT(0, ctx.OscillationCount);
+}
+
 /* ---- Main ---- */
 int main(void) {
-    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issue #21)");
+    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#22)");
 
     /* Group A: Single EVSE multi-cycle convergence */
     RUN_TEST(test_smart_standalone_converges_to_target);
@@ -656,6 +827,13 @@ int main(void) {
     /* Stability / oscillation detection */
     RUN_TEST(test_smart_stability_no_oscillation);
     RUN_TEST(test_two_evse_stability_no_oscillation);
+
+    /* Adaptive gain / oscillation dampening (Issue #22) */
+    RUN_TEST(test_oscillation_detected_on_sign_flip);
+    RUN_TEST(test_adaptive_gain_reduces_step_during_oscillation);
+    RUN_TEST(test_oscillation_count_decays_when_stable);
+    RUN_TEST(test_adaptive_gain_dampens_noisy_load);
+    RUN_TEST(test_normal_mode_no_adaptive_gain);
 
     TEST_SUITE_RESULTS();
 }

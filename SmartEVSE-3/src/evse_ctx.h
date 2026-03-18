@@ -385,6 +385,11 @@ typedef struct {
     uint8_t  RampRateDivisor;       /* Symmetric ramp divisor for smart/solar (>=1) */
     uint8_t  SolarFineDeadBand;     /* Dead band for solar fine regulation (deciamps) */
 
+    // --- Adaptive gain / oscillation dampening (Plan 02, Issue #22) ---
+    int32_t  IsetBalancedPrev;      /* Previous cycle's IsetBalanced (for change tracking) */
+    int32_t  IdiffPrev;             /* Previous cycle's Idifference (for sign-flip detection) */
+    uint8_t  OscillationCount;      /* Consecutive sign flips detected (0 = stable) */
+
     // --- Safety ---
     int8_t  TempEVSE;
     uint16_t maxTemp;

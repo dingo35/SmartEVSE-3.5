@@ -735,10 +735,29 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // Ongoing regulation (lines 1252-1265)
         // Issue #15: smart dead band + symmetric ramp rates
         // Issue #18: suppress regulation during settling window
+        // Issue #22: adaptive gain — increase divisor when oscillation detected
         if (!mod && ctx->SettlingTimer == 0) {
             if (ctx->phasesLastUpdateFlag) {
                 int32_t absIdiff = Idifference < 0 ? -Idifference : Idifference;
                 int divisor = ctx->RampRateDivisor > 0 ? ctx->RampRateDivisor : 1;
+
+                // Issue #22: Oscillation detection — sign flip of Idifference
+                if (ctx->IdiffPrev != 0 && Idifference != 0) {
+                    bool sign_flip = (ctx->IdiffPrev > 0 && Idifference < 0) ||
+                                     (ctx->IdiffPrev < 0 && Idifference > 0);
+                    if (sign_flip) {
+                        if (ctx->OscillationCount < 10)
+                            ctx->OscillationCount++;
+                    } else {
+                        if (ctx->OscillationCount > 0)
+                            ctx->OscillationCount--;
+                    }
+                }
+                ctx->IdiffPrev = Idifference;
+
+                // Issue #22: Adaptive gain — boost divisor by OscillationCount
+                divisor += ctx->OscillationCount;
+
                 if (ctx->Mode == MODE_SMART && absIdiff < ctx->SmartDeadBand) {
                     // Within dead band: no adjustment
                 } else if (Idifference > 0) {
@@ -751,6 +770,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                     else
                         ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety
                 }
+
+                ctx->IsetBalancedPrev = ctx->IsetBalanced;
             }
             if (ctx->IsetBalanced < 0) ctx->IsetBalanced = 0;
             if (ctx->IsetBalanced > 800) ctx->IsetBalanced = 800;  // Hard limit 80A (line 1264)
