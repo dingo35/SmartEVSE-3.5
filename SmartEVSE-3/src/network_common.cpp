@@ -2,6 +2,7 @@
 
 #include <WiFi.h>
 #include <vector>
+#include <ctype.h>
 #include "mbedtls/md_internal.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
@@ -239,8 +240,15 @@ void MQTTclient_t::announce(const String& entity_name, const String& domain, con
     String topic = "homeassistant/" + domain + "/" + MQTTprefix + "-" + entity_suffix + "/config";
 
     // Build default_entity_id: must be lowercase, only [a-z0-9_] allowed. See: https://www.home-assistant.io/docs/configuration/customizing-devices/
-    String default_entity_id = domain + "." + MQTTprefix + "_" + entity_suffix;
-    default_entity_id.toLowerCase();
+    // Convert CamelCase to snake_case for readable entity IDs (e.g. ChargeCurrent -> charge_current)
+    String snake_suffix;
+    for (unsigned int i = 0; i < entity_suffix.length(); i++) {
+        char c = entity_suffix[i];
+        if (isupper(c) && i > 0)
+            snake_suffix += '_';
+        snake_suffix += (char)tolower(c);
+    }
+    String default_entity_id = domain + "." + MQTTprefix + "_" + snake_suffix;
     default_entity_id.replace("-", "_");
 
     const String config_url = "http://" + WiFi.localIP().toString();

@@ -745,6 +745,162 @@ void test_idle_timeout_zero(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/IdleTimeout", "0", &cmd));
 }
 
+// ---- Boundary and edge case tests (Issue #59) ----
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-005
+ * @scenario Max sum mains at lower boundary (10) is accepted
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentMaxSumMains with payload "10"
+ * @then Command is accepted with max_sum_mains = 10
+ */
+void test_max_sum_mains_boundary_10(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentMaxSumMains", "10", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_SUM_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(10, cmd.max_sum_mains);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-005
+ * @scenario Max sum mains at upper boundary (600) is accepted
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentMaxSumMains with payload "600"
+ * @then Command is accepted with max_sum_mains = 600
+ */
+void test_max_sum_mains_boundary_600(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentMaxSumMains", "600", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_SUM_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(600, cmd.max_sum_mains);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-004
+ * @scenario Negative current override is accepted (atoi converts, no range check)
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CurrentOverride with payload "-10"
+ * @then Command is accepted (parser does not reject; dispatch layer validates)
+ */
+void test_current_override_negative(void) {
+    /* The parser uses atoi() then casts to uint16_t — no explicit rejection.
+     * The dispatch layer in esp32.cpp checks against MinCurrent/MaxCurrent.
+     * This test documents the current behavior. */
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CurrentOverride", "-10", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CURRENT_OVERRIDE, cmd.cmd);
+}
+
+/*
+ * @feature MQTT Meter Parsing
+ * @req REQ-MQTT-007
+ * @scenario Mains meter with extra trailing fields after L1:L2:L3 is accepted
+ * @given A valid MQTT prefix
+ * @when Payload is "100:200:300:extra"
+ * @then L1=100, L2=200, L3=300 (extra data ignored by sscanf)
+ */
+void test_mains_meter_extra_fields_ignored(void) {
+    int32_t L1, L2, L3;
+    TEST_ASSERT_TRUE(mqtt_parse_mains_meter("100:200:300:extra", &L1, &L2, &L3));
+    TEST_ASSERT_EQUAL_INT(100, L1);
+    TEST_ASSERT_EQUAL_INT(200, L2);
+    TEST_ASSERT_EQUAL_INT(300, L3);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-002
+ * @scenario Empty payload is rejected for Mode command
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/Mode with empty payload ""
+ * @then The parser returns false
+ */
+void test_empty_payload_mode_rejected(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/Mode", "", &cmd));
+}
+
+// ---- MQTT Heartbeat ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat set to valid value via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "60"
+ * @then Command type is MQTT_CMD_MQTT_HEARTBEAT with mqtt_heartbeat = 60
+ */
+void test_mqtt_heartbeat_valid(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "60", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_HEARTBEAT, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(60, cmd.mqtt_heartbeat);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat below minimum (9) is rejected
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "9"
+ * @then The parser returns false
+ */
+void test_mqtt_heartbeat_too_low(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "9", &cmd));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-023
+ * @scenario MQTTHeartbeat above maximum (301) is rejected
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTHeartbeat with payload "301"
+ * @then The parser returns false
+ */
+void test_mqtt_heartbeat_too_high(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTHeartbeat", "301", &cmd));
+}
+
+// ---- MQTT ChangeOnly ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly enabled via MQTT with payload "1"
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "1"
+ * @then Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = true
+ */
+void test_mqtt_change_only_enable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "1", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_CHANGE_ONLY, cmd.cmd);
+    TEST_ASSERT_TRUE(cmd.mqtt_change_only);
+}
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly disabled via MQTT with payload "0"
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "0"
+ * @then Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = false
+ */
+void test_mqtt_change_only_disable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "0", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MQTT_CHANGE_ONLY, cmd.cmd);
+    TEST_ASSERT_FALSE(cmd.mqtt_change_only);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-024
+ * @scenario MQTTChangeOnly rejects invalid payload
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MQTTChangeOnly with payload "2"
+ * @then The parser returns false
+ */
+void test_mqtt_change_only_invalid(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "2", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -861,6 +1017,23 @@ int main(void) {
     RUN_TEST(test_idle_timeout_too_low);
     RUN_TEST(test_idle_timeout_too_high);
     RUN_TEST(test_idle_timeout_zero);
+
+    // Boundary and edge cases (Issue #59)
+    RUN_TEST(test_max_sum_mains_boundary_10);
+    RUN_TEST(test_max_sum_mains_boundary_600);
+    RUN_TEST(test_current_override_negative);
+    RUN_TEST(test_mains_meter_extra_fields_ignored);
+    RUN_TEST(test_empty_payload_mode_rejected);
+
+    // MQTTHeartbeat
+    RUN_TEST(test_mqtt_heartbeat_valid);
+    RUN_TEST(test_mqtt_heartbeat_too_low);
+    RUN_TEST(test_mqtt_heartbeat_too_high);
+
+    // MQTTChangeOnly
+    RUN_TEST(test_mqtt_change_only_enable);
+    RUN_TEST(test_mqtt_change_only_disable);
+    RUN_TEST(test_mqtt_change_only_invalid);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

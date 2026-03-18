@@ -52,6 +52,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "meter.h"
 #include "evse_bridge.h"
 #include "mqtt_parser.h"
+#include "mqtt_publish.h"
 #include "http_api.h"
 
 //OCPP includes
@@ -164,12 +165,23 @@ struct SettingsCache {
     uint8_t AutoUpdate, LCDlock, CableLock;
     uint16_t LCDPin;
     bool MQTTSmartServer;
+#if MQTT
+    bool MQTTChangeOnly;
+    uint16_t MQTTHeartbeat;
+#endif
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
     bool valid;  // True once cache is populated from read_settings()
 };
 static SettingsCache settingsCache = {};
+
+// MQTT change-only publishing cache and settings
+#if MQTT
+static mqtt_cache_t mqtt_cache;
+bool MQTTChangeOnly = true;               // Master toggle: true = change-only, false = publish all
+uint16_t MQTTHeartbeat = 60;              // Heartbeat interval (seconds) for unchanged values
+#endif
 
 // Macros to only write if value changed
 #define PREFS_PUT_UCHAR_IF_CHANGED(key, value, cacheVar) \
@@ -771,6 +783,17 @@ void mqtt_receive_callback(const String topic, const String payload) {
             }
             break;
 
+        case MQTT_CMD_MQTT_HEARTBEAT:
+            MQTTHeartbeat = cmd.mqtt_heartbeat;
+            mqtt_cache.heartbeat_s = MQTTHeartbeat;
+            request_write_settings();
+            break;
+
+        case MQTT_CMD_MQTT_CHANGE_ONLY:
+            MQTTChangeOnly = cmd.mqtt_change_only;
+            request_write_settings();
+            break;
+
         default:
             return;
     }
@@ -846,6 +869,9 @@ void printRFID(char *buf, size_t bufsize) {
 
 
 void SetupMQTTClient() {
+    // Initialize MQTT change-only publish cache
+    mqtt_cache_init(&mqtt_cache, MQTTHeartbeat);
+
     // Set up subscriptions
     MQTTclient.subscribe(MQTTprefix + "/Set/#",1);
     MQTTclient.publish(MQTTprefix+"/connected", "online", true, 0);
@@ -901,7 +927,7 @@ void SetupMQTTClient() {
         //set the parameters for and MQTTclient.announce other sensor entities:
         optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W") + MQTTclient.jsna("state_class","measurement");
         MQTTclient.announce("EV Charge Power", "sensor", optional_payload);
-        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
+        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total");
         MQTTclient.announce("EV Energy Charged", "sensor", optional_payload);
         optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
         MQTTclient.announce("EV Total Energy Charged", "sensor", optional_payload);
@@ -936,7 +962,7 @@ void SetupMQTTClient() {
     optional_payload += String(R"(, "options" : ["On", "Off"])");
     MQTTclient.announce("Custom Button", "select", optional_payload);
 
-    optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
+    optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","measurement");
     MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
     //set the parameters for and MQTTclient.announce diagnostic sensor entities:
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
@@ -947,8 +973,12 @@ void SetupMQTTClient() {
     MQTTclient.announce("WiFi RSSI", "sensor", optional_payload);
     optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","temperature") + MQTTclient.jsna("unit_of_measurement","°C") + MQTTclient.jsna("state_class","measurement");
     MQTTclient.announce("ESP Temp", "sensor", optional_payload);
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
     MQTTclient.announce("ESP Uptime", "sensor", optional_payload);
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic");
+    MQTTclient.announce("LoadBl", "sensor", optional_payload);
+    MQTTclient.announce("PairingPin", "sensor", optional_payload);
+    MQTTclient.announce("Firmware Version", "sensor", optional_payload);
 
 #if MODEM
         optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
@@ -973,6 +1003,9 @@ void SetupMQTTClient() {
     optional_payload += MQTTclient.jsna("value_template", R"({{ value | int / 10 if value | is_number else none }})") + MQTTclient.jsna("command_template", R"({{ value | int * 10 }})");
     MQTTclient.announce("Charge Current Override", "number", optional_payload);
 
+    optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CurrentMaxSumMains")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "600") + MQTTclient.jsna("mode","box");
+    MQTTclient.announce("Current Max Sum Mains", "number", optional_payload);
+
     //set the parameters for and MQTTclient.announce Cable Lock:
     optional_payload = MQTTclient.jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
     optional_payload += String(R"(, "options" : ["0", "1"])");
@@ -996,96 +1029,160 @@ void SetupMQTTClient() {
 
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
     MQTTclient.announce("Schedule State", "sensor", optional_payload);
+
+    // MQTT publish settings: change-only toggle and heartbeat interval
+    optional_payload = MQTTclient.jsna("entity_category","config")
+        + MQTTclient.jsna("state_topic", String(MQTTprefix + "/MQTTChangeOnly"))
+        + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/MQTTChangeOnly"))
+        + MQTTclient.jsna("payload_on", "1")
+        + MQTTclient.jsna("payload_off", "0");
+    MQTTclient.announce("MQTT Change Only", "switch", optional_payload);
+
+    optional_payload = MQTTclient.jsna("entity_category","config")
+        + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/MQTTHeartbeat"))
+        + MQTTclient.jsna("min", "10")
+        + MQTTclient.jsna("max", "300")
+        + MQTTclient.jsna("mode","box")
+        + MQTTclient.jsna("unit_of_measurement", "s");
+    MQTTclient.announce("MQTT Heartbeat", "number", optional_payload);
+}
+
+// Wrapper: publish an integer value only if changed (or change-only is disabled)
+static void mqtt_pub_int(mqtt_slot_t slot, const char *suffix, int32_t value,
+                         bool retained, uint32_t now_s) {
+    if (!MQTTChangeOnly || mqtt_should_publish_int(&mqtt_cache, slot, value, now_s))
+        MQTTclient.publish(MQTTprefix + suffix, value, retained, 0);
+}
+
+// Wrapper: publish a string value only if changed (or change-only is disabled)
+static void mqtt_pub_str(mqtt_slot_t slot, const char *suffix, const char *value,
+                         bool retained, uint32_t now_s) {
+    if (!MQTTChangeOnly || mqtt_should_publish_str(&mqtt_cache, slot, value, now_s))
+        MQTTclient.publish(MQTTprefix + suffix, value, retained, 0);
 }
 
 void mqttPublishData() {
+    // Detect forced publish (lastMqttUpdate set to 10 by external triggers)
+    bool forced = (lastMqttUpdate >= 10);
     lastMqttUpdate = 0;
+    if (forced)
+        mqtt_cache_force_all(&mqtt_cache);
+    uint32_t now_s = (uint32_t)(esp_timer_get_time() / 1000000);
 
         if (MainsMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
+            mqtt_pub_int(MQTT_SLOT_MAINS_L1, "/MainsCurrentL1", MainsMeter.Irms[0], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_MAINS_L2, "/MainsCurrentL2", MainsMeter.Irms[1], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_MAINS_L3, "/MainsCurrentL3", MainsMeter.Irms[2], false, now_s);
+            // Zero-value guard: suppress energy publishing when meter has not yet reported valid data
+            // Publishing 0 for total_increasing sensors corrupts HA long-term statistics
+            if (MainsMeter.Import_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_MAINS_IMPORT_ENERGY, "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, now_s);
+            if (MainsMeter.Export_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_MAINS_EXPORT_ENERGY, "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, now_s);
         }
         if (EVMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
+            mqtt_pub_int(MQTT_SLOT_EV_L1, "/EVCurrentL1", EVMeter.Irms[0], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_L2, "/EVCurrentL2", EVMeter.Irms[1], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_L3, "/EVCurrentL3", EVMeter.Irms[2], false, now_s);
+            // Zero-value guard for EV meter energy values
+            if (EVMeter.Import_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_EV_IMPORT_ENERGY, "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, now_s);
+            if (EVMeter.Export_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_EV_EXPORT_ENERGY, "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, now_s);
         }
-        MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
-        MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
-        MQTTclient.publish(MQTTprefix + "/MaxCurrent", MaxCurrent * 10, true, 0);
-        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
-        MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
-        MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
-        MQTTclient.publish(MQTTprefix + "/NrOfPhases", Nr_Of_Phases_Charging, true, 0);
-        MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
-        MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
-        MQTTclient.publish(MQTTprefix + "/EnableC2", StrEnableC2[EnableC2], true, 0);
+        mqtt_pub_int(MQTT_SLOT_ESP_TEMP, "/ESPTemp", TempEVSE, false, now_s);
+        mqtt_pub_str(MQTT_SLOT_MODE, "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, now_s);
+        mqtt_pub_int(MQTT_SLOT_MAX_CURRENT, "/MaxCurrent", MaxCurrent * 10, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_CUSTOM_BUTTON, "/CustomButton", CustomButton ? "On" : "Off", false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CHARGE_CURRENT, "/ChargeCurrent", Balanced[0], true, now_s);
+        mqtt_pub_int(MQTT_SLOT_CHARGE_CURRENT_OVERRIDE, "/ChargeCurrentOverride", OverrideCurrent, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_NR_OF_PHASES, "/NrOfPhases", Nr_Of_Phases_Charging, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_ACCESS, "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, now_s);
+        mqtt_pub_str(MQTT_SLOT_RFID, "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, now_s);
+        mqtt_pub_str(MQTT_SLOT_ENABLE_C2, "/EnableC2", StrEnableC2[EnableC2], true, now_s);
         if (RFIDReader) {
             char buf[15];
             printRFID(buf, sizeof(buf));
-            MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
+            mqtt_pub_str(MQTT_SLOT_RFID_LAST_READ, "/RFIDLastRead", buf, true, now_s);
         }
-        MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
-        MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(ErrorFlags), true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiSSID", String(WiFi.SSID()), true, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiBSSID", String(WiFi.BSSIDstr()), true, 0);
+        mqtt_pub_str(MQTT_SLOT_STATE, "/State", getStateNameWeb(State), true, now_s);
+        mqtt_pub_str(MQTT_SLOT_ERROR, "/Error", getErrorNameWeb(ErrorFlags), true, now_s);
+        mqtt_pub_str(MQTT_SLOT_EV_PLUG_STATE, "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, now_s);
+        mqtt_pub_str(MQTT_SLOT_WIFI_SSID, "/WiFiSSID", WiFi.SSID().c_str(), true, now_s);
+        mqtt_pub_str(MQTT_SLOT_WIFI_BSSID, "/WiFiBSSID", WiFi.BSSIDstr().c_str(), true, now_s);
 #if MODEM
-        MQTTclient.publish(MQTTprefix + "/CPPWM", CurrentPWM, false, 0);
-        MQTTclient.publish(MQTTprefix + "/CPPWMOverride", CPDutyOverride ? String(CurrentPWM) : "-1", true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVInitialSoC", InitialSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVFullSoC", FullSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVComputedSoC", ComputedSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVRemainingSoC", RemainingSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVTimeUntilFull", TimeUntilFull, false, 0);
-        MQTTclient.publish(MQTTprefix + "/EVEnergyCapacity", EnergyCapacity, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVEnergyRequest", EnergyRequest, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVCCID", EVCCID, true, 0);
-        MQTTclient.publish(MQTTprefix + "/RequiredEVCCID", RequiredEVCCID, true, 0);
+        mqtt_pub_int(MQTT_SLOT_CPPWM, "/CPPWM", CurrentPWM, false, now_s);
+        { // CPPWMOverride is string-typed: either the PWM value or "-1"
+            char cppwm_buf[8];
+            if (CPDutyOverride)
+                snprintf(cppwm_buf, sizeof(cppwm_buf), "%d", (int)CurrentPWM);
+            else
+                snprintf(cppwm_buf, sizeof(cppwm_buf), "-1");
+            mqtt_pub_str(MQTT_SLOT_CPPWM_OVERRIDE, "/CPPWMOverride", cppwm_buf, true, now_s);
+        }
+        mqtt_pub_int(MQTT_SLOT_EV_INITIAL_SOC, "/EVInitialSoC", InitialSoC, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_FULL_SOC, "/EVFullSoC", FullSoC, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_COMPUTED_SOC, "/EVComputedSoC", ComputedSoC, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_REMAINING_SOC, "/EVRemainingSoC", RemainingSoC, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_TIME_UNTIL_FULL, "/EVTimeUntilFull", TimeUntilFull, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_ENERGY_CAPACITY, "/EVEnergyCapacity", EnergyCapacity, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_EV_ENERGY_REQUEST, "/EVEnergyRequest", EnergyRequest, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_EVCCID, "/EVCCID", EVCCID, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_REQUIRED_EVCCID, "/RequiredEVCCID", RequiredEVCCID, true, now_s);
 #endif
         if (EVMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/EVChargePower", EVMeter.PowerMeasured, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVEnergyCharged", EVMeter.EnergyCharged, true, 0);
-            MQTTclient.publish(MQTTprefix + "/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
+            mqtt_pub_int(MQTT_SLOT_EV_CHARGE_POWER, "/EVChargePower", EVMeter.PowerMeasured, false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_ENERGY_CHARGED, "/EVEnergyCharged", EVMeter.EnergyCharged, true, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_TOTAL_ENERGY_CHARGED, "/EVTotalEnergyCharged", EVMeter.Energy, false, now_s);
         }
         if (homeBatteryLastUpdate)
-            MQTTclient.publish(MQTTprefix + "/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
+            mqtt_pub_int(MQTT_SLOT_HOME_BATTERY_CURRENT, "/HomeBatteryCurrent", homeBatteryCurrent, false, now_s);
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-        MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
-        MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
+        mqtt_pub_str(MQTT_SLOT_OCPP, "/OCPP", OcppMode ? "Enabled" : "Disabled", true, now_s);
+        mqtt_pub_str(MQTT_SLOT_OCPP_CONNECTION, "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, now_s);
 #endif //ENABLE_OCPP
-        MQTTclient.publish(MQTTprefix + "/LEDColorOff", String(ColorOff[0])+","+String(ColorOff[1])+","+String(ColorOff[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorNormal", String(ColorNormal[0])+","+String(ColorNormal[1])+","+String(ColorNormal[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorSmart", String(ColorSmart[0])+","+String(ColorSmart[1])+","+String(ColorSmart[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorSolar", String(ColorSolar[0])+","+String(ColorSolar[1])+","+String(ColorSolar[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorCustom", String(ColorCustom[0])+","+String(ColorCustom[1])+","+String(ColorCustom[2]), true, 0);
-        if (Lock != 0) {
-            MQTTclient.publish(MQTTprefix + "/CableLock", CableLock, true, 0);
+        { // LED color topics — build string in buffer
+            char color_buf[16];
+            snprintf(color_buf, sizeof(color_buf), "%u,%u,%u", ColorOff[0], ColorOff[1], ColorOff[2]);
+            mqtt_pub_str(MQTT_SLOT_LED_COLOR_OFF, "/LEDColorOff", color_buf, true, now_s);
+            snprintf(color_buf, sizeof(color_buf), "%u,%u,%u", ColorNormal[0], ColorNormal[1], ColorNormal[2]);
+            mqtt_pub_str(MQTT_SLOT_LED_COLOR_NORMAL, "/LEDColorNormal", color_buf, true, now_s);
+            snprintf(color_buf, sizeof(color_buf), "%u,%u,%u", ColorSmart[0], ColorSmart[1], ColorSmart[2]);
+            mqtt_pub_str(MQTT_SLOT_LED_COLOR_SMART, "/LEDColorSmart", color_buf, true, now_s);
+            snprintf(color_buf, sizeof(color_buf), "%u,%u,%u", ColorSolar[0], ColorSolar[1], ColorSolar[2]);
+            mqtt_pub_str(MQTT_SLOT_LED_COLOR_SOLAR, "/LEDColorSolar", color_buf, true, now_s);
+            snprintf(color_buf, sizeof(color_buf), "%u,%u,%u", ColorCustom[0], ColorCustom[1], ColorCustom[2]);
+            mqtt_pub_str(MQTT_SLOT_LED_COLOR_CUSTOM, "/LEDColorCustom", color_buf, true, now_s);
         }
-        MQTTclient.publish(MQTTprefix + "/ESPUptime", esp_timer_get_time() / 1000000, false, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiRSSI", String(WiFi.RSSI()), false, 0);
-        MQTTclient.publish(MQTTprefix + "/LoadBl", LoadBl, true, 0);
-        MQTTclient.publish(MQTTprefix + "/PairingPin", PairingPin, true, 0);
-        MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+        if (Lock != 0) {
+            mqtt_pub_int(MQTT_SLOT_CABLE_LOCK, "/CableLock", CableLock, true, now_s);
+        }
+        mqtt_pub_int(MQTT_SLOT_ESP_UPTIME, "/ESPUptime", (int32_t)(esp_timer_get_time() / 1000000), false, now_s);
+        { // WiFiRSSI is an integer but was published as String — use int wrapper
+            mqtt_pub_int(MQTT_SLOT_WIFI_RSSI, "/WiFiRSSI", WiFi.RSSI(), false, now_s);
+        }
+        mqtt_pub_int(MQTT_SLOT_LOAD_BL, "/LoadBl", LoadBl, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_PAIRING_PIN, "/PairingPin", PairingPin.c_str(), true, now_s);
+        mqtt_pub_str(MQTT_SLOT_FIRMWARE_VERSION, "/FirmwareVersion", VERSION, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_SOLAR_STOP_TIMER, "/SolarStopTimer", SolarStopTimer, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CURRENT_MAX_SUM_MAINS, "/CurrentMaxSumMains", MaxSumMains, true, now_s);
         if (LoadBl == 1) {
             static const char *StrPrioStrategy[] = {"ModbusAddr", "FirstConn", "LastConn"};
-            MQTTclient.publish(MQTTprefix + "/PrioStrategy", PrioStrategy <= 2 ? StrPrioStrategy[PrioStrategy] : "N/A", true, 0);
-            MQTTclient.publish(MQTTprefix + "/RotationInterval", RotationInterval, true, 0);
-            MQTTclient.publish(MQTTprefix + "/IdleTimeout", IdleTimeout, true, 0);
-            MQTTclient.publish(MQTTprefix + "/RotationTimer", RotationTimer, false, 0);
+            mqtt_pub_str(MQTT_SLOT_PRIO_STRATEGY, "/PrioStrategy", PrioStrategy <= 2 ? StrPrioStrategy[PrioStrategy] : "N/A", true, now_s);
+            mqtt_pub_int(MQTT_SLOT_ROTATION_INTERVAL, "/RotationInterval", RotationInterval, true, now_s);
+            mqtt_pub_int(MQTT_SLOT_IDLE_TIMEOUT, "/IdleTimeout", IdleTimeout, true, now_s);
+            mqtt_pub_int(MQTT_SLOT_ROTATION_TIMER, "/RotationTimer", RotationTimer, false, now_s);
             static const char *StrSchedState[] = {"Inactive", "Active", "Paused"};
             String schedStr;
             for (int i = 0; i < NR_EVSES; i++) {
                 if (i > 0) schedStr += ",";
                 schedStr += (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
             }
-            MQTTclient.publish(MQTTprefix + "/ScheduleState", schedStr, false, 0);
+            mqtt_pub_str(MQTT_SLOT_SCHEDULE_STATE, "/ScheduleState", schedStr.c_str(), false, now_s);
         }
+        // MQTT config settings — publish for HA switch/number entity state
+        MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);
+        MQTTclient.publish(MQTTprefix + "/MQTTHeartbeat", (int)MQTTHeartbeat, true, 0);
 }
 
 // SmartEVSE server MQTT client setup - subscribe to Set topics
@@ -1247,6 +1344,10 @@ void read_settings() {
         LCDPin = preferences.getUShort("LCDPin", 0);
         AutoUpdate = preferences.getUChar("AutoUpdate", AUTOUPDATE);
         MQTTSmartServer = preferences.getBool("MQTTSmartServer", APPSERVER);
+#if MQTT
+        MQTTChangeOnly = preferences.getBool("MQTTChgOnly", true);
+        MQTTHeartbeat = preferences.getUShort("MQTTHrtbt", 60);
+#endif
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
 #if MODEM
@@ -1316,6 +1417,10 @@ void read_settings() {
         settingsCache.CableLock = CableLock;
         settingsCache.LCDPin = LCDPin;
         settingsCache.MQTTSmartServer = MQTTSmartServer;
+#if MQTT
+        settingsCache.MQTTChangeOnly = MQTTChangeOnly;
+        settingsCache.MQTTHeartbeat = MQTTHeartbeat;
+#endif
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
@@ -1393,6 +1498,10 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
     PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin, LCDPin);
     PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer, MQTTSmartServer);
+#if MQTT
+    PREFS_PUT_BOOL_IF_CHANGED("MQTTChgOnly", MQTTChangeOnly, MQTTChangeOnly);
+    PREFS_PUT_USHORT_IF_CHANGED("MQTTHrtbt", MQTTHeartbeat, MQTTHeartbeat);
+#endif
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
@@ -1688,6 +1797,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["mqtt"]["status"] = "Disconnected";
         }
         doc["mqtt"]["smartevse_server"] = MQTTSmartServer;
+        doc["mqtt"]["change_only"] = MQTTChangeOnly;
+        doc["mqtt"]["heartbeat"] = MQTTHeartbeat;
 #endif
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1764,8 +1875,28 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         return true;
-      } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {                     // if POST
+      } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {
+#if MQTT
+        // Process MQTT publish settings before mqtt_update early return,
+        // because configureMqtt() bundles these with mqtt_update=1
+        if(request->hasParam("mqtt_heartbeat")) {
+            int val = request->getParam("mqtt_heartbeat")->value().toInt();
+            if(!http_api_validate_mqtt_heartbeat(val)) {
+                MQTTHeartbeat = val;
+                mqtt_cache.heartbeat_s = MQTTHeartbeat;
+            }
+        }
+        if(request->hasParam("mqtt_change_only")) {
+            int val = request->getParam("mqtt_change_only")->value().toInt();
+            if(!http_api_validate_mqtt_change_only(val)) {
+                MQTTChangeOnly = (val == 1);
+            }
+        }
+#endif
         if(request->hasParam("mqtt_update")) {
+#if MQTT
+            request_write_settings();  // persist mqtt_heartbeat/mqtt_change_only if changed above
+#endif
             return false;                                                       // handled in network.cpp
         }
         DynamicJsonDocument doc(512); // https://arduinojson.org/v6/assistant/

@@ -321,6 +321,10 @@
                 $('#mqtt_password').val(data.mqtt.password);
                 $('#mqtt_topic_prefix').val(data.mqtt.topic_prefix);
                 $('#mqtt_tls').prop('checked', data.mqtt.tls).checkboxradio("refresh");  // Set and refresh widget
+                if (data.mqtt.change_only !== undefined)
+                    $('#mqtt_change_only').prop('checked', data.mqtt.change_only);
+                if (data.mqtt.heartbeat !== undefined)
+                    $('#mqtt_heartbeat').val(data.mqtt.heartbeat);
                 $('#mqtt_ca_cert').val(data.mqtt.ca_cert || '');
                 toggleCertVisibility();
             }
@@ -1377,7 +1381,9 @@
                             mqtt_password:     $('#mqtt_password').val(),
                             mqtt_topic_prefix: $('#mqtt_topic_prefix').val(),
                             mqtt_tls:          $('#mqtt_tls').is(':checked') ? 1 : 0,
-                            mqtt_ca_cert:      $('#mqtt_ca_cert').val()
+                            mqtt_ca_cert:      $('#mqtt_ca_cert').val(),
+                            mqtt_change_only:  $('#mqtt_change_only').is(':checked') ? 1 : 0,
+                            mqtt_heartbeat:    $('#mqtt_heartbeat').val()
                         };
                         // Build query string with proper encoding
                         var query = Object.keys(params)
@@ -1664,6 +1670,8 @@
                                                 <label>Password: <input id="mqtt_password" title="Leave empty for anonymous MQTT"></label>
                                                 <label>Topic Prefix: <input id="mqtt_topic_prefix"></label>
                                                 <label>Enable TLS: <input type="checkbox" id="mqtt_tls" value="1"></label>
+                                                <label>Change-Only Publishing: <input type="checkbox" id="mqtt_change_only" value="1" title="When enabled, only publish MQTT values that have changed"></label>
+                                                <label>Heartbeat Interval (s): <input id="mqtt_heartbeat" type="number" min="10" max="300" title="How often to re-publish unchanged values (10-300 seconds)"></label>
                                                 <div id="mqtt_ca_cert_wrapper" style="display:none;">
                                                     <label>CA Certificate (PEM): <textarea id="mqtt_ca_cert" rows="10" style="width:100%; font-family:monospace;" title="Paste the PEM-formatted CA certificate here for TLS. if left empty, LetsEncrypt will be used as default"></textarea></label>
                                                 </div>

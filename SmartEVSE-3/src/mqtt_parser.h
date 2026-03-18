@@ -26,6 +26,8 @@ typedef enum {
     MQTT_CMD_PRIO_STRATEGY,
     MQTT_CMD_ROTATION_INTERVAL,
     MQTT_CMD_IDLE_TIMEOUT,
+    MQTT_CMD_MQTT_HEARTBEAT,
+    MQTT_CMD_MQTT_CHANGE_ONLY,
 } mqtt_cmd_type_t;
 
 // Mode values matching firmware MODE_NORMAL/MODE_SOLAR/MODE_SMART
@@ -60,6 +62,8 @@ typedef struct {
         uint8_t prio_strategy;                  // MQTT_CMD_PRIO_STRATEGY (0-2)
         uint16_t rotation_interval;             // MQTT_CMD_ROTATION_INTERVAL (0, 30-1440)
         uint16_t idle_timeout;                  // MQTT_CMD_IDLE_TIMEOUT (30-300)
+        uint16_t mqtt_heartbeat;                // MQTT_CMD_MQTT_HEARTBEAT (10-300)
+        bool mqtt_change_only;                  // MQTT_CMD_MQTT_CHANGE_ONLY (0/1)
     };
 } mqtt_command_t;
 

@@ -124,9 +124,9 @@ footer {
 <body>
 <h1>SmartEVSE-3 Traceability Report</h1>
 <div class="summary">
-<div class="stat"><div class="number">39</div><div class="label">Features</div></div>
-<div class="stat"><div class="number">539</div><div class="label">Test Scenarios</div></div>
-<div class="stat"><div class="number">539</div><div class="label">With Requirements</div></div>
+<div class="stat"><div class="number">40</div><div class="label">Features</div></div>
+<div class="stat"><div class="number">560</div><div class="label">Test Scenarios</div></div>
+<div class="stat"><div class="number">560</div><div class="label">With Requirements</div></div>
 <div class="stat"><div class="number">100%</div><div class="label">Requirement Coverage</div></div>
 </div>
 <div class="feature-section">
@@ -2083,7 +2083,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">MQTT Command Parsing (27 scenarios)</div>
+<div class="feature-title">MQTT Command Parsing (30 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -2281,10 +2281,31 @@ footer {
 <td><code>test_idle_timeout_max</code></td>
 <td><span class="file-ref">test_mqtt_parser.c:708</span></td>
 </tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-023</span></td>
+<td>MQTTHeartbeat set to valid value via MQTT</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTHeartbeat with payload &quot;60&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_MQTT_HEARTBEAT with mqtt_heartbeat = 60</li></ul></td>
+<td><code>test_mqtt_heartbeat_valid</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:824</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-024</span></td>
+<td>MQTTChangeOnly enabled via MQTT with payload &quot;1&quot;</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTChangeOnly with payload &quot;1&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = true</li></ul></td>
+<td><code>test_mqtt_change_only_enable</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:864</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-024</span></td>
+<td>MQTTChangeOnly disabled via MQTT with payload &quot;0&quot;</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTChangeOnly with payload &quot;0&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_MQTT_CHANGE_ONLY with mqtt_change_only = false</li></ul></td>
+<td><code>test_mqtt_change_only_disable</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:878</span></td>
+</tr>
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">MQTT Input Validation (29 scenarios)</div>
+<div class="feature-title">MQTT Input Validation (36 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -2483,23 +2504,72 @@ footer {
 <td><span class="file-ref">test_mqtt_parser.c:739</span></td>
 </tr>
 <tr>
+<td><span class="req-tag">REQ-MQTT-005</span></td>
+<td>Max sum mains at lower boundary (10) is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/CurrentMaxSumMains with payload &quot;10&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command is accepted with max_sum_mains = 10</li></ul></td>
+<td><code>test_max_sum_mains_boundary_10</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:750</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-005</span></td>
+<td>Max sum mains at upper boundary (600) is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/CurrentMaxSumMains with payload &quot;600&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command is accepted with max_sum_mains = 600</li></ul></td>
+<td><code>test_max_sum_mains_boundary_600</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:764</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-004</span></td>
+<td>Negative current override is accepted (atoi converts, no range check)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/CurrentOverride with payload &quot;-10&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command is accepted (parser does not reject; dispatch layer validates)</li></ul></td>
+<td><code>test_current_override_negative</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:778</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-002</span></td>
+<td>Empty payload is rejected for Mode command</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/Mode with empty payload &quot;&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns false</li></ul></td>
+<td><code>test_empty_payload_mode_rejected</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:810</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-023</span></td>
+<td>MQTTHeartbeat below minimum (9) is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTHeartbeat with payload &quot;9&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns false</li></ul></td>
+<td><code>test_mqtt_heartbeat_too_low</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:838</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-023</span></td>
+<td>MQTTHeartbeat above maximum (301) is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTHeartbeat with payload &quot;301&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns false</li></ul></td>
+<td><code>test_mqtt_heartbeat_too_high</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:850</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-024</span></td>
+<td>MQTTChangeOnly rejects invalid payload</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MQTTChangeOnly with payload &quot;2&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns false</li></ul></td>
+<td><code>test_mqtt_change_only_invalid</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:892</span></td>
+</tr>
+<tr>
 <td><span class="req-tag">REQ-MQTT-014</span></td>
 <td>Unrecognized topic returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_unrecognized_topic</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:750</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:906</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-MQTT-014</span></td>
 <td>Wrong prefix returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_wrong_prefix</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:759</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:915</span></td>
 </tr>
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">MQTT Meter Parsing (6 scenarios)</div>
+<div class="feature-title">MQTT Meter Parsing (7 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -2550,6 +2620,13 @@ footer {
 <td><code>test_ev_meter_command</code></td>
 <td><span class="file-ref">test_mqtt_parser.c:355</span></td>
 </tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-007</span></td>
+<td>Mains meter with extra trailing fields after L1:L2:L3 is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Payload is &quot;100:200:300:extra&quot;</li><li class="step-then"><span class="step-keyword">Then</span> L1=100, L2=200, L3=300 (extra data ignored by sscanf)</li></ul></td>
+<td><code>test_mains_meter_extra_fields_ignored</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:794</span></td>
+</tr>
 </tbody></table>
 </div>
 <div class="feature-section">
@@ -2589,6 +2666,88 @@ footer {
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_color_custom_command</code></td>
 <td><span class="file-ref">test_mqtt_parser.c:461</span></td>
+</tr>
+</tbody></table>
+</div>
+<div class="feature-section">
+<div class="feature-title">MQTT Change-Only Publishing (10 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>First integer publish always goes through</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An empty cache with heartbeat 60s</li><li class="step-when"><span class="step-keyword">When</span> An integer value is checked for slot MQTT_SLOT_ESP_TEMP</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_int returns true (first time)</li></ul></td>
+<td><code>test_int_first_publish</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>Unchanged integer is suppressed</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A cache with MQTT_SLOT_ESP_TEMP previously published as 42</li><li class="step-when"><span class="step-keyword">When</span> The same value 42 is checked at now_s=110 (before heartbeat)</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_int returns false</li></ul></td>
+<td><code>test_int_unchanged_suppressed</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:29</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>Changed integer value triggers publish</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A cache with MQTT_SLOT_ESP_TEMP previously published as 42</li><li class="step-when"><span class="step-keyword">When</span> A different value 43 is checked</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_int returns true</li></ul></td>
+<td><code>test_int_changed_publishes</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:43</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-021</span></td>
+<td>Heartbeat forces re-publish of unchanged integer</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A cache with MQTT_SLOT_ESP_TEMP published at t=100 with heartbeat 60s</li><li class="step-when"><span class="step-keyword">When</span> The same value is checked at t=160 (heartbeat elapsed)</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_int returns true</li></ul></td>
+<td><code>test_int_heartbeat_republish</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:57</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>First string publish always goes through</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An empty cache with heartbeat 60s</li><li class="step-when"><span class="step-keyword">When</span> A string value &quot;Normal&quot; is checked for slot MQTT_SLOT_MODE</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_str returns true</li></ul></td>
+<td><code>test_str_first_publish</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:74</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>Changed string value triggers publish</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A cache with MQTT_SLOT_MODE previously published as &quot;Normal&quot;</li><li class="step-when"><span class="step-keyword">When</span> A different string &quot;Solar&quot; is checked</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_str returns true</li></ul></td>
+<td><code>test_str_changed_publishes</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:87</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-022</span></td>
+<td>mqtt_cache_force_all marks all entries stale</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A cache with MQTT_SLOT_ESP_TEMP published (unchanged value)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_cache_force_all is called then the same value is checked</li><li class="step-then"><span class="step-keyword">Then</span> mqtt_should_publish_int returns true (forced)</li></ul></td>
+<td><code>test_force_all_triggers_publish</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:104</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>CRC16 produces consistent non-zero hashes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Known string inputs</li><li class="step-when"><span class="step-keyword">When</span> mqtt_crc16 is called</li><li class="step-then"><span class="step-keyword">Then</span> Different strings produce different hashes and same strings produce same hash</li></ul></td>
+<td><code>test_crc16_consistency</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:122</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>Out-of-range slot is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid cache</li><li class="step-when"><span class="step-keyword">When</span> mqtt_should_publish_int is called with slot &gt;= MQTT_CACHE_MAX_SLOTS</li><li class="step-then"><span class="step-keyword">Then</span> Returns false (no crash, no publish)</li></ul></td>
+<td><code>test_invalid_slot_rejected</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:143</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-020</span></td>
+<td>MQTT_SLOT_COUNT fits within MQTT_CACHE_MAX_SLOTS</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The enum definition</li><li class="step-when"><span class="step-keyword">When</span> MQTT_SLOT_COUNT is compared to MQTT_CACHE_MAX_SLOTS</li><li class="step-then"><span class="step-keyword">Then</span> MQTT_SLOT_COUNT is less than or equal to MQTT_CACHE_MAX_SLOTS</li></ul></td>
+<td><code>test_slot_count_within_bounds</code></td>
+<td><span class="file-ref">test_mqtt_publish.c:159</span></td>
 </tr>
 </tbody></table>
 </div>

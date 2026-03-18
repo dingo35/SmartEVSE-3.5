@@ -20,6 +20,7 @@ EVSE_SRC := $(SRC_DIR)/evse_state_machine.c
 
 # Source files for module-specific tests
 MQTT_PARSER_SRC    := $(SRC_DIR)/mqtt_parser.c
+MQTT_PUBLISH_SRC   := $(SRC_DIR)/mqtt_publish.c
 HTTP_API_SRC       := $(SRC_DIR)/http_api.c
 SERIAL_PARSER_SRC  := $(SRC_DIR)/serial_parser.c
 LED_COLOR_SRC      := $(SRC_DIR)/led_color.c
@@ -36,6 +37,9 @@ all: $(TEST_BINS)
 # Module-specific build rules (must come before the generic rule)
 $(BUILD)/test_mqtt_parser: $(TEST_DIR)/test_mqtt_parser.c $(MQTT_PARSER_SRC) $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_mqtt_parser.c $(MQTT_PARSER_SRC)
+
+$(BUILD)/test_mqtt_publish: $(TEST_DIR)/test_mqtt_publish.c $(MQTT_PUBLISH_SRC) $(SRC_DIR)/mqtt_publish.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_mqtt_publish.c $(MQTT_PUBLISH_SRC)
 
 $(BUILD)/test_http_api: $(TEST_DIR)/test_http_api.c $(HTTP_API_SRC) $(SRC_DIR)/http_api.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_http_api.c $(HTTP_API_SRC)

@@ -29,6 +29,8 @@ typedef struct {
     bool has_prio_strategy;     int prio_strategy;
     bool has_rotation_interval; int rotation_interval;
     bool has_idle_timeout;      int idle_timeout;
+    bool has_mqtt_heartbeat;    int mqtt_heartbeat;
+    bool has_mqtt_change_only;  int mqtt_change_only;
 } http_settings_request_t;
 
 // Validation result — NULL means valid, non-NULL is an error message.
@@ -77,6 +79,12 @@ const char *http_api_validate_rotation_interval(int value, int load_bl);
 
 // Validate idle_timeout (30..300). Only valid on master.
 const char *http_api_validate_idle_timeout(int value, int load_bl);
+
+// Validate mqtt_heartbeat (10..300).
+const char *http_api_validate_mqtt_heartbeat(int value);
+
+// Validate mqtt_change_only (0 or 1).
+const char *http_api_validate_mqtt_change_only(int value);
 
 #ifdef __cplusplus
 }
