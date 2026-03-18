@@ -181,6 +181,7 @@ static SettingsCache settingsCache = {};
 static mqtt_cache_t mqtt_cache;
 bool MQTTChangeOnly = true;               // Master toggle: true = change-only, false = publish all
 uint16_t MQTTHeartbeat = 60;              // Heartbeat interval (seconds) for unchanged values
+static uint32_t MQTTMsgCount = 0;         // Count of MQTT messages published since boot
 #endif
 
 // Macros to only write if value changed
@@ -1030,6 +1031,13 @@ void SetupMQTTClient() {
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
     MQTTclient.announce("Schedule State", "sensor", optional_payload);
 
+    // Diagnostic: free heap and MQTT message counter
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("unit_of_measurement","B") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    MQTTclient.announce("Free Heap", "sensor", optional_payload);
+
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    MQTTclient.announce("MQTT Msg Count", "sensor", optional_payload);
+
     // MQTT publish settings: change-only toggle and heartbeat interval
     optional_payload = MQTTclient.jsna("entity_category","config")
         + MQTTclient.jsna("state_topic", String(MQTTprefix + "/MQTTChangeOnly"))
@@ -1050,15 +1058,19 @@ void SetupMQTTClient() {
 // Wrapper: publish an integer value only if changed (or change-only is disabled)
 static void mqtt_pub_int(mqtt_slot_t slot, const char *suffix, int32_t value,
                          bool retained, uint32_t now_s) {
-    if (!MQTTChangeOnly || mqtt_should_publish_int(&mqtt_cache, slot, value, now_s))
+    if (!MQTTChangeOnly || mqtt_should_publish_int(&mqtt_cache, slot, value, now_s)) {
         MQTTclient.publish(MQTTprefix + suffix, value, retained, 0);
+        MQTTMsgCount++;
+    }
 }
 
 // Wrapper: publish a string value only if changed (or change-only is disabled)
 static void mqtt_pub_str(mqtt_slot_t slot, const char *suffix, const char *value,
                          bool retained, uint32_t now_s) {
-    if (!MQTTChangeOnly || mqtt_should_publish_str(&mqtt_cache, slot, value, now_s))
+    if (!MQTTChangeOnly || mqtt_should_publish_str(&mqtt_cache, slot, value, now_s)) {
         MQTTclient.publish(MQTTprefix + suffix, value, retained, 0);
+        MQTTMsgCount++;
+    }
 }
 
 void mqttPublishData() {
@@ -1180,6 +1192,10 @@ void mqttPublishData() {
             }
             mqtt_pub_str(MQTT_SLOT_SCHEDULE_STATE, "/ScheduleState", schedStr.c_str(), false, now_s);
         }
+        // Diagnostic: free heap and MQTT message counter
+        mqtt_pub_int(MQTT_SLOT_FREE_HEAP, "/FreeHeap", (int32_t)ESP.getFreeHeap(), false, now_s);
+        mqtt_pub_int(MQTT_SLOT_MQTT_MSG_COUNT, "/MQTTMsgCount", (int32_t)MQTTMsgCount, false, now_s);
+
         // MQTT config settings — publish for HA switch/number entity state
         MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);
         MQTTclient.publish(MQTTprefix + "/MQTTHeartbeat", (int)MQTTHeartbeat, true, 0);
