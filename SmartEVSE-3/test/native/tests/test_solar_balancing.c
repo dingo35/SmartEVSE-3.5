@@ -35,6 +35,7 @@ static void setup_solar_charging(void) {
     ctx.Balanced[0] = 100;
     ctx.ChargeCurrent = 160;
     ctx.IsetBalanced = 100;
+    ctx.IsetBalanced_ema = 100;  /* Match IsetBalanced for EMA consistency */
     ctx.Nr_Of_Phases_Charging = 3;
     ctx.Node[0].IntTimer = SOLARSTARTTIME + 1; /* Past startup */
 }
@@ -486,6 +487,262 @@ void test_multi_evse_solar_startup(void) {
     TEST_ASSERT_EQUAL_INT(ctx.MinCurrent * 10, ctx.Balanced[0]);
 }
 
+/* ==== Issue #15: Measurement Smoothing and Dead Band ==== */
+
+static void setup_smart_charging(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_SMART;
+    ctx.LoadBl = 0;
+    ctx.MaxCurrent = 16;
+    ctx.MaxCapacity = 16;
+    ctx.MinCurrent = 6;
+    ctx.MaxMains = 25;
+    ctx.MaxCircuit = 32;
+    ctx.MainsMeterType = 1;
+    ctx.phasesLastUpdateFlag = true;
+
+    ctx.State = STATE_C;
+    ctx.BalancedState[0] = STATE_C;
+    ctx.BalancedMax[0] = 160;
+    ctx.Balanced[0] = 100;
+    ctx.ChargeCurrent = 160;
+    ctx.IsetBalanced = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.Nr_Of_Phases_Charging = 3;
+}
+
+/* ---- EMA smoothing tests ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-021
+ * @scenario EMA smoothing dampens sudden IsetBalanced changes
+ * @given The EVSE is in smart mode with IsetBalanced_ema=100 and EmaAlpha=50
+ * @when evse_calc_balanced_current computes a new IsetBalanced of 200
+ * @then IsetBalanced_ema moves toward 200 but not all the way (between 100 and 200)
+ */
+void test_ema_smoothing_dampens_change(void) {
+    setup_smart_charging();
+    ctx.IsetBalanced_ema = 100;
+    ctx.EmaAlpha = 50;
+    /* Create conditions where IsetBalanced will be high (large surplus) */
+    ctx.MainsMeterImeasured = -100;  /* Lots of headroom */
+    ctx.IsetBalanced = 100;
+    evse_calc_balanced_current(&ctx, 0);
+    /* EMA should move toward new value but be dampened */
+    TEST_ASSERT_GREATER_THAN(100, ctx.IsetBalanced_ema);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-022
+ * @scenario EMA with alpha=100 tracks raw IsetBalanced exactly (no smoothing)
+ * @given The EVSE is in smart mode with EmaAlpha=100 and IsetBalanced_ema=50
+ * @when evse_calc_balanced_current computes a new IsetBalanced with large surplus
+ * @then IsetBalanced_ema updates to a value different from the old 50
+ */
+void test_ema_alpha_100_no_smoothing(void) {
+    setup_smart_charging();
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 50;
+    ctx.MainsMeterImeasured = -100;
+    evse_calc_balanced_current(&ctx, 0);
+    /* With alpha=100, EMA tracks the raw calculated IsetBalanced exactly.
+     * Distribution may then cap IsetBalanced below IsetBalanced_ema. */
+    TEST_ASSERT_NOT_EQUAL(50, ctx.IsetBalanced_ema);
+    TEST_ASSERT_LESS_OR_EQUAL(ctx.IsetBalanced_ema, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-023
+ * @scenario EMA with alpha=0 holds previous value (full dampening)
+ * @given The EVSE is in smart mode with EmaAlpha=0 and IsetBalanced_ema=80
+ * @when evse_calc_balanced_current computes a different IsetBalanced
+ * @then IsetBalanced_ema remains at 80
+ */
+void test_ema_alpha_0_full_dampening(void) {
+    setup_smart_charging();
+    ctx.EmaAlpha = 0;
+    ctx.IsetBalanced_ema = 80;
+    ctx.MainsMeterImeasured = -100;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(80, ctx.IsetBalanced_ema);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-024
+ * @scenario EMA defaults are initialized correctly by evse_init
+ * @given A freshly initialized EVSE context
+ * @when evse_init is called
+ * @then EmaAlpha=100 (no smoothing), SmartDeadBand=10, RampRateDivisor=4, SolarFineDeadBand=5
+ */
+void test_smoothing_defaults_initialized(void) {
+    evse_ctx_t fresh;
+    evse_init(&fresh, NULL);
+    TEST_ASSERT_EQUAL_INT(100, fresh.EmaAlpha);
+    TEST_ASSERT_EQUAL_INT(10, fresh.SmartDeadBand);
+    TEST_ASSERT_EQUAL_INT(4, fresh.RampRateDivisor);
+    TEST_ASSERT_EQUAL_INT(5, fresh.SolarFineDeadBand);
+    TEST_ASSERT_EQUAL_INT(0, fresh.IsetBalanced_ema);
+}
+
+/* ---- Smart mode dead band tests ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-025
+ * @scenario Smart mode dead band suppresses small adjustments
+ * @given The EVSE is in smart mode with SmartDeadBand=10 and small Idifference (~5 dA)
+ * @when evse_calc_balanced_current is called
+ * @then IsetBalanced does not change (within dead band)
+ */
+void test_smart_deadband_suppresses_small_change(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 10;
+    /* MainsMeterImeasured close to MaxMains*10 so Idifference is small */
+    ctx.MainsMeterImeasured = 245;  /* Idifference = 250-245 = 5, < dead band 10 */
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(before, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-026
+ * @scenario Smart mode dead band allows large adjustments through
+ * @given The EVSE is in smart mode with SmartDeadBand=10 and large Idifference
+ * @when evse_calc_balanced_current is called with large surplus (Idifference >> 10)
+ * @then IsetBalanced increases (dead band does not suppress)
+ */
+void test_smart_deadband_allows_large_change(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 10;
+    ctx.MainsMeterImeasured = 100;  /* Idifference = 250-100 = 150, >> dead band */
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_GREATER_THAN(before, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-027
+ * @scenario Smart mode dead band suppresses small negative Idifference
+ * @given The EVSE is in smart mode with SmartDeadBand=10 and Idifference=-5
+ * @when evse_calc_balanced_current is called with slight overload
+ * @then IsetBalanced does not decrease (within dead band)
+ */
+void test_smart_deadband_suppresses_small_decrease(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 10;
+    ctx.EmaAlpha = 100;  /* No EMA smoothing to isolate dead band effect */
+    ctx.IsetBalanced_ema = 100;
+    ctx.Balanced[0] = 110;  /* Larger current draw so guard rail doesn't cap */
+    /* Slightly over MaxMains: Idifference = 250-255 = -5, |5| < dead band 10 */
+    ctx.MainsMeterImeasured = 255;
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(before, ctx.IsetBalanced);
+}
+
+/* ---- Symmetric ramp rate tests ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-028
+ * @scenario Symmetric ramp applies same rate for increasing and decreasing
+ * @given The EVSE is in smart mode with RampRateDivisor=4 and Idifference=40
+ * @when evse_calc_balanced_current is called with positive Idifference
+ * @then IsetBalanced increases by Idifference/4 = 10
+ */
+void test_symmetric_ramp_increase(void) {
+    setup_smart_charging();
+    ctx.RampRateDivisor = 4;
+    ctx.SmartDeadBand = 0;  /* Disable dead band for this test */
+    ctx.EmaAlpha = 100;     /* No EMA smoothing */
+    ctx.IsetBalanced_ema = 100;
+    /* Idifference = MaxMains*10 - MainsMeterImeasured = 250 - 210 = 40 */
+    ctx.MainsMeterImeasured = 210;
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Should increase by 40/4 = 10 */
+    TEST_ASSERT_EQUAL_INT(before + 10, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-029
+ * @scenario Symmetric ramp applies same divisor for decrease (was full-step)
+ * @given The EVSE is in smart mode with RampRateDivisor=4 and Idifference=-40
+ * @when evse_calc_balanced_current is called with negative Idifference
+ * @then IsetBalanced decreases by |Idifference|/4 = 10 (not full 40)
+ */
+void test_symmetric_ramp_decrease(void) {
+    setup_smart_charging();
+    ctx.RampRateDivisor = 4;
+    ctx.SmartDeadBand = 0;  /* Disable dead band for this test */
+    ctx.EmaAlpha = 100;     /* No EMA smoothing */
+    ctx.IsetBalanced_ema = 100;
+    ctx.Balanced[0] = 140;  /* Larger draw so guard rail > 90 after decrease */
+    /* Idifference = 250 - 290 = -40 */
+    ctx.MainsMeterImeasured = 290;
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Should decrease by 40/4 = 10, not full 40 */
+    TEST_ASSERT_EQUAL_INT(before - 10, ctx.IsetBalanced);
+}
+
+/* ---- Solar fine regulation expanded dead band tests ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-030
+ * @scenario Solar fine regulation dead band expanded to 5 dA
+ * @given The EVSE is solar charging with IsumImport=4 (was outside old 3 dA band, now inside 5 dA)
+ * @when evse_calc_balanced_current is called
+ * @then IsetBalanced does not decrease from fine regulation (4 dA within 5 dA dead band)
+ */
+void test_solar_fine_deadband_expanded(void) {
+    setup_solar_charging();
+    ctx.SolarFineDeadBand = 5;
+    ctx.EmaAlpha = 100;     /* No EMA smoothing */
+    ctx.ImportCurrent = 0;
+    /* Set Isum small positive (within dead band) and MainsMeterImeasured so
+     * Idifference > 0 (surplus) to enter fine regulation increase path */
+    ctx.Isum = 4;  /* IsumImport = 4, within 5 dA dead band */
+    ctx.MainsMeterImeasured = ctx.Isum + (int16_t)ctx.Balanced[0];
+    ctx.IsetBalanced = 100;
+    ctx.IsetBalanced_ema = 100;
+    evse_calc_balanced_current(&ctx, 0);
+    /* IsumImport=4 is > 0 but <= SolarFineDeadBand(5): no decrease applied.
+     * The fine regulation positive path (IsumImport < 0) doesn't trigger either.
+     * So IsetBalanced should stay at 100 from fine regulation perspective. */
+    TEST_ASSERT_EQUAL_INT(100, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-031
+ * @scenario Solar fine regulation triggers decrease above expanded dead band
+ * @given The EVSE is solar charging with IsumImport=15 (well above 5 dA dead band)
+ * @when evse_calc_balanced_current is called
+ * @then IsetBalanced decreases (outside dead band)
+ */
+void test_solar_fine_deadband_triggers_above(void) {
+    setup_solar_charging();
+    ctx.SolarFineDeadBand = 5;
+    ctx.EmaAlpha = 100;     /* No EMA smoothing */
+    ctx.ImportCurrent = 0;
+    ctx.Isum = 15;  /* IsumImport = 15, > 5 dA dead band */
+    ctx.MainsMeterImeasured = ctx.Isum + (int16_t)ctx.Balanced[0];
+    ctx.IsetBalanced = 150;
+    ctx.IsetBalanced_ema = 150;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_TRUE(ctx.IsetBalanced < 150);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Solar Balancing");
@@ -510,6 +767,19 @@ int main(void) {
     RUN_TEST(test_normal_mode_forces_3p);
     RUN_TEST(test_phases_flag_gates_regulation);
     RUN_TEST(test_multi_evse_solar_startup);
+
+    /* Issue #15: Measurement Smoothing and Dead Band */
+    RUN_TEST(test_ema_smoothing_dampens_change);
+    RUN_TEST(test_ema_alpha_100_no_smoothing);
+    RUN_TEST(test_ema_alpha_0_full_dampening);
+    RUN_TEST(test_smoothing_defaults_initialized);
+    RUN_TEST(test_smart_deadband_suppresses_small_change);
+    RUN_TEST(test_smart_deadband_allows_large_change);
+    RUN_TEST(test_smart_deadband_suppresses_small_decrease);
+    RUN_TEST(test_symmetric_ramp_increase);
+    RUN_TEST(test_symmetric_ramp_decrease);
+    RUN_TEST(test_solar_fine_deadband_expanded);
+    RUN_TEST(test_solar_fine_deadband_triggers_above);
 
     TEST_SUITE_RESULTS();
 }

@@ -178,6 +178,18 @@ typedef enum {
 #ifndef SOLARSTARTTIME
 #define SOLARSTARTTIME     40
 #endif
+#ifndef EMA_ALPHA_DEFAULT
+#define EMA_ALPHA_DEFAULT      100   /* 100 = no smoothing (opt-in via config) */
+#endif
+#ifndef SMART_DEADBAND_DEFAULT
+#define SMART_DEADBAND_DEFAULT  10   /* 1.0A in deciamps */
+#endif
+#ifndef RAMP_RATE_DIVISOR_DEFAULT
+#define RAMP_RATE_DIVISOR_DEFAULT  4 /* Symmetric /4 for both up and down */
+#endif
+#ifndef SOLAR_FINE_DEADBAND_DEFAULT
+#define SOLAR_FINE_DEADBAND_DEFAULT 5 /* 0.5A in deciamps (was effectively 3) */
+#endif
 #ifndef RFIDLOCKTIME
 #define RFIDLOCKTIME       60
 #endif
@@ -307,6 +319,13 @@ typedef struct {
     uint16_t StartCurrent;
     uint16_t StopTime;
     uint16_t ImportCurrent;
+
+    // --- Measurement smoothing & dead band (Plan 01, Issue #15) ---
+    int32_t  IsetBalanced_ema;      /* EMA-smoothed IsetBalanced (deciamps) */
+    uint8_t  EmaAlpha;              /* EMA weight 0-100: higher = more responsive */
+    uint8_t  SmartDeadBand;         /* Dead band for smart mode regulation (deciamps) */
+    uint8_t  RampRateDivisor;       /* Symmetric ramp divisor for smart/solar (>=1) */
+    uint8_t  SolarFineDeadBand;     /* Dead band for solar fine regulation (deciamps) */
 
     // --- Safety ---
     int8_t  TempEVSE;

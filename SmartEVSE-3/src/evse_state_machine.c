@@ -156,6 +156,13 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->StopTime = STOP_TIME;
     ctx->ImportCurrent = IMPORT_CURRENT;
 
+    // Measurement smoothing & dead band
+    ctx->IsetBalanced_ema = 0;
+    ctx->EmaAlpha = EMA_ALPHA_DEFAULT;
+    ctx->SmartDeadBand = SMART_DEADBAND_DEFAULT;
+    ctx->RampRateDivisor = RAMP_RATE_DIVISOR_DEFAULT;
+    ctx->SolarFineDeadBand = SOLAR_FINE_DEADBAND_DEFAULT;
+
     // Safety
     ctx->TempEVSE = 25;
     ctx->maxTemp = MAX_TEMPERATURE;
@@ -706,14 +713,22 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         }
 
         // Ongoing regulation (lines 1252-1265)
+        // Issue #15: smart dead band + symmetric ramp rates
         if (!mod) {
             if (ctx->phasesLastUpdateFlag) {
-                if (Idifference > 0) {
+                int32_t absIdiff = Idifference < 0 ? -Idifference : Idifference;
+                int divisor = ctx->RampRateDivisor > 0 ? ctx->RampRateDivisor : 1;
+                if (ctx->Mode == MODE_SMART && absIdiff < ctx->SmartDeadBand) {
+                    // Within dead band: no adjustment
+                } else if (Idifference > 0) {
                     if (ctx->Mode == MODE_SMART)
-                        ctx->IsetBalanced += (Idifference / 4);
-                    // Solar increase is handled below
+                        ctx->IsetBalanced += (Idifference / divisor);
+                    // Solar increase is handled below in fine regulation
                 } else {
-                    ctx->IsetBalanced += Idifference;    // Immediately decrease (Smart and Solar)
+                    if (ctx->Mode == MODE_SMART)
+                        ctx->IsetBalanced += (Idifference / divisor);  // Symmetric ramp
+                    else
+                        ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety
                 }
             }
             if (ctx->IsetBalanced < 0) ctx->IsetBalanced = 0;
@@ -735,7 +750,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                             ctx->IsetBalanced -= (IsumImport / 2);
                         else if (IsumImport > 10)
                             ctx->IsetBalanced -= 5;
-                        else if (IsumImport > 3)
+                        else if (IsumImport > (int32_t)ctx->SolarFineDeadBand)
                             ctx->IsetBalanced -= 1;
                     }
                 }
@@ -761,6 +776,16 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         int phases = evse_force_single_phase(ctx) ? 1 : 3;  // line 1320
         ctx->IsetBalanced = min_int(ctx->IsetBalanced,
                                     (ctx->GridRelayMaxSumMains * 10) / phases);
+    }
+
+    // ---- Phase 4b: EMA smoothing (Issue #15) ----
+    // Apply exponential moving average to IsetBalanced to dampen oscillation.
+    // EmaAlpha 0-100: 0 = fully damped (no change), 100 = no smoothing.
+    if (ctx->Mode != MODE_NORMAL && ctx->phasesLastUpdateFlag) {
+        int32_t alpha = ctx->EmaAlpha;
+        ctx->IsetBalanced_ema = (alpha * ctx->IsetBalanced +
+                                 (100 - alpha) * ctx->IsetBalanced_ema) / 100;
+        ctx->IsetBalanced = ctx->IsetBalanced_ema;
     }
 
     // ---- Phase 5: Shortage detection and distribution (lines 1328-1495) ----
