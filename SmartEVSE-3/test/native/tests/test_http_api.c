@@ -787,6 +787,102 @@ void test_iec61851_nostate_and_unknown(void) {
     TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(99, NO_ERROR));
 }
 
+// ---- Phase Switch Validation ----
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Valid 1-phase switch request on standalone with C2 contactor
+ * @given A standalone EVSE (load_bl=0) with EnableC2=AUTO
+ * @when A phase switch to 1 phase is requested
+ * @then Validation passes (returns NULL)
+ */
+void test_phase_switch_valid_1p(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) == NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Valid 3-phase switch request on master with C2 contactor
+ * @given A master EVSE (load_bl=1) with EnableC2=ALWAYS_ON
+ * @when A phase switch to 3 phases is requested
+ * @then Validation passes (returns NULL)
+ */
+void test_phase_switch_valid_3p(void) {
+    http_phase_switch_request_t req = { .phases = 3 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_ON, 1) == NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Invalid phase count (2) is rejected
+ * @given A standalone EVSE with EnableC2=AUTO
+ * @when A phase switch to 2 phases is requested
+ * @then Validation fails with error message
+ */
+void test_phase_switch_invalid_phase_count(void) {
+    http_phase_switch_request_t req = { .phases = 2 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch rejected when C2 contactor not present
+ * @given An EVSE with EnableC2=NOT_PRESENT (no C2 hardware)
+ * @when A phase switch to 1 phase is requested
+ * @then Validation fails because hardware cannot switch phases
+ */
+void test_phase_switch_no_c2_hardware(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, NOT_PRESENT, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch rejected on slave node
+ * @given A slave EVSE (load_bl=2) with EnableC2=AUTO
+ * @when A phase switch to 3 phases is requested
+ * @then Validation fails because slaves cannot initiate phase switching
+ */
+void test_phase_switch_slave_rejected(void) {
+    http_phase_switch_request_t req = { .phases = 3 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 2) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch with zero phases is rejected
+ * @given A standalone EVSE with EnableC2=AUTO
+ * @when A phase switch to 0 phases is requested
+ * @then Validation fails
+ */
+void test_phase_switch_zero_phases(void) {
+    http_phase_switch_request_t req = { .phases = 0 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Phase switch valid with all non-NOT_PRESENT EnableC2 values
+ * @given A standalone EVSE with various EnableC2 settings (ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO)
+ * @when A phase switch to 1 phase is requested
+ * @then Validation passes for all C2 configurations that have hardware present
+ */
+void test_phase_switch_all_c2_configs(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_OFF, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, SOLAR_OFF, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_ON, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) == NULL);
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("HTTP API");
 
@@ -879,6 +975,15 @@ int main(void) {
     RUN_TEST(test_iec61851_hard_error_overrides_state);
     RUN_TEST(test_iec61851_soft_errors_no_override);
     RUN_TEST(test_iec61851_nostate_and_unknown);
+
+    // Phase switch validation
+    RUN_TEST(test_phase_switch_valid_1p);
+    RUN_TEST(test_phase_switch_valid_3p);
+    RUN_TEST(test_phase_switch_invalid_phase_count);
+    RUN_TEST(test_phase_switch_no_c2_hardware);
+    RUN_TEST(test_phase_switch_slave_rejected);
+    RUN_TEST(test_phase_switch_zero_phases);
+    RUN_TEST(test_phase_switch_all_c2_configs);
 
     TEST_SUITE_RESULTS();
 }

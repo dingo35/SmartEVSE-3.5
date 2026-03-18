@@ -53,6 +53,17 @@ char evse_state_to_iec61851(int state, int error_flags) {
     }
 }
 
+const char *http_api_validate_phase_switch(const http_phase_switch_request_t *req,
+                                           int enable_c2, int load_bl) {
+    if (req->phases != 1 && req->phases != 3)
+        return "Value not allowed!";
+    if (enable_c2 == NOT_PRESENT)
+        return "C2 contactor not present";
+    if (load_bl >= 2)
+        return "Value not allowed!";
+    return NULL;
+}
+
 bool http_api_parse_color(int r_val, int g_val, int b_val,
                           uint8_t *r_out, uint8_t *g_out, uint8_t *b_out) {
     if (r_val < 0 || r_val > 255 || g_val < 0 || g_val > 255 || b_val < 0 || b_val > 255)
