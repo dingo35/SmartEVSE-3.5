@@ -20,6 +20,8 @@ extern evse_ctx_t g_evse_ctx;
 void evse_bridge_init(void);
 void evse_sync_globals_to_ctx(void);
 void evse_sync_ctx_to_globals(void);
+void evse_bridge_lock(void);
+void evse_bridge_unlock(void);
 
 #ifdef __cplusplus
 }
