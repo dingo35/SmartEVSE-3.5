@@ -231,6 +231,29 @@ void setMode(uint8_t NewMode) ;
 void BuzzConfirmation(void);
 void BuzzError(void);
 
+// HTTP handler helpers (used by http_handlers.cpp)
+uint8_t getErrorId(uint8_t ErrorCode);
+const char *getErrorNameWeb(uint8_t ErrorCode);
+void printRFID(char *buf, size_t bufsize);
+int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime);
+
+// String arrays used by HTTP response
+extern const char StrStateNameWeb[15][17];
+extern const char StrErrorNameWeb[9][20];
+extern const char StrRFIDStatusWeb[8][20];
+
+// MQTT cache (non-static, shared with http_handlers.cpp)
+#include "mqtt_publish.h"
+extern mqtt_cache_t mqtt_cache;
+
+// Modem (conditional)
+#if MODEM
+void RecomputeSoC(void);
+#endif
+
+// LCD PIN code (used by http_handlers.cpp)
+extern uint16_t LCDPin;
+
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
 bool ocppIsConnectorPlugged();
