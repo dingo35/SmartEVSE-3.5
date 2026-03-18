@@ -1875,8 +1875,28 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         serializeJson(doc, json);
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         return true;
-      } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {                     // if POST
+      } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {
+#if MQTT
+        // Process MQTT publish settings before mqtt_update early return,
+        // because configureMqtt() bundles these with mqtt_update=1
+        if(request->hasParam("mqtt_heartbeat")) {
+            int val = request->getParam("mqtt_heartbeat")->value().toInt();
+            if(!http_api_validate_mqtt_heartbeat(val)) {
+                MQTTHeartbeat = val;
+                mqtt_cache.heartbeat_s = MQTTHeartbeat;
+            }
+        }
+        if(request->hasParam("mqtt_change_only")) {
+            int val = request->getParam("mqtt_change_only")->value().toInt();
+            if(!http_api_validate_mqtt_change_only(val)) {
+                MQTTChangeOnly = (val == 1);
+            }
+        }
+#endif
         if(request->hasParam("mqtt_update")) {
+#if MQTT
+            request_write_settings();  // persist mqtt_heartbeat/mqtt_change_only if changed above
+#endif
             return false;                                                       // handled in network.cpp
         }
         DynamicJsonDocument doc(512); // https://arduinojson.org/v6/assistant/
@@ -2124,31 +2144,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["idle_timeout"] = err;
             }
         }
-
-#if MQTT
-        if(request->hasParam("mqtt_heartbeat")) {
-            int val = request->getParam("mqtt_heartbeat")->value().toInt();
-            const char *err = http_api_validate_mqtt_heartbeat(val);
-            if(!err) {
-                MQTTHeartbeat = val;
-                mqtt_cache.heartbeat_s = MQTTHeartbeat;
-                doc["mqtt_heartbeat"] = MQTTHeartbeat;
-            } else {
-                doc["mqtt_heartbeat"] = err;
-            }
-        }
-
-        if(request->hasParam("mqtt_change_only")) {
-            int val = request->getParam("mqtt_change_only")->value().toInt();
-            const char *err = http_api_validate_mqtt_change_only(val);
-            if(!err) {
-                MQTTChangeOnly = (val == 1);
-                doc["mqtt_change_only"] = MQTTChangeOnly;
-            } else {
-                doc["mqtt_change_only"] = err;
-            }
-        }
-#endif
 
         if(request->hasParam("lcdlock")) {
             int lock = request->getParam("lcdlock")->value().toInt();
