@@ -65,6 +65,7 @@ extern uint8_t ScheduleState[];
 extern uint16_t RotationTimer;
 extern int8_t TempEVSE;
 extern const char StrRFIDReader[7][10];
+extern Switch_Phase_t Switching_Phases_C2;
 
 #if MQTT
 extern String MQTTHost;
@@ -471,6 +472,28 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(request->hasParam("enable_C2")) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
+        }
+
+        if(request->hasParam("phases")) {
+            int phases = request->getParam("phases")->value().toInt();
+            http_phase_switch_request_t req = { .phases = phases };
+            const char *err = http_api_validate_phase_switch(&req, EnableC2, LoadBl);
+            if (!err) {
+                bool switching = false;
+                int prev = Nr_Of_Phases_Charging;
+                if (phases == 1 && Nr_Of_Phases_Charging != 1) {
+                    Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+                    switching = true;
+                } else if (phases == 3 && Nr_Of_Phases_Charging != 3) {
+                    Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+                    switching = true;
+                }
+                doc["phases"] = phases;
+                doc["switching"] = switching;
+                doc["previous_phases"] = prev;
+            } else {
+                doc["phases"] = err;
+            }
         }
 
         if(request->hasParam("stop_timer")) {
