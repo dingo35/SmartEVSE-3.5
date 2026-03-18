@@ -297,7 +297,7 @@ void test_nocurrent_increments_on_hard_shortage(void) {
  * @scenario NoCurrent counter clears when sufficient power is available
  * @given Master with 2 EVSEs in Smart mode, low mains load, IsetBalanced=400, NoCurrent previously at 5
  * @when Balanced current is calculated with plenty of available power
- * @then NoCurrent counter is cleared to 0
+ * @then NoCurrent counter decays by 1 (gradual recovery)
  */
 void test_nocurrent_zero_when_sufficient(void) {
     setup_master_n_evse(2);
@@ -310,8 +310,8 @@ void test_nocurrent_zero_when_sufficient(void) {
 
     evse_calc_balanced_current(&ctx, 0);
 
-    /* Plenty of current: NoCurrent should be cleared */
-    TEST_ASSERT_EQUAL_INT(0, ctx.NoCurrent);
+    /* Plenty of current: NoCurrent decays by 1 */
+    TEST_ASSERT_EQUAL_INT(4, ctx.NoCurrent);
 }
 
 /* ---- Node at STATE_B does not receive current ---- */
