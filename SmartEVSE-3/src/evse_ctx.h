@@ -270,6 +270,26 @@ typedef struct {
     uint8_t  ErrorFlags;            /* Active error flags */
 } evse_solar_debug_t;
 
+// ---- Load balancing diagnostic snapshot (Plan 02, Issue #25) ----
+// Populated by evse_calc_balanced_current() each cycle when LoadBl == 1.
+// Network layer can publish via MQTT without impacting regulation timing.
+typedef struct {
+    int32_t  IsetBalanced;            /* Final IsetBalanced after all adjustments */
+    int32_t  Idifference;             /* Raw grid headroom / deficit */
+    int32_t  IdiffFiltered;           /* EMA-filtered Idifference */
+    int32_t  Baseload;                /* Non-EVSE mains consumption */
+    int32_t  Baseload_EV;             /* Non-EVSE consumption on EV meter */
+    uint16_t Balanced[NR_EVSES];      /* Per-EVSE current allocations */
+    uint16_t BalancedMax[NR_EVSES];   /* Per-EVSE maximum limits */
+    uint8_t  ActiveEVSE;              /* Number of charging EVSEs */
+    uint8_t  OscillationCount;        /* Adaptive gain oscillation counter */
+    uint8_t  NoCurrent;               /* Shortage counter */
+    uint8_t  ScheduleState[NR_EVSES]; /* Priority scheduling state per EVSE */
+    bool     PriorityScheduled;       /* True if priority scheduling ran this cycle */
+    bool     Shortage;                /* True if IsetBalanced < ActiveEVSE * MinCurrent */
+    bool     DeltaClamped;            /* True if distribution smoothing clamped any EVSE */
+} evse_lb_diag_t;
+
 // ---- The full EVSE state context ----
 typedef struct {
     // --- Core state ---
@@ -420,6 +440,9 @@ typedef struct {
 
     // --- Solar debug snapshot (Issue #19) ---
     evse_solar_debug_t solar_debug;
+
+    // --- Load balancing diagnostic snapshot (Issue #25) ---
+    evse_lb_diag_t lb_diag;
 
     // --- Test instrumentation (for assertions) ---
 #ifdef EVSE_TESTING

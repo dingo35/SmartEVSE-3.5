@@ -686,6 +686,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     Baseload = ctx->MainsMeterImeasured - TotalCurrent;
 
     int saveActiveEVSE = ActiveEVSE;
+    bool deltaClamped = false; // cppcheck-suppress variableScope
+    bool shortage = false; // cppcheck-suppress variableScope
 
     // ---- Phase 3: Calculate IsetBalanced (lines 1198-1305) ----
     if (ctx->Mode == MODE_NORMAL) {
@@ -842,6 +844,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
 
         if (ctx->IsetBalanced < (int32_t)(ActiveEVSE * ctx->MinCurrent * 10)) {
             // ---- Shortage of power (lines 1332-1440) ----
+            shortage = true;
 
             // Save actual available power before inflation (for priority scheduling)
             int32_t actualAvailable = ctx->IsetBalanced;
@@ -1039,11 +1042,14 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 if (ctx->BalancedPrev[n] == 0) continue;  // No previous data
 
                 int32_t delta = (int32_t)ctx->Balanced[n] - (int32_t)ctx->BalancedPrev[n];
-                if (delta > MAX_DELTA_PER_CYCLE)
+                if (delta > MAX_DELTA_PER_CYCLE) {
                     ctx->Balanced[n] = ctx->BalancedPrev[n] + MAX_DELTA_PER_CYCLE;
-                else if (delta < -MAX_DELTA_PER_CYCLE)
+                    deltaClamped = true;
+                } else if (delta < -MAX_DELTA_PER_CYCLE) {
                     ctx->Balanced[n] = (ctx->BalancedPrev[n] > MAX_DELTA_PER_CYCLE)
                         ? ctx->BalancedPrev[n] - MAX_DELTA_PER_CYCLE : 0;
+                    deltaClamped = true;
+                }
             }
         }
 
@@ -1093,6 +1099,24 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     ctx->solar_debug.SettlingTimer = ctx->SettlingTimer;
     ctx->solar_debug.Nr_Of_Phases_Charging = ctx->Nr_Of_Phases_Charging;
     ctx->solar_debug.ErrorFlags = ctx->ErrorFlags;
+
+    // Issue #25: populate load balancing diagnostic snapshot
+    ctx->lb_diag.IsetBalanced = ctx->IsetBalanced;
+    ctx->lb_diag.Idifference = Idifference;
+    ctx->lb_diag.IdiffFiltered = ctx->IdiffFiltered;
+    ctx->lb_diag.Baseload = Baseload;
+    ctx->lb_diag.Baseload_EV = Baseload_EV;
+    ctx->lb_diag.ActiveEVSE = (uint8_t)saveActiveEVSE;
+    ctx->lb_diag.OscillationCount = ctx->OscillationCount;
+    ctx->lb_diag.NoCurrent = ctx->NoCurrent;
+    ctx->lb_diag.PriorityScheduled = priorityScheduled;
+    ctx->lb_diag.Shortage = shortage;
+    ctx->lb_diag.DeltaClamped = deltaClamped;
+    for (n = 0; n < NR_EVSES; n++) {
+        ctx->lb_diag.Balanced[n] = ctx->Balanced[n];
+        ctx->lb_diag.BalancedMax[n] = ctx->BalancedMax[n];
+        ctx->lb_diag.ScheduleState[n] = ctx->ScheduleState[n];
+    }
 
     // Reset measurement flag (line 1505)
     ctx->phasesLastUpdateFlag = false;

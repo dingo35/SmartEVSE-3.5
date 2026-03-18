@@ -1051,9 +1051,98 @@ void test_balanced_prev_tracks_previous(void) {
     TEST_ASSERT_EQUAL_INT(saved1, ctx.BalancedPrev[1]);
 }
 
+/* ========================================================================
+ * GROUP: LB diagnostic snapshot (Issue #25)
+ * ======================================================================== */
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-052
+ * @scenario LB diagnostic snapshot populated after regulation cycle
+ * @given Master with 2 EVSEs in Smart mode after regulation
+ * @when evse_calc_balanced_current completes
+ * @then lb_diag contains correct IsetBalanced, ActiveEVSE, and Balanced[] values
+ */
+void test_lb_diag_snapshot_populated(void) {
+    setup_smart_master_n(2, 25, 50);
+    simulate_n_cycles(&ctx, 5, 50);
+
+    TEST_ASSERT_EQUAL_INT(ctx.IsetBalanced, ctx.lb_diag.IsetBalanced);
+    TEST_ASSERT_EQUAL_INT(2, ctx.lb_diag.ActiveEVSE);
+    TEST_ASSERT_EQUAL_INT(ctx.Balanced[0], ctx.lb_diag.Balanced[0]);
+    TEST_ASSERT_EQUAL_INT(ctx.Balanced[1], ctx.lb_diag.Balanced[1]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-053
+ * @scenario LB diagnostic captures shortage state
+ * @given Master with 4 EVSEs in Smart mode under hard shortage
+ * @when Regulation cycle detects insufficient power
+ * @then lb_diag.Shortage is true and lb_diag.NoCurrent > 0
+ */
+void test_lb_diag_captures_shortage(void) {
+    setup_smart_master_n(4, 15, 50);
+    /* Available: (150 - 50) = 100 dA. Need: 4*60 = 240 dA. */
+    simulate_n_cycles(&ctx, 5, 50);
+
+    /* Priority scheduling handles shortage — Shortage flag should be set */
+    TEST_ASSERT_TRUE(ctx.lb_diag.Shortage);
+    TEST_ASSERT_TRUE(ctx.lb_diag.PriorityScheduled);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-054
+ * @scenario LB diagnostic captures oscillation count
+ * @given Standalone EVSE with OscillationCount elevated
+ * @when Regulation cycle completes
+ * @then lb_diag.OscillationCount matches ctx.OscillationCount
+ */
+void test_lb_diag_captures_oscillation(void) {
+    setup_smart_standalone(25, 50);
+    ctx.OscillationCount = 4;
+
+    int32_t total_ev = ctx.Balanced[0];
+    ctx.EVMeterImeasured = (int16_t)total_ev;
+    ctx.MainsMeterImeasured = (int16_t)(50 + total_ev);
+    ctx.Isum = ctx.MainsMeterImeasured;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    TEST_ASSERT_EQUAL_INT(ctx.OscillationCount, ctx.lb_diag.OscillationCount);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-055
+ * @scenario LB diagnostic captures delta clamping state
+ * @given Master with 2 EVSEs where distribution smoothing will clamp
+ * @when Large current change triggers clamping
+ * @then lb_diag.DeltaClamped is true
+ */
+void test_lb_diag_captures_delta_clamped(void) {
+    setup_smart_master_n(2, 40, 50);
+    ctx.Balanced[0] = 100;
+    ctx.Balanced[1] = 100;
+    ctx.BalancedPrev[0] = 100;
+    ctx.BalancedPrev[1] = 100;
+    ctx.IsetBalanced = 200;
+    ctx.IdiffFiltered = 150;
+
+    /* Large headroom -> large jump -> clamped */
+    ctx.MainsMeterImeasured = 50;
+    ctx.EVMeterImeasured = 200;
+    ctx.Isum = 50;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    TEST_ASSERT_TRUE(ctx.lb_diag.DeltaClamped);
+}
+
 /* ---- Main ---- */
 int main(void) {
-    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#24)");
+    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#25)");
 
     /* Group A: Single EVSE multi-cycle convergence */
     RUN_TEST(test_smart_standalone_converges_to_target);
@@ -1102,6 +1191,12 @@ int main(void) {
     RUN_TEST(test_distribution_smoothing_skipped_on_mod1);
     RUN_TEST(test_distribution_smoothing_still_converges);
     RUN_TEST(test_balanced_prev_tracks_previous);
+
+    /* LB diagnostic snapshot (Issue #25) */
+    RUN_TEST(test_lb_diag_snapshot_populated);
+    RUN_TEST(test_lb_diag_captures_shortage);
+    RUN_TEST(test_lb_diag_captures_oscillation);
+    RUN_TEST(test_lb_diag_captures_delta_clamped);
 
     TEST_SUITE_RESULTS();
 }
