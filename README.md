@@ -28,9 +28,8 @@ logic:
   continue to work unchanged. Protected by a FreeRTOS mutex on ESP32
 - **HAL callbacks** — hardware operations (contactors, CP duty, pilot signal) are
   abstracted behind function pointers, replaced with no-ops in test builds
-- **539 native tests** across 23 suites with full Specification-by-Example (SbE)
-  traceability — covering state transitions, load balancing, solar mode, OCPP, MQTT,
-  HTTP API, error handling, phase switching, and more
+- **560+ native tests** across 24 suites with full Specification-by-Example (SbE)
+  traceability
 
 The purpose is to demonstrate how AI agents (Claude Code) can be used as collaborative
 software engineering partners on real-world embedded/OT systems — performing root cause
@@ -40,68 +39,140 @@ collaboration using the multi-agent workflow described in [CLAUDE.md](CLAUDE.md)
 
 # What is it?
 
-It's an open source EVSE (Electric Vehicle Supply Equipment). It supports 1-3 phase charging, fixed charging cable or charging socket. Locking actuator support (5 different types). And it can directly drive a mains contactor for supplying power to the EV. It features a display from which all module parameters can be configured.<br>
-Up to 8 modules can be connected together to charge up to eight EV's from one mains connection without overloading it.<br>
-The mains connection can be monitored by the (optional) sensorbox or a modbus kWh meter. This allows smart charging.
-Communication between the SmartEVSE(s) / Sensorbox or kWh meters is done over RS485(modbus).
-
+It's an open source EVSE (Electric Vehicle Supply Equipment). It supports 1-3 phase
+charging, fixed charging cable or charging socket. Locking actuator support (5 different
+types). And it can directly drive a mains contactor for supplying power to the EV.
+It features a display from which all module parameters can be configured.<br>
+Up to 8 modules can be connected together to charge up to eight EV's from one mains
+connection without overloading it.<br>
+The mains connection can be monitored by the (optional) sensorbox or a modbus kWh meter.
+This allows smart charging.
+Communication between the SmartEVSE(s) / Sensorbox or kWh meters is done over
+RS485 (Modbus).
 
 # Features
 
-- Works with all EV's or plugin hybrids.
-- Measures the current consumption of other appliances, and automatically lowers or increases the charging current to the EV. (sensorbox required)
-- The power sharing feature let's you connect up to 8 SmartEVSE's to one mains supply.
-- Two switched 230VAC outputs, for contactors. Switch between 1 or 3 phase charging.
-- Powered RS485 communication bus for sensorbox / Modbus kWh Meters.
-- Can be used with fixed cable, or socket and charging cable.
+## Charging
+
+- Works with all EV's or plugin hybrids
+- 1-3 phase charging, fixed cable or socket with locking actuator (5 types)
 - Automatically selects current capacity of the connected cable (13/16/32A)
-- Locking actuator support, locks the charging cable in the socket.
-- RFID reader support, restrict the use of the charging station to max 100 RFID cards.
-- An optional modbus kWh meter will measure power and energy, and display this on the LCD.
-- Built-in temperature sensor.
-- RGB led output for status information while charging.
-- All module parameters can be configured using the display and buttons.
-- WiFi status page.
-- Firmware upgradable through USB-C port or through the built in webserver.
-- MQTT API for communication with external software (e.g. HomeAssistant)
-- REST API
-- Remote control with Smartphone App 
-- Rudimentary support for home batteries
-- Supports delayed charging
-- OCPP 1.6j support
+- Two switched 230VAC contactor outputs — switch between 1 or 3 phase charging
+- Powered RS485 communication bus for sensorbox / Modbus kWh meters
+- Built-in temperature sensor with thermal protection
 - Operating voltage: 110-240 Vac
-- Dimensions (W x D x H):  52 x 91 x 58 mm (width: 3 DIN modules)
+- Dimensions (W x D x H): 52 x 91 x 58 mm (3 DIN modules)
 
-# Privacy first
+## Smart & Solar Mode
 
-- SmartEVSE will work perfectly fine without a internet connection.
-- The controller does not collect or store usage statistics. Your data remains yours.
-- No vendor lock-in. History has shown this can result in non-functional EV chargers.
-- Open Source Firmware. Fork it, modify it, contribute to make it even better.
+- **Smart mode**: automatically adjusts charge current based on other household
+  consumption to stay within mains capacity
+- **Solar mode**: charges from solar surplus, with configurable start/stop thresholds
+  and import allowance
+- **1P/3P phase switching**: automatic switching between 1-phase and 3-phase based
+  on available power (requires CONTACT 2 wiring)
 
-# Connecting the SmartEVSE to WiFi
+### Fork improvements (addresses upstream [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316))
 
-For connecting your device to your WiFi, follow the detailed instructions
-on the [Configuration page](docs/configuration.md#wifi) page, WIFI section.
+- **EMA current smoothing** — configurable exponential moving average filter to
+  dampen oscillation in smart/solar modes
+- **Dead band regulation** — suppresses micro-adjustments when current difference
+  is within a configurable band
+- **Symmetric ramp rates** — equal ramp-up and ramp-down speeds prevent
+  overshoot/undershoot oscillation
+- **Tiered phase switching timers** — separate fast timer for severe overload,
+  configurable hold-down guard to prevent rapid 1P/3P cycling
+- **Stop/start cycling prevention** — higher NoCurrent threshold, gradual decay,
+  solar minimum run time, and shorter solar charge delay
+- **Slow EV compatibility** — settling window and ramp rate limiter for EVs like
+  the Renault Zoe that stall on rapid current changes
 
-# Updating Firmware
+See [Solar & Smart Mode Stability](docs/solar-smart-stability.md) for all settings
+and configuration.
 
-Connect the SmartEVSE controller to your WiFi network (using the menu of the SmartEVSE), and then browse to http://IPaddress/update where IPaddress is the IP which is shown on the display.
-You can also use http://smartevse-xxxx.local/update where xxxx is the serial nr of your controller.<br>
-Here you can select the firmware.bin and press update to update the firmware.<br>
-After updating the firmware, you can access the status page again using the normal url: http://smartevse-xxxx.local  (replace xxxx with the serial nr of your controller)<br>
+## Load Balancing & Power Sharing
+
+- Up to 8 SmartEVSEs share one mains connection without overloading it
+- Priority-based power scheduling with configurable rotation intervals
+- Delayed charging support
+
+## RFID & Authorization
+
+- RFID reader support — restrict usage to up to 100 registered cards
+- OCPP 1.6j support for backend authorization
+
+### Fork improvements
+
+- **Fixed RFID toggle bug** — AccessStatus is now cleared on all disconnect paths
+  (including Tesla C→B→A), preventing the next RFID swipe from toggling OFF
+  instead of ON
+- **Bridge transaction mutex** — FreeRTOS mutex prevents concurrent task corruption
+  of the state context, fixing daily OCPP session failures after Tesla disconnects
+
+## MQTT & Home Assistant
+
+- MQTT API for communication with Home Assistant and other software
+- Auto-discovery payloads for automatic HA entity setup
+
+### Fork improvements (addresses upstream [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338))
+
+- **Change-only publishing** — 70-97% message reduction by only publishing changed
+  values, with configurable heartbeat interval (default 60s)
+- **Fixed HA discovery payloads** — corrected `state_class` for energy sensors,
+  preventing corrupted long-term statistics
+- **Energy zero-value guard** — energy values only published when > 0, preventing
+  phantom consumption in HA energy dashboard
+- **Entity naming cleanup** — snake_case entity IDs for HA 2025.10+ compatibility
+- **New entities**: MaxSumMains (settable), FreeHeap, MQTTMsgCount, LoadBl,
+  PairingPin, FirmwareVersion (diagnostic)
+
+See [MQTT & Home Assistant](docs/mqtt-home-assistant.md) for full topic reference
+and configuration.
+
+## Web & Connectivity
+
+- WiFi status page with real-time monitoring
+- REST API for external integration
+- Remote control with Smartphone App
+- LCD remote control via WebSockets
+- Firmware upgradable through USB-C or built-in webserver
+
+## Privacy
+
+- Works perfectly fine without internet — no cloud dependency
+- Does not collect or store usage statistics
+- No vendor lock-in — open source firmware
+- Fork it, modify it, contribute to make it even better
+
+# Getting started
+
+## Connecting to WiFi
+
+Follow the instructions on the [Configuration page](docs/configuration.md#wifi),
+WiFi section.
+
+## Updating firmware
+
+Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update`
+(replace `xxxx` with your serial number, shown on the display). Select the
+`firmware.bin` and press Update.
 
 # Documentation
 
-[Hardware installation](docs/installation.md)<br>
-[Configuration](docs/configuration.md)<br>
-[Operation](docs/operation.md)<br>
-[Building and Flashing the firmware](docs/building_flashing.md)<br>
-[REST API reference](docs/REST_API.md)<br>
-[Coding standards](CODING_STANDARDS.md)<br>
-[Contributing](CONTRIBUTING.md)<br>
-[AI agent instructions (Claude Code)](CLAUDE.md)<br>
-[AI agent instructions (GitHub Copilot)](.github/copilot-instructions.md)<br>
+| Document | Description |
+|----------|-------------|
+| [Hardware installation](docs/installation.md) | Wiring, mounting, contactor setup |
+| [Configuration](docs/configuration.md) | LCD menu settings reference |
+| [Operation](docs/operation.md) | Day-to-day usage guide |
+| [Solar & Smart Mode Stability](docs/solar-smart-stability.md) | EMA smoothing, dead bands, phase switch timers, cycling prevention |
+| [MQTT & Home Assistant](docs/mqtt-home-assistant.md) | Full topic reference, change-only publishing, entity naming |
+| [REST API reference](docs/REST_API.md) | HTTP endpoints for external integration |
+| [OCPP setup](docs/ocpp.md) | OCPP 1.6j backend configuration |
+| [Priority scheduling](docs/priority-scheduling.md) | Load balancing priority configuration |
+| [Building & Flashing](docs/building_flashing.md) | Compiling firmware from source |
+| [Coding standards](CODING_STANDARDS.md) | Code conventions for contributors |
+| [Contributing](CONTRIBUTING.md) | How to contribute to this project |
+| [AI agent instructions](CLAUDE.md) | Multi-agent workflow for Claude Code |
 
 # Testing & Quality
 
@@ -110,48 +181,47 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 23 |
-| Test scenarios | 539 |
-| Features covered | 39 |
+| Test suites | 24 |
+| Test scenarios | 560 |
+| Features covered | 40+ |
 | Requirement traceability | 100% |
 
 **Test areas** include IEC 61851-1 state transitions, load balancing (single and
 multi-node), Smart/Solar operating modes, OCPP current limiting, MQTT command
-parsing, HTTP API validation, error handling & safety, modem/ISO15118 negotiation,
-phase switching, and end-to-end charging flows.
+parsing and publishing, HTTP API validation, error handling & safety, modem/ISO15118
+negotiation, phase switching, bridge transaction integrity, and end-to-end
+charging flows.
 
 Every test function carries Specification-by-Example (SbE) annotations (`@feature`,
 `@req`, `@scenario`, `@given`/`@when`/`@then`) that trace back to requirements. The
 CI pipeline generates two reports on every build:
 
-- **[Test Specification](SmartEVSE-3/test/native/test-specification.md)** — Markdown
-  document listing all scenarios grouped by feature, with requirement IDs and
-  Given/When/Then steps. Auto-regenerated and committed on every merge to master.
-- **[Traceability Report](SmartEVSE-3/test/native/traceability-report.md)** — Requirement-to-test
-  matrix showing which tests cover each requirement, grouped by feature. Auto-regenerated
-  and committed on every merge to master. Also attached to every GitHub release.
+- **[Test Specification](SmartEVSE-3/test/native/test-specification.md)** — all
+  scenarios grouped by feature, with Given/When/Then steps
+- **[Traceability Report](SmartEVSE-3/test/native/traceability-report.md)** —
+  requirement-to-test coverage matrix
 
-Additional CI artifacts:
-
-| Artifact | Description |
-|----------|-------------|
-| `coverage-report` | Line coverage for the state machine module (lcov) |
-| `traceability-reports` | HTML + Markdown specification reports |
-| `bdd-report` | BDD feature test results (pytest-bdd HTML) |
-
-To run the test suite locally:
+To run locally:
 
 ```bash
-cd SmartEVSE-3/test/native
-make clean test
+cd SmartEVSE-3/test/native && make clean test
 ```
 
-To generate the specification and traceability reports locally:
+# Roadmap
 
-```bash
-cd SmartEVSE-3/test/native
-python3 scripts/extract_traceability.py --html traceability-report.html --markdown test-specification.md --markdown-report traceability-report.md
-```
+Active improvement projects tracked via
+[GitHub Projects](https://github.com/basmeerman?tab=projects):
+
+| Status | Project | Upstream issues |
+|--------|---------|----------------|
+| Done | Plan 01: Solar & Smart Mode Stability | [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Done | Plan 08: HA MQTT Integration | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
+| Next | Plan 02: Multi-Node Load Balancing | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Next | Plan 04: EVCC Integration | — |
+| Planned | Plan 03: OCPP Robustness | — |
+| Planned | Plan 05: Meter Compatibility & Modbus | — |
+| Planned | Plan 06: Diagnostic Telemetry | — |
+| Planned | Plan 07: Web UI Modernization | — |
 
 # SmartEVSE App
 
