@@ -211,6 +211,9 @@ typedef enum {
 #ifndef PHASE_SWITCH_SEVERE_DEFAULT
 #define PHASE_SWITCH_SEVERE_DEFAULT     30 /* 30s for severe shortage (fast switch) */
 #endif
+#ifndef MAX_DELTA_PER_CYCLE
+#define MAX_DELTA_PER_CYCLE            30 /* Max 3.0A Balanced[] change per cycle (deciamps) */
+#endif
 #ifndef RFIDLOCKTIME
 #define RFIDLOCKTIME       60
 #endif
@@ -384,6 +387,9 @@ typedef struct {
     uint8_t  SmartDeadBand;         /* Dead band for smart mode regulation (deciamps) */
     uint8_t  RampRateDivisor;       /* Symmetric ramp divisor for smart/solar (>=1) */
     uint8_t  SolarFineDeadBand;     /* Dead band for solar fine regulation (deciamps) */
+
+    // --- Distribution smoothing (Plan 02, Issue #24) ---
+    uint16_t BalancedPrev[NR_EVSES]; /* Previous cycle's Balanced[] (for delta clamping) */
 
     // --- Adaptive gain / oscillation dampening (Plan 02, Issue #22) ---
     int32_t  IsetBalancedPrev;      /* Previous cycle's IsetBalanced (for change tracking) */

@@ -1030,6 +1030,26 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             n++;
         }
         } // end of standard distribution
+
+        // Issue #24: Distribution smoothing — clamp per-EVSE delta
+        // Skip on mod=1 (new EVSE joining needs full redistribution)
+        if (!mod) {
+            for (n = 0; n < NR_EVSES; n++) {
+                if (ctx->BalancedState[n] != STATE_C) continue;
+                if (ctx->BalancedPrev[n] == 0) continue;  // No previous data
+
+                int32_t delta = (int32_t)ctx->Balanced[n] - (int32_t)ctx->BalancedPrev[n];
+                if (delta > MAX_DELTA_PER_CYCLE)
+                    ctx->Balanced[n] = ctx->BalancedPrev[n] + MAX_DELTA_PER_CYCLE;
+                else if (delta < -MAX_DELTA_PER_CYCLE)
+                    ctx->Balanced[n] = (ctx->BalancedPrev[n] > MAX_DELTA_PER_CYCLE)
+                        ? ctx->BalancedPrev[n] - MAX_DELTA_PER_CYCLE : 0;
+            }
+        }
+
+        // Update BalancedPrev for next cycle
+        for (n = 0; n < NR_EVSES; n++)
+            ctx->BalancedPrev[n] = ctx->Balanced[n];
     }
 
     // Issue #18: Ramp rate limiter + settling trigger (standalone only)

@@ -903,9 +903,157 @@ void test_ema_filter_tracks_sustained_change(void) {
     TEST_ASSERT_GREATER_OR_EQUAL(expected_move / 2, actual_move);
 }
 
+/* ========================================================================
+ * GROUP: Distribution smoothing (Issue #24)
+ * ======================================================================== */
+
+#ifndef MAX_DELTA_PER_CYCLE
+#define MAX_DELTA_PER_CYCLE 30  /* 3.0A in deciamps */
+#endif
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-047
+ * @scenario Distribution smoothing clamps per-EVSE current change
+ * @given Master with 2 EVSEs in Smart mode, converged to 100dA each
+ * @when IsetBalanced suddenly jumps to 320dA (large headroom increase)
+ * @then Each EVSE Balanced[] changes by at most MAX_DELTA_PER_CYCLE (30dA) per cycle
+ */
+void test_distribution_smoothing_clamps_increase(void) {
+    setup_smart_master_n(2, 40, 50);
+    /* Manually set converged state */
+    ctx.Balanced[0] = 100;
+    ctx.Balanced[1] = 100;
+    ctx.BalancedPrev[0] = 100;
+    ctx.BalancedPrev[1] = 100;
+    ctx.IsetBalanced = 200;
+
+    /* Sudden large headroom: low baseload */
+    ctx.MainsMeterImeasured = 50;
+    ctx.EVMeterImeasured = 200;
+    ctx.Isum = 50;
+    ctx.IdiffFiltered = 150;  /* Warm EMA */
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Each EVSE should increase by at most MAX_DELTA_PER_CYCLE */
+    TEST_ASSERT_LESS_OR_EQUAL(100 + MAX_DELTA_PER_CYCLE, (int)ctx.Balanced[0]);
+    TEST_ASSERT_LESS_OR_EQUAL(100 + MAX_DELTA_PER_CYCLE, (int)ctx.Balanced[1]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-048
+ * @scenario Distribution smoothing clamps per-EVSE current decrease
+ * @given Master with 2 EVSEs in Smart mode, converged to 200dA each
+ * @when IsetBalanced suddenly drops (mains overloaded)
+ * @then Each EVSE Balanced[] decreases by at most MAX_DELTA_PER_CYCLE per cycle
+ */
+void test_distribution_smoothing_clamps_decrease(void) {
+    setup_smart_master_n(2, 40, 50);
+    ctx.Balanced[0] = 200;
+    ctx.Balanced[1] = 200;
+    ctx.BalancedPrev[0] = 200;
+    ctx.BalancedPrev[1] = 200;
+    ctx.IsetBalanced = 400;
+
+    /* Sudden overload */
+    ctx.MainsMeterImeasured = 400;
+    ctx.EVMeterImeasured = 400;
+    ctx.Isum = 400;
+    ctx.IdiffFiltered = -100;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Each should decrease by at most MAX_DELTA_PER_CYCLE */
+    TEST_ASSERT_GREATER_OR_EQUAL(200 - MAX_DELTA_PER_CYCLE, ctx.Balanced[0]);
+    TEST_ASSERT_GREATER_OR_EQUAL(200 - MAX_DELTA_PER_CYCLE, ctx.Balanced[1]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-049
+ * @scenario Distribution smoothing is skipped for mod=1 (new EVSE joining)
+ * @given Master with 2 EVSEs, EVSE 1 just joined with mod=1
+ * @when Balanced current is calculated with mod=1
+ * @then Balanced[] values are NOT clamped (full redistribution allowed)
+ */
+void test_distribution_smoothing_skipped_on_mod1(void) {
+    setup_smart_master_n(2, 40, 50);
+    ctx.Balanced[0] = 300;
+    ctx.Balanced[1] = 60;
+    ctx.BalancedPrev[0] = 300;
+    ctx.BalancedPrev[1] = 60;
+    ctx.IsetBalanced = 360;
+
+    ctx.MainsMeterImeasured = 50;
+    ctx.EVMeterImeasured = 360;
+    ctx.Isum = 50;
+    ctx.phasesLastUpdateFlag = true;
+
+    /* mod=1: new EVSE joining — should redistribute fully */
+    evse_calc_balanced_current(&ctx, 1);
+
+    /* With mod=1, clamping is skipped. Large changes are allowed. */
+    int32_t delta0 = (int32_t)ctx.Balanced[0] - 300;
+    if (delta0 < 0) delta0 = -delta0;
+    int32_t delta1 = (int32_t)ctx.Balanced[1] - 60;
+    if (delta1 < 0) delta1 = -delta1;
+
+    /* At least one EVSE should have changed by more than MAX_DELTA if redistribution happened */
+    TEST_ASSERT_TRUE(delta0 > MAX_DELTA_PER_CYCLE || delta1 > MAX_DELTA_PER_CYCLE);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-050
+ * @scenario Distribution smoothing still converges within 20 cycles
+ * @given Master with 2 EVSEs in Smart mode, starting from MinCurrent
+ * @when 20 regulation cycles with distribution smoothing
+ * @then Both EVSEs converge to fair sharing within 10dA
+ */
+void test_distribution_smoothing_still_converges(void) {
+    setup_smart_master_n(2, 25, 50);
+
+    simulate_n_cycles(&ctx, 20, 50);
+
+    int diff = (int)ctx.Balanced[0] - (int)ctx.Balanced[1];
+    if (diff < 0) diff = -diff;
+    TEST_ASSERT_LESS_OR_EQUAL(10, diff);
+    TEST_ASSERT_GREATER_THAN(60, ctx.Balanced[0]);
+}
+
+/*
+ * @feature LB Convergence
+ * @req REQ-LB-051
+ * @scenario BalancedPrev tracks previous cycle values
+ * @given Master with 2 EVSEs after a regulation cycle
+ * @when A second regulation cycle runs
+ * @then BalancedPrev[] matches the Balanced[] values from the previous cycle
+ */
+void test_balanced_prev_tracks_previous(void) {
+    setup_smart_master_n(2, 25, 50);
+    simulate_n_cycles(&ctx, 5, 50);
+
+    uint16_t saved0 = ctx.Balanced[0];
+    uint16_t saved1 = ctx.Balanced[1];
+
+    /* Run one more cycle */
+    int32_t total_ev = ctx.Balanced[0] + ctx.Balanced[1];
+    ctx.EVMeterImeasured = (int16_t)total_ev;
+    ctx.MainsMeterImeasured = (int16_t)(50 + total_ev);
+    ctx.Isum = ctx.MainsMeterImeasured;
+    ctx.phasesLastUpdateFlag = true;
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* BalancedPrev should match what Balanced was before this cycle */
+    TEST_ASSERT_EQUAL_INT(saved0, ctx.BalancedPrev[0]);
+    TEST_ASSERT_EQUAL_INT(saved1, ctx.BalancedPrev[1]);
+}
+
 /* ---- Main ---- */
 int main(void) {
-    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#23)");
+    TEST_SUITE_BEGIN("LB Convergence (Plan-02, Issues #21-#24)");
 
     /* Group A: Single EVSE multi-cycle convergence */
     RUN_TEST(test_smart_standalone_converges_to_target);
@@ -947,6 +1095,13 @@ int main(void) {
     RUN_TEST(test_ema_filter_still_converges);
     RUN_TEST(test_ema_filter_reduces_noise_swing);
     RUN_TEST(test_ema_filter_tracks_sustained_change);
+
+    /* Distribution smoothing (Issue #24) */
+    RUN_TEST(test_distribution_smoothing_clamps_increase);
+    RUN_TEST(test_distribution_smoothing_clamps_decrease);
+    RUN_TEST(test_distribution_smoothing_skipped_on_mod1);
+    RUN_TEST(test_distribution_smoothing_still_converges);
+    RUN_TEST(test_balanced_prev_tracks_previous);
 
     TEST_SUITE_RESULTS();
 }
