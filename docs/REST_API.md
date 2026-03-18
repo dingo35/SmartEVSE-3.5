@@ -91,6 +91,28 @@ to your curl POST command. -d ''
   - Examples:
   - If the desired C2 mode is "Solar Off", the string to be sent is 2
 ```
+
+* phases
+
+&emsp;&emsp;Request a phase switch between 1-phase and 3-phase charging.
+<br>&emsp;&emsp;Only values 1 and 3 are accepted.
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Requirements:
+<br>&emsp;&emsp;- C2 contactor must be present (enable_C2 != 0 "Not present")
+<br>&emsp;&emsp;- Only works on Master or standalone (PWR SHARE = Disabled or Master)
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;The state machine handles the safe disconnect-switch-reconnect sequence automatically.
+<br>&emsp;&emsp;If the requested phase count matches the current phase count, no switching occurs.
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Response includes switching status:
+```json
+    {"phases": 1, "switching": true, "previous_phases": 3}
+```
+<br>&emsp;&emsp;Examples:
+```
+    curl -X POST 'http://ipaddress/settings?phases=1' -d ''
+    curl -X POST 'http://ipaddress/settings?phases=3' -d ''
+```
 * starttime
 
 &emsp;&emsp;Enables delayed charging; always has to be combined with sending the mode in which you want to start charging.
