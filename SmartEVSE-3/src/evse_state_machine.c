@@ -167,6 +167,12 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->StopTime = STOP_TIME;
     ctx->ImportCurrent = IMPORT_CURRENT;
 
+    // Slow EV compatibility
+    ctx->SettlingWindow = SETTLING_WINDOW_DEFAULT;
+    ctx->SettlingTimer = 0;
+    ctx->LastBalanced = 0;
+    ctx->MaxRampRate = MAX_RAMP_RATE_DEFAULT;
+
     // Measurement smoothing & dead band
     ctx->IsetBalanced_ema = 0;
     ctx->EmaAlpha = EMA_ALPHA_DEFAULT;
@@ -725,7 +731,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
 
         // Ongoing regulation (lines 1252-1265)
         // Issue #15: smart dead band + symmetric ramp rates
-        if (!mod) {
+        // Issue #18: suppress regulation during settling window
+        if (!mod && ctx->SettlingTimer == 0) {
             if (ctx->phasesLastUpdateFlag) {
                 int32_t absIdiff = Idifference < 0 ? -Idifference : Idifference;
                 int divisor = ctx->RampRateDivisor > 0 ? ctx->RampRateDivisor : 1;
@@ -747,7 +754,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         }
 
         // Solar fine-grained regulation (lines 1268-1293)
-        if (ctx->Mode == MODE_SOLAR) {
+        // Issue #18: also suppressed during settling window
+        if (ctx->Mode == MODE_SOLAR && ctx->SettlingTimer == 0) {
             IsumImport = ctx->Isum - (10 * ctx->ImportCurrent);
             if (ActiveEVSE > 0 && Idifference > 0) {
                 if (ctx->phasesLastUpdateFlag) {
@@ -990,6 +998,24 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             n++;
         }
         } // end of standard distribution
+    }
+
+    // Issue #18: Ramp rate limiter + settling trigger (standalone only)
+    if (ctx->Mode != MODE_NORMAL && ctx->LoadBl == 0 &&
+        ctx->BalancedState[0] == STATE_C) {
+        // Ramp rate limiter: cap Balanced[0] change per cycle
+        if (ctx->MaxRampRate > 0 && ctx->LastBalanced > 0) {
+            int32_t diff = (int32_t)ctx->Balanced[0] - (int32_t)ctx->LastBalanced;
+            if (diff > ctx->MaxRampRate)
+                ctx->Balanced[0] = ctx->LastBalanced + ctx->MaxRampRate;
+            else if (diff < -(int32_t)ctx->MaxRampRate)
+                ctx->Balanced[0] = (ctx->LastBalanced > ctx->MaxRampRate)
+                    ? ctx->LastBalanced - ctx->MaxRampRate : 0;
+        }
+        // Settling trigger: start settling window if Balanced[0] changed
+        if (ctx->Balanced[0] != ctx->LastBalanced && ctx->SettlingWindow > 0)
+            ctx->SettlingTimer = ctx->SettlingWindow;
+        ctx->LastBalanced = ctx->Balanced[0];
     }
 
     // No active EVSEs: reset timers (lines 1497-1502)
@@ -1376,6 +1402,11 @@ void evse_tick_1s(evse_ctx_t *ctx) {
         } else {
             evse_set_state(ctx, STATE_B1);
         }
+    }
+
+    // SettlingTimer countdown (Issue #18)
+    if (ctx->SettlingTimer > 0) {
+        ctx->SettlingTimer--;
     }
 
     // SolarStopTimer countdown (lines 1670-1679)

@@ -199,6 +199,12 @@ typedef enum {
 #ifndef SOLAR_MIN_RUN_TIME_DEFAULT
 #define SOLAR_MIN_RUN_TIME_DEFAULT     60 /* 60s min charge time before NoCurrent can trigger LESS_6A */
 #endif
+#ifndef SETTLING_WINDOW_DEFAULT
+#define SETTLING_WINDOW_DEFAULT         5 /* 5 seconds settling after current change */
+#endif
+#ifndef MAX_RAMP_RATE_DEFAULT
+#define MAX_RAMP_RATE_DEFAULT          30 /* Max 3.0A change per regulation cycle (deciamps) */
+#endif
 #ifndef PHASE_SWITCH_HOLDDOWN_DEFAULT
 #define PHASE_SWITCH_HOLDDOWN_DEFAULT  300 /* 5 min on 1P before allowing 3P upgrade */
 #endif
@@ -345,6 +351,12 @@ typedef struct {
     uint16_t StartCurrent;
     uint16_t StopTime;
     uint16_t ImportCurrent;
+
+    // --- Slow EV compatibility (Issue #18) ---
+    uint8_t  SettlingWindow;        /* Seconds to suppress regulation after current change */
+    uint8_t  SettlingTimer;         /* Countdown: when >0, regulation is suppressed */
+    uint16_t LastBalanced;          /* Previous Balanced[0] to detect current changes */
+    uint8_t  MaxRampRate;           /* Max deciamps change per regulation cycle */
 
     // --- Measurement smoothing & dead band (Plan 01, Issue #15) ---
     int32_t  IsetBalanced_ema;      /* EMA-smoothed IsetBalanced (deciamps) */

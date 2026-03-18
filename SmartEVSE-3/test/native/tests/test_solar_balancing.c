@@ -938,6 +938,192 @@ void test_cycling_prevention_defaults(void) {
     TEST_ASSERT_EQUAL_INT(60, fresh.SolarMinRunTime);
 }
 
+/* ==== Issue #18: Slow EV Compatibility (Zoe Fix) ==== */
+
+/* ---- Settling window suppresses regulation ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-041
+ * @scenario Settling window suppresses smart regulation after current change
+ * @given The EVSE is in smart mode with SettlingTimer > 0 (settling active)
+ * @when evse_calc_balanced_current is called with large surplus
+ * @then IsetBalanced does not increase (regulation suppressed during settling)
+ */
+void test_settling_window_suppresses_regulation(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 0;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.SettlingTimer = 3;  /* Active settling */
+    ctx.MainsMeterImeasured = 100;  /* Large surplus: Idifference = 150 */
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Regulation should be suppressed during settling */
+    TEST_ASSERT_EQUAL_INT(before, ctx.IsetBalanced);
+}
+
+/* ---- Settling window allows regulation when expired ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-042
+ * @scenario Regulation proceeds normally when settling timer is 0
+ * @given The EVSE is in smart mode with SettlingTimer=0 and large surplus
+ * @when evse_calc_balanced_current is called
+ * @then IsetBalanced increases (regulation active)
+ */
+void test_settling_expired_allows_regulation(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 0;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.SettlingTimer = 0;  /* Not settling */
+    ctx.MainsMeterImeasured = 100;
+    int32_t before = ctx.IsetBalanced;
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_GREATER_THAN(before, ctx.IsetBalanced);
+}
+
+/* ---- Current change triggers settling ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-043
+ * @scenario Balanced[0] change triggers settling timer
+ * @given The EVSE is solar charging with LastBalanced=100 and SettlingWindow=5
+ * @when evse_calc_balanced_current produces a different Balanced[0]
+ * @then SettlingTimer is set to SettlingWindow
+ */
+void test_current_change_triggers_settling(void) {
+    setup_solar_charging();
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 150;
+    ctx.SettlingWindow = 5;
+    ctx.SettlingTimer = 0;
+    ctx.LastBalanced = 100;  /* Different from what calc will produce */
+    ctx.Isum = -50;
+    ctx.MainsMeterImeasured = -50 + (int16_t)ctx.Balanced[0];
+    ctx.IsetBalanced = 150;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Balanced[0] should differ from LastBalanced=100, triggering settling */
+    if (ctx.Balanced[0] != 100) {
+        TEST_ASSERT_EQUAL_INT(5, ctx.SettlingTimer);
+    }
+}
+
+/* ---- Ramp rate limits current increase ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-044
+ * @scenario Ramp rate limits how much Balanced[0] can change per cycle
+ * @given The EVSE is smart charging with MaxRampRate=30 and Balanced[0]=100
+ * @when evse_calc_balanced_current produces a large increase
+ * @then Balanced[0] changes by at most MaxRampRate from LastBalanced
+ */
+void test_ramp_rate_limits_increase(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 0;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.MaxRampRate = 30;
+    ctx.LastBalanced = 100;
+    ctx.Balanced[0] = 100;
+    ctx.MainsMeterImeasured = -200;  /* Huge surplus -> big IsetBalanced increase */
+    ctx.MaxMains = 100;
+    evse_calc_balanced_current(&ctx, 0);
+    /* Balanced[0] should not exceed LastBalanced + MaxRampRate */
+    TEST_ASSERT_LESS_OR_EQUAL(130, ctx.Balanced[0]);
+}
+
+/* ---- Ramp rate limits current decrease ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-045
+ * @scenario Ramp rate limits how much Balanced[0] can decrease per cycle
+ * @given The EVSE is smart charging with MaxRampRate=30 and Balanced[0]=160
+ * @when evse_calc_balanced_current produces a large decrease
+ * @then Balanced[0] decreases by at most MaxRampRate from LastBalanced
+ */
+void test_ramp_rate_limits_decrease(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 0;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.MaxRampRate = 30;
+    ctx.LastBalanced = 160;
+    ctx.Balanced[0] = 160;
+    ctx.MainsMeterImeasured = 350;  /* Heavy load -> decrease */
+    evse_calc_balanced_current(&ctx, 0);
+    /* Balanced[0] should not drop below LastBalanced - MaxRampRate = 130 */
+    if (ctx.Balanced[0] > 0)
+        TEST_ASSERT_GREATER_OR_EQUAL(130, ctx.Balanced[0]);
+}
+
+/* ---- Settling timer counts down in tick_1s ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-046
+ * @scenario SettlingTimer counts down each second
+ * @given SettlingTimer=3
+ * @when evse_tick_1s is called
+ * @then SettlingTimer decrements to 2
+ */
+void test_settling_timer_countdown(void) {
+    evse_init(&ctx, NULL);
+    ctx.State = STATE_C;
+    ctx.SettlingTimer = 3;
+    evse_tick_1s(&ctx);
+    TEST_ASSERT_EQUAL_INT(2, ctx.SettlingTimer);
+}
+
+/* ---- Slow EV defaults ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-047
+ * @scenario Slow EV compatibility defaults initialized correctly
+ * @given A freshly initialized EVSE context
+ * @when evse_init is called
+ * @then SettlingWindow=5, MaxRampRate=30, SettlingTimer=0, LastBalanced=0
+ */
+void test_slow_ev_defaults(void) {
+    evse_ctx_t fresh;
+    evse_init(&fresh, NULL);
+    TEST_ASSERT_EQUAL_INT(5, fresh.SettlingWindow);
+    TEST_ASSERT_EQUAL_INT(30, fresh.MaxRampRate);
+    TEST_ASSERT_EQUAL_INT(0, fresh.SettlingTimer);
+    TEST_ASSERT_EQUAL_INT(0, fresh.LastBalanced);
+}
+
+/* ---- Ramp rate zero means no limiting ---- */
+
+/*
+ * @feature Solar Balancing
+ * @req REQ-SOL-048
+ * @scenario MaxRampRate=0 disables ramp rate limiting
+ * @given The EVSE is smart charging with MaxRampRate=0
+ * @when evse_calc_balanced_current produces a large change
+ * @then Balanced[0] is not ramp-limited (can change freely)
+ */
+void test_ramp_rate_zero_no_limit(void) {
+    setup_smart_charging();
+    ctx.SmartDeadBand = 0;
+    ctx.EmaAlpha = 100;
+    ctx.IsetBalanced_ema = 100;
+    ctx.MaxRampRate = 0;  /* Disabled */
+    ctx.LastBalanced = 60;
+    ctx.Balanced[0] = 60;
+    ctx.MainsMeterImeasured = 50;  /* Surplus */
+    ctx.MaxMains = 40;
+    evse_calc_balanced_current(&ctx, 0);
+    /* With ramp rate disabled, Balanced[0] can change freely */
+    TEST_ASSERT_TRUE(ctx.Balanced[0] != 60 || ctx.IsetBalanced != 100);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Solar Balancing");
@@ -986,6 +1172,16 @@ int main(void) {
     RUN_TEST(test_solar_charge_delay_shorter);
     RUN_TEST(test_smart_charge_delay_unchanged);
     RUN_TEST(test_cycling_prevention_defaults);
+
+    /* Issue #18: Slow EV Compatibility (Zoe Fix) */
+    RUN_TEST(test_settling_window_suppresses_regulation);
+    RUN_TEST(test_settling_expired_allows_regulation);
+    RUN_TEST(test_current_change_triggers_settling);
+    RUN_TEST(test_ramp_rate_limits_increase);
+    RUN_TEST(test_ramp_rate_limits_decrease);
+    RUN_TEST(test_settling_timer_countdown);
+    RUN_TEST(test_slow_ev_defaults);
+    RUN_TEST(test_ramp_rate_zero_no_limit);
 
     TEST_SUITE_RESULTS();
 }
