@@ -643,7 +643,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     int32_t TotalCurrent = 0;
     int32_t ActiveMax = 0;
     int32_t Baseload, Baseload_EV;
-    int32_t Idifference; // cppcheck-suppress variableScope
+    int32_t Idifference = 0; // cppcheck-suppress variableScope
     int32_t IsumImport = 0;
     bool LimitedByMaxSumMains = false;
     bool priorityScheduled = false; // cppcheck-suppress variableScope
