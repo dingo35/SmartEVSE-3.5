@@ -1162,7 +1162,7 @@ void mqttPublishData() {
             mqtt_pub_int(MQTT_SLOT_WIFI_RSSI, "/WiFiRSSI", WiFi.RSSI(), false, now_s);
         }
         mqtt_pub_int(MQTT_SLOT_LOAD_BL, "/LoadBl", LoadBl, true, now_s);
-        mqtt_pub_int(MQTT_SLOT_PAIRING_PIN, "/PairingPin", PairingPin, true, now_s);
+        mqtt_pub_str(MQTT_SLOT_PAIRING_PIN, "/PairingPin", PairingPin.c_str(), true, now_s);
         mqtt_pub_str(MQTT_SLOT_FIRMWARE_VERSION, "/FirmwareVersion", VERSION, true, now_s);
         mqtt_pub_int(MQTT_SLOT_SOLAR_STOP_TIMER, "/SolarStopTimer", SolarStopTimer, false, now_s);
         mqtt_pub_int(MQTT_SLOT_CURRENT_MAX_SUM_MAINS, "/CurrentMaxSumMains", MaxSumMains, true, now_s);
