@@ -949,6 +949,10 @@ void SetupMQTTClient() {
     MQTTclient.announce("ESP Temp", "sensor", optional_payload);
     optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
     MQTTclient.announce("ESP Uptime", "sensor", optional_payload);
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic");
+    MQTTclient.announce("LoadBl", "sensor", optional_payload);
+    MQTTclient.announce("PairingPin", "sensor", optional_payload);
+    MQTTclient.announce("Firmware Version", "sensor", optional_payload);
 
 #if MODEM
         optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
@@ -1081,6 +1085,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/WiFiRSSI", String(WiFi.RSSI()), false, 0);
         MQTTclient.publish(MQTTprefix + "/LoadBl", LoadBl, true, 0);
         MQTTclient.publish(MQTTprefix + "/PairingPin", PairingPin, true, 0);
+        MQTTclient.publish(MQTTprefix + "/FirmwareVersion", VERSION, true, 0);
         MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
         MQTTclient.publish(MQTTprefix + "/CurrentMaxSumMains", MaxSumMains, true, 0);
         if (LoadBl == 1) {
