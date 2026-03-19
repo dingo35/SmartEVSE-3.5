@@ -93,6 +93,7 @@ extern "C" {
 #define PILOT_12V   12
 #define PILOT_9V     9
 #define PILOT_6V     6
+#define PILOT_3V     3
 #define PILOT_DIODE  1
 #define PILOT_SHORT  255
 #define PILOT_NOK    0
