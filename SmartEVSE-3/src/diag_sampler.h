@@ -36,6 +36,10 @@ void diag_stop(void);
 /* Format a JSON status response into buf.  Returns bytes written or -1. */
 int diag_status_json(char *buf, size_t bufsz);
 
+/* Push latest snapshot to connected WebSocket clients.
+ * Implemented in network_common.cpp. No-op if no clients connected. */
+void diag_ws_push_snapshot(const diag_snapshot_t *snap);
+
 #ifdef __cplusplus
 }
 #endif

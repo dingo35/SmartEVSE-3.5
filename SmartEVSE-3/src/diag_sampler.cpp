@@ -10,6 +10,7 @@
 #include "main.h"
 #include "esp32.h"
 #include "diag_sampler.h"
+#include "diag_modbus.h"
 #include "evse_bridge.h"
 #include "meter.h"
 #include "debug.h"
@@ -65,16 +66,25 @@ diag_ring_t *diag_get_ring(void)
     return &diag_ring;
 }
 
+extern diag_mb_ring_t g_diag_mb_ring;
+
 void diag_start(diag_profile_t profile)
 {
     diag_ring_reset(&diag_ring);
     diag_set_profile(&diag_ring, profile);
     diag_ring.start_time = diag_uptime_seconds;
+
+    /* Enable Modbus event ring for MODBUS/FAST profiles */
+    bool mb_enable = (profile == DIAG_PROFILE_MODBUS || profile == DIAG_PROFILE_FAST);
+    diag_mb_enable(&g_diag_mb_ring, mb_enable);
+    if (mb_enable)
+        diag_mb_reset(&g_diag_mb_ring);
 }
 
 void diag_stop(void)
 {
     diag_ring_freeze(&diag_ring, true);
+    diag_mb_enable(&g_diag_mb_ring, false);
 }
 
 void diag_sample(void)
@@ -155,6 +165,9 @@ void diag_sample(void)
 #endif
 
     diag_ring_push(&diag_ring, &snap);
+
+    /* Push to WebSocket clients if any are connected */
+    diag_ws_push_snapshot(&snap);
 }
 
 int diag_status_json(char *buf, size_t bufsz)

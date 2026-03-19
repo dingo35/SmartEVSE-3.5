@@ -65,6 +65,12 @@ String MQTTprivatePassword;                 // mqtt.smartevse.nl pre calculated 
 mg_timer *LCDImageTimer = nullptr;
 std::vector<mg_connection*> wsLcdConnections;
 
+// BEGIN PLAN-06: Diagnostic telemetry WebSocket stream
+#include "diag_sampler.h"
+#include "diag_modbus.h"
+std::vector<mg_connection*> wsDiagConnections;
+// END PLAN-06
+
 static void stopLCDImageTimer(struct mg_mgr *manager) {
     if (LCDImageTimer != nullptr && manager != nullptr) {
         mg_timer_free(&manager->timers, LCDImageTimer);
@@ -851,6 +857,32 @@ static void lcd_image_timer_fn(void *arg) {
     }
 }
 
+// BEGIN PLAN-06: Push diagnostic snapshot to WebSocket clients
+void diag_ws_push_snapshot(const diag_snapshot_t *snap) {
+    if (wsDiagConnections.empty() || !snap)
+        return;
+
+    // Remove stale connections
+    for (size_t i = wsDiagConnections.size(); i > 0; --i) {
+        mg_connection *c = wsDiagConnections[i - 1];
+        if (c == nullptr || c->is_closing)
+            wsDiagConnections.erase(wsDiagConnections.begin() + (i - 1));
+    }
+
+    // Send binary snapshot (64 bytes) to all connected clients
+    for (auto *c : wsDiagConnections) {
+        mg_ws_send(c, snap, sizeof(diag_snapshot_t), WEBSOCKET_OP_BINARY);
+    }
+}
+
+static bool isTrackedDiagWsConnection(const mg_connection *connection) {
+    for (const auto *tracked : wsDiagConnections) {
+        if (tracked == connection) return true;
+    }
+    return false;
+}
+// END PLAN-06
+
 // Handle button command received via WebSocket
 // Expected JSON format: {"button":"left|middle|right", "state":0|1}
 static void handleButtonCommand(struct mg_connection *c, const char* data, size_t len) {
@@ -1030,6 +1062,15 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
     }
     if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
+    // BEGIN PLAN-06: Remove diag WebSocket connection
+    for (auto it = wsDiagConnections.begin(); it != wsDiagConnections.end(); ++it) {
+        if (*it == c) {
+            wsDiagConnections.erase(it);
+            _LOG_V("Removed diag WS connection, remaining: %d\n", wsDiagConnections.size());
+            break;
+        }
+    }
+    // END PLAN-06
   } else if (ev == MG_EV_WS_OPEN) {
     // Websocket connection opened - check if it's for /ws/lcd endpoint
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;
@@ -1043,6 +1084,12 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             _LOG_V("Started LCD image timer\n");
         }
     }
+    // BEGIN PLAN-06: Diagnostic stream WebSocket
+    if (mg_match(hm->uri, mg_str("/diag/stream"), NULL)) {
+        wsDiagConnections.push_back(c);
+        _LOG_V("New diag WS connection, total: %d\n", wsDiagConnections.size());
+    }
+    // END PLAN-06
   } else if (ev == MG_EV_WS_MSG) {
     // Websocket message received - handle button commands
     struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
@@ -1061,6 +1108,12 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         mg_ws_upgrade(c, hm, NULL);  // Upgrade HTTP to WebSocket
         return;  // Don't process as regular HTTP
     }
+    // BEGIN PLAN-06: Diagnostic stream WebSocket upgrade
+    if (mg_match(hm->uri, mg_str("/diag/stream"), NULL)) {
+        mg_ws_upgrade(c, hm, NULL);
+        return;
+    }
+    // END PLAN-06
 
     static webServerRequest requestObj;  // Static to avoid heap allocation on every request
     webServerRequest* request = &requestObj;

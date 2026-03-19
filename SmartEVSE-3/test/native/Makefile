@@ -33,6 +33,7 @@ OCPP_LOGIC_SRC     := $(SRC_DIR)/ocpp_logic.c
 OCPP_TELEMETRY_SRC := $(SRC_DIR)/ocpp_telemetry.c
 SOLAR_DEBUG_JSON_SRC := $(SRC_DIR)/solar_debug_json.c
 DIAG_TELEMETRY_SRC  := $(SRC_DIR)/diag_telemetry.c
+DIAG_MODBUS_SRC     := $(SRC_DIR)/diag_modbus.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -100,6 +101,9 @@ $(BUILD)/test_solar_debug_json: $(TEST_DIR)/test_solar_debug_json.c $(SOLAR_DEBU
 
 $(BUILD)/test_diag_telemetry: $(TEST_DIR)/test_diag_telemetry.c $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_telemetry.c $(DIAG_TELEMETRY_SRC)
+
+$(BUILD)/test_diag_modbus: $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC) $(SRC_DIR)/diag_modbus.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC)
 
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
