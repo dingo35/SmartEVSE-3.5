@@ -104,6 +104,10 @@ const char *http_api_validate_phase_switch(const http_phase_switch_request_t *re
 // NOSTATE or unrecognized values return 'F' (not available).
 char evse_state_to_iec61851(int state, int error_flags);
 
+// Derive whether charging is actively enabled from internal state.
+// Returns true when the EVSE is delivering energy (STATE_C or STATE_C1).
+bool evse_charging_enabled(int state);
+
 #ifdef __cplusplus
 }
 #endif

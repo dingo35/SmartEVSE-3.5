@@ -787,6 +787,52 @@ void test_iec61851_nostate_and_unknown(void) {
     TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(99, NO_ERROR));
 }
 
+// ---- Charging Enabled Derivation ----
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario STATE_C means charging is enabled
+ * @given The EVSE is in STATE_C (charging)
+ * @when evse_charging_enabled is called
+ * @then It returns true
+ */
+void test_charging_enabled_state_c(void) {
+    TEST_ASSERT_TRUE(evse_charging_enabled(STATE_C));
+}
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario STATE_C1 means charging is enabled (stopping phase)
+ * @given The EVSE is in STATE_C1 (charge stopping)
+ * @when evse_charging_enabled is called
+ * @then It returns true because energy is still being delivered
+ */
+void test_charging_enabled_state_c1(void) {
+    TEST_ASSERT_TRUE(evse_charging_enabled(STATE_C1));
+}
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario Non-charging states return false
+ * @given The EVSE is in STATE_A, STATE_B, or other non-charging states
+ * @when evse_charging_enabled is called
+ * @then It returns false
+ */
+void test_charging_enabled_non_charging_states(void) {
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_A));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_B));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_B1));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_D));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_COMM_B));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_ACTSTART));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_MODEM_REQUEST));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_MODEM_DENIED));
+    TEST_ASSERT_FALSE(evse_charging_enabled(NOSTATE));
+}
+
 // ---- Phase Switch Validation ----
 
 /*
@@ -975,6 +1021,11 @@ int main(void) {
     RUN_TEST(test_iec61851_hard_error_overrides_state);
     RUN_TEST(test_iec61851_soft_errors_no_override);
     RUN_TEST(test_iec61851_nostate_and_unknown);
+
+    // Charging enabled derivation
+    RUN_TEST(test_charging_enabled_state_c);
+    RUN_TEST(test_charging_enabled_state_c1);
+    RUN_TEST(test_charging_enabled_non_charging_states);
 
     // Phase switch validation
     RUN_TEST(test_phase_switch_valid_1p);

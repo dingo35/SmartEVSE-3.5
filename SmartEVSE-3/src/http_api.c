@@ -53,6 +53,10 @@ char evse_state_to_iec61851(int state, int error_flags) {
     }
 }
 
+bool evse_charging_enabled(int state) {
+    return (state == STATE_C || state == STATE_C1);
+}
+
 const char *http_api_validate_phase_switch(const http_phase_switch_request_t *req,
                                            int enable_c2, int load_bl) {
     if (req->phases != 1 && req->phases != 3)

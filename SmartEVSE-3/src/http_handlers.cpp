@@ -170,7 +170,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
         char iec_buf[2] = {evse_state_to_iec61851(State, ErrorFlags), '\0'};
         doc["evse"]["iec61851_state"] = iec_buf;
-        doc["evse"]["charging_enabled"] = (State == STATE_C || State == STATE_C1);
+        doc["evse"]["charging_enabled"] = evse_charging_enabled(State);
         if (RFIDReader) {
             char buf[15];
             printRFID(buf, sizeof(buf));
