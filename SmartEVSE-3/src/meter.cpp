@@ -54,6 +54,9 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
     Imeasured = 0;
     Import_active_energy = 0;
     Export_active_energy = 0;
+    EnergyPhase[0] = 0;
+    EnergyPhase[1] = 0;
+    EnergyPhase[2] = 0;
     Energy = 0;
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
     Timeout = timeout;
@@ -450,6 +453,12 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             else
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             UpdateEnergies();
+        } else if (MB.Register == 0x015A && (Type == EM_EASTRON3P || Type == EM_EASTRON3P_INV)) {
+            // Per-phase total active energy (Eastron SDM630: registers 0x015A-0x015F)
+            // 3 × FLOAT32 values in kWh, convert to Wh
+            for (int x = 0; x < 3; x++) {
+                EnergyPhase[x] = decodeMeasurement(MB.Data, x, EMConfig[Type].EDivisor - 3);
+            }
         }
 
     }
