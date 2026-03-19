@@ -153,8 +153,16 @@ extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
 #ifndef SENSORBOX_VERSION
-extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
+// Result struct for HomeWizard P1 meter readings
+struct HomeWizardP1Result {
+    int8_t phases;                  // 0=failure, 1=single phase, 3=three phase
+    std::array<int16_t, 3> currents; // Per-phase current in deci-amps
+    int32_t import_energy_wh;       // Total import energy in Wh (0 if unavailable)
+    int32_t export_energy_wh;       // Total export energy in Wh (0 if unavailable)
+};
+extern HomeWizardP1Result getMainsFromHomeWizardP1();
 extern String homeWizardHost;
+extern String homeWizardManualIP;
 #endif
 
 #define FW_DOWNLOAD_PATH "http://smartevse-3.s3.eu-west-2.amazonaws.com"

@@ -108,6 +108,9 @@ $(BUILD)/test_diag_modbus: $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC) $(S
 $(BUILD)/test_diag_replay: $(TEST_DIR)/test_diag_replay.c diag_loader.c include/diag_loader.h $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_replay.c diag_loader.c $(DIAG_TELEMETRY_SRC)
 
+$(BUILD)/test_api_staleness: $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC) $(SRC_DIR)/evse_ctx.h $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC)
+
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_$*.c $(EVSE_SRC)

@@ -816,6 +816,21 @@ void mqtt_receive_callback(const String topic, const String payload) {
             break;
         // END PLAN-06
 
+        // BEGIN PLAN-09: API staleness timeout
+        case MQTT_CMD_MAINS_METER_TIMEOUT:
+            // Applied via bridge layer to evse_ctx.api_mains_timeout
+            break;
+        // END PLAN-09
+
+        // BEGIN PLAN-09: HomeWizard manual IP fallback
+        case MQTT_CMD_HOMEWIZARD_IP:
+            homeWizardManualIP = cmd.homewizard_ip;
+            // Clear cached mDNS result so next poll uses the new IP
+            homeWizardHost = "";
+            _LOG_A("HomeWizard manual IP set to '%s'\n", cmd.homewizard_ip);
+            break;
+        // END PLAN-09
+
         default:
             return;
     }
@@ -1020,6 +1035,12 @@ void SetupMQTTClient() {
     MQTTclient.announce("LoadBl", "sensor", optional_payload);
     MQTTclient.announce("PairingPin", "sensor", optional_payload);
     MQTTclient.announce("Firmware Version", "sensor", optional_payload);
+    // BEGIN PLAN-09: Metering diagnostic counters
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    MQTTclient.announce("MeterTimeoutCount", "sensor", optional_payload);
+    MQTTclient.announce("MeterRecoveryCount", "sensor", optional_payload);
+    MQTTclient.announce("ApiStaleCount", "sensor", optional_payload);
+    // END PLAN-09
 
 #if MODEM
         optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
@@ -1266,6 +1287,11 @@ void mqttPublishData() {
         // Diagnostic: free heap and MQTT message counter
         mqtt_pub_int(MQTT_SLOT_FREE_HEAP, "/FreeHeap", (int32_t)ESP.getFreeHeap(), false, now_s);
         mqtt_pub_int(MQTT_SLOT_MQTT_MSG_COUNT, "/MQTTMsgCount", (int32_t)MQTTMsgCount, false, now_s);
+        // BEGIN PLAN-09: Metering diagnostic counters
+        mqtt_pub_int(MQTT_SLOT_METER_TIMEOUT_COUNT, "/MeterTimeoutCount", (int32_t)g_evse_ctx.meter_timeout_count, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_METER_RECOVERY_COUNT, "/MeterRecoveryCount", (int32_t)g_evse_ctx.meter_recovery_count, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_API_STALE_COUNT, "/ApiStaleCount", (int32_t)g_evse_ctx.api_stale_count, false, now_s);
+        // END PLAN-09
 
         // MQTT config settings — publish for HA switch/number entity state
         MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);
@@ -2668,16 +2694,22 @@ bool fwNeedsUpdate(char * version) {
     _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
     lastCheck_homewizard = currentTime;
 
-    const auto currents = getMainsFromHomeWizardP1();
+    const auto result = getMainsFromHomeWizardP1();
 #if SMARTEVSE_VERSION < 40 //v3
-    for (int i = 0; i < currents.first; i++)
-        MainsMeter.Irms[i] = currents.second[i];
-    if (currents.first) {
+    for (int i = 0; i < result.phases; i++)
+        MainsMeter.Irms[i] = result.currents[i];
+    if (result.phases) {
+        // BEGIN PLAN-09: HomeWizard energy data
+        if (result.import_energy_wh > 0)
+            MainsMeter.Import_active_energy = result.import_energy_wh;
+        if (result.export_energy_wh > 0)
+            MainsMeter.Export_active_energy = result.export_energy_wh;
+        // END PLAN-09
         CalcIsum();
         MainsMeter.setTimeout(COMM_TIMEOUT);
     }
 #else
-    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, currents.second[0], currents.second[1], currents.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, result.currents[0], result.currents[1], result.currents[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
 }
 
