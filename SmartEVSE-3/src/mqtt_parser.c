@@ -148,6 +148,17 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
                                    &out->ev_meter.L3, &out->ev_meter.W, &out->ev_meter.Wh);
     }
 
+    /* API mains meter staleness timeout: 0=disabled, 10-3600 seconds */
+    if (match_topic(prefix, topic, "/Set/MainsMeterTimeout")) {
+        out->cmd = MQTT_CMD_MAINS_METER_TIMEOUT;
+        int val = atoi(payload);
+        if (val == 0 || (val >= 10 && val <= 3600)) {
+            out->mains_meter_timeout = (uint16_t)val;
+            return true;
+        }
+        return false;
+    }
+
     /* Home battery current: positive = charging, negative = discharging */
     if (match_topic(prefix, topic, "/Set/HomeBatteryCurrent")) {
         out->cmd = MQTT_CMD_HOME_BATTERY_CURRENT;

@@ -185,6 +185,12 @@ typedef enum {
 #ifndef SMART_DEADBAND_DEFAULT
 #define SMART_DEADBAND_DEFAULT  10   /* 1.0A in deciamps */
 #endif
+#ifndef API_MAINS_STALENESS_DEFAULT
+#define API_MAINS_STALENESS_DEFAULT 120  /* Default staleness timeout in seconds */
+#endif
+#ifndef EM_API_METER
+#define EM_API_METER  9   /* MainsMeterType value for API/MQTT feed (matches EM_API in meter.h) */
+#endif
 #ifndef RAMP_RATE_DIVISOR_DEFAULT
 #define RAMP_RATE_DIVISOR_DEFAULT  4 /* Symmetric /4 for both up and down */
 #endif
@@ -349,6 +355,11 @@ typedef struct {
     uint8_t  EVMeterType;
     uint8_t  MainsMeterTimeout;
     uint8_t  EVMeterTimeout;
+
+    // --- API mains staleness detection ---
+    uint16_t api_mains_staleness_timer; /* Countdown in seconds, reset on API data arrival */
+    uint16_t api_mains_timeout;        /* Configurable staleness timeout: 0=disabled, default 120s */
+    bool     api_mains_stale;          /* true when API mains data is stale */
 
     // --- Error handling ---
     uint8_t ErrorFlags;

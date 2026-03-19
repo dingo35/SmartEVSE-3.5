@@ -312,12 +312,14 @@ non-Modbus protocol).
 4. Example: `curl -X POST "http://192.168.1.100/currents?L1=100&L2=50&L3=30" -d ''`
 
 **Important considerations:**
-- The external automation must publish updates frequently — the generic meter
-  timeout is 11 seconds (`COMM_TIMEOUT`). If no update arrives within 11 seconds,
-  SmartEVSE treats the meter as offline and charging stops.
-- There is no dedicated staleness detection with configurable timeout or diagnostic
-  flags — only the generic 11-second meter timeout applies.
-- Publish at least every 5–10 seconds to maintain a reliable connection.
+- **Staleness detection** (enabled by default): If no update arrives within the
+  configured timeout (default 120 seconds), SmartEVSE falls back to MaxMains on
+  all phases as a safe default. Charging continues at the safe limit rather than
+  stopping entirely. Configure via MQTT: publish to
+  `SmartEVSE/<serial>/Set/MainsMeterTimeout` with a value in seconds (0 = disabled,
+  10–3600). When staleness detection is disabled (timeout = 0), the generic 11-second
+  meter timeout applies and charging stops on timeout.
+- Publish updates at regular intervals (recommended: every 5–10 seconds).
 - Only works when `MainsMeter` is set to API (type 9).
 - Does not work in multi-node slave mode (`LoadBl >= 2`).
 
