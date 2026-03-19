@@ -518,6 +518,7 @@ Projects are executed in this priority order (re-prioritize with human approval)
 | P3 | Plan 05 — Meter Compatibility | Medium scope, extraction work |
 | P4 | Plan 06 — Diagnostic Telemetry | Enables debugging 01/02/05 in production |
 | P4 | Plan 07 — Web UI Modernization | Largest scope, least safety-critical |
+| P4 | Plan 09 — Power Input Methods | Documentation + feature gaps, back of backlog |
 
 ### Dependency Rules
 
