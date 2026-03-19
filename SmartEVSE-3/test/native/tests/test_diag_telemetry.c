@@ -9,6 +9,12 @@
 #include "diag_telemetry.h"
 #include <string.h>
 
+/* Static buffers to keep stack usage under 1024 bytes (CI -Wstack-usage=1024).
+ * diag_snapshot_t is 64 bytes, so buf[8]=512, out[8]=512 would exceed limit. */
+static diag_snapshot_t s_buf[8];
+static diag_snapshot_t s_out[8];
+static diag_ring_t     s_ring;
+
 /* Helper: create a snapshot with a given timestamp */
 static diag_snapshot_t make_snap(uint32_t ts)
 {
@@ -76,20 +82,17 @@ void test_ring_init_null(void)
  */
 void test_push_and_read_single(void)
 {
-    diag_snapshot_t buf[8];
-    diag_ring_t ring;
-    diag_ring_init(&ring, buf, 8);
-    diag_set_profile(&ring, DIAG_PROFILE_GENERAL);
+    diag_ring_init(&s_ring, s_buf, 8);
+    diag_set_profile(&s_ring, DIAG_PROFILE_GENERAL);
 
     diag_snapshot_t snap = make_snap(42);
-    diag_ring_push(&ring, &snap);
+    diag_ring_push(&s_ring, &snap);
 
-    TEST_ASSERT_EQUAL(1, ring.count);
+    TEST_ASSERT_EQUAL(1, s_ring.count);
 
-    diag_snapshot_t out[8];
-    uint16_t n = diag_ring_read(&ring, out, 8);
+    uint16_t n = diag_ring_read(&s_ring, s_out, 8);
     TEST_ASSERT_EQUAL(1, n);
-    TEST_ASSERT_EQUAL(42, out[0].timestamp);
+    TEST_ASSERT_EQUAL(42, s_out[0].timestamp);
 }
 
 /*
@@ -301,22 +304,19 @@ void test_unfreeze_allows_push(void)
  */
 void test_frozen_allows_read(void)
 {
-    diag_snapshot_t buf[8];
-    diag_ring_t ring;
-    diag_ring_init(&ring, buf, 8);
-    diag_set_profile(&ring, DIAG_PROFILE_GENERAL);
+    diag_ring_init(&s_ring, s_buf, 8);
+    diag_set_profile(&s_ring, DIAG_PROFILE_GENERAL);
 
     diag_snapshot_t s1 = make_snap(10);
     diag_snapshot_t s2 = make_snap(20);
-    diag_ring_push(&ring, &s1);
-    diag_ring_push(&ring, &s2);
-    diag_ring_freeze(&ring, true);
+    diag_ring_push(&s_ring, &s1);
+    diag_ring_push(&s_ring, &s2);
+    diag_ring_freeze(&s_ring, true);
 
-    diag_snapshot_t out[8];
-    uint16_t n = diag_ring_read(&ring, out, 8);
+    uint16_t n = diag_ring_read(&s_ring, s_out, 8);
     TEST_ASSERT_EQUAL(2, n);
-    TEST_ASSERT_EQUAL(10, out[0].timestamp);
-    TEST_ASSERT_EQUAL(20, out[1].timestamp);
+    TEST_ASSERT_EQUAL(10, s_out[0].timestamp);
+    TEST_ASSERT_EQUAL(20, s_out[1].timestamp);
 }
 
 /* ---- Profile setting ---- */
