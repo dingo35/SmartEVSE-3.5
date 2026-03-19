@@ -59,6 +59,16 @@ static const char *tf_current_test = NULL;
     } \
 } while(0)
 
+#define TEST_ASSERT_EQUAL_STRING(expected, actual) do { \
+    const char *_e = (expected); const char *_a = (actual); \
+    if ((_e == NULL && _a != NULL) || (_e != NULL && _a == NULL) || \
+        (_e != NULL && _a != NULL && strcmp(_e, _a) != 0)) { \
+        printf("\n    FAIL %s:%d: expected \"%s\", got \"%s\"", __FILE__, __LINE__, \
+               _e ? _e : "(null)", _a ? _a : "(null)"); \
+        tf_current_failed = 1; \
+    } \
+} while(0)
+
 #define TEST_ASSERT_LESS_OR_EQUAL(threshold, actual) do { \
     int _t = (int)(threshold); int _a = (int)(actual); \
     if (_a > _t) { \

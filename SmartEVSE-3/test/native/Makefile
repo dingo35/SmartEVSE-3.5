@@ -24,6 +24,7 @@ MQTT_PUBLISH_SRC   := $(SRC_DIR)/mqtt_publish.c
 HTTP_API_SRC       := $(SRC_DIR)/http_api.c
 SERIAL_PARSER_SRC  := $(SRC_DIR)/serial_parser.c
 LED_COLOR_SRC      := $(SRC_DIR)/led_color.c
+OCPP_LOGIC_SRC     := $(SRC_DIR)/ocpp_logic.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -49,6 +50,21 @@ $(BUILD)/test_serial_parser: $(TEST_DIR)/test_serial_parser.c $(SERIAL_PARSER_SR
 
 $(BUILD)/test_led_color: $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC) $(SRC_DIR)/led_color.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC)
+
+$(BUILD)/test_ocpp_auth: $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_connector: $(TEST_DIR)/test_ocpp_connector.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_connector.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_rfid: $(TEST_DIR)/test_ocpp_rfid.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_rfid.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_lb: $(TEST_DIR)/test_ocpp_lb.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_lb.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_settings: $(TEST_DIR)/test_ocpp_settings.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_settings.c $(OCPP_LOGIC_SRC)
 
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
