@@ -198,3 +198,43 @@ ocpp_validate_result_t ocpp_validate_auth_key(const char *auth_key) {
 
     return OCPP_VALIDATE_OK;
 }
+
+/* ---- IEC 61851 → OCPP StatusNotification mapping ---- */
+
+const char *ocpp_iec61851_to_status(char iec_state, bool evse_ready,
+                                    bool tx_active) {
+    switch (iec_state) {
+    case 'A':
+        /* No vehicle connected. If a transaction just ended, MicroOcpp may
+         * report Finishing briefly — but from an IEC 61851 perspective, this
+         * is Available. */
+        return tx_active ? OCPP_STATUS_FINISHING : OCPP_STATUS_AVAILABLE;
+
+    case 'B':
+        /* Vehicle connected but not charging. During a transaction, the EV
+         * has paused charging (SuspendedEV). Otherwise, it's Preparing. */
+        return tx_active ? OCPP_STATUS_SUSPENDED_EV : OCPP_STATUS_PREPARING;
+
+    case 'C':
+        /* Vehicle charging. If EVSE is not offering current (e.g., OCPP
+         * limit set to 0 or load balancer paused), it's SuspendedEVSE. */
+        if (!evse_ready) {
+            return OCPP_STATUS_SUSPENDED_EVSE;
+        }
+        return OCPP_STATUS_CHARGING;
+
+    case 'D':
+        /* Charging with ventilation — same as C for OCPP purposes. */
+        if (!evse_ready) {
+            return OCPP_STATUS_SUSPENDED_EVSE;
+        }
+        return OCPP_STATUS_CHARGING;
+
+    case 'E':
+    case 'F':
+        return OCPP_STATUS_FAULTED;
+
+    default:
+        return OCPP_STATUS_FAULTED;
+    }
+}

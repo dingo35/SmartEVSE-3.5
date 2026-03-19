@@ -70,6 +70,9 @@ $(BUILD)/test_ocpp_settings: $(TEST_DIR)/test_ocpp_settings.c $(OCPP_LOGIC_SRC) 
 $(BUILD)/test_ocpp_telemetry: $(TEST_DIR)/test_ocpp_telemetry.c $(OCPP_TELEMETRY_SRC) $(SRC_DIR)/ocpp_telemetry.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_telemetry.c $(OCPP_TELEMETRY_SRC)
 
+$(BUILD)/test_ocpp_iec61851: $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC)
+
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_$*.c $(EVSE_SRC)
