@@ -192,6 +192,44 @@
 
                     </div>
                     </div><!-- end dashboard-grid -->
+
+                    <!-- Power Flow Diagram -->
+                    <div class="with_mainsmeter power-flow-card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
+                      <div class="card shadow py-2">
+                        <div class="card-body" style="padding:.75rem;">
+                          <svg id="power_flow" viewBox="0 0 520 160" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Grid node -->
+                            <g id="pf_grid" transform="translate(50,80)">
+                              <path class="pf-icon" d="M-8,-20 L8,-20 L12,-8 L4,-8 L8,20 L-4,-2 L2,-2 L-4,-20 Z" opacity=".7"/>
+                              <text class="pf-node-label" y="34">Grid</text>
+                              <text class="pf-node-value" id="pf_grid_val" y="46">-</text>
+                            </g>
+                            <!-- Home node -->
+                            <g id="pf_home" transform="translate(260,80)">
+                              <path class="pf-icon" d="M0,-22 L18,-8 L14,-8 L14,12 L-14,12 L-14,-8 L-18,-8 Z" opacity=".7"/>
+                              <text class="pf-node-label" y="30">Home</text>
+                            </g>
+                            <!-- EVSE/Car node -->
+                            <g id="pf_evse" transform="translate(470,80)">
+                              <path class="pf-icon" d="M-16,4 L-12,-10 L-4,-10 L-2,-18 L14,-18 L18,-10 L18,4 Z M-10,4 L-10,10 L-4,10 L-4,4 M10,4 L10,10 L16,10 L16,4" opacity=".7"/>
+                              <text class="pf-node-label" y="30">EVSE</text>
+                              <text class="pf-node-value" id="pf_evse_val" y="42">-</text>
+                            </g>
+                            <!-- Battery node (optional) -->
+                            <g id="pf_battery" transform="translate(260,148)" style="display:none;">
+                              <path class="pf-icon" d="M-10,-6 L10,-6 L10,6 L-10,6 Z M10,-3 L13,-3 L13,3 L10,3" opacity=".7" transform="scale(.8)"/>
+                              <text class="pf-node-label" x="20" y="4" style="text-anchor:start;">Bat</text>
+                              <text class="pf-node-value" id="pf_bat_val" x="44" y="4" style="text-anchor:start;">-</text>
+                            </g>
+                            <!-- Flow lines -->
+                            <line id="pf_line_gh" class="pf-line flow-none" x1="80" y1="80" x2="230" y2="80"/>
+                            <line id="pf_line_he" class="pf-line flow-none" x1="290" y1="80" x2="440" y2="80"/>
+                            <line id="pf_line_bh" class="pf-line flow-none" x1="260" y1="100" x2="260" y2="138" style="display:none;"/>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+
                     <div class="dashboard-grid" style="margin-top:1rem;">
 
                     <div class="with_modem">

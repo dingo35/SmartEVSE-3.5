@@ -27,7 +27,8 @@ var wsConnected = false;
 /* Cache of last known WS values for computing totals */
 var wsCache = {
     phase_L1: 0, phase_L2: 0, phase_L3: 0,
-    evmeter_L1: 0, evmeter_L2: 0, evmeter_L3: 0
+    evmeter_L1: 0, evmeter_L2: 0, evmeter_L3: 0,
+    evmeter_power: 0, battery_current: 0
 };
 
 function updateConnStatus(connected) {
@@ -99,11 +100,19 @@ function applyWsData(d) {
         $id('evmeter_currents_total').textContent = ((wsCache.evmeter_L1 + wsCache.evmeter_L2 + wsCache.evmeter_L3) / 10).toFixed(1) + " A";
     }
 
-    if (d.evmeter_power !== undefined)
+    if (d.evmeter_power !== undefined) {
         $id('evmeter_power').textContent = (d.evmeter_power / 1000).toFixed(1) + " kW";
+        wsCache.evmeter_power = d.evmeter_power;
+    }
     if (d.evmeter_charged_wh !== undefined)
         $id('evmeter_charged_kwh').textContent = (d.evmeter_charged_wh / 1000).toFixed(1) + " kWh";
+    /* Update power flow when any relevant value changes */
+    if (phaseChanged || d.evmeter_power !== undefined || d.battery_current !== undefined) {
+        var mt = wsCache.phase_L1 + wsCache.phase_L2 + wsCache.phase_L3;
+        updatePowerFlow(mt, wsCache.evmeter_power || 0, d.battery_current !== undefined ? d.battery_current : (wsCache.battery_current || 0));
+    }
     if (d.battery_current !== undefined) {
+        wsCache.battery_current = d.battery_current;
         $id('battery_current').textContent = (d.battery_current / 10).toFixed(1) + " A";
         if (d.battery_current == 0) $id('battery_status').textContent = "Idle";
         else $id('battery_status').textContent = d.battery_current < 0 ? "Discharging" : "Charging";
@@ -207,6 +216,57 @@ function syncMobileNav(modeId) {
     for (var x of [0, 1, 2, 3, 4]) {
         var btn = $id('mnav_' + x);
         if (btn) btn.classList.toggle('active', x === modeId);
+    }
+}
+
+/* ========== Power flow diagram ========== */
+function updatePowerFlow(mainsTotal, evPower, batCurrent) {
+    /* mainsTotal in 0.1A, evPower in W, batCurrent in 0.1A */
+    var lineGH = $id('pf_line_gh');
+    var lineHE = $id('pf_line_he');
+    var lineBH = $id('pf_line_bh');
+    var gridVal = $id('pf_grid_val');
+    var evseVal = $id('pf_evse_val');
+    var batGroup = $id('pf_battery');
+    var batVal = $id('pf_bat_val');
+
+    if (!lineGH) return;
+
+    /* Grid -> Home flow */
+    var gridW = Math.abs(mainsTotal) * 23; /* rough W estimate at 230V */
+    if (gridVal) gridVal.textContent = (gridW / 1000).toFixed(1) + ' kW';
+    var sw = Math.max(2, Math.min(6, Math.abs(mainsTotal) / 100));
+    lineGH.style.strokeWidth = sw;
+    if (mainsTotal > 5) {
+        lineGH.setAttribute('class', 'pf-line flow-fwd'); /* importing */
+    } else if (mainsTotal < -5) {
+        lineGH.setAttribute('class', 'pf-line flow-rev'); /* exporting */
+    } else {
+        lineGH.setAttribute('class', 'pf-line flow-none');
+    }
+
+    /* Home -> EVSE flow */
+    if (evseVal) evseVal.textContent = (Math.abs(evPower) / 1000).toFixed(1) + ' kW';
+    var sw2 = Math.max(2, Math.min(6, Math.abs(evPower) / 2000));
+    lineHE.style.strokeWidth = sw2;
+    if (evPower > 50) {
+        lineHE.setAttribute('class', 'pf-line flow-fwd');
+    } else {
+        lineHE.setAttribute('class', 'pf-line flow-none');
+    }
+
+    /* Battery (optional) */
+    if (batCurrent !== undefined && batCurrent !== 0) {
+        if (batGroup) batGroup.style.display = '';
+        if (lineBH) lineBH.style.display = '';
+        if (batVal) batVal.textContent = (Math.abs(batCurrent) / 10).toFixed(1) + ' A';
+        if (lineBH) {
+            if (batCurrent > 0) {
+                lineBH.setAttribute('class', 'pf-line flow-fwd'); /* charging battery */
+            } else {
+                lineBH.setAttribute('class', 'pf-line flow-rev'); /* discharging */
+            }
+        }
     }
 }
 
@@ -386,6 +446,7 @@ function loadData() {
             $id('phase_3').textContent = (data.phase_currents.L3 / 10).toFixed(1) + " A";
             maxMainsAmps = data.settings.current_main || 25;
             updatePhaseBars(data.phase_currents.L1, data.phase_currents.L2, data.phase_currents.L3);
+            updatePowerFlow(data.phase_currents.TOTAL, data.ev_meter.import_active_power, data.home_battery.current);
             $id('evmeter_currents_total').textContent = (data.ev_meter.currents.TOTAL / 10).toFixed(1) + " A";
             $id('evmeter_currents_1').textContent = (data.ev_meter.currents.L1 / 10).toFixed(1) + " A";
             $id('evmeter_currents_2').textContent = (data.ev_meter.currents.L2 / 10).toFixed(1) + " A";

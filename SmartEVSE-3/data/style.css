@@ -263,6 +263,59 @@ input:disabled, select:disabled, textarea:disabled, button:disabled {
     color: #5a5c69;
 }
 
+/* --- Power flow diagram --- */
+.power-flow-card {
+    grid-column: 1 / -1;
+}
+.power-flow-card svg {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    display: block;
+}
+.pf-line {
+    fill: none;
+    stroke: #b7b9cc;
+    stroke-width: 2;
+    stroke-dasharray: 8 4;
+    stroke-linecap: round;
+}
+.pf-line.flow-fwd {
+    stroke: #4e73df;
+    animation: pf-fwd 0.8s linear infinite;
+}
+.pf-line.flow-rev {
+    stroke: #1cc88a;
+    animation: pf-rev 0.8s linear infinite;
+}
+.pf-line.flow-none {
+    stroke: #d1d3e2;
+    stroke-dasharray: 4 6;
+    animation: none;
+}
+@keyframes pf-fwd {
+    from { stroke-dashoffset: 12; }
+    to { stroke-dashoffset: 0; }
+}
+@keyframes pf-rev {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: 12; }
+}
+.pf-node-label {
+    font-size: 11px;
+    fill: #5a5c69;
+    text-anchor: middle;
+    font-weight: 700;
+}
+.pf-node-value {
+    font-size: 10px;
+    fill: #858796;
+    text-anchor: middle;
+}
+.pf-icon {
+    fill: #5a5c69;
+}
+
 /* --- Mobile bottom navigation --- */
 .mobile-nav {
     display: none;
