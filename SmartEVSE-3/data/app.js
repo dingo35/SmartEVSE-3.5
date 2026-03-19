@@ -1063,6 +1063,22 @@ function postRequiredEVCCID() {
     } else {
         requestImmediateReconnect();
     }
+
+    /* Keyboard shortcuts for LCD buttons */
+    document.addEventListener('keydown', function(e) {
+        /* Only handle when not focused on an input field */
+        var tag = document.activeElement && document.activeElement.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        var btnName = null;
+        if (e.key === 'ArrowLeft') btnName = 'left';
+        else if (e.key === 'ArrowRight') btnName = 'right';
+        else if (e.key === 'Enter') btnName = 'middle';
+        if (btnName) {
+            e.preventDefault();
+            sendButtonState(btnName, true);
+            setTimeout(function() { sendButtonState(btnName, false); }, 300);
+        }
+    });
 })();
 
 /* ========== Initialization ========== */
