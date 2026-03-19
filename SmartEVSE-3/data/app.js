@@ -232,6 +232,38 @@ function updatePhaseBars(l1, l2, l3, prefix) {
     }
 }
 
+function updateNodeOverview(nodes, maxCurrent) {
+    var container = $id('node_list');
+    if (!container || !nodes) return;
+    var html = '';
+    var totalCurrent = 0;
+    var activeCount = 0;
+    for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (n.state === 'Idle' && n.current === 0 && i > 0) continue; /* skip unused nodes */
+        activeCount++;
+        totalCurrent += n.current;
+        var pct = maxCurrent > 0 ? Math.min(100, n.current / maxCurrent * 100) : 0;
+        var color = n.state === 'Charging' ? '#1cc88a' : n.state === 'Request' ? '#f6c23e' : '#858796';
+        var label = i === 0 ? 'Master' : 'Node ' + i;
+        var badge = n.sched ? '<span style="font-size:.7rem;padding:1px 4px;border-radius:3px;background:' +
+            (n.sched === 'Active' ? '#1cc88a' : n.sched === 'Paused' ? '#f6c23e' : '#858796') +
+            ';color:#fff;margin-left:4px;">' + n.sched + '</span>' : '';
+        html += '<div class="phase-bar-row" style="margin-bottom:4px;">' +
+            '<span class="phase-bar-label" style="width:60px;">' + label + '</span>' +
+            '<div class="phase-bar-track"><div style="height:100%;border-radius:5px;width:' +
+            pct.toFixed(1) + '%;background:' + color + ';transition:width .4s;min-width:2px;"></div></div>' +
+            '<span class="phase-bar-value">' + (n.current / 10).toFixed(1) + 'A' + badge + '</span></div>';
+    }
+    container.innerHTML = html;
+    /* Total bar */
+    var totalPct = maxCurrent > 0 ? Math.min(100, totalCurrent / (maxCurrent * activeCount) * 100) : 0;
+    var totalBar = $id('lb_total_bar');
+    var totalVal = $id('lb_total_val');
+    if (totalBar) totalBar.style.width = totalPct.toFixed(1) + '%';
+    if (totalVal) totalVal.textContent = (totalCurrent / 10).toFixed(1) + 'A';
+}
+
 function syncMobileNav(modeId) {
     for (var x of [0, 1, 2, 3, 4]) {
         var btn = $id('mnav_' + x);
@@ -413,6 +445,9 @@ function loadData() {
                     var states = data.schedule.state.join(', ');
                     $id('schedule_state').textContent = states;
                     $id('rotation_timer').textContent = data.schedule.rotation_timer + 's';
+                }
+                if (data.nodes) {
+                    updateNodeOverview(data.nodes, data.settings.current_max);
                 }
             } else {
                 hideAll('.with_scheduling');

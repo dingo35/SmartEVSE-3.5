@@ -67,6 +67,7 @@ extern uint8_t DelayedRepeat;
 extern uint8_t RFIDReader;
 extern uint16_t maxTemp;
 extern uint8_t ScheduleState[];
+extern uint8_t BalancedState[];   // PLAN-07: per-node state for node overview
 extern uint16_t RotationTimer;
 extern int8_t TempEVSE;
 extern const char StrRFIDReader[7][10];
@@ -134,7 +135,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(3200); // https://arduinojson.org/v6/assistant/
+        DynamicJsonDocument doc(3700); // https://arduinojson.org/v6/assistant/ (3200 + nodes array)
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -213,6 +214,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["schedule"]["state"][i] = (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
             }
             doc["schedule"]["rotation_timer"] = RotationTimer;
+            // BEGIN PLAN-07: Per-node load balancing data
+            static const char *StrBalState[] = {"Idle", "Request", "Charging"};
+            for (int i = 0; i < NR_EVSES; i++) {
+                doc["nodes"][i]["current"] = Balanced[i];
+                doc["nodes"][i]["state"] = (BalancedState[i] <= 2) ? StrBalState[BalancedState[i]] : "N/A";
+                doc["nodes"][i]["sched"] = (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
+            }
+            // END PLAN-07
         }
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;

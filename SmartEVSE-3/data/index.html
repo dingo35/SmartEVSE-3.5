@@ -231,6 +231,23 @@
                       </div>
                     </div>
 
+                    <!-- Load Balancing Node Overview (master only) -->
+                    <div class="with_scheduling" id="node_overview_card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
+                      <div class="card border-left-info shadow py-2">
+                        <div class="card-body">
+                          <div class="text font-weight-bold text-info text-uppercase mb-1">Load Balancing Nodes</div>
+                          <div id="node_list"></div>
+                          <div style="margin-top:8px;">
+                            <div class="phase-bar-row">
+                              <span class="phase-bar-label" style="width:50px;">Total</span>
+                              <div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="lb_total_bar" style="width:0%"></div></div>
+                              <span class="phase-bar-value" id="lb_total_val">-</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div class="dashboard-grid" style="margin-top:1rem;">
 
                     <div class="with_modem">
