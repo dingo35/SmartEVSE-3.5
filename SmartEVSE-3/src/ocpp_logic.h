@@ -126,6 +126,39 @@ ocpp_validate_result_t ocpp_validate_chargebox_id(const char *cb_id);
  */
 ocpp_validate_result_t ocpp_validate_auth_key(const char *auth_key);
 
+/* ---- IEC 61851 → OCPP StatusNotification mapping ---- */
+
+/*
+ * OCPP 1.6 ChargePointStatus values as string constants.
+ * These match the StatusNotification.req status field.
+ */
+#define OCPP_STATUS_AVAILABLE      "Available"
+#define OCPP_STATUS_PREPARING      "Preparing"
+#define OCPP_STATUS_CHARGING       "Charging"
+#define OCPP_STATUS_SUSPENDED_EVSE "SuspendedEVSE"
+#define OCPP_STATUS_SUSPENDED_EV   "SuspendedEV"
+#define OCPP_STATUS_FINISHING      "Finishing"
+#define OCPP_STATUS_FAULTED        "Faulted"
+
+/*
+ * Map IEC 61851 state letter to OCPP 1.6 ChargePointStatus string.
+ *   iec_state         — IEC 61851 state ('A'-'F' from evse_state_to_iec61851())
+ *   evse_ready        — true if EVSE is offering current (PWM > 0)
+ *   tx_active         — true if an OCPP transaction is running
+ *
+ * Returns a pointer to a static string constant (never NULL).
+ *
+ * Mapping:
+ *   A (no vehicle)           → Available (or Finishing if tx just ended)
+ *   B (vehicle connected)    → Preparing (or SuspendedEV if tx active but EV not drawing)
+ *   C (charging)             → Charging (or SuspendedEVSE if EVSE not offering current)
+ *   D (with ventilation)     → Charging
+ *   E (error)                → Faulted
+ *   F (not available)        → Faulted
+ */
+const char *ocpp_iec61851_to_status(char iec_state, bool evse_ready,
+                                    bool tx_active);
+
 #ifdef __cplusplus
 }
 #endif
