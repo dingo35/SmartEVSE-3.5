@@ -309,6 +309,27 @@ void evse_set_access(evse_ctx_t *ctx, AccessStatus_t access) {
     }
 }
 
+// ---- STATE_A entry logic (extracted for readability) ----
+static void evse_enter_state_a(evse_ctx_t *ctx) {
+    ctx->ModemStage = 0;
+    if (ctx->ModemEnabled && ctx->DisconnectTimeCounter == -1)
+        ctx->DisconnectTimeCounter = 0;      // Start disconnect counter
+    evse_clear_error_flags(ctx, LESS_6A);
+    ctx->ChargeDelay = 0;
+    ctx->Node[0].Timer = 0;
+    ctx->Node[0].IntTimer = 0;
+    ctx->Node[0].Phases = 0;
+    ctx->Node[0].MinCurrent = 0;
+    // Clear authorization when returning to STATE_A after any charging-related
+    // state. The OCPP layer detects the AccessStatus→OFF change on the next
+    // tick and terminates the transaction.
+    if (ctx->State == STATE_C || ctx->State == STATE_C1 ||
+        ctx->State == STATE_B || ctx->State == STATE_B1) {
+        ctx->AccessStatus = OFF;
+        ctx->AccessTimer = 0;
+    }
+}
+
 // ---- State transition ----
 // Faithful to setState() in main.cpp:790-941
 void evse_set_state(evse_ctx_t *ctx, uint8_t new_state) {
@@ -334,32 +355,8 @@ void evse_set_state(evse_ctx_t *ctx, uint8_t new_state) {
             record_contactor1(ctx, false);               // CONTACTOR1_OFF
             record_contactor2(ctx, false);               // CONTACTOR2_OFF
             record_cp_duty(ctx, 1024);                   // PWM off, +12V
-
-            if (new_state == STATE_A) {
-                ctx->ModemStage = 0;                     // line 827
-                if (ctx->ModemEnabled && ctx->DisconnectTimeCounter == -1)
-                    ctx->DisconnectTimeCounter = 0;      // Start disconnect counter
-                evse_clear_error_flags(ctx, LESS_6A);    // line 828
-                ctx->ChargeDelay = 0;                    // line 829
-                ctx->Node[0].Timer = 0;
-                ctx->Node[0].IntTimer = 0;
-                ctx->Node[0].Phases = 0;
-                ctx->Node[0].MinCurrent = 0;
-                // When ending an active charging session (STATE_C or C1 → STATE_A),
-                // Clear authorization when returning to STATE_A after any charging-related
-                // state. Without this, AccessStatus stays ON for up to RFIDLOCKTIME
-                // seconds, causing the next RFID swipe to toggle it OFF (stopping a
-                // session that was never started) instead of ON (starting a new session).
-                // The normal Tesla disconnect path is C -> B -> A, so old_state is
-                // STATE_B when we reach here — we must include B and B1 in the check.
-                // The OCPP layer detects the AccessStatus→OFF change on the next tick
-                // and terminates the transaction.
-                if (ctx->State == STATE_C || ctx->State == STATE_C1 ||
-                    ctx->State == STATE_B || ctx->State == STATE_B1) {
-                    ctx->AccessStatus = OFF;
-                    ctx->AccessTimer = 0;
-                }
-            }
+            if (new_state == STATE_A)
+                evse_enter_state_a(ctx);
             break;
 
         case STATE_MODEM_REQUEST:
@@ -1136,8 +1133,7 @@ void evse_schedule_tick_1s(evse_ctx_t *ctx) {
             ctx->ConnectedTime[i] = ctx->Uptime;
         } else if (ctx->BalancedState[i] != STATE_C) {
             ctx->ConnectedTime[i] = 0;
-            if (ctx->ScheduleState[i] != SCHED_INACTIVE)
-                ctx->ScheduleState[i] = SCHED_INACTIVE;
+            ctx->ScheduleState[i] = SCHED_INACTIVE;
         }
     }
 

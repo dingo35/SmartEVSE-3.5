@@ -24,6 +24,11 @@ MQTT_PUBLISH_SRC   := $(SRC_DIR)/mqtt_publish.c
 HTTP_API_SRC       := $(SRC_DIR)/http_api.c
 SERIAL_PARSER_SRC  := $(SRC_DIR)/serial_parser.c
 LED_COLOR_SRC      := $(SRC_DIR)/led_color.c
+METER_TELEMETRY_SRC := $(SRC_DIR)/meter_telemetry.c
+MODBUS_DECODE_SRC   := $(SRC_DIR)/modbus_decode.c
+METER_DECODE_SRC    := $(SRC_DIR)/meter_decode.c
+P1_PARSE_SRC        := $(SRC_DIR)/p1_parse.c
+MODBUS_LOG_SRC      := $(SRC_DIR)/modbus_log.c
 OCPP_LOGIC_SRC     := $(SRC_DIR)/ocpp_logic.c
 OCPP_TELEMETRY_SRC := $(SRC_DIR)/ocpp_telemetry.c
 
@@ -51,6 +56,21 @@ $(BUILD)/test_serial_parser: $(TEST_DIR)/test_serial_parser.c $(SERIAL_PARSER_SR
 
 $(BUILD)/test_led_color: $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC) $(SRC_DIR)/led_color.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC)
+
+$(BUILD)/test_meter_telemetry: $(TEST_DIR)/test_meter_telemetry.c $(METER_TELEMETRY_SRC) $(SRC_DIR)/meter_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_meter_telemetry.c $(METER_TELEMETRY_SRC)
+
+$(BUILD)/test_modbus_decode: $(TEST_DIR)/test_modbus_decode.c $(MODBUS_DECODE_SRC) $(SRC_DIR)/modbus_decode.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_modbus_decode.c $(MODBUS_DECODE_SRC)
+
+$(BUILD)/test_meter_decode: $(TEST_DIR)/test_meter_decode.c $(METER_DECODE_SRC) $(SRC_DIR)/meter_decode.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_meter_decode.c $(METER_DECODE_SRC)
+
+$(BUILD)/test_p1_parse: $(TEST_DIR)/test_p1_parse.c $(P1_PARSE_SRC) $(SRC_DIR)/p1_parse.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_p1_parse.c $(P1_PARSE_SRC)
+
+$(BUILD)/test_modbus_log: $(TEST_DIR)/test_modbus_log.c $(MODBUS_LOG_SRC) $(SRC_DIR)/modbus_log.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_modbus_log.c $(MODBUS_LOG_SRC)
 
 $(BUILD)/test_ocpp_auth: $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC)
