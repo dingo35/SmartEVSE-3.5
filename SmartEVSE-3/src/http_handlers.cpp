@@ -21,6 +21,7 @@
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include "ocpp_logic.h"
+#include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
 // Externs for globals not exposed via headers
@@ -82,6 +83,8 @@ extern uint16_t MQTTHeartbeat;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
 extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
+extern float OcppCurrentLimit;
+extern ocpp_telemetry_t OcppTelemetry;
 #endif
 
 //make mongoose 7.14 compatible with 7.13
@@ -260,6 +263,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         } else {
             doc["ocpp"]["status"] = "Disconnected";
         }
+
+        // OCPP telemetry
+        doc["ocpp"]["tx_active"] = OcppTelemetry.tx_active;
+        doc["ocpp"]["tx_starts"] = OcppTelemetry.tx_start_count;
+        doc["ocpp"]["tx_stops"] = OcppTelemetry.tx_stop_count;
+        doc["ocpp"]["auth_accepts"] = OcppTelemetry.auth_accept_count;
+        doc["ocpp"]["auth_rejects"] = OcppTelemetry.auth_reject_count;
+        doc["ocpp"]["auth_timeouts"] = OcppTelemetry.auth_timeout_count;
+        doc["ocpp"]["smart_charging_active"] = (!LoadBl && OcppCurrentLimit >= 0.0f);
+        doc["ocpp"]["current_limit_a"] = OcppCurrentLimit >= 0.0f ? OcppCurrentLimit : -1;
+        doc["ocpp"]["lb_conflict"] = OcppTelemetry.lb_conflict;
 #endif //ENABLE_OCPP
 
         doc["home_battery"]["current"] = homeBatteryCurrent;

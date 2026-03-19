@@ -55,6 +55,7 @@
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
+#include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
 extern Preferences preferences;
@@ -294,6 +295,7 @@ MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
 bool OcppWasStandalone = false; // Tracks LoadBl state at ocppInit() time for LB exclusivity check
+ocpp_telemetry_t OcppTelemetry; // OCPP connection and transaction telemetry
 
 unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 

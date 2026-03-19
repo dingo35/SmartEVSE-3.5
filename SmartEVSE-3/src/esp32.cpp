@@ -61,6 +61,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
 #include "ocpp_logic.h"
+#include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
 #if SMARTEVSE_VERSION >= 40
@@ -356,6 +357,7 @@ extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 extern float OcppCurrentLimit;
 extern bool OcppWasStandalone;
+extern ocpp_telemetry_t OcppTelemetry;
 
 extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 
@@ -1153,6 +1155,18 @@ void mqttPublishData() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         mqtt_pub_str(MQTT_SLOT_OCPP, "/OCPP", OcppMode ? "Enabled" : "Disabled", true, now_s);
         mqtt_pub_str(MQTT_SLOT_OCPP_CONNECTION, "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, now_s);
+        mqtt_pub_str(MQTT_SLOT_OCPP_TX_ACTIVE, "/OCPPTxActive", OcppTelemetry.tx_active ? "true" : "false", false, now_s);
+        {
+            char ocpp_limit_buf[16];
+            if (OcppCurrentLimit >= 0.0f) {
+                snprintf(ocpp_limit_buf, sizeof(ocpp_limit_buf), "%.1f", (double)OcppCurrentLimit);
+            } else {
+                snprintf(ocpp_limit_buf, sizeof(ocpp_limit_buf), "none");
+            }
+            mqtt_pub_str(MQTT_SLOT_OCPP_CURRENT_LIMIT, "/OCPPCurrentLimit", ocpp_limit_buf, false, now_s);
+        }
+        mqtt_pub_str(MQTT_SLOT_OCPP_SMART_CHARGING, "/OCPPSmartCharging",
+            OcppTelemetry.lb_conflict ? "Conflict" : (!LoadBl ? "Active" : "Inactive"), false, now_s);
 #endif //ENABLE_OCPP
         { // LED color topics — build string in buffer
             char color_buf[16];
@@ -1699,6 +1713,8 @@ bool ocppLockingTxDefined() {
 
 void ocppInit() {
 
+    ocpp_telemetry_init(&OcppTelemetry);
+
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
 
     auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
@@ -1871,6 +1887,21 @@ void ocppInit() {
         OcppDefinedTxNotification = true;
         OcppTrackTxNotification = event;
         OcppLastTxNotification = millis();
+
+        // Update telemetry counters
+        if (event == MicroOcpp::TxNotification::StartTx) {
+            ocpp_telemetry_tx_started(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::StopTx) {
+            ocpp_telemetry_tx_stopped(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::Authorized ||
+                   event == MicroOcpp::TxNotification::RemoteStart) {
+            ocpp_telemetry_auth_accepted(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::AuthorizationRejected ||
+                   event == MicroOcpp::TxNotification::DeAuthorized) {
+            ocpp_telemetry_auth_rejected(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::AuthorizationTimeout) {
+            ocpp_telemetry_auth_timeout(&OcppTelemetry);
+        }
     });
 
     // Declare custom "ConfigureMaxCurrent" key
@@ -1931,6 +1962,7 @@ void ocppLoop() {
 
     // Check OCPP / LoadBl mutual exclusivity at runtime
     ocpp_lb_status_t lb_status = ocpp_check_lb_exclusivity(LoadBl, OcppMode, OcppWasStandalone);
+    OcppTelemetry.lb_conflict = (lb_status != OCPP_LB_OK);
     if (lb_status == OCPP_LB_CONFLICT) {
         // LoadBl changed to non-zero while OCPP is active — Smart Charging limits
         // are silently ignored by the state machine. Neutralize the limit and warn.
