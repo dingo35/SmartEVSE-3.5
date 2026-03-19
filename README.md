@@ -28,7 +28,7 @@ logic:
   continue to work unchanged. Protected by a FreeRTOS mutex on ESP32
 - **HAL callbacks** — hardware operations (contactors, CP duty, pilot signal) are
   abstracted behind function pointers, replaced with no-ops in test builds
-- **850+ native tests** across 37 suites with full Specification-by-Example (SbE)
+- **900+ native tests** across 44 suites with full Specification-by-Example (SbE)
   traceability
 
 The purpose is to demonstrate how AI agents (Claude Code) can be used as collaborative
@@ -253,6 +253,27 @@ template.
 - **MQTT profile control** — `Set/DiagProfile` command to start/stop diagnostic
   capture remotely
 
+## ERE Session Logging
+
+### Fork improvements ([PR #89](https://github.com/basmeerman/SmartEVSE-3.5/pull/89))
+
+- **Charge session tracking** — automatic session recording on every charge cycle
+  with start/end timestamps, energy charged (kWh), peak current, phases, and mode
+- **ERE-compatible output** — JSON format includes all fields required for Dutch ERE
+  (Emissie Reductie Eenheden) certificate submission to an inboekdienstverlener
+- **MQTT session publish** — retained JSON message on `<prefix>/Session/Complete`
+  on session end; Home Assistant or any MQTT logger collects sessions for annual
+  CSV export
+- **REST endpoint** — `GET /session/last` returns the last completed session as JSON
+  (or 204 if no session yet)
+- **OCPP alignment** — sessions are flagged when OCPP is managing the transaction,
+  using the same energy meter readings as OCPP StartTransaction/StopTransaction
+- **Zero flash wear** — MQTT-only persistence; no flash writes, no RAM ring buffer,
+  just 32 bytes for the current session
+
+See [ERE Session Logging](docs/ere-session-logging.md) for setup, HA automation
+examples, MID meter requirements, and reporting workflow.
+
 ## Web & Connectivity
 
 - WiFi status page with real-time monitoring
@@ -311,6 +332,7 @@ Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update
 | [MQTT & Home Assistant](docs/mqtt-home-assistant.md) | Full topic reference, change-only publishing, entity naming |
 | [EVCC Integration](docs/evcc-integration.md) | EVCC charger template, IEC 61851 mapping, phase switching API |
 | [REST API reference](docs/REST_API.md) | HTTP endpoints for external integration |
+| [ERE Session Logging](docs/ere-session-logging.md) | Charge session tracking for Dutch ERE certificates, HA automation, MID requirements |
 | [OCPP setup](docs/ocpp.md) | OCPP 1.6j provider guides (Tap Electric, Tibber, SteVe) and configuration |
 | [Priority scheduling](docs/priority-scheduling.md) | Load balancing priority configuration |
 | [Building & Flashing](docs/building_flashing.md) | Compiling firmware from source |
@@ -325,8 +347,8 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 43 |
-| Test scenarios | 870+ |
+| Test suites | 44 |
+| Test scenarios | 900+ |
 | Features covered | 60+ |
 | Requirement traceability | 100% |
 
@@ -336,9 +358,9 @@ authorization/connector state/settings validation/telemetry, MQTT command parsin
 and publishing, HTTP API validation, EVCC IEC 61851 state mapping, Modbus frame
 decoding (FC03/04/06/10), meter byte decoding (4 endianness modes), HomeWizard P1
 JSON parsing, meter telemetry counters, API staleness detection, metering
-diagnostics, diagnostic telemetry, error handling & safety, modem/ISO15118
-negotiation, phase switching, bridge transaction integrity, and end-to-end
-charging flows.
+diagnostics, diagnostic telemetry, charge session logging (ERE), error handling &
+safety, modem/ISO15118 negotiation, phase switching, bridge transaction integrity,
+and end-to-end charging flows.
 
 Every test function carries Specification-by-Example (SbE) annotations (`@feature`,
 `@req`, `@scenario`, `@given`/`@when`/`@then`) that trace back to requirements. The
@@ -371,6 +393,7 @@ All improvement plans are complete. Tracked via
 | Done | Plan 07: Web UI Modernization | [#85](https://github.com/basmeerman/SmartEVSE-3.5/pull/85) | — |
 | Done | Plan 08: HA MQTT Integration | [#64](https://github.com/basmeerman/SmartEVSE-3.5/pull/64), [#68](https://github.com/basmeerman/SmartEVSE-3.5/pull/68), [#82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82) | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
 | Done | Plan 09: Power Input Methods | [#86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86) | — |
+| Done | Plan 10: ERE Session Logging | [#89](https://github.com/basmeerman/SmartEVSE-3.5/pull/89) | — |
 
 # SmartEVSE App
 
