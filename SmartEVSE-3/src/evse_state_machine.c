@@ -135,6 +135,11 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->api_mains_timeout = API_MAINS_STALENESS_DEFAULT;
     ctx->api_mains_stale = false;
 
+    // Metering diagnostic counters
+    ctx->meter_timeout_count = 0;
+    ctx->meter_recovery_count = 0;
+    ctx->api_stale_count = 0;
+
     // Error handling
     ctx->ErrorFlags = NO_ERROR;
     ctx->ChargeDelay = 0;
@@ -1578,6 +1583,7 @@ void evse_tick_1s(evse_ctx_t *ctx) {
             if (!(ctx->MainsMeterType == EM_API_METER && ctx->api_mains_timeout > 0)) {
                 evse_set_error_flags(ctx, CT_NOCOMM);
                 evse_set_power_unavailable(ctx);
+                ctx->meter_timeout_count++;
             }
         } else if (ctx->MainsMeterTimeout > 0) {
             ctx->MainsMeterTimeout--;
@@ -1586,6 +1592,7 @@ void evse_tick_1s(evse_ctx_t *ctx) {
         if (ctx->MainsMeterTimeout == 0 && !(ctx->ErrorFlags & CT_NOCOMM)) {
             evse_set_error_flags(ctx, CT_NOCOMM);
             evse_set_power_unavailable(ctx);
+            ctx->meter_timeout_count++;
         } else if (ctx->MainsMeterTimeout > 0) {
             ctx->MainsMeterTimeout--;
         }
@@ -1608,6 +1615,7 @@ void evse_tick_1s(evse_ctx_t *ctx) {
     // CT_NOCOMM recovery (line 1769)
     if ((ctx->ErrorFlags & CT_NOCOMM) && ctx->MainsMeterTimeout > 0) {
         evse_clear_error_flags(ctx, CT_NOCOMM);
+        ctx->meter_recovery_count++;
     }
 
     // EV_NOCOMM recovery (line 1771)
@@ -1631,6 +1639,7 @@ void evse_tick_1s(evse_ctx_t *ctx) {
         // On expiry: set stale flag and fall back to MaxMains (once)
         if (ctx->api_mains_staleness_timer == 0 && !ctx->api_mains_stale) {
             ctx->api_mains_stale = true;
+            ctx->api_stale_count++;
             for (int i = 0; i < 3; i++) {
                 ctx->MainsMeterIrms[i] = (int16_t)(ctx->MaxMains * 10);
             }

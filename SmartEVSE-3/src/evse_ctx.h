@@ -361,6 +361,11 @@ typedef struct {
     uint16_t api_mains_timeout;        /* Configurable staleness timeout: 0=disabled, default 120s */
     bool     api_mains_stale;          /* true when API mains data is stale */
 
+    // --- Metering diagnostic counters ---
+    uint32_t meter_timeout_count;      /* Number of CT_NOCOMM timeout events */
+    uint32_t meter_recovery_count;     /* Number of CT_NOCOMM recovery events */
+    uint32_t api_stale_count;          /* Number of API staleness detection events */
+
     // --- Error handling ---
     uint8_t ErrorFlags;
     uint8_t ChargeDelay;

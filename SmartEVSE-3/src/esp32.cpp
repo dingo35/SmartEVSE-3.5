@@ -1024,6 +1024,12 @@ void SetupMQTTClient() {
     MQTTclient.announce("LoadBl", "sensor", optional_payload);
     MQTTclient.announce("PairingPin", "sensor", optional_payload);
     MQTTclient.announce("Firmware Version", "sensor", optional_payload);
+    // BEGIN PLAN-09: Metering diagnostic counters
+    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
+    MQTTclient.announce("MeterTimeoutCount", "sensor", optional_payload);
+    MQTTclient.announce("MeterRecoveryCount", "sensor", optional_payload);
+    MQTTclient.announce("ApiStaleCount", "sensor", optional_payload);
+    // END PLAN-09
 
 #if MODEM
         optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
@@ -1270,6 +1276,11 @@ void mqttPublishData() {
         // Diagnostic: free heap and MQTT message counter
         mqtt_pub_int(MQTT_SLOT_FREE_HEAP, "/FreeHeap", (int32_t)ESP.getFreeHeap(), false, now_s);
         mqtt_pub_int(MQTT_SLOT_MQTT_MSG_COUNT, "/MQTTMsgCount", (int32_t)MQTTMsgCount, false, now_s);
+        // BEGIN PLAN-09: Metering diagnostic counters
+        mqtt_pub_int(MQTT_SLOT_METER_TIMEOUT_COUNT, "/MeterTimeoutCount", (int32_t)g_evse_ctx.meter_timeout_count, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_METER_RECOVERY_COUNT, "/MeterRecoveryCount", (int32_t)g_evse_ctx.meter_recovery_count, false, now_s);
+        mqtt_pub_int(MQTT_SLOT_API_STALE_COUNT, "/ApiStaleCount", (int32_t)g_evse_ctx.api_stale_count, false, now_s);
+        // END PLAN-09
 
         // MQTT config settings — publish for HA switch/number entity state
         MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);
