@@ -123,6 +123,7 @@ private:
 extern MQTTclientSmartEVSE_t MQTTclientSmartEVSE;
 extern String MQTTSmartEVSEprefix;              // Shared prefix for all SmartEVSE MQTT operations
 extern void mqttSmartEVSEPublishData();
+extern void mqttPublishSessionComplete(void);
 extern void SetupMQTTClientSmartEVSE();
 #endif //MQTT
 
