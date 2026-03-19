@@ -48,6 +48,7 @@
 #include <soc/sens_struct.h>
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+#include "diag_sampler.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1175,6 +1176,10 @@ void Timer1S_singlerun(void) {
 
 #if MQTT
     timer1s_mqtt_publish();
+#endif
+
+#ifdef SMARTEVSE_VERSION //ESP32
+    diag_sample();
 #endif
 
 #ifndef SMARTEVSE_VERSION //CH32

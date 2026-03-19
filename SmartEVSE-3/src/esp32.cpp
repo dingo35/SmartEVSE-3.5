@@ -51,6 +51,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "meter.h"
 #include "evse_bridge.h"
 #include "solar_debug_json.h"
+#include "diag_sampler.h"
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
@@ -2557,6 +2558,7 @@ extern void Timer20ms(void * parameter);
     // Initialize state machine HAL callbacks (contactor, PWM, state change logging)
     // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
     evse_bridge_init();
+    diag_sampler_init();
 
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(

@@ -14,6 +14,7 @@
 #include "modbus.h"
 #include "mqtt_publish.h"
 #include "OneWire.h"
+#include "diag_sampler.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1174,6 +1175,73 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
+
+    // BEGIN PLAN-06: Diagnostic telemetry REST endpoints
+    } else if (mg_http_match_uri(hm, "/diag/status") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        char json[256];
+        int n = diag_status_json(json, sizeof(json));
+        if (n > 0)
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json);
+        else
+            mg_http_reply(c, 500, "", "status error\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/start") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        /* Parse profile from query: /diag/start?profile=general */
+        char pbuf[16] = {0};
+        mg_http_get_var(&hm->query, "profile", pbuf, sizeof(pbuf));
+
+        diag_profile_t profile = DIAG_PROFILE_GENERAL;
+        if (strcmp(pbuf, "solar") == 0)        profile = DIAG_PROFILE_SOLAR;
+        else if (strcmp(pbuf, "loadbal") == 0)  profile = DIAG_PROFILE_LOADBAL;
+        else if (strcmp(pbuf, "modbus") == 0)   profile = DIAG_PROFILE_MODBUS;
+        else if (strcmp(pbuf, "fast") == 0)     profile = DIAG_PROFILE_FAST;
+        /* else default to GENERAL */
+
+        diag_start(profile);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                      "{\"started\":true,\"profile\":\"%s\"}\r\n", pbuf[0] ? pbuf : "general");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/stop") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        diag_stop();
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                      "{\"stopped\":true}\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/download") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        diag_ring_t *ring = diag_get_ring();
+        /* Freeze for consistent download */
+        bool was_frozen = ring->frozen;
+        diag_ring_freeze(ring, true);
+
+        /* Serialize to binary .diag format */
+        size_t max_sz = sizeof(diag_file_header_t) + (size_t)ring->count * sizeof(diag_snapshot_t) + 4;
+        uint8_t *out = (uint8_t *)malloc(max_sz);
+        if (!out) {
+            if (!was_frozen) diag_ring_freeze(ring, false);
+            mg_http_reply(c, 500, "", "out of memory\r\n");
+            return true;
+        }
+
+        size_t n = diag_ring_serialize(ring, out, max_sz, VERSION, serialnr);
+        if (!was_frozen) diag_ring_freeze(ring, false);
+
+        if (n > 0) {
+            mg_printf(c,
+                      "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: application/octet-stream\r\n"
+                      "Content-Disposition: attachment; filename=\"smartevse_%u.diag\"\r\n"
+                      "Content-Length: %u\r\n\r\n",
+                      (unsigned)serialnr, (unsigned)n);
+            mg_send(c, out, n);
+            c->is_resp = 0;
+        } else {
+            mg_http_reply(c, 500, "", "serialize error\r\n");
+        }
+        free(out);
+        return true;
+    // END PLAN-06
   }
   return false;
 }
