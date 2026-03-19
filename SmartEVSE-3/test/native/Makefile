@@ -105,6 +105,9 @@ $(BUILD)/test_diag_telemetry: $(TEST_DIR)/test_diag_telemetry.c $(DIAG_TELEMETRY
 $(BUILD)/test_diag_modbus: $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC) $(SRC_DIR)/diag_modbus.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC)
 
+$(BUILD)/test_diag_replay: $(TEST_DIR)/test_diag_replay.c diag_loader.c include/diag_loader.h $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_replay.c diag_loader.c $(DIAG_TELEMETRY_SRC)
+
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_$*.c $(EVSE_SRC)
