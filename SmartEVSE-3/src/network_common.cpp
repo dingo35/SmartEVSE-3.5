@@ -214,7 +214,7 @@ static void ws_data_timer_fn(void *arg) {
     if (fullSync) wsDataSyncCounter = 0;
 
     // Build JSON
-    DynamicJsonDocument doc(fullSync ? 512 : 256);
+    DynamicJsonDocument doc(fullSync ? 640 : 384);
 
     if (fullSync) {
         wsBuildFullState(doc);

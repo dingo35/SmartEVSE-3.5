@@ -172,18 +172,18 @@ function connectDataWs() {
         /* Resume polling while WS is disconnected */
         loadData();
     };
-
-    /* Pause/resume on visibility change */
-    document.addEventListener('visibilitychange', function() {
-        if (document.hidden) {
-            if (dataWs) dataWs.close();
-        } else if (!dataWs || dataWs.readyState !== WebSocket.OPEN) {
-            clearTimeout(dataWsReconnectTimer);
-            dataWsReconnectAttempts = 0;
-            connectDataWs();
-        }
-    });
 }
+
+/* Visibility-aware pause/resume for data WS (registered once) */
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        if (dataWs) dataWs.close();
+    } else if (!dataWs || dataWs.readyState !== WebSocket.OPEN) {
+        clearTimeout(dataWsReconnectTimer);
+        dataWsReconnectAttempts = 0;
+        connectDataWs();
+    }
+});
 
 /* ========== Theme (dark mode) ========== */
 function getTheme() {
