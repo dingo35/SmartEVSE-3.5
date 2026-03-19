@@ -895,6 +895,19 @@ void SetupMQTTClient() {
         MQTTclient.announce("Home Battery Current", "sensor", optional_payload);
     }
 
+    //set the parameters for and announce sensors with device class 'power':
+    optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","W");
+    if (MainsMeter.Type) {
+        MQTTclient.announce("Mains Power L1", "sensor", optional_payload);
+        MQTTclient.announce("Mains Power L2", "sensor", optional_payload);
+        MQTTclient.announce("Mains Power L3", "sensor", optional_payload);
+    }
+    if (EVMeter.Type) {
+        MQTTclient.announce("EV Power L1", "sensor", optional_payload);
+        MQTTclient.announce("EV Power L2", "sensor", optional_payload);
+        MQTTclient.announce("EV Power L3", "sensor", optional_payload);
+    }
+
 #if MODEM
         //set the parameters for modem/SoC sensor entities:
         optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
@@ -1091,6 +1104,9 @@ void mqttPublishData() {
                 mqtt_pub_int(MQTT_SLOT_MAINS_IMPORT_ENERGY, "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, now_s);
             if (MainsMeter.Export_active_energy > 0)
                 mqtt_pub_int(MQTT_SLOT_MAINS_EXPORT_ENERGY, "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, now_s);
+            mqtt_pub_int(MQTT_SLOT_MAINS_POWER_L1, "/MainsPowerL1", MainsMeter.Power[0], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_MAINS_POWER_L2, "/MainsPowerL2", MainsMeter.Power[1], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_MAINS_POWER_L3, "/MainsPowerL3", MainsMeter.Power[2], false, now_s);
         }
         if (EVMeter.Type) {
             mqtt_pub_int(MQTT_SLOT_EV_L1, "/EVCurrentL1", EVMeter.Irms[0], false, now_s);
@@ -1101,6 +1117,9 @@ void mqttPublishData() {
                 mqtt_pub_int(MQTT_SLOT_EV_IMPORT_ENERGY, "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, now_s);
             if (EVMeter.Export_active_energy > 0)
                 mqtt_pub_int(MQTT_SLOT_EV_EXPORT_ENERGY, "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_POWER_L1, "/EVPowerL1", EVMeter.Power[0], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_POWER_L2, "/EVPowerL2", EVMeter.Power[1], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_EV_POWER_L3, "/EVPowerL3", EVMeter.Power[2], false, now_s);
         }
         mqtt_pub_int(MQTT_SLOT_ESP_TEMP, "/ESPTemp", TempEVSE, false, now_s);
         mqtt_pub_str(MQTT_SLOT_MODE, "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, now_s);
