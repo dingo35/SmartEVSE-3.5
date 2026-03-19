@@ -1,0 +1,51 @@
+template: smartevse-http
+products:
+  - brand: Edgetech
+    description:
+      generic: Smart EVSE (HTTP)
+      en: Smart EVSE via HTTP REST API
+      de: Smart EVSE per HTTP REST API
+      nl: Smart EVSE via HTTP REST API
+requirements:
+  description:
+    en: Requires SmartEVSE firmware with EVCC API extensions. The EVSE must be connected to the same network via WiFi.
+    de: Erfordert SmartEVSE-Firmware mit EVCC-API-Erweiterungen. Die EVSE muss per WLAN im gleichen Netzwerk sein.
+    nl: Vereist SmartEVSE firmware met EVCC API extensies. De EVSE moet via WiFi op hetzelfde netwerk zijn aangesloten.
+capabilities: ["1p3p"]
+params:
+  - name: host
+render: |
+  type: custom
+  status:
+    source: http
+    uri: http://{{ .host }}/settings
+    jq: .evse.iec61851_state
+  enabled:
+    source: http
+    uri: http://{{ .host }}/settings
+    jq: .evse.charging_enabled
+  enable:
+    source: http
+    uri: http://{{ .host }}/settings?mode={{ "{{" }}if .{{ "}}" }}1{{ "{{" }}else{{ "}}" }}0{{ "{{" }}end{{ "}}" }}
+    method: POST
+  maxcurrent:
+    source: http
+    uri: http://{{ .host }}/settings?override_current={{ "{{" }}mul . 10{{ "}}" }}
+    method: POST
+  phases1p3p:
+    source: http
+    uri: http://{{ .host }}/settings?phases=${:%d}
+    method: POST
+  power:
+    source: http
+    uri: http://{{ .host }}/settings
+    jq: .ev_meter.import_active_power
+  currents:
+    source: http
+    uri: http://{{ .host }}/settings
+    jq: "[.ev_meter.currents.L1, .ev_meter.currents.L2, .ev_meter.currents.L3] | map(. / 10)"
+  energy:
+    source: http
+    uri: http://{{ .host }}/settings
+    jq: .ev_meter.charged_wh
+    scale: 0.001
