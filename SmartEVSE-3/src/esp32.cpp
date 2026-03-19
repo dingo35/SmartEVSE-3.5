@@ -60,6 +60,8 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
+#include "ocpp_logic.h"
+#include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
 #if SMARTEVSE_VERSION >= 40
@@ -354,6 +356,8 @@ extern uint8_t OcppTrackCPvoltage;
 extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 extern float OcppCurrentLimit;
+extern bool OcppWasStandalone;
+extern ocpp_telemetry_t OcppTelemetry;
 
 extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 
@@ -1151,6 +1155,18 @@ void mqttPublishData() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         mqtt_pub_str(MQTT_SLOT_OCPP, "/OCPP", OcppMode ? "Enabled" : "Disabled", true, now_s);
         mqtt_pub_str(MQTT_SLOT_OCPP_CONNECTION, "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, now_s);
+        mqtt_pub_str(MQTT_SLOT_OCPP_TX_ACTIVE, "/OCPPTxActive", OcppTelemetry.tx_active ? "true" : "false", false, now_s);
+        {
+            char ocpp_limit_buf[16];
+            if (OcppCurrentLimit >= 0.0f) {
+                snprintf(ocpp_limit_buf, sizeof(ocpp_limit_buf), "%.1f", (double)OcppCurrentLimit);
+            } else {
+                snprintf(ocpp_limit_buf, sizeof(ocpp_limit_buf), "none");
+            }
+            mqtt_pub_str(MQTT_SLOT_OCPP_CURRENT_LIMIT, "/OCPPCurrentLimit", ocpp_limit_buf, false, now_s);
+        }
+        mqtt_pub_str(MQTT_SLOT_OCPP_SMART_CHARGING, "/OCPPSmartCharging",
+            OcppTelemetry.lb_conflict ? "Conflict" : (!LoadBl ? "Active" : "Inactive"), false, now_s);
 #endif //ENABLE_OCPP
         { // LED color topics — build string in buffer
             char color_buf[16];
@@ -1697,6 +1713,8 @@ bool ocppLockingTxDefined() {
 
 void ocppInit() {
 
+    ocpp_telemetry_init(&OcppTelemetry);
+
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
 
     auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
@@ -1814,6 +1832,9 @@ void ocppInit() {
         return nullptr;
     });
 
+    // Track LoadBl state at init time for runtime exclusivity checks
+    OcppWasStandalone = !LoadBl;
+
     // If SmartEVSE load balancer is turned off, then enable OCPP Smart Charging
     // This means after toggling LB, OCPP must be disabled and enabled for changes to become effective
     if (!LoadBl) {
@@ -1866,6 +1887,21 @@ void ocppInit() {
         OcppDefinedTxNotification = true;
         OcppTrackTxNotification = event;
         OcppLastTxNotification = millis();
+
+        // Update telemetry counters
+        if (event == MicroOcpp::TxNotification::StartTx) {
+            ocpp_telemetry_tx_started(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::StopTx) {
+            ocpp_telemetry_tx_stopped(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::Authorized ||
+                   event == MicroOcpp::TxNotification::RemoteStart) {
+            ocpp_telemetry_auth_accepted(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::AuthorizationRejected ||
+                   event == MicroOcpp::TxNotification::DeAuthorized) {
+            ocpp_telemetry_auth_rejected(&OcppTelemetry);
+        } else if (event == MicroOcpp::TxNotification::AuthorizationTimeout) {
+            ocpp_telemetry_auth_timeout(&OcppTelemetry);
+        }
     });
 
     // Declare custom "ConfigureMaxCurrent" key
@@ -1908,6 +1944,7 @@ void ocppDeinit() {
     OcppTrackAccessBit = false;
     OcppTrackCPvoltage = PILOT_NOK;
     OcppCurrentLimit = -1.f;
+    OcppWasStandalone = false;
 
     mocpp_deinitialize();
 
@@ -1922,6 +1959,26 @@ void ocppLoop() {
     }
 
     mocpp_loop();
+
+    // Check OCPP / LoadBl mutual exclusivity at runtime
+    ocpp_lb_status_t lb_status = ocpp_check_lb_exclusivity(LoadBl, OcppMode, OcppWasStandalone);
+    OcppTelemetry.lb_conflict = (lb_status != OCPP_LB_OK);
+    if (lb_status == OCPP_LB_CONFLICT) {
+        // LoadBl changed to non-zero while OCPP is active — Smart Charging limits
+        // are silently ignored by the state machine. Neutralize the limit and warn.
+        if (OcppCurrentLimit >= 0.0f) {
+            _LOG_W("OCPP: LoadBl=%u conflicts with Smart Charging, disabling OCPP current limit\n", LoadBl);
+            OcppCurrentLimit = -1.0f;
+        }
+    } else if (lb_status == OCPP_LB_NEEDS_REINIT) {
+        // LoadBl changed from non-zero to 0 — Smart Charging callback was never
+        // registered. User needs to disable/enable OCPP for it to take effect.
+        static bool ocpp_reinit_warned = false;
+        if (!ocpp_reinit_warned) {
+            _LOG_W("OCPP: LoadBl changed to standalone but Smart Charging not registered. Disable/enable OCPP to activate.\n");
+            ocpp_reinit_warned = true;
+        }
+    }
 
     // handle Configuration updates
 
@@ -1973,13 +2030,22 @@ void ocppLoop() {
     if (RFIDReader == 6 || RFIDReader == 0) {
         // RFID reader in OCPP mode or RFID fully disabled - OCPP controls Access_bit
         if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
-            _LOG_A("OCPP set Access_bit\n");
-            setAccess(ON);
+            // Guard: defer Access_bit if mode/delay conflicts (FreeVend + Solar, ChargeDelay)
+            if (ocpp_should_defer_access(Mode, ChargeDelay, ErrorFlags)) {
+                // Don't update OcppTrackPermitsCharge — retry rising edge on next loop
+                _LOG_D("OCPP: deferring Access_bit (Mode=%u ChargeDelay=%u ErrorFlags=0x%04X)\n", Mode, ChargeDelay, ErrorFlags);
+            } else {
+                _LOG_A("OCPP set Access_bit\n");
+                setAccess(ON);
+                OcppTrackPermitsCharge = true;
+            }
         } else if (AccessStatus == ON && !ocppPermitsCharge()) {
             _LOG_A("OCPP unset Access_bit\n");
             setAccess(OFF);
+            OcppTrackPermitsCharge = false;
+        } else {
+            OcppTrackPermitsCharge = ocppPermitsCharge();
         }
-        OcppTrackPermitsCharge = ocppPermitsCharge();
 
         // Check if OCPP charge permission has been revoked by other module
         if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge

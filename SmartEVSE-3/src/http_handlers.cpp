@@ -20,6 +20,8 @@
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
+#include "ocpp_logic.h"
+#include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
 // Externs for globals not exposed via headers
@@ -81,6 +83,8 @@ extern uint16_t MQTTHeartbeat;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
 extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
+extern float OcppCurrentLimit;
+extern ocpp_telemetry_t OcppTelemetry;
 #endif
 
 //make mongoose 7.14 compatible with 7.13
@@ -259,6 +263,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         } else {
             doc["ocpp"]["status"] = "Disconnected";
         }
+
+        // OCPP telemetry
+        doc["ocpp"]["tx_active"] = OcppTelemetry.tx_active;
+        doc["ocpp"]["tx_starts"] = OcppTelemetry.tx_start_count;
+        doc["ocpp"]["tx_stops"] = OcppTelemetry.tx_stop_count;
+        doc["ocpp"]["auth_accepts"] = OcppTelemetry.auth_accept_count;
+        doc["ocpp"]["auth_rejects"] = OcppTelemetry.auth_reject_count;
+        doc["ocpp"]["auth_timeouts"] = OcppTelemetry.auth_timeout_count;
+        doc["ocpp"]["smart_charging_active"] = (!LoadBl && OcppCurrentLimit >= 0.0f);
+        doc["ocpp"]["current_limit_a"] = OcppCurrentLimit >= 0.0f ? OcppCurrentLimit : -1;
+        doc["ocpp"]["lb_conflict"] = OcppTelemetry.lb_conflict;
 #endif //ENABLE_OCPP
 
         doc["home_battery"]["current"] = homeBatteryCurrent;
@@ -633,8 +648,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 }
 
                 if(request->hasParam("ocpp_backend_url")) {
-                    if (OcppWsClient) {
-                        OcppWsClient->setBackendUrl(request->getParam("ocpp_backend_url")->value().c_str());
+                    const char *url = request->getParam("ocpp_backend_url")->value().c_str();
+                    ocpp_validate_result_t vr = ocpp_validate_backend_url(url);
+                    if (vr != OCPP_VALIDATE_OK) {
+                        doc["ocpp_backend_url"] = vr == OCPP_VALIDATE_EMPTY ? "URL is empty"
+                                                : vr == OCPP_VALIDATE_BAD_SCHEME ? "URL must start with ws:// or wss://"
+                                                : "Invalid URL";
+                    } else if (OcppWsClient) {
+                        OcppWsClient->setBackendUrl(url);
                         doc["ocpp_backend_url"] = OcppWsClient->getBackendUrl();
                     } else {
                         doc["ocpp_backend_url"] = "Can only update when OCPP enabled";
@@ -642,8 +663,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 }
 
                 if(request->hasParam("ocpp_cb_id")) {
-                    if (OcppWsClient) {
-                        OcppWsClient->setChargeBoxId(request->getParam("ocpp_cb_id")->value().c_str());
+                    const char *cb_id = request->getParam("ocpp_cb_id")->value().c_str();
+                    ocpp_validate_result_t vr = ocpp_validate_chargebox_id(cb_id);
+                    if (vr != OCPP_VALIDATE_OK) {
+                        doc["ocpp_cb_id"] = vr == OCPP_VALIDATE_EMPTY ? "ChargeBoxId is empty"
+                                          : vr == OCPP_VALIDATE_TOO_LONG ? "ChargeBoxId exceeds 20 characters"
+                                          : vr == OCPP_VALIDATE_BAD_CHARS ? "ChargeBoxId contains invalid characters"
+                                          : "Invalid ChargeBoxId";
+                    } else if (OcppWsClient) {
+                        OcppWsClient->setChargeBoxId(cb_id);
                         doc["ocpp_cb_id"] = OcppWsClient->getChargeBoxId();
                     } else {
                         doc["ocpp_cb_id"] = "Can only update when OCPP enabled";
@@ -651,8 +679,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 }
 
                 if(request->hasParam("ocpp_auth_key")) {
-                    if (OcppWsClient) {
-                        OcppWsClient->setAuthKey(request->getParam("ocpp_auth_key")->value().c_str());
+                    const char *auth_key = request->getParam("ocpp_auth_key")->value().c_str();
+                    ocpp_validate_result_t vr = ocpp_validate_auth_key(auth_key);
+                    if (vr != OCPP_VALIDATE_OK) {
+                        doc["ocpp_auth_key"] = vr == OCPP_VALIDATE_TOO_LONG ? "Auth key exceeds 40 characters"
+                                             : "Invalid auth key";
+                    } else if (OcppWsClient) {
+                        OcppWsClient->setAuthKey(auth_key);
                         doc["ocpp_auth_key"] = OcppWsClient->getAuthKey();
                     } else {
                         doc["ocpp_auth_key"] = "Can only update when OCPP enabled";

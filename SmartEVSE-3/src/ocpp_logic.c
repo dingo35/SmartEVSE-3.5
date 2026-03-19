@@ -54,6 +54,28 @@ bool ocpp_should_clear_access(bool permits_charge, uint8_t access_status) {
     return access_status == 1 && !permits_charge;  /* 1 = ON */
 }
 
+bool ocpp_should_defer_access(uint8_t mode, uint8_t charge_delay,
+                              uint16_t error_flags) {
+    /*
+     * When FreeVend/auto-auth is active, OCPP grants ocppPermitsCharge()
+     * unconditionally. But in Solar mode, we should defer Access_bit until
+     * the state machine's solar logic confirms surplus is available.
+     *
+     * Deferral conditions:
+     * 1. Solar mode + NO_SUN error → no solar surplus available
+     * 2. Any mode + ChargeDelay active → still in delay period
+     */
+    if (mode == MODE_SOLAR && (error_flags & NO_SUN)) {
+        return true;
+    }
+
+    if (charge_delay > 0) {
+        return true;
+    }
+
+    return false;
+}
+
 /* ---- RFID hex formatting ---- */
 
 void ocpp_format_rfid_hex(const uint8_t *rfid, size_t rfid_len,

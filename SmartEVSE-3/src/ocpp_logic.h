@@ -52,6 +52,18 @@ bool ocpp_should_set_access(bool permits_charge, bool prev_permits_charge);
  */
 bool ocpp_should_clear_access(bool permits_charge, uint8_t access_status);
 
+/*
+ * Returns true if setting Access_bit should be deferred despite OCPP
+ * permitting charge. This guards against FreeVend/auto-auth bypassing
+ * Solar mode surplus checks or ChargeDelay.
+ *
+ *   mode          — current Mode (MODE_NORMAL=0, MODE_SMART=1, MODE_SOLAR=2)
+ *   charge_delay  — current ChargeDelay (>0 means delay active)
+ *   error_flags   — current ErrorFlags (NO_SUN bit means no solar surplus)
+ */
+bool ocpp_should_defer_access(uint8_t mode, uint8_t charge_delay,
+                              uint16_t error_flags);
+
 /* ---- RFID hex formatting ---- */
 
 #define OCPP_RFID_HEX_MAX  15  /* 7 bytes * 2 hex chars + NUL */

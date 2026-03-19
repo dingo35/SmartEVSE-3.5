@@ -93,6 +93,64 @@ void test_lb_changed_1_to_0_needs_reinit(void) {
         ocpp_check_lb_exclusivity(0, true, false));
 }
 
+/* ---- Runtime transition sequences ---- */
+
+/*
+ * @feature OCPP Load Balancing Exclusivity
+ * @req REQ-OCPP-032
+ * @scenario Runtime transition: standalone → master → back to standalone
+ * @given OCPP was initialized in standalone mode (was_standalone=true)
+ * @when LoadBl changes 0→1 (conflict) then 1→0 (back to standalone)
+ * @then First check returns CONFLICT, second returns OK (was_standalone still true from init)
+ */
+void test_lb_transition_standalone_master_standalone(void) {
+    bool was_standalone = true;
+
+    /* Phase 1: LoadBl changes to 1 while OCPP was initialized standalone */
+    TEST_ASSERT_EQUAL_INT(OCPP_LB_CONFLICT,
+        ocpp_check_lb_exclusivity(1, true, was_standalone));
+
+    /* Phase 2: LoadBl changes back to 0 — was_standalone is still true from init,
+     * so Smart Charging callback is still registered. No conflict. */
+    TEST_ASSERT_EQUAL_INT(OCPP_LB_OK,
+        ocpp_check_lb_exclusivity(0, true, was_standalone));
+}
+
+/*
+ * @feature OCPP Load Balancing Exclusivity
+ * @req REQ-OCPP-033
+ * @scenario Runtime transition: master init → standalone change
+ * @given OCPP was initialized in master mode (was_standalone=false)
+ * @when LoadBl changes from 1 to 0
+ * @then Returns NEEDS_REINIT because Smart Charging was never registered
+ */
+void test_lb_transition_master_init_to_standalone(void) {
+    bool was_standalone = false;
+
+    /* LoadBl=1 at init, OCPP active → no conflict (LB is active, Smart Charging not registered) */
+    TEST_ASSERT_EQUAL_INT(OCPP_LB_CONFLICT,
+        ocpp_check_lb_exclusivity(1, true, was_standalone));
+
+    /* LoadBl changes to 0 → needs reinit */
+    TEST_ASSERT_EQUAL_INT(OCPP_LB_NEEDS_REINIT,
+        ocpp_check_lb_exclusivity(0, true, was_standalone));
+}
+
+/*
+ * @feature OCPP Load Balancing Exclusivity
+ * @req REQ-OCPP-034
+ * @scenario High LoadBl values (nodes 3-8) all trigger conflict
+ * @given OCPP is enabled and was initialized standalone
+ * @when LoadBl is set to values 3 through 8
+ * @then All return OCPP_LB_CONFLICT
+ */
+void test_lb_all_node_values_conflict(void) {
+    for (uint8_t lb = 3; lb <= 8; lb++) {
+        TEST_ASSERT_EQUAL_INT(OCPP_LB_CONFLICT,
+            ocpp_check_lb_exclusivity(lb, true, true));
+    }
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Load Balancing Exclusivity");
@@ -103,6 +161,9 @@ int main(void) {
     RUN_TEST(test_lb_node_conflict);
     RUN_TEST(test_lb_changed_0_to_1_conflict);
     RUN_TEST(test_lb_changed_1_to_0_needs_reinit);
+    RUN_TEST(test_lb_transition_standalone_master_standalone);
+    RUN_TEST(test_lb_transition_master_init_to_standalone);
+    RUN_TEST(test_lb_all_node_values_conflict);
 
     TEST_SUITE_RESULTS();
 }
