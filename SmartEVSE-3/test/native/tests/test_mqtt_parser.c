@@ -901,6 +901,48 @@ void test_mqtt_change_only_invalid(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MQTTChangeOnly", "2", &cmd));
 }
 
+// ---- SolarDebug ----
+
+/*
+ * @feature Solar Debug Telemetry
+ * @req REQ-SOL-020
+ * @scenario SolarDebug enable via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/SolarDebug with payload "1"
+ * @then The parser returns true with solar_debug = true
+ */
+void test_solar_debug_enable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/SolarDebug", "1", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_SOLAR_DEBUG, cmd.cmd);
+    TEST_ASSERT_TRUE(cmd.solar_debug);
+}
+
+/*
+ * @feature Solar Debug Telemetry
+ * @req REQ-SOL-020
+ * @scenario SolarDebug disable via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/SolarDebug with payload "0"
+ * @then The parser returns true with solar_debug = false
+ */
+void test_solar_debug_disable(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/SolarDebug", "0", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_SOLAR_DEBUG, cmd.cmd);
+    TEST_ASSERT_FALSE(cmd.solar_debug);
+}
+
+/*
+ * @feature Solar Debug Telemetry
+ * @req REQ-SOL-020
+ * @scenario SolarDebug rejects invalid payload
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/SolarDebug with payload "2"
+ * @then The parser returns false
+ */
+void test_solar_debug_invalid(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/SolarDebug", "2", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -1034,6 +1076,11 @@ int main(void) {
     RUN_TEST(test_mqtt_change_only_enable);
     RUN_TEST(test_mqtt_change_only_disable);
     RUN_TEST(test_mqtt_change_only_invalid);
+
+    // SolarDebug
+    RUN_TEST(test_solar_debug_enable);
+    RUN_TEST(test_solar_debug_disable);
+    RUN_TEST(test_solar_debug_invalid);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

@@ -482,6 +482,18 @@ void evse_bridge_unlock(void) {
 #endif
 }
 
+// ---- Solar debug snapshot reader (spinlock-protected) ----
+void evse_get_solar_debug(evse_solar_debug_t *out) {
+    if (!out) return;
+#ifdef SMARTEVSE_VERSION
+    portENTER_CRITICAL(&evse_sync_spinlock);
+#endif
+    *out = g_evse_ctx.solar_debug;
+#ifdef SMARTEVSE_VERSION
+    portEXIT_CRITICAL(&evse_sync_spinlock);
+#endif
+}
+
 // ---- Initialization ----
 void evse_bridge_init(void) {
 #ifdef SMARTEVSE_VERSION

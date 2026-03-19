@@ -264,5 +264,18 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    if (match_topic(prefix, topic, "/Set/SolarDebug")) {
+        out->cmd = MQTT_CMD_SOLAR_DEBUG;
+        if (strcmp(payload, "1") == 0 || strcmp(payload, "ON") == 0) {
+            out->solar_debug = true;
+            return true;
+        }
+        if (strcmp(payload, "0") == 0 || strcmp(payload, "OFF") == 0) {
+            out->solar_debug = false;
+            return true;
+        }
+        return false;
+    }
+
     return false;
 }

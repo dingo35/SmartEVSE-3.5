@@ -50,6 +50,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "modbus.h"
 #include "meter.h"
 #include "evse_bridge.h"
+#include "solar_debug_json.h"
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
@@ -798,6 +799,10 @@ void mqtt_receive_callback(const String topic, const String payload) {
             request_write_settings();
             break;
 
+        case MQTT_CMD_SOLAR_DEBUG:
+            mqttSetSolarDebug(cmd.solar_debug);
+            break;
+
         default:
             return;
     }
@@ -1272,6 +1277,36 @@ void mqttSmartEVSEPublishData() {
     }
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/PairingPin", PairingPin, true, 0);
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
+}
+
+// Solar debug MQTT publishing (Issue #66)
+// Gated behind SolarDebugEnabled flag — only publishes when enabled.
+// Rate-limited: publishes at most once every SOLAR_DEBUG_INTERVAL_MS.
+static bool SolarDebugEnabled = false;
+static unsigned long SolarDebugLastPublish = 0;
+#define SOLAR_DEBUG_INTERVAL_MS 5000
+
+void mqttPublishSolarDebug(void) {
+    if (!SolarDebugEnabled) return;
+    if (!MQTTclient.connected) return;
+
+    unsigned long now = millis();
+    if (SolarDebugLastPublish != 0 && (now - SolarDebugLastPublish) < SOLAR_DEBUG_INTERVAL_MS)
+        return;
+
+    evse_solar_debug_t snap;
+    evse_get_solar_debug(&snap);
+
+    char json[384];
+    if (solar_debug_to_json(&snap, json, sizeof(json)) > 0) {
+        MQTTclient.publish(MQTTprefix + "/Debug/Solar", json, false, 0);
+        SolarDebugLastPublish = now;
+    }
+}
+
+void mqttSetSolarDebug(bool enabled) {
+    SolarDebugEnabled = enabled;
+    if (!enabled) SolarDebugLastPublish = 0;
 }
 #endif
 
