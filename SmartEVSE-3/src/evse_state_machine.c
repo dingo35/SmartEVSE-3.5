@@ -683,6 +683,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     Baseload = ctx->MainsMeterImeasured - TotalCurrent;
 
     int saveActiveEVSE = ActiveEVSE;
+    bool deltaClamped = false; // cppcheck-suppress variableScope
+    bool shortage = false; // cppcheck-suppress variableScope
 
     // ---- Phase 3: Calculate IsetBalanced (lines 1198-1305) ----
     if (ctx->Mode == MODE_NORMAL) {
@@ -732,22 +734,49 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // Ongoing regulation (lines 1252-1265)
         // Issue #15: smart dead band + symmetric ramp rates
         // Issue #18: suppress regulation during settling window
+        // Issue #22: adaptive gain — increase divisor when oscillation detected
         if (!mod && ctx->SettlingTimer == 0) {
             if (ctx->phasesLastUpdateFlag) {
-                int32_t absIdiff = Idifference < 0 ? -Idifference : Idifference;
                 int divisor = ctx->RampRateDivisor > 0 ? ctx->RampRateDivisor : 1;
-                if (ctx->Mode == MODE_SMART && absIdiff < ctx->SmartDeadBand) {
+
+                // Issue #22: Oscillation detection — sign flip of Idifference
+                if (ctx->IdiffPrev != 0 && Idifference != 0) {
+                    bool sign_flip = (ctx->IdiffPrev > 0 && Idifference < 0) ||
+                                     (ctx->IdiffPrev < 0 && Idifference > 0);
+                    if (sign_flip) {
+                        if (ctx->OscillationCount < 10)
+                            ctx->OscillationCount++;
+                    } else {
+                        if (ctx->OscillationCount > 0)
+                            ctx->OscillationCount--;
+                    }
+                }
+                ctx->IdiffPrev = Idifference;
+
+                // Issue #22: Adaptive gain — boost divisor by OscillationCount
+                divisor += ctx->OscillationCount;
+
+                // Issue #23: EMA filter on Idifference (alpha=25%)
+                // Smooth measurement noise before applying gain.
+                // new = old*3/4 + raw/4
+                ctx->IdiffFiltered = (ctx->IdiffFiltered * 3 + Idifference) / 4;
+                int32_t filteredIdiff = ctx->IdiffFiltered;
+                int32_t absFiltered = filteredIdiff < 0 ? -filteredIdiff : filteredIdiff;
+
+                if (ctx->Mode == MODE_SMART && absFiltered < ctx->SmartDeadBand) {
                     // Within dead band: no adjustment
-                } else if (Idifference > 0) {
+                } else if (filteredIdiff > 0) {
                     if (ctx->Mode == MODE_SMART)
-                        ctx->IsetBalanced += (Idifference / divisor);
+                        ctx->IsetBalanced += (filteredIdiff / divisor);
                     // Solar increase is handled below in fine regulation
                 } else {
                     if (ctx->Mode == MODE_SMART)
-                        ctx->IsetBalanced += (Idifference / divisor);  // Symmetric ramp
+                        ctx->IsetBalanced += (filteredIdiff / divisor);  // Symmetric ramp
                     else
-                        ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety
+                        ctx->IsetBalanced += Idifference;  // Solar: full-step decrease for safety (raw, not filtered)
                 }
+
+                ctx->IsetBalancedPrev = ctx->IsetBalanced;
             }
             if (ctx->IsetBalanced < 0) ctx->IsetBalanced = 0;
             if (ctx->IsetBalanced > 800) ctx->IsetBalanced = 800;  // Hard limit 80A (line 1264)
@@ -812,6 +841,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
 
         if (ctx->IsetBalanced < (int32_t)(ActiveEVSE * ctx->MinCurrent * 10)) {
             // ---- Shortage of power (lines 1332-1440) ----
+            shortage = true;
 
             // Save actual available power before inflation (for priority scheduling)
             int32_t actualAvailable = ctx->IsetBalanced;
@@ -1000,6 +1030,29 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             n++;
         }
         } // end of standard distribution
+
+        // Issue #24: Distribution smoothing — clamp per-EVSE delta
+        // Skip on mod=1 (new EVSE joining needs full redistribution)
+        if (!mod) {
+            for (n = 0; n < NR_EVSES; n++) {
+                if (ctx->BalancedState[n] != STATE_C) continue;
+                if (ctx->BalancedPrev[n] == 0) continue;  // No previous data
+
+                int32_t delta = (int32_t)ctx->Balanced[n] - (int32_t)ctx->BalancedPrev[n];
+                if (delta > MAX_DELTA_PER_CYCLE) {
+                    ctx->Balanced[n] = ctx->BalancedPrev[n] + MAX_DELTA_PER_CYCLE;
+                    deltaClamped = true;
+                } else if (delta < -MAX_DELTA_PER_CYCLE) {
+                    ctx->Balanced[n] = (ctx->BalancedPrev[n] > MAX_DELTA_PER_CYCLE)
+                        ? ctx->BalancedPrev[n] - MAX_DELTA_PER_CYCLE : 0;
+                    deltaClamped = true;
+                }
+            }
+        }
+
+        // Update BalancedPrev for next cycle
+        for (n = 0; n < NR_EVSES; n++)
+            ctx->BalancedPrev[n] = ctx->Balanced[n];
     }
 
     // Issue #18: Ramp rate limiter + settling trigger (standalone only)
@@ -1043,6 +1096,24 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     ctx->solar_debug.SettlingTimer = ctx->SettlingTimer;
     ctx->solar_debug.Nr_Of_Phases_Charging = ctx->Nr_Of_Phases_Charging;
     ctx->solar_debug.ErrorFlags = ctx->ErrorFlags;
+
+    // Issue #25: populate load balancing diagnostic snapshot
+    ctx->lb_diag.IsetBalanced = ctx->IsetBalanced;
+    ctx->lb_diag.Idifference = Idifference;
+    ctx->lb_diag.IdiffFiltered = ctx->IdiffFiltered;
+    ctx->lb_diag.Baseload = Baseload;
+    ctx->lb_diag.Baseload_EV = Baseload_EV;
+    ctx->lb_diag.ActiveEVSE = (uint8_t)saveActiveEVSE;
+    ctx->lb_diag.OscillationCount = ctx->OscillationCount;
+    ctx->lb_diag.NoCurrent = ctx->NoCurrent;
+    ctx->lb_diag.PriorityScheduled = priorityScheduled;
+    ctx->lb_diag.Shortage = shortage;
+    ctx->lb_diag.DeltaClamped = deltaClamped;
+    for (n = 0; n < NR_EVSES; n++) {
+        ctx->lb_diag.Balanced[n] = ctx->Balanced[n];
+        ctx->lb_diag.BalancedMax[n] = ctx->BalancedMax[n];
+        ctx->lb_diag.ScheduleState[n] = ctx->ScheduleState[n];
+    }
 
     // Reset measurement flag (line 1505)
     ctx->phasesLastUpdateFlag = false;

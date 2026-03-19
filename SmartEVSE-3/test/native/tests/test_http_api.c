@@ -7,6 +7,7 @@
 
 #include "test_framework.h"
 #include "http_api.h"
+#include "evse_ctx.h"
 #include <string.h>
 
 // ---- Color Parsing ----
@@ -639,6 +640,295 @@ void test_validate_settings_scheduling_slave(void) {
     TEST_ASSERT_EQUAL_INT(3, count);
 }
 
+// ---- IEC 61851 State Mapping ----
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_A maps to IEC 61851 state A (standby)
+ * @given The EVSE is in STATE_A with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'A'
+ */
+void test_iec61851_state_a(void) {
+    TEST_ASSERT_EQUAL_INT('A', evse_state_to_iec61851(STATE_A, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_B maps to IEC 61851 state B (vehicle detected)
+ * @given The EVSE is in STATE_B with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'B'
+ */
+void test_iec61851_state_b(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_C maps to IEC 61851 state C (charging)
+ * @given The EVSE is in STATE_C with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'C'
+ */
+void test_iec61851_state_c(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-020
+ * @scenario STATE_D maps to IEC 61851 state D (ventilation required)
+ * @given The EVSE is in STATE_D with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'D'
+ */
+void test_iec61851_state_d(void) {
+    TEST_ASSERT_EQUAL_INT('D', evse_state_to_iec61851(STATE_D, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario STATE_B1 maps to IEC 61851 state B (connected, EVSE not ready)
+ * @given The EVSE is in STATE_B1 (no PWM signal) with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'B' because the vehicle is connected
+ */
+void test_iec61851_state_b1(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B1, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario STATE_C1 maps to IEC 61851 state C (charge stopping)
+ * @given The EVSE is in STATE_C1 (stopping) with no errors
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'C' because charging session is still active
+ */
+void test_iec61851_state_c1(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C1, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-021
+ * @scenario Communication and modem states map to B (connected)
+ * @given The EVSE is in various communication/modem states
+ * @when evse_state_to_iec61851 is called for each
+ * @then All return 'B' because the vehicle is connected but not yet charging
+ */
+void test_iec61851_comm_modem_states(void) {
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_COMM_B, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_COMM_B_OK, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_COMM_C, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_COMM_C_OK, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_ACTSTART, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_REQUEST, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_WAIT, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_MODEM_DONE, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Modem denied maps to E (error)
+ * @given The EVSE is in STATE_MODEM_DENIED
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'E' because access was denied
+ */
+void test_iec61851_modem_denied(void) {
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_MODEM_DENIED, NO_ERROR));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Hard error flags override state to E (error)
+ * @given The EVSE is in STATE_C (charging) with RCM_TRIPPED error
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'E' because a hard error takes priority
+ */
+void test_iec61851_hard_error_overrides_state(void) {
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, RCM_TRIPPED));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_B, CT_NOCOMM));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, TEMP_HIGH));
+    TEST_ASSERT_EQUAL_INT('E', evse_state_to_iec61851(STATE_C, EV_NOCOMM));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-022
+ * @scenario Soft errors (LESS_6A, NO_SUN) do NOT override state
+ * @given The EVSE is in STATE_C with LESS_6A or STATE_A with NO_SUN
+ * @when evse_state_to_iec61851 is called
+ * @then It returns the state-based letter, not 'E'
+ */
+void test_iec61851_soft_errors_no_override(void) {
+    TEST_ASSERT_EQUAL_INT('C', evse_state_to_iec61851(STATE_C, LESS_6A));
+    TEST_ASSERT_EQUAL_INT('A', evse_state_to_iec61851(STATE_A, NO_SUN));
+    TEST_ASSERT_EQUAL_INT('B', evse_state_to_iec61851(STATE_B, LESS_6A | NO_SUN));
+}
+
+/*
+ * @feature EVCC IEC 61851 State Mapping
+ * @req REQ-API-023
+ * @scenario NOSTATE and unknown values map to F (not available)
+ * @given The EVSE is in NOSTATE or an unrecognized state value
+ * @when evse_state_to_iec61851 is called
+ * @then It returns 'F' indicating EVSE not available
+ */
+void test_iec61851_nostate_and_unknown(void) {
+    TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(NOSTATE, NO_ERROR));
+    TEST_ASSERT_EQUAL_INT('F', evse_state_to_iec61851(99, NO_ERROR));
+}
+
+// ---- Charging Enabled Derivation ----
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario STATE_C means charging is enabled
+ * @given The EVSE is in STATE_C (charging)
+ * @when evse_charging_enabled is called
+ * @then It returns true
+ */
+void test_charging_enabled_state_c(void) {
+    TEST_ASSERT_TRUE(evse_charging_enabled(STATE_C));
+}
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario STATE_C1 means charging is enabled (stopping phase)
+ * @given The EVSE is in STATE_C1 (charge stopping)
+ * @when evse_charging_enabled is called
+ * @then It returns true because energy is still being delivered
+ */
+void test_charging_enabled_state_c1(void) {
+    TEST_ASSERT_TRUE(evse_charging_enabled(STATE_C1));
+}
+
+/*
+ * @feature EVCC Charging Enabled
+ * @req REQ-API-025
+ * @scenario Non-charging states return false
+ * @given The EVSE is in STATE_A, STATE_B, or other non-charging states
+ * @when evse_charging_enabled is called
+ * @then It returns false
+ */
+void test_charging_enabled_non_charging_states(void) {
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_A));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_B));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_B1));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_D));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_COMM_B));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_ACTSTART));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_MODEM_REQUEST));
+    TEST_ASSERT_FALSE(evse_charging_enabled(STATE_MODEM_DENIED));
+    TEST_ASSERT_FALSE(evse_charging_enabled(NOSTATE));
+}
+
+// ---- Phase Switch Validation ----
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Valid 1-phase switch request on standalone with C2 contactor
+ * @given A standalone EVSE (load_bl=0) with EnableC2=AUTO
+ * @when A phase switch to 1 phase is requested
+ * @then Validation passes (returns NULL)
+ */
+void test_phase_switch_valid_1p(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) == NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Valid 3-phase switch request on master with C2 contactor
+ * @given A master EVSE (load_bl=1) with EnableC2=ALWAYS_ON
+ * @when A phase switch to 3 phases is requested
+ * @then Validation passes (returns NULL)
+ */
+void test_phase_switch_valid_3p(void) {
+    http_phase_switch_request_t req = { .phases = 3 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_ON, 1) == NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Invalid phase count (2) is rejected
+ * @given A standalone EVSE with EnableC2=AUTO
+ * @when A phase switch to 2 phases is requested
+ * @then Validation fails with error message
+ */
+void test_phase_switch_invalid_phase_count(void) {
+    http_phase_switch_request_t req = { .phases = 2 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch rejected when C2 contactor not present
+ * @given An EVSE with EnableC2=NOT_PRESENT (no C2 hardware)
+ * @when A phase switch to 1 phase is requested
+ * @then Validation fails because hardware cannot switch phases
+ */
+void test_phase_switch_no_c2_hardware(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, NOT_PRESENT, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch rejected on slave node
+ * @given A slave EVSE (load_bl=2) with EnableC2=AUTO
+ * @when A phase switch to 3 phases is requested
+ * @then Validation fails because slaves cannot initiate phase switching
+ */
+void test_phase_switch_slave_rejected(void) {
+    http_phase_switch_request_t req = { .phases = 3 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 2) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-025
+ * @scenario Phase switch with zero phases is rejected
+ * @given A standalone EVSE with EnableC2=AUTO
+ * @when A phase switch to 0 phases is requested
+ * @then Validation fails
+ */
+void test_phase_switch_zero_phases(void) {
+    http_phase_switch_request_t req = { .phases = 0 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) != NULL);
+}
+
+/*
+ * @feature EVCC Phase Switch Validation
+ * @req REQ-API-024
+ * @scenario Phase switch valid with all non-NOT_PRESENT EnableC2 values
+ * @given A standalone EVSE with various EnableC2 settings (ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO)
+ * @when A phase switch to 1 phase is requested
+ * @then Validation passes for all C2 configurations that have hardware present
+ */
+void test_phase_switch_all_c2_configs(void) {
+    http_phase_switch_request_t req = { .phases = 1 };
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_OFF, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, SOLAR_OFF, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, ALWAYS_ON, 0) == NULL);
+    TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) == NULL);
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("HTTP API");
 
@@ -718,6 +1008,33 @@ int main(void) {
     RUN_TEST(test_validate_settings_slave_restrictions);
     RUN_TEST(test_validate_settings_scheduling_valid);
     RUN_TEST(test_validate_settings_scheduling_slave);
+
+    // IEC 61851 state mapping
+    RUN_TEST(test_iec61851_state_a);
+    RUN_TEST(test_iec61851_state_b);
+    RUN_TEST(test_iec61851_state_c);
+    RUN_TEST(test_iec61851_state_d);
+    RUN_TEST(test_iec61851_state_b1);
+    RUN_TEST(test_iec61851_state_c1);
+    RUN_TEST(test_iec61851_comm_modem_states);
+    RUN_TEST(test_iec61851_modem_denied);
+    RUN_TEST(test_iec61851_hard_error_overrides_state);
+    RUN_TEST(test_iec61851_soft_errors_no_override);
+    RUN_TEST(test_iec61851_nostate_and_unknown);
+
+    // Charging enabled derivation
+    RUN_TEST(test_charging_enabled_state_c);
+    RUN_TEST(test_charging_enabled_state_c1);
+    RUN_TEST(test_charging_enabled_non_charging_states);
+
+    // Phase switch validation
+    RUN_TEST(test_phase_switch_valid_1p);
+    RUN_TEST(test_phase_switch_valid_3p);
+    RUN_TEST(test_phase_switch_invalid_phase_count);
+    RUN_TEST(test_phase_switch_no_c2_hardware);
+    RUN_TEST(test_phase_switch_slave_rejected);
+    RUN_TEST(test_phase_switch_zero_phases);
+    RUN_TEST(test_phase_switch_all_c2_configs);
 
     TEST_SUITE_RESULTS();
 }

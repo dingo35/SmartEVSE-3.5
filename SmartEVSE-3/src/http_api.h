@@ -86,6 +86,28 @@ const char *http_api_validate_mqtt_heartbeat(int value);
 // Validate mqtt_change_only (0 or 1).
 const char *http_api_validate_mqtt_change_only(int value);
 
+// Phase switch request — parsed from POST /settings "phases" parameter.
+typedef struct {
+    int phases;     // Requested phase count: 1 or 3
+} http_phase_switch_request_t;
+
+// Validate a phase switch request.
+// enable_c2: current EnableC2 setting (NOT_PRESENT=0 means no C2 hardware).
+// load_bl: load balancing role (>=2 means slave, cannot switch).
+// Returns NULL on success, or a static error message on failure.
+const char *http_api_validate_phase_switch(const http_phase_switch_request_t *req,
+                                           int enable_c2, int load_bl);
+
+// Map internal EVSE state + error flags to an IEC 61851-1 state letter (A-F).
+// Hard errors (CT_NOCOMM, TEMP_HIGH, EV_NOCOMM, RCM_TRIPPED, etc.) override to 'E'.
+// Soft errors (LESS_6A, NO_SUN) are temporary and do NOT override the state.
+// NOSTATE or unrecognized values return 'F' (not available).
+char evse_state_to_iec61851(int state, int error_flags);
+
+// Derive whether charging is actively enabled from internal state.
+// Returns true when the EVSE is delivering energy (STATE_C or STATE_C1).
+bool evse_charging_enabled(int state);
+
 #ifdef __cplusplus
 }
 #endif

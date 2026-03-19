@@ -28,7 +28,7 @@ logic:
   continue to work unchanged. Protected by a FreeRTOS mutex on ESP32
 - **HAL callbacks** — hardware operations (contactors, CP duty, pilot signal) are
   abstracted behind function pointers, replaced with no-ops in test builds
-- **560+ native tests** across 24 suites with full Specification-by-Example (SbE)
+- **680+ native tests** across 25 suites with full Specification-by-Example (SbE)
   traceability
 
 The purpose is to demonstrate how AI agents (Claude Code) can be used as collaborative
@@ -96,6 +96,27 @@ and configuration.
 - Priority-based power scheduling with configurable rotation intervals
 - Delayed charging support
 
+### Fork improvements (addresses upstream [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316))
+
+- **Oscillation dampening** — detects current hunting (sign-flip detection on
+  Idifference) and adaptively increases the regulation divisor to slow down
+  adjustments until the system stabilizes
+- **EMA filter on Idifference** — exponential moving average (25% alpha) smooths
+  measurement noise from current transducers, reducing false regulation triggers
+  while preserving convergence speed
+- **Distribution smoothing** — per-EVSE delta clamping limits current changes to
+  max 3.0A per cycle, preventing contactor stress and EV charge controller
+  destabilization from sudden jumps
+- **Load balancing diagnostic snapshot** — per-cycle diagnostic struct captures
+  IsetBalanced, filtered Idifference, baseload, per-EVSE allocations, oscillation
+  count, and shortage/clamping flags for debugging via MQTT
+- **126 convergence tests** — multi-cycle simulation test suite covering 2-8 node
+  configurations, priority scheduling under shortage, node join/leave transitions,
+  and vehicle response lag modeling
+
+See [Load Balancing Stability](docs/load-balancing-stability.md) for all settings
+and configuration.
+
 ## RFID & Authorization
 
 - RFID reader support — restrict usage to up to 100 registered cards
@@ -128,6 +149,28 @@ and configuration.
 
 See [MQTT & Home Assistant](docs/mqtt-home-assistant.md) for full topic reference
 and configuration.
+
+## EVCC Integration
+
+- REST API integration with [EVCC](https://evcc.io/) energy management system
+- WiFi-only setup — no RS485 Modbus wiring required
+
+### Fork improvements
+
+- **IEC 61851-1 state mapping** — pure C function maps internal SmartEVSE states
+  to standard IEC 61851 letters (A-F), with correct soft/hard error distinction.
+  Hard errors (RCM, overcurrent, temperature) map to 'E'; soft errors (LESS_6A,
+  NO_SUN) preserve the underlying state
+- **Phase switching via HTTP** — `POST /settings?phases=1|3` triggers safe 1P/3P
+  switching with full validation (C2 contactor present, master/standalone only).
+  The state machine handles the disconnect-switch-reconnect sequence automatically
+- **Charging state derivation** — `charging_enabled` boolean in GET /settings
+  response, derived from STATE_C/STATE_C1
+- **Ready-to-use EVCC template** — complete `evcc.yaml` custom charger template
+  included in documentation
+
+See [EVCC Integration](docs/evcc-integration.md) for setup guide and charger
+template.
 
 ## Web & Connectivity
 
@@ -165,7 +208,9 @@ Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update
 | [Configuration](docs/configuration.md) | LCD menu settings reference |
 | [Operation](docs/operation.md) | Day-to-day usage guide |
 | [Solar & Smart Mode Stability](docs/solar-smart-stability.md) | EMA smoothing, dead bands, phase switch timers, cycling prevention |
+| [Load Balancing Stability](docs/load-balancing-stability.md) | Oscillation dampening, EMA filter, distribution smoothing, diagnostics |
 | [MQTT & Home Assistant](docs/mqtt-home-assistant.md) | Full topic reference, change-only publishing, entity naming |
+| [EVCC Integration](docs/evcc-integration.md) | EVCC charger template, IEC 61851 mapping, phase switching API |
 | [REST API reference](docs/REST_API.md) | HTTP endpoints for external integration |
 | [OCPP setup](docs/ocpp.md) | OCPP 1.6j backend configuration |
 | [Priority scheduling](docs/priority-scheduling.md) | Load balancing priority configuration |
@@ -181,16 +226,16 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 24 |
-| Test scenarios | 560 |
-| Features covered | 40+ |
+| Test suites | 25 |
+| Test scenarios | 680+ |
+| Features covered | 50+ |
 | Requirement traceability | 100% |
 
 **Test areas** include IEC 61851-1 state transitions, load balancing (single and
-multi-node), Smart/Solar operating modes, OCPP current limiting, MQTT command
-parsing and publishing, HTTP API validation, error handling & safety, modem/ISO15118
-negotiation, phase switching, bridge transaction integrity, and end-to-end
-charging flows.
+multi-node with convergence simulation), Smart/Solar operating modes, OCPP current
+limiting, MQTT command parsing and publishing, HTTP API validation, EVCC IEC 61851
+state mapping, error handling & safety, modem/ISO15118 negotiation, phase switching,
+bridge transaction integrity, and end-to-end charging flows.
 
 Every test function carries Specification-by-Example (SbE) annotations (`@feature`,
 `@req`, `@scenario`, `@given`/`@when`/`@then`) that trace back to requirements. The
@@ -215,13 +260,14 @@ Active improvement projects tracked via
 | Status | Project | Upstream issues |
 |--------|---------|----------------|
 | Done | Plan 01: Solar & Smart Mode Stability | [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Done | Plan 02: Multi-Node Load Balancing | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Done | Plan 04: EVCC Integration | [EVCC #13852](https://github.com/evcc-io/evcc/pull/13852) |
 | Done | Plan 08: HA MQTT Integration | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
-| Next | Plan 02: Multi-Node Load Balancing | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
-| Next | Plan 04: EVCC Integration | — |
-| Planned | Plan 03: OCPP Robustness | — |
-| Planned | Plan 05: Meter Compatibility & Modbus | — |
+| Active | Plan 03: OCPP Robustness | — |
+| Active | Plan 05: Meter Compatibility & Modbus | — |
 | Planned | Plan 06: Diagnostic Telemetry | — |
 | Planned | Plan 07: Web UI Modernization | — |
+| Planned | Plan 09: Power Input Methods | — |
 
 # SmartEVSE App
 

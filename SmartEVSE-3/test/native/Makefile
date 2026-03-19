@@ -29,6 +29,8 @@ MODBUS_DECODE_SRC   := $(SRC_DIR)/modbus_decode.c
 METER_DECODE_SRC    := $(SRC_DIR)/meter_decode.c
 P1_PARSE_SRC        := $(SRC_DIR)/p1_parse.c
 MODBUS_LOG_SRC      := $(SRC_DIR)/modbus_log.c
+OCPP_LOGIC_SRC     := $(SRC_DIR)/ocpp_logic.c
+OCPP_TELEMETRY_SRC := $(SRC_DIR)/ocpp_telemetry.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -69,6 +71,27 @@ $(BUILD)/test_p1_parse: $(TEST_DIR)/test_p1_parse.c $(P1_PARSE_SRC) $(SRC_DIR)/p
 
 $(BUILD)/test_modbus_log: $(TEST_DIR)/test_modbus_log.c $(MODBUS_LOG_SRC) $(SRC_DIR)/modbus_log.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_modbus_log.c $(MODBUS_LOG_SRC)
+
+$(BUILD)/test_ocpp_auth: $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_auth.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_connector: $(TEST_DIR)/test_ocpp_connector.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_connector.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_rfid: $(TEST_DIR)/test_ocpp_rfid.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_rfid.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_lb: $(TEST_DIR)/test_ocpp_lb.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_lb.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_settings: $(TEST_DIR)/test_ocpp_settings.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_settings.c $(OCPP_LOGIC_SRC)
+
+$(BUILD)/test_ocpp_telemetry: $(TEST_DIR)/test_ocpp_telemetry.c $(OCPP_TELEMETRY_SRC) $(SRC_DIR)/ocpp_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_telemetry.c $(OCPP_TELEMETRY_SRC)
+
+$(BUILD)/test_ocpp_iec61851: $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC)
 
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)

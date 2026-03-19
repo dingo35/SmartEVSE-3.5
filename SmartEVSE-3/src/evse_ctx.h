@@ -93,6 +93,7 @@ extern "C" {
 #define PILOT_12V   12
 #define PILOT_9V     9
 #define PILOT_6V     6
+#define PILOT_3V     3
 #define PILOT_DIODE  1
 #define PILOT_SHORT  255
 #define PILOT_NOK    0
@@ -211,6 +212,9 @@ typedef enum {
 #ifndef PHASE_SWITCH_SEVERE_DEFAULT
 #define PHASE_SWITCH_SEVERE_DEFAULT     30 /* 30s for severe shortage (fast switch) */
 #endif
+#ifndef MAX_DELTA_PER_CYCLE
+#define MAX_DELTA_PER_CYCLE            30 /* Max 3.0A Balanced[] change per cycle (deciamps) */
+#endif
 #ifndef RFIDLOCKTIME
 #define RFIDLOCKTIME       60
 #endif
@@ -266,6 +270,26 @@ typedef struct {
     uint8_t  Nr_Of_Phases_Charging; /* Current phase count */
     uint8_t  ErrorFlags;            /* Active error flags */
 } evse_solar_debug_t;
+
+// ---- Load balancing diagnostic snapshot (Plan 02, Issue #25) ----
+// Populated by evse_calc_balanced_current() each cycle when LoadBl == 1.
+// Network layer can publish via MQTT without impacting regulation timing.
+typedef struct {
+    int32_t  IsetBalanced;            /* Final IsetBalanced after all adjustments */
+    int32_t  Idifference;             /* Raw grid headroom / deficit */
+    int32_t  IdiffFiltered;           /* EMA-filtered Idifference */
+    int32_t  Baseload;                /* Non-EVSE mains consumption */
+    int32_t  Baseload_EV;             /* Non-EVSE consumption on EV meter */
+    uint16_t Balanced[NR_EVSES];      /* Per-EVSE current allocations */
+    uint16_t BalancedMax[NR_EVSES];   /* Per-EVSE maximum limits */
+    uint8_t  ActiveEVSE;              /* Number of charging EVSEs */
+    uint8_t  OscillationCount;        /* Adaptive gain oscillation counter */
+    uint8_t  NoCurrent;               /* Shortage counter */
+    uint8_t  ScheduleState[NR_EVSES]; /* Priority scheduling state per EVSE */
+    bool     PriorityScheduled;       /* True if priority scheduling ran this cycle */
+    bool     Shortage;                /* True if IsetBalanced < ActiveEVSE * MinCurrent */
+    bool     DeltaClamped;            /* True if distribution smoothing clamped any EVSE */
+} evse_lb_diag_t;
 
 // ---- The full EVSE state context ----
 typedef struct {
@@ -385,6 +409,17 @@ typedef struct {
     uint8_t  RampRateDivisor;       /* Symmetric ramp divisor for smart/solar (>=1) */
     uint8_t  SolarFineDeadBand;     /* Dead band for solar fine regulation (deciamps) */
 
+    // --- Distribution smoothing (Plan 02, Issue #24) ---
+    uint16_t BalancedPrev[NR_EVSES]; /* Previous cycle's Balanced[] (for delta clamping) */
+
+    // --- Adaptive gain / oscillation dampening (Plan 02, Issue #22) ---
+    int32_t  IsetBalancedPrev;      /* Previous cycle's IsetBalanced (for change tracking) */
+    int32_t  IdiffPrev;             /* Previous cycle's Idifference (for sign-flip detection) */
+    uint8_t  OscillationCount;      /* Consecutive sign flips detected (0 = stable) */
+
+    // --- Idifference EMA filter (Plan 02, Issue #23) ---
+    int32_t  IdiffFiltered;         /* EMA-smoothed Idifference: new = old*3/4 + raw/4 */
+
     // --- Safety ---
     int8_t  TempEVSE;
     uint16_t maxTemp;
@@ -406,6 +441,9 @@ typedef struct {
 
     // --- Solar debug snapshot (Issue #19) ---
     evse_solar_debug_t solar_debug;
+
+    // --- Load balancing diagnostic snapshot (Issue #25) ---
+    evse_lb_diag_t lb_diag;
 
     // --- Test instrumentation (for assertions) ---
 #ifdef EVSE_TESTING

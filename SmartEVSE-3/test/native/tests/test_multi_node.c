@@ -283,6 +283,8 @@ void test_nocurrent_increments_on_hard_shortage(void) {
     /* Baseload = 500 - 400 = 100. IsetBalanced upper = MaxMains*10 - Baseload = 250 - 100 = 150 */
     /* But 4 EVSEs * 60 = 240 needed. 240 > 150 => hard shortage */
     ctx.IsetBalanced = 100;
+    /* Pre-seed EMA filter so regulation applies full Idifference on first cycle */
+    ctx.IdiffFiltered = -250;  /* Matches expected raw Idifference (250 - 500) */
 
     evse_calc_balanced_current(&ctx, 0);
 
