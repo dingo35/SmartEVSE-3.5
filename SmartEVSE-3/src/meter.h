@@ -92,6 +92,7 @@ class Meter {
 #endif
     int32_t Import_active_energy;                                               // Imported active energy
     int32_t Export_active_energy;                                               // Exported active energy
+    int32_t EnergyPhase[3];                                                     // Per-phase net energy (Wh) — 0 if meter doesn't support it
     int32_t Energy;                                                             // Wh -> Import_active_energy - Export_active_energy
     int32_t EnergyCharged;                                                      // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
     int32_t EnergyMeterStart;                                                   // kWh meter value is stored once EV is connected to EVSE (Wh)

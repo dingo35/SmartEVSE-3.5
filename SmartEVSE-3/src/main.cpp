@@ -317,6 +317,7 @@ EXT void PowerPanicCtrl(uint8_t enable);
 EXT uint8_t ReadESPdata(char *buf);
 
 extern void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export);
+extern bool requestPhaseEnergyMeasurement(uint8_t Meter, uint8_t Address);
 extern void requestNodeConfig(uint8_t NodeNr);
 extern void requestPowerMeasurement(uint8_t Meter, uint8_t Address, uint16_t PRegister);
 extern void requestNodeStatus(uint8_t NodeNr);
@@ -1444,6 +1445,26 @@ void requestEnergyMeasurement(uint8_t Meter, uint8_t Address, bool Export) {
 }
 
 /**
+ * Request per-phase energy measurement from meters that support it.
+ * Returns true if a request was sent, false if meter doesn't support per-phase energy.
+ *
+ * @param uint8_t Meter type
+ * @param uint8_t Address
+ */
+bool requestPhaseEnergyMeasurement(uint8_t Meter, uint8_t Address) {
+    switch (Meter) {
+        case EM_EASTRON3P:
+        case EM_EASTRON3P_INV:
+            // Eastron SDM630: L1/L2/L3 total active energy at registers 0x015A-0x015F
+            // 3 phases × 2 registers each = 6 registers (FLOAT32)
+            ModbusReadInputRequest(Address, EMConfig[Meter].Function, 0x015A, 6);
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
  * Send Power measurement request over modbus
  *
  * @param uint8_t Meter
@@ -1989,6 +2010,14 @@ void ModbusRequestLoop() {
                         energytimer = 0;
                         break;
                     }
+                }
+                ModbusRequest++;
+                // fall through
+            case 22:
+                // Request per-phase energy if Mainsmeter supports it (every ~60s via energytimer)
+                if (MainsMeter.Type && energytimer == 0) {
+                    if (requestPhaseEnergyMeasurement(MainsMeter.Type, MainsMeter.Address))
+                        break;
                 }
                 ModbusRequest++;
                 // fall through
