@@ -20,6 +20,7 @@
 #include "evse_bridge.h"
 #include "serial_parser.h"
 #include "led_color.h"
+#include "session_log.h"
 
 #ifdef SMARTEVSE_VERSION //ESP32
 #define EXT extern
@@ -327,6 +328,7 @@ extern void CheckRFID(void);
 extern void mqttPublishData();
 extern void mqttSmartEVSEPublishData();
 extern void mqttPublishSolarDebug(void);
+extern void mqttPublishSessionComplete(void);
 extern bool MQTTclientSmartEVSE_AppConnected;
 extern void DisconnectEvent(void);
 extern char EVCCID[32];
@@ -2368,6 +2370,14 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
     // EVMeter energy tracking (STATE_A pilot 12V disconnect)
     if (State == STATE_A && pilot_val == PILOT_12V && !EVMeter.ResetKwh) {
         EVMeter.ResetKwh = 1;                                               // reset EV kWh meter on next B->C change
+        // End charge session on vehicle disconnect (A + 12V)
+        if (session_is_active()) {
+            session_end((uint32_t)time(NULL), EVMeter.Import_active_energy,
+                        (uint16_t)(Balanced[0]), Nr_Of_Phases_Charging);
+#if MQTT
+            mqttPublishSessionComplete();
+#endif
+        }
     }
 
     // EVMeter energy start (STATE_B -> STATE_C transition)
@@ -2375,6 +2385,8 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
         EVMeter.EnergyMeterStart = EVMeter.Energy;
         EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart;
         EVMeter.ResetKwh = 0;
+        // Start charge session on B->C transition
+        session_start((uint32_t)time(NULL), EVMeter.Import_active_energy, Mode);
     }
 }
 

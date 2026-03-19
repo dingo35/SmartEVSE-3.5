@@ -8,6 +8,7 @@
 #include "esp32.h"
 #include "network_common.h"
 #include "http_api.h"
+#include "session_log.h"
 #include "utils.h"
 #include "glcd.h"
 #include "meter.h"
@@ -1107,6 +1108,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
 #endif
+    } else if (mg_http_match_uri(hm, "/session/last") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        const session_record_t *last = session_get_last();
+        if (!last) {
+            mg_http_reply(c, 204, "", "");
+        } else {
+            char json[384];
+            if (session_to_json(last, json, sizeof(json)) > 0) {
+                mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json);
+            } else {
+                mg_http_reply(c, 500, "", "");
+            }
+        }
+        return true;
+
 #if MODEM && SMARTEVSE_VERSION >= 40
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("GET", hm->method.buf, hm->method.len)) {
         //this can be activated by: curl -X GET "http://smartevse-xxxx.lan/ev_state?update_ev_state=1" -d ''

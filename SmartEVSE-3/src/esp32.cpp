@@ -51,6 +51,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "meter.h"
 #include "evse_bridge.h"
 #include "solar_debug_json.h"
+#include "session_log.h"
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
@@ -1300,6 +1301,18 @@ void mqttSmartEVSEPublishData() {
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
 }
 
+// Publish completed charge session via MQTT (retained) for ERE/HA integration
+void mqttPublishSessionComplete(void) {
+    if (!MQTTclient.connected) return;
+    const session_record_t *last = session_get_last();
+    if (!last) return;
+
+    char json[384];
+    if (session_to_json(last, json, sizeof(json)) > 0) {
+        MQTTclient.publish(MQTTprefix + "/Session/Complete", json, true, 0);
+    }
+}
+
 // Solar debug MQTT publishing (Issue #66)
 // Gated behind SolarDebugEnabled flag — only publishes when enabled.
 // Rate-limited: publishes at most once every SOLAR_DEBUG_INTERVAL_MS.
@@ -2188,6 +2201,19 @@ void ocppLoop() {
         OcppForcesLock = true;
     }
 
+    // Mark active session with OCPP flag when transaction is running
+    {
+        static bool ocpp_session_marked = false;
+        if (session_is_active() && transaction && transaction->isRunning()) {
+            if (!ocpp_session_marked) {
+                session_set_ocpp_id(0); // Sets ocpp_active flag; ID 0 = OCPP-managed
+                ocpp_session_marked = true;
+            }
+        } else if (!session_is_active()) {
+            ocpp_session_marked = false;
+        }
+    }
+
 }
 #endif //ENABLE_OCPP
 
@@ -2557,6 +2583,7 @@ extern void Timer20ms(void * parameter);
     // Initialize state machine HAL callbacks (contactor, PWM, state change logging)
     // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
     evse_bridge_init();
+    session_init();
 
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
