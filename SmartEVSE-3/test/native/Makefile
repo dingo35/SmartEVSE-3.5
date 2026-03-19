@@ -32,6 +32,8 @@ MODBUS_LOG_SRC      := $(SRC_DIR)/modbus_log.c
 OCPP_LOGIC_SRC     := $(SRC_DIR)/ocpp_logic.c
 OCPP_TELEMETRY_SRC := $(SRC_DIR)/ocpp_telemetry.c
 SOLAR_DEBUG_JSON_SRC := $(SRC_DIR)/solar_debug_json.c
+DIAG_TELEMETRY_SRC  := $(SRC_DIR)/diag_telemetry.c
+DIAG_MODBUS_SRC     := $(SRC_DIR)/diag_modbus.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -96,6 +98,15 @@ $(BUILD)/test_ocpp_iec61851: $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC) 
 
 $(BUILD)/test_solar_debug_json: $(TEST_DIR)/test_solar_debug_json.c $(SOLAR_DEBUG_JSON_SRC) $(SRC_DIR)/solar_debug_json.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_solar_debug_json.c $(SOLAR_DEBUG_JSON_SRC)
+
+$(BUILD)/test_diag_telemetry: $(TEST_DIR)/test_diag_telemetry.c $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_telemetry.c $(DIAG_TELEMETRY_SRC)
+
+$(BUILD)/test_diag_modbus: $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC) $(SRC_DIR)/diag_modbus.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC)
+
+$(BUILD)/test_diag_replay: $(TEST_DIR)/test_diag_replay.c diag_loader.c include/diag_loader.h $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_replay.c diag_loader.c $(DIAG_TELEMETRY_SRC)
 
 $(BUILD)/test_api_staleness: $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC) $(SRC_DIR)/evse_ctx.h $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC)

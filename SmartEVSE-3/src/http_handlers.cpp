@@ -14,6 +14,9 @@
 #include "modbus.h"
 #include "mqtt_publish.h"
 #include "OneWire.h"
+#include "diag_sampler.h"
+#include "diag_storage.h"
+#include <LittleFS.h>
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -64,6 +67,7 @@ extern uint8_t DelayedRepeat;
 extern uint8_t RFIDReader;
 extern uint16_t maxTemp;
 extern uint8_t ScheduleState[];
+extern uint8_t BalancedState[];   // PLAN-07: per-node state for node overview
 extern uint16_t RotationTimer;
 extern int8_t TempEVSE;
 extern const char StrRFIDReader[7][10];
@@ -131,7 +135,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(3200); // https://arduinojson.org/v6/assistant/
+        DynamicJsonDocument doc(3700); // https://arduinojson.org/v6/assistant/ (3200 + nodes array)
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -210,6 +214,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["schedule"]["state"][i] = (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
             }
             doc["schedule"]["rotation_timer"] = RotationTimer;
+            // BEGIN PLAN-07: Per-node load balancing data
+            static const char *StrBalState[] = {"Idle", "Request", "Charging"};
+            for (int i = 0; i < NR_EVSES; i++) {
+                doc["nodes"][i]["current"] = Balanced[i];
+                doc["nodes"][i]["state"] = (BalancedState[i] <= 2) ? StrBalState[BalancedState[i]] : "N/A";
+                doc["nodes"][i]["sched"] = (ScheduleState[i] <= 2) ? StrSchedState[ScheduleState[i]] : "N/A";
+            }
+            // END PLAN-07
         }
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
@@ -1174,6 +1186,151 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", ""); //json request needs json response
         return true;
 #endif
+
+    // BEGIN PLAN-06: Diagnostic telemetry REST endpoints
+    } else if (mg_http_match_uri(hm, "/diag/status") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        char json[256];
+        int n = diag_status_json(json, sizeof(json));
+        if (n > 0)
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json);
+        else
+            mg_http_reply(c, 500, "", "status error\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/start") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        /* Parse profile from query: /diag/start?profile=general */
+        char pbuf[16] = {0};
+        mg_http_get_var(&hm->query, "profile", pbuf, sizeof(pbuf));
+
+        diag_profile_t profile = DIAG_PROFILE_GENERAL;
+        if (strcmp(pbuf, "solar") == 0)        profile = DIAG_PROFILE_SOLAR;
+        else if (strcmp(pbuf, "loadbal") == 0)  profile = DIAG_PROFILE_LOADBAL;
+        else if (strcmp(pbuf, "modbus") == 0)   profile = DIAG_PROFILE_MODBUS;
+        else if (strcmp(pbuf, "fast") == 0)     profile = DIAG_PROFILE_FAST;
+        /* else default to GENERAL */
+
+        diag_start(profile);
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                      "{\"started\":true,\"profile\":\"%s\"}\r\n", pbuf[0] ? pbuf : "general");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/stop") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        diag_stop();
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                      "{\"stopped\":true}\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/download") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        diag_ring_t *ring = diag_get_ring();
+        /* Freeze for consistent download */
+        bool was_frozen = ring->frozen;
+        diag_ring_freeze(ring, true);
+
+        /* Serialize to binary .diag format */
+        size_t max_sz = sizeof(diag_file_header_t) + (size_t)ring->count * sizeof(diag_snapshot_t) + 4;
+        uint8_t *out = (uint8_t *)malloc(max_sz);
+        if (!out) {
+            if (!was_frozen) diag_ring_freeze(ring, false);
+            mg_http_reply(c, 500, "", "out of memory\r\n");
+            return true;
+        }
+
+        size_t n = diag_ring_serialize(ring, out, max_sz, VERSION, serialnr);
+        if (!was_frozen) diag_ring_freeze(ring, false);
+
+        if (n > 0) {
+            mg_printf(c,
+                      "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: application/octet-stream\r\n"
+                      "Content-Disposition: attachment; filename=\"smartevse_%u.diag\"\r\n"
+                      "Content-Length: %u\r\n\r\n",
+                      (unsigned)serialnr, (unsigned)n);
+            mg_send(c, out, n);
+            c->is_resp = 0;
+        } else {
+            mg_http_reply(c, 500, "", "serialize error\r\n");
+        }
+        free(out);
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/dump") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        bool ok = diag_storage_dump(DIAG_TRIGGER_MANUAL);
+        mg_http_reply(c, ok ? 200 : 500, "Content-Type: application/json\r\n",
+                      "{\"dumped\":%s}\r\n", ok ? "true" : "false");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/files") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        char json[384];
+        int n = diag_storage_list_json(json, sizeof(json));
+        if (n > 0)
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json);
+        else
+            mg_http_reply(c, 500, "", "list error\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        /* Extract filename from URI: /diag/file/<filename> */
+        struct mg_str uri = hm->uri;
+        const char *prefix = "/diag/file/";
+        size_t prefix_len = strlen(prefix);
+        if (uri.len <= prefix_len) {
+            mg_http_reply(c, 400, "", "missing filename\r\n");
+            return true;
+        }
+        char fname[48];
+        size_t fname_len = uri.len - prefix_len;
+        if (fname_len >= sizeof(fname)) fname_len = sizeof(fname) - 1;
+        memcpy(fname, uri.buf + prefix_len, fname_len);
+        fname[fname_len] = '\0';
+
+        /* Read file from LittleFS */
+        char filepath[64];
+        snprintf(filepath, sizeof(filepath), "%s/%s", DIAG_DIR, fname);
+        File file = LittleFS.open(filepath, "r");
+        if (!file) {
+            mg_http_reply(c, 404, "", "file not found\r\n");
+            return true;
+        }
+        size_t fsize = file.size();
+        uint8_t *fbuf = (uint8_t *)malloc(fsize);
+        if (!fbuf) {
+            file.close();
+            mg_http_reply(c, 500, "", "out of memory\r\n");
+            return true;
+        }
+        file.read(fbuf, fsize);
+        file.close();
+
+        mg_printf(c,
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: application/octet-stream\r\n"
+                  "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                  "Content-Length: %u\r\n\r\n",
+                  fname, (unsigned)fsize);
+        mg_send(c, fbuf, fsize);
+        c->is_resp = 0;
+        free(fbuf);
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("DELETE", hm->method.buf, hm->method.len)) {
+        struct mg_str uri = hm->uri;
+        const char *prefix = "/diag/file/";
+        size_t prefix_len = strlen(prefix);
+        if (uri.len <= prefix_len) {
+            mg_http_reply(c, 400, "", "missing filename\r\n");
+            return true;
+        }
+        char fname[48];
+        size_t fname_len = uri.len - prefix_len;
+        if (fname_len >= sizeof(fname)) fname_len = sizeof(fname) - 1;
+        memcpy(fname, uri.buf + prefix_len, fname_len);
+        fname[fname_len] = '\0';
+
+        bool ok = diag_storage_delete(fname);
+        mg_http_reply(c, ok ? 200 : 404, "Content-Type: application/json\r\n",
+                      "{\"deleted\":%s}\r\n", ok ? "true" : "false");
+        return true;
+    // END PLAN-06
   }
   return false;
 }

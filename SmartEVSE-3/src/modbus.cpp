@@ -61,6 +61,10 @@ extern void request_write_settings(void);
 
 
 #ifdef SMARTEVSE_VERSION //ESP32v3
+// BEGIN PLAN-06: Modbus diagnostic timing
+#include "diag_modbus.h"
+diag_mb_ring_t g_diag_mb_ring;
+// END PLAN-06
 extern ModbusMessage response;
 
 // ########################## Modbus helper functions ##########################
@@ -85,6 +89,10 @@ void ModbusSend8(uint8_t address, uint8_t function, uint16_t reg, uint16_t data)
         ModbusError e(err);
         _LOG_A("Error creating request: 0x%02x - %s\n", (int)e, (const char *)e);
     }
+    // BEGIN PLAN-06: Record Modbus send event
+    diag_mb_record(&g_diag_mb_ring, millis(), address, function,
+                   DIAG_MB_EVENT_SENT, 0);
+    // END PLAN-06
     _LOG_V("Sent packet");
     _LOG_V_NO_FUNC(" address: 0x%02x, function: 0x%02x, reg: 0x%04x, token:0x%08x, data: 0x%04x.\n", address, function, reg, token, data);
 }
@@ -803,6 +811,12 @@ ModbusMessage MBbroadcast(ModbusMessage request) {
 // Responses from Slaves/Nodes are handled here
 void MBhandleData(ModbusMessage msg, uint32_t token)
 {
+    // BEGIN PLAN-06: Record Modbus response event
+    uint8_t addr = token >> 24;
+    uint8_t func = (token >> 16) & 0xFF;
+    diag_mb_record(&g_diag_mb_ring, millis(), addr, func,
+                   DIAG_MB_EVENT_RECEIVED, 0);
+    // END PLAN-06
     ModbusDecode( (uint8_t*)msg.data(), msg.size());
     HandleModbusResponse();
 }
@@ -817,6 +831,11 @@ void MBhandleError(Error error, uint32_t token)
   address = token >> 24;
   function = (token >> 16);
   reg = token & 0xFFFF;
+
+  // BEGIN PLAN-06: Record Modbus error event
+  diag_mb_record(&g_diag_mb_ring, millis(), address, function,
+                 DIAG_MB_EVENT_ERROR, (uint8_t)error);
+  // END PLAN-06
 
   if (LoadBl == 1 && ((address>=2 && address <=8 && function == 4 && reg == 0) || address == 9)) {  //master sends out messages to nodes 2-8, if no EVSE is connected with that address
                                                                                 //a timeout will be generated. This is legit!
@@ -868,7 +887,10 @@ void ConfigureModbusMode(uint8_t newmode) {
             MBclient.onDataHandler(&MBhandleData);
             MBclient.onErrorHandler(&MBhandleError);
             // Start ModbusRTU Master background task
-            MBclient.begin(Serial1, 1, (uint32_t)50000U);   // pinning it to core1 reduces modbus problems. Make sure there is 50ms quiet time between messages //TODO howto ensure this in v4?
+            MBclient.begin(Serial1, 1, (uint32_t)50000U);
+            // BEGIN PLAN-06: Initialize Modbus diagnostic ring
+            diag_mb_init(&g_diag_mb_ring);
+            // END PLAN-06   // pinning it to core1 reduces modbus problems. Make sure there is 50ms quiet time between messages //TODO howto ensure this in v4?
         }
     } else if (newmode > 1) {
         // Register worker. at serverID 'LoadBl', all function codes

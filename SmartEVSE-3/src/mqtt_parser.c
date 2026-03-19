@@ -300,5 +300,34 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    if (match_topic(prefix, topic, "/Set/DiagProfile")) {
+        out->cmd = MQTT_CMD_DIAG_PROFILE;
+        if (strcmp(payload, "off") == 0 || strcmp(payload, "0") == 0) {
+            out->diag_profile = 0;
+            return true;
+        }
+        if (strcmp(payload, "general") == 0 || strcmp(payload, "1") == 0) {
+            out->diag_profile = 1;
+            return true;
+        }
+        if (strcmp(payload, "solar") == 0 || strcmp(payload, "2") == 0) {
+            out->diag_profile = 2;
+            return true;
+        }
+        if (strcmp(payload, "loadbal") == 0 || strcmp(payload, "3") == 0) {
+            out->diag_profile = 3;
+            return true;
+        }
+        if (strcmp(payload, "modbus") == 0 || strcmp(payload, "4") == 0) {
+            out->diag_profile = 4;
+            return true;
+        }
+        if (strcmp(payload, "fast") == 0 || strcmp(payload, "5") == 0) {
+            out->diag_profile = 5;
+            return true;
+        }
+        return false;
+    }
+
     return false;
 }
