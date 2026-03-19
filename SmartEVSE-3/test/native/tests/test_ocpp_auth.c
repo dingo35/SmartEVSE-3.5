@@ -7,6 +7,7 @@
 
 #include "test_framework.h"
 #include "ocpp_logic.h"
+#include "evse_ctx.h"
 
 /* ---- Auth path selection ---- */
 
@@ -170,6 +171,104 @@ void test_should_not_clear_access_when_paused(void) {
     TEST_ASSERT_FALSE(ocpp_should_clear_access(false, 2));  /* 2 = PAUSE */
 }
 
+/* ---- FreeVend + Mode interaction (access deferral) ---- */
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-028
+ * @scenario FreeVend + Solar mode with NO_SUN defers Access_bit
+ * @given Mode is Solar, ErrorFlags has NO_SUN set, ChargeDelay=0
+ * @when ocpp_should_defer_access is called
+ * @then Returns true because Solar mode has no surplus available
+ */
+void test_defer_access_solar_no_sun(void) {
+    TEST_ASSERT_TRUE(ocpp_should_defer_access(MODE_SOLAR, 0, NO_SUN));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-028
+ * @scenario FreeVend + Solar mode without NO_SUN does not defer
+ * @given Mode is Solar, ErrorFlags is clear (surplus available), ChargeDelay=0
+ * @when ocpp_should_defer_access is called
+ * @then Returns false because solar surplus is available
+ */
+void test_no_defer_access_solar_with_surplus(void) {
+    TEST_ASSERT_FALSE(ocpp_should_defer_access(MODE_SOLAR, 0, NO_ERROR));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-029
+ * @scenario FreeVend + ChargeDelay active defers Access_bit
+ * @given Mode is Normal, ChargeDelay=60 (delay active), ErrorFlags clear
+ * @when ocpp_should_defer_access is called
+ * @then Returns true because ChargeDelay is active
+ */
+void test_defer_access_charge_delay_active(void) {
+    TEST_ASSERT_TRUE(ocpp_should_defer_access(MODE_NORMAL, 60, NO_ERROR));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-029
+ * @scenario FreeVend + ChargeDelay=0 does not defer in Normal mode
+ * @given Mode is Normal, ChargeDelay=0, ErrorFlags clear
+ * @when ocpp_should_defer_access is called
+ * @then Returns false because no deferral conditions are met
+ */
+void test_no_defer_access_normal_no_delay(void) {
+    TEST_ASSERT_FALSE(ocpp_should_defer_access(MODE_NORMAL, 0, NO_ERROR));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-028
+ * @scenario FreeVend + Solar mode with ChargeDelay defers (both conditions)
+ * @given Mode is Solar, ChargeDelay=30, ErrorFlags has NO_SUN
+ * @when ocpp_should_defer_access is called
+ * @then Returns true because both Solar/NO_SUN and ChargeDelay trigger deferral
+ */
+void test_defer_access_solar_delay_and_no_sun(void) {
+    TEST_ASSERT_TRUE(ocpp_should_defer_access(MODE_SOLAR, 30, NO_SUN));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-029
+ * @scenario Smart mode with ChargeDelay defers Access_bit
+ * @given Mode is Smart, ChargeDelay=10, ErrorFlags clear
+ * @when ocpp_should_defer_access is called
+ * @then Returns true because ChargeDelay is active regardless of mode
+ */
+void test_defer_access_smart_with_delay(void) {
+    TEST_ASSERT_TRUE(ocpp_should_defer_access(MODE_SMART, 10, NO_ERROR));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-028
+ * @scenario Smart mode without delay or errors does not defer
+ * @given Mode is Smart, ChargeDelay=0, ErrorFlags clear
+ * @when ocpp_should_defer_access is called
+ * @then Returns false because Smart mode without ChargeDelay has no deferral
+ */
+void test_no_defer_access_smart_no_delay(void) {
+    TEST_ASSERT_FALSE(ocpp_should_defer_access(MODE_SMART, 0, NO_ERROR));
+}
+
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-028
+ * @scenario Normal mode with NO_SUN error does not defer (only Solar checks NO_SUN)
+ * @given Mode is Normal, ErrorFlags has NO_SUN, ChargeDelay=0
+ * @when ocpp_should_defer_access is called
+ * @then Returns false because NO_SUN deferral only applies in Solar mode
+ */
+void test_no_defer_access_normal_with_no_sun(void) {
+    TEST_ASSERT_FALSE(ocpp_should_defer_access(MODE_NORMAL, 0, NO_SUN));
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Authorization Logic");
@@ -187,6 +286,14 @@ int main(void) {
     RUN_TEST(test_should_not_clear_access_when_still_permitted);
     RUN_TEST(test_should_not_clear_access_when_already_off);
     RUN_TEST(test_should_not_clear_access_when_paused);
+    RUN_TEST(test_defer_access_solar_no_sun);
+    RUN_TEST(test_no_defer_access_solar_with_surplus);
+    RUN_TEST(test_defer_access_charge_delay_active);
+    RUN_TEST(test_no_defer_access_normal_no_delay);
+    RUN_TEST(test_defer_access_solar_delay_and_no_sun);
+    RUN_TEST(test_defer_access_smart_with_delay);
+    RUN_TEST(test_no_defer_access_smart_no_delay);
+    RUN_TEST(test_no_defer_access_normal_with_no_sun);
 
     TEST_SUITE_RESULTS();
 }

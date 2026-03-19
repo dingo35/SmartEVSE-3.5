@@ -1998,13 +1998,22 @@ void ocppLoop() {
     if (RFIDReader == 6 || RFIDReader == 0) {
         // RFID reader in OCPP mode or RFID fully disabled - OCPP controls Access_bit
         if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
-            _LOG_A("OCPP set Access_bit\n");
-            setAccess(ON);
+            // Guard: defer Access_bit if mode/delay conflicts (FreeVend + Solar, ChargeDelay)
+            if (ocpp_should_defer_access(Mode, ChargeDelay, ErrorFlags)) {
+                // Don't update OcppTrackPermitsCharge — retry rising edge on next loop
+                _LOG_D("OCPP: deferring Access_bit (Mode=%u ChargeDelay=%u ErrorFlags=0x%04X)\n", Mode, ChargeDelay, ErrorFlags);
+            } else {
+                _LOG_A("OCPP set Access_bit\n");
+                setAccess(ON);
+                OcppTrackPermitsCharge = true;
+            }
         } else if (AccessStatus == ON && !ocppPermitsCharge()) {
             _LOG_A("OCPP unset Access_bit\n");
             setAccess(OFF);
+            OcppTrackPermitsCharge = false;
+        } else {
+            OcppTrackPermitsCharge = ocppPermitsCharge();
         }
-        OcppTrackPermitsCharge = ocppPermitsCharge();
 
         // Check if OCPP charge permission has been revoked by other module
         if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
