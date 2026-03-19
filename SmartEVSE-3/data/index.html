@@ -31,10 +31,10 @@
                     </div>
                 </div>
 
-                  <div class="row">
+                  <div class="dashboard-grid">
 
                     <!-- EVSE Status Card -->
-                    <div class="col-md-6" style="margin-bottom: 20px;">
+                    <div>
                         <div class="card border-left-primary shadow h-100 py-2">
                             <div class="card-body">
                                 <div class="row no-gutters align-items-center">
@@ -77,7 +77,7 @@
                                               State:
                                             </div>
                                             <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="state"></div>
+                                              <span id="state_dot" class="state-dot" style="background:#858796;"></span><span class="h5 mb-0 mr-3 text-gray-800" id="state"></span>
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center" id="with_errors">
@@ -159,7 +159,7 @@
                     </div>
 
                     <!-- LCD Card -->
-                      <div class="col-md-6" style="margin-bottom: 20px;">
+                      <div>
                           <div class="card border-left-primary shadow h-100 py-2">
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
@@ -191,10 +191,10 @@
                       </div>
 
                     </div>
-                    <!-- END ROW -->
-                    <div class="row">
+                    </div><!-- end dashboard-grid -->
+                    <div class="dashboard-grid" style="margin-top:1rem;">
 
-                    <div class="col-xl-4 col-md-6 mb-4 with_modem">
+                    <div class="with_modem">
                         <div class="card border-left-danger shadow h-100 py-2">
                             <div class="card-body">
                                 <div class="row no-gutters align-items-center">
@@ -261,7 +261,7 @@
                         </div>
                     </div>
 
-                    <div class="col-xl-4 col-md-6 mb-4">
+                    <div class="">
                       <div class="card border-left-info shadow h-100 py-2">
                           <div class="card-body">
                               <div class="row no-gutters align-items-center">
@@ -304,7 +304,7 @@
                       </div>
                   </div>
 
-                  <div class="col-xl-4 col-md-6 mb-4 with_mainsmeter" style="display: none;">
+                  <div class="with_mainsmeter" style="display: none;">
                     <div class="card border-left-success shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -342,6 +342,11 @@
                                           <div class="h5 mb-0 mr-3 text-gray-800" id="phase_3" style="text-align: right;"></div>
                                         </div>
                                     </div>
+                                    <div class="phase-bars" id="mains_phase_bars">
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L1</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="mains_bar_L1" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L1">-</span></div>
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L2</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L2" id="mains_bar_L2" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L2">-</span></div>
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L3</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L3" id="mains_bar_L3" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L3">-</span></div>
+                                    </div>
                                     <div class="row no-gutters align-items-center" id="with_p1_api_data_date">
                                       <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
                                           Date:
@@ -371,7 +376,7 @@
                     </div>
                 </div>
 
-                <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery">
+                <div class="" id="with_homebattery">
                   <div class="card border-left-success shadow h-100 py-2">
                       <div class="card-body">
                           <div class="row no-gutters align-items-center">
@@ -424,7 +429,7 @@
               </div>
 
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_evmeter" style="display: none;">
+              <div class="" id="with_evmeter" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -476,7 +481,7 @@
               </div>
 
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_evmeter" style="display: none;">
+              <div class="" id="with_evmeter" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -527,7 +532,7 @@
                 </div>
               </div>
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery" style="display: none;">
+              <div class="" id="with_homebattery" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -578,11 +583,10 @@
                 </div>
               </div>
             </div>
-            <!-- END ROW -->
-              <div class="row">
+            </div><!-- end dashboard-grid -->
 
                 <!-- Control Card -->
-                <div style="margin-bottom: 20px;">
+                <div style="margin-top: 1rem; margin-bottom: 20px;">
                     <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -798,6 +802,15 @@
         </div>
       </div>
   </div>
+
+  <!-- Mobile bottom navigation -->
+  <nav class="mobile-nav" id="mobile_nav">
+    <button type="button" id="mnav_0" onclick="activate(0)">OFF</button>
+    <button type="button" id="mnav_4" onclick="activate(4)">PAUSE</button>
+    <button type="button" id="mnav_1" onclick="activate(1)">NORMAL</button>
+    <button type="button" id="mnav_2" onclick="activate(2)">SOLAR</button>
+    <button type="button" id="mnav_3" onclick="activate(3)">SMART</button>
+  </nav>
 
   <script src="app.js"></script>
 </body>

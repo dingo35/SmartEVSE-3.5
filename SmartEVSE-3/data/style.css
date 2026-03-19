@@ -195,3 +195,108 @@ input:disabled, select:disabled, textarea:disabled, button:disabled {
     opacity: .5;
     cursor: not-allowed;
 }
+
+/* --- Dashboard Grid (Increment 3) --- */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+@media (min-width: 768px) {
+    .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1200px) {
+    .dashboard-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.dashboard-grid > .card-wide {
+    grid-column: 1 / -1;
+}
+
+/* --- State indicator dot --- */
+.state-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+/* --- Phase current bars --- */
+.phase-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+.phase-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.phase-bar-label {
+    width: 24px;
+    font-size: .8rem;
+    font-weight: 700;
+    color: #5a5c69;
+}
+.phase-bar-track {
+    flex: 1;
+    height: 10px;
+    background: #e3e6f0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.phase-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.4s ease;
+    min-width: 2px;
+}
+.phase-bar-L1 { background: #4e73df; }
+.phase-bar-L2 { background: #1cc88a; }
+.phase-bar-L3 { background: #f6c23e; }
+.phase-bar-value {
+    width: 55px;
+    text-align: right;
+    font-size: .85rem;
+    color: #5a5c69;
+}
+
+/* --- Mobile bottom navigation --- */
+.mobile-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-top: 2px solid #e3e6f0;
+    padding: 6px 0;
+    z-index: 100;
+    justify-content: space-around;
+    box-shadow: 0 -2px 8px rgba(0,0,0,.08);
+}
+.mobile-nav button {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 6px 4px;
+    font-size: .75rem;
+    font-weight: 600;
+    color: #858796;
+    cursor: pointer;
+    min-width: 0;
+    box-shadow: none;
+    margin: 0;
+}
+.mobile-nav button.active {
+    color: #1cc88a;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+@media (max-width: 767px) {
+    .mobile-nav { display: flex; }
+    body { padding-bottom: 56px; }
+}

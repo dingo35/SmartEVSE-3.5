@@ -39,12 +39,15 @@ function updateConnStatus(connected) {
 
 /* Apply flat WS data fields to the DOM */
 function applyWsData(d) {
+    if (d.state_id !== undefined || d.error_flags !== undefined)
+        updateStateDot(d.state_id, d.error_flags);
     if (d.mode_id !== undefined) {
         var modeNames = {0:'OFF', 1:'NORMAL', 2:'SOLAR', 3:'SMART', 4:'PAUSE'};
         $qs('#mode').textContent = modeNames[d.mode_id] || 'N/A';
         for (var x of [0, 1, 2, 3, 4]) {
             $qs('#mode_' + x).classList.toggle('active', x === d.mode_id);
         }
+        syncMobileNav(d.mode_id);
         if (d.mode_id == 2) {
             showAll('.with_solar');
             hideById('override_current_box');
@@ -82,6 +85,7 @@ function applyWsData(d) {
         $id('phase_2').textContent = (wsCache.phase_L2 / 10).toFixed(1) + " A";
         $id('phase_3').textContent = (wsCache.phase_L3 / 10).toFixed(1) + " A";
         $id('phase_total').textContent = ((wsCache.phase_L1 + wsCache.phase_L2 + wsCache.phase_L3) / 10).toFixed(1) + " A";
+        updatePhaseBars(wsCache.phase_L1, wsCache.phase_L2, wsCache.phase_L3);
     }
 
     var evChanged = false;
@@ -172,6 +176,40 @@ function connectDataWs() {
     });
 }
 
+/* ========== UI helpers ========== */
+var maxMainsAmps = 25; /* default, updated on loadData */
+
+function updateStateDot(stateId, errorFlags) {
+    var dot = $id('state_dot');
+    if (!dot) return;
+    if (errorFlags && errorFlags > 0) { dot.style.backgroundColor = '#e74a3b'; return; }
+    /* stateId: 0=A(idle), 1=B(connected), 2=C(charging), 8=Activate, etc. */
+    if (stateId === 2 || stateId === 6 || stateId === 7) dot.style.backgroundColor = '#1cc88a'; /* charging - green */
+    else if (stateId === 1 || stateId === 5 || stateId === 9) dot.style.backgroundColor = '#36b9cc'; /* connected - blue */
+    else dot.style.backgroundColor = '#858796'; /* idle/off - gray */
+}
+
+function updatePhaseBars(l1, l2, l3, prefix) {
+    prefix = prefix || 'mains_bar';
+    var max = maxMainsAmps * 10; /* values are in 0.1A */
+    var vals = [l1, l2, l3];
+    var labels = ['L1', 'L2', 'L3'];
+    for (var i = 0; i < 3; i++) {
+        var pct = max > 0 ? Math.min(100, Math.abs(vals[i]) / max * 100) : 0;
+        var barEl = $id(prefix + '_' + labels[i]);
+        var valEl = $id(prefix + '_val_' + labels[i]);
+        if (barEl) barEl.style.width = pct.toFixed(1) + '%';
+        if (valEl) valEl.textContent = (vals[i] / 10).toFixed(1) + 'A';
+    }
+}
+
+function syncMobileNav(modeId) {
+    for (var x of [0, 1, 2, 3, 4]) {
+        var btn = $id('mnav_' + x);
+        if (btn) btn.classList.toggle('active', x === modeId);
+    }
+}
+
 /* ========== Cert visibility ========== */
 function toggleCertVisibility() {
     $id('mqtt_ca_cert_wrapper').style.display =
@@ -211,6 +249,7 @@ function loadData() {
             for (var x of [0, 1, 2, 3, 4]) {
                 $qs('#mode_' + x).classList.toggle('active', x === data.mode_id);
             }
+            syncMobileNav(data.mode_id);
 
             $id('dutycycle').textContent = (data.evse.pwm * 100 / 1024).toFixed(0) + " %";
             if (data.mode_id == 2) { /* SOLAR MODE */
@@ -302,6 +341,7 @@ function loadData() {
             $id('car_connected').textContent = data.car_connected ? "Yes" : "No";
             $id('state').textContent = data.evse.state;
             last_evse_state_id = data.evse.last_state_id;
+            updateStateDot(data.evse.state_id, data.evse.error_id);
             $id('temp').textContent = data.evse.temp + " \u00B0C / " + data.evse.temp_max + " \u00B0C";
 
             if (data.evse.error != "None") {
@@ -344,6 +384,8 @@ function loadData() {
             $id('phase_1').textContent = (data.phase_currents.L1 / 10).toFixed(1) + " A";
             $id('phase_2').textContent = (data.phase_currents.L2 / 10).toFixed(1) + " A";
             $id('phase_3').textContent = (data.phase_currents.L3 / 10).toFixed(1) + " A";
+            maxMainsAmps = data.settings.current_main || 25;
+            updatePhaseBars(data.phase_currents.L1, data.phase_currents.L2, data.phase_currents.L3);
             $id('evmeter_currents_total').textContent = (data.ev_meter.currents.TOTAL / 10).toFixed(1) + " A";
             $id('evmeter_currents_1').textContent = (data.ev_meter.currents.L1 / 10).toFixed(1) + " A";
             $id('evmeter_currents_2').textContent = (data.ev_meter.currents.L2 / 10).toFixed(1) + " A";
