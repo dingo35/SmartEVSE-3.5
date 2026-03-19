@@ -293,6 +293,7 @@ uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for O
 MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
+bool OcppWasStandalone = false; // Tracks LoadBl state at ocppInit() time for LB exclusivity check
 
 unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 

@@ -60,6 +60,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
+#include "ocpp_logic.h"
 #endif //ENABLE_OCPP
 
 #if SMARTEVSE_VERSION >= 40
@@ -354,6 +355,7 @@ extern uint8_t OcppTrackCPvoltage;
 extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
 extern float OcppCurrentLimit;
+extern bool OcppWasStandalone;
 
 extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 
@@ -1814,6 +1816,9 @@ void ocppInit() {
         return nullptr;
     });
 
+    // Track LoadBl state at init time for runtime exclusivity checks
+    OcppWasStandalone = !LoadBl;
+
     // If SmartEVSE load balancer is turned off, then enable OCPP Smart Charging
     // This means after toggling LB, OCPP must be disabled and enabled for changes to become effective
     if (!LoadBl) {
@@ -1908,6 +1913,7 @@ void ocppDeinit() {
     OcppTrackAccessBit = false;
     OcppTrackCPvoltage = PILOT_NOK;
     OcppCurrentLimit = -1.f;
+    OcppWasStandalone = false;
 
     mocpp_deinitialize();
 
@@ -1922,6 +1928,25 @@ void ocppLoop() {
     }
 
     mocpp_loop();
+
+    // Check OCPP / LoadBl mutual exclusivity at runtime
+    ocpp_lb_status_t lb_status = ocpp_check_lb_exclusivity(LoadBl, OcppMode, OcppWasStandalone);
+    if (lb_status == OCPP_LB_CONFLICT) {
+        // LoadBl changed to non-zero while OCPP is active — Smart Charging limits
+        // are silently ignored by the state machine. Neutralize the limit and warn.
+        if (OcppCurrentLimit >= 0.0f) {
+            _LOG_W("OCPP: LoadBl=%u conflicts with Smart Charging, disabling OCPP current limit\n", LoadBl);
+            OcppCurrentLimit = -1.0f;
+        }
+    } else if (lb_status == OCPP_LB_NEEDS_REINIT) {
+        // LoadBl changed from non-zero to 0 — Smart Charging callback was never
+        // registered. User needs to disable/enable OCPP for it to take effect.
+        static bool ocpp_reinit_warned = false;
+        if (!ocpp_reinit_warned) {
+            _LOG_W("OCPP: LoadBl changed to standalone but Smart Charging not registered. Disable/enable OCPP to activate.\n");
+            ocpp_reinit_warned = true;
+        }
+    }
 
     // handle Configuration updates
 
