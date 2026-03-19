@@ -641,12 +641,12 @@ String discoverHomeWizardP1() {
  *     - A int flag indicating: 0: failure, 1: single phase current, 3: 3 phase current
  *     - An array of 3 values representing the active current in deci-amps for L1, L2, and L3
  */
-std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
+HomeWizardP1Result getMainsFromHomeWizardP1() {
 
     _LOG_A("getMainsFromHWP1(): invocation\n");
     const String hostname = discoverHomeWizardP1();
     if (hostname == "") {
-        return {false, {0, 0, 0}};
+        return {0, {0, 0, 0}, 0, 0};
     }
 
     const String url = "http://" + hostname + "/api/v1/data";
@@ -678,7 +678,7 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
             lastMdnsQueryTime = 0;  // Allow immediate rediscovery
             _LOG_A("getMainsFromHWP1(): Connection failed, clearing cache for rediscovery.\n");
         }
-        return {false, {0, 0, 0}};
+        return {0, {0, 0, 0}, 0, 0};
     }
 
     // Get the response stream
@@ -686,24 +686,32 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
 
     const char* currentKeys[] = {"active_current_l1_a", "active_current_l2_a", "active_current_l3_a"};
     const char* powerKeys[] = {"active_power_l1_w", "active_power_l2_w", "active_power_l3_w"};
+    // BEGIN PLAN-09: HomeWizard energy data
+    const char* energyImportKey = "total_power_import_kwh";
+    const char* energyExportKey = "total_power_export_kwh";
+    // END PLAN-09
 
     // Create a filter to parse only specific fields.
-    StaticJsonDocument<96> filter;
+    StaticJsonDocument<128> filter;
     for (const auto* key : currentKeys) filter[key] = true;
     for (const auto* key : powerKeys) filter[key] = true;
+    // BEGIN PLAN-09: HomeWizard energy data
+    filter[energyImportKey] = true;
+    filter[energyExportKey] = true;
+    // END PLAN-09
 
     /////test homewizard connected to single phase mainsmeter
     //const char stream[] = "{\"wifi_ssid\":\"Imaginous\",\"wifi_strength\":86,\"smr_version\":50,\"meter_model\":\"Kaifa AIFA-METER\",\"unique_id\":\"0000000000000000000000000000000000\",\"active_tariff\":1,\"total_power_import_kwh\":7412.085,\"total_power_import_t1_kwh\":4283.482,\"total_power_import_t2_kwh\":3128.603,\"total_power_export_kwh\":6551.330,\"total_power_export_t1_kwh\":1930.678,\"total_power_export_t2_kwh\":4620.652,\"active_power_w\":-2725.000,\"active_power_l1_w\":-2725.000,\"active_voltage_l1_v\":238.400,\"active_current_a\":11.430,\"active_current_l1_a\":-11.430,\"voltage_sag_l1_count\":8.000,\"voltage_swell_l1_count\":0.000,\"any_power_fail_count\":0.000,\"long_power_fail_count\":0.000,\"total_gas_m3\":1795.627,\"gas_timestamp\":250405135009,\"gas_unique_id\":\"0000000000000000000000000000000000\",\"external\":[{\"unique_id\":\"0000000000000000000000000000000000\",\"type\":\"gas_meter\",\"timestamp\":250405135009,\"value\":1795.627,\"unit\":\"m3\"}]}";
 
     // Create a filtered JSON document to hold the parsed data.
-    DynamicJsonDocument doc(256);
+    DynamicJsonDocument doc(384);
     const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
     homeWizardHttpClient->end();
 
     // Handle JSON parsing errors.
     if (error) {
         _LOG_A("getMainsFromHomeWizardP1(): JSON deserialization failed: %s\n", error.c_str());
-        return {false, {0, 0, 0}};
+        return {0, {0, 0, 0}, 0, 0};
     }
 
     uint8_t phases = 0;
@@ -716,7 +724,7 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
     if (!phases) {
         // Early return on missing data.
         _LOG_A("getMainsFromHomeWizardP1(): required JSON fields 'active_current_l1_a' not found\n");
-        return {phases, {0, 0, 0}};
+        return {0, {0, 0, 0}, 0, 0};
     }
 
     // Determine grid direction based on power: negative indicates feed-in, positive indicates usage.
@@ -730,7 +738,20 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
         int16_t rawCurrent = doc[currentKeys[i]].as<float>() * 10;
         currents[i] = std::abs(rawCurrent) * getCorrection(powerKeys[i]);
     }
-return {phases, currents};
+
+    // BEGIN PLAN-09: HomeWizard energy data
+    // Extract energy import/export if available (kWh from API → Wh for SmartEVSE)
+    int32_t import_wh = 0;
+    int32_t export_wh = 0;
+    if (doc.containsKey(energyImportKey)) {
+        import_wh = (int32_t)(doc[energyImportKey].as<float>() * 1000.0f);
+    }
+    if (doc.containsKey(energyExportKey)) {
+        export_wh = (int32_t)(doc[energyExportKey].as<float>() * 1000.0f);
+    }
+    // END PLAN-09
+
+    return {(int8_t)phases, currents, import_wh, export_wh};
 }
 #endif
 

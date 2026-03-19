@@ -2655,16 +2655,22 @@ bool fwNeedsUpdate(char * version) {
     _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
     lastCheck_homewizard = currentTime;
 
-    const auto currents = getMainsFromHomeWizardP1();
+    const auto result = getMainsFromHomeWizardP1();
 #if SMARTEVSE_VERSION < 40 //v3
-    for (int i = 0; i < currents.first; i++)
-        MainsMeter.Irms[i] = currents.second[i];
-    if (currents.first) {
+    for (int i = 0; i < result.phases; i++)
+        MainsMeter.Irms[i] = result.currents[i];
+    if (result.phases) {
+        // BEGIN PLAN-09: HomeWizard energy data
+        if (result.import_energy_wh > 0)
+            MainsMeter.Import_active_energy = result.import_energy_wh;
+        if (result.export_energy_wh > 0)
+            MainsMeter.Export_active_energy = result.export_energy_wh;
+        // END PLAN-09
         CalcIsum();
         MainsMeter.setTimeout(COMM_TIMEOUT);
     }
 #else
-    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, currents.second[0], currents.second[1], currents.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, result.currents[0], result.currents[1], result.currents[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
 }
 

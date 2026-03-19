@@ -212,10 +212,11 @@ and exposes data via a local HTTP REST API.
 - Polls `http://<p1meter>/api/v1/data` every 1.95 seconds
 - Reads: `active_current_l1_a`, `active_current_l2_a`, `active_current_l3_a`
 - Uses `active_power_l1_w` etc. to determine current direction (import vs export)
-- Does NOT read energy data (`total_power_import_kwh`, `total_power_export_kwh`)
-  — this is a known limitation
+- Reads energy data: `total_power_import_kwh` and `total_power_export_kwh`
+  (converted to Wh for the HA energy dashboard)
 
-**Data provided:** Per-phase current with direction correction. No energy data.
+**Data provided:** Per-phase current with direction correction, import/export
+energy totals.
 
 **Failure modes and recovery:**
 - WiFi dropout → HTTP requests fail → meter times out after 11 seconds → charging stops
@@ -364,7 +365,7 @@ or incorrect values from a malfunctioning automation.
 | **Polling** | ~2s (SmartEVSE polls) | ~2s (SmartEVSE polls) | 1.95s (SmartEVSE polls) | External push | External push |
 | **Timeout** | 11s | 11s | 11s | 60s | 11s |
 | **Per-phase current** | Yes | Yes | Yes | N/A (single value) | Yes |
-| **Energy data** | Yes (most meters) | No | No | No | No |
+| **Energy data** | Yes (most meters) | No | Yes (import/export) | No | No |
 | **Power data** | Yes (most meters) | No | Direction only | No | No |
 | **Auto-discovery** | No (manual address) | Yes (fixed 0x0A) | Yes (mDNS) | No | No |
 | **Multi-node compatible** | Yes | Yes | Yes (master only) | Master only | Master only |
