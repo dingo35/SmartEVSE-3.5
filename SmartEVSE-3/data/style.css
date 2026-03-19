@@ -115,23 +115,83 @@
     opacity: 1;
 }
 
-/* Green selected button. */
-#content .ui-btn.ui-btn-active {
-    background-color: #1cc88a;
-    color: #333;
-    border-color: #ddd;
-    text-shadow: 0 1px 0 #f3f3f3;
-}
-
-/* Prevent jQuery Mobile buttons from expanding to full width and consistent margins. */
-button.ui-btn, a.ui-btn {
+/* --- Buttons (replaces jQuery Mobile button styles) --- */
+#content button, #content a.btn {
     display: inline-block;
     min-width: 100px;
-    width: unset;
+    padding: .4em .8em;
+    margin: .2em .15em;
+    border: 1px solid #ddd;
+    border-radius: .35rem;
+    background-color: #f6f6f6;
+    color: #333;
+    font-size: .9rem;
+    font-weight: 400;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+#content button:hover, #content a.btn:hover {
+    background-color: #e9e9e9;
+    text-decoration: none;
+}
+#content button:active, #content a.btn:active {
+    background-color: #ddd;
+}
+
+/* Active mode button (green highlight). */
+#content button.active {
+    background-color: #1cc88a;
+    color: #333;
+    border-color: #1ab87f;
+    text-shadow: 0 1px 0 #f3f3f3;
 }
 
 /* Consistent form margins for labels and inputs. */
 .form-group label, .form-inline {
     margin-right: .25rem;
     gap: .25rem;
+}
+
+/* --- Tooltips (moved from inline styles) --- */
+.tooltip {
+    position: relative;
+    display: inline-block;
+    border-bottom: 1px dotted black;
+    opacity: unset;
+    font-size: inherit;
+}
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: 220px;
+    background-color: black;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px 0;
+    position: absolute;
+    z-index: 1;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -110px;
+    font-size: .875rem;
+}
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+}
+
+/* --- Checkboxes (replaces jQuery Mobile checkboxradio widget) --- */
+input[type="checkbox"] {
+    width: 1.1em;
+    height: 1.1em;
+    vertical-align: middle;
+    cursor: pointer;
+    accent-color: #1cc88a;
+}
+
+/* --- Disabled fields --- */
+input:disabled, select:disabled, textarea:disabled, button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
 }
