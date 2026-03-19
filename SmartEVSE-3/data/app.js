@@ -185,6 +185,26 @@ function connectDataWs() {
     });
 }
 
+/* ========== Theme (dark mode) ========== */
+function getTheme() {
+    var stored = localStorage.getItem('evse_theme');
+    if (stored) return stored;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    var btn = $id('theme_toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '\u2600' : '\u263E'; /* sun or moon */
+}
+function toggleTheme() {
+    var current = document.documentElement.getAttribute('data-theme') || getTheme();
+    var next = current === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('evse_theme', next);
+    applyTheme(next);
+}
+/* Apply saved theme immediately */
+applyTheme(getTheme());
+
 /* ========== UI helpers ========== */
 var maxMainsAmps = 25; /* default, updated on loadData */
 

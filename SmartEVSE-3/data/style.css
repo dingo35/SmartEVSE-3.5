@@ -353,3 +353,131 @@ input:disabled, select:disabled, textarea:disabled, button:disabled {
     .mobile-nav { display: flex; }
     body { padding-bottom: 56px; }
 }
+
+/* --- Dark mode (Increment 5) --- */
+/* Theme toggle button */
+.theme-toggle {
+    background: none;
+    border: 1px solid rgba(255,255,255,.4);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    margin-left: 10px;
+    vertical-align: middle;
+    color: #fff;
+    box-shadow: none;
+    min-width: unset;
+}
+.theme-toggle:hover { border-color: #fff; }
+
+/* Dark theme overrides */
+[data-theme="dark"] body,
+[data-theme="dark"] #content-wrapper {
+    background-color: #1a1a2e !important;
+    color: #d1d3e2 !important;
+}
+[data-theme="dark"] .card {
+    background-color: #16213e !important;
+    border-color: #2d2d4a !important;
+}
+[data-theme="dark"] .text-gray-800 {
+    color: #d1d3e2 !important;
+}
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-700 {
+    color: #b7b9cc !important;
+}
+[data-theme="dark"] .shadow {
+    box-shadow: 0 .15rem 1.75rem 0 rgba(0,0,0,.4) !important;
+}
+[data-theme="dark"] .form-control,
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+    background-color: #0f3460 !important;
+    border-color: #2d2d4a !important;
+    color: #d1d3e2 !important;
+}
+[data-theme="dark"] #content button,
+[data-theme="dark"] #content a.btn {
+    background-color: #0f3460;
+    border-color: #2d2d4a;
+    color: #d1d3e2;
+}
+[data-theme="dark"] #content button:hover,
+[data-theme="dark"] #content a.btn:hover {
+    background-color: #1a4a7a;
+}
+[data-theme="dark"] #content button.active {
+    background-color: #1cc88a;
+    color: #1a1a2e;
+}
+[data-theme="dark"] .mobile-nav {
+    background: #16213e;
+    border-top-color: #2d2d4a;
+}
+[data-theme="dark"] .mobile-nav button {
+    color: #858796;
+}
+[data-theme="dark"] .tooltip .tooltiptext {
+    background-color: #2d2d4a;
+}
+[data-theme="dark"] .phase-bar-track {
+    background: #2d2d4a;
+}
+[data-theme="dark"] .pf-icon { fill: #b7b9cc; }
+[data-theme="dark"] .pf-node-label { fill: #d1d3e2; }
+[data-theme="dark"] .pf-node-value { fill: #b7b9cc; }
+[data-theme="dark"] .pf-line.flow-none { stroke: #2d2d4a; }
+[data-theme="dark"] .phase-bar-value { color: #b7b9cc; }
+[data-theme="dark"] .phase-bar-label { color: #b7b9cc; }
+[data-theme="dark"] .alert-success {
+    background-color: #0f3460 !important;
+    border-color: #1cc88a !important;
+    color: #d1d3e2 !important;
+}
+[data-theme="dark"] #lcd-lock-hint { color: #b7b9cc; }
+
+/* Auto-detect system preference */
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) body,
+    html:not([data-theme="light"]) #content-wrapper {
+        background-color: #1a1a2e !important;
+        color: #d1d3e2 !important;
+    }
+    html:not([data-theme="light"]) .card {
+        background-color: #16213e !important;
+        border-color: #2d2d4a !important;
+    }
+    html:not([data-theme="light"]) .text-gray-800 { color: #d1d3e2 !important; }
+    html:not([data-theme="light"]) .shadow { box-shadow: 0 .15rem 1.75rem 0 rgba(0,0,0,.4) !important; }
+    html:not([data-theme="light"]) .form-control,
+    html:not([data-theme="light"]) input,
+    html:not([data-theme="light"]) select,
+    html:not([data-theme="light"]) textarea {
+        background-color: #0f3460 !important;
+        border-color: #2d2d4a !important;
+        color: #d1d3e2 !important;
+    }
+    html:not([data-theme="light"]) #content button,
+    html:not([data-theme="light"]) #content a.btn {
+        background-color: #0f3460;
+        border-color: #2d2d4a;
+        color: #d1d3e2;
+    }
+    html:not([data-theme="light"]) #content button.active {
+        background-color: #1cc88a;
+        color: #1a1a2e;
+    }
+    html:not([data-theme="light"]) .mobile-nav {
+        background: #16213e;
+        border-top-color: #2d2d4a;
+    }
+    html:not([data-theme="light"]) .pf-icon { fill: #b7b9cc; }
+    html:not([data-theme="light"]) .pf-node-label { fill: #d1d3e2; }
+    html:not([data-theme="light"]) .phase-bar-track { background: #2d2d4a; }
+}
