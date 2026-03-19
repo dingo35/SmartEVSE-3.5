@@ -15,6 +15,8 @@
 #include "mqtt_publish.h"
 #include "OneWire.h"
 #include "diag_sampler.h"
+#include "diag_storage.h"
+#include <LittleFS.h>
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1240,6 +1242,84 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             mg_http_reply(c, 500, "", "serialize error\r\n");
         }
         free(out);
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/dump") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        bool ok = diag_storage_dump(DIAG_TRIGGER_MANUAL);
+        mg_http_reply(c, ok ? 200 : 500, "Content-Type: application/json\r\n",
+                      "{\"dumped\":%s}\r\n", ok ? "true" : "false");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/files") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        char json[384];
+        int n = diag_storage_list_json(json, sizeof(json));
+        if (n > 0)
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json);
+        else
+            mg_http_reply(c, 500, "", "list error\r\n");
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        /* Extract filename from URI: /diag/file/<filename> */
+        struct mg_str uri = hm->uri;
+        const char *prefix = "/diag/file/";
+        size_t prefix_len = strlen(prefix);
+        if (uri.len <= prefix_len) {
+            mg_http_reply(c, 400, "", "missing filename\r\n");
+            return true;
+        }
+        char fname[48];
+        size_t fname_len = uri.len - prefix_len;
+        if (fname_len >= sizeof(fname)) fname_len = sizeof(fname) - 1;
+        memcpy(fname, uri.buf + prefix_len, fname_len);
+        fname[fname_len] = '\0';
+
+        /* Read file from LittleFS */
+        char filepath[64];
+        snprintf(filepath, sizeof(filepath), "%s/%s", DIAG_DIR, fname);
+        File file = LittleFS.open(filepath, "r");
+        if (!file) {
+            mg_http_reply(c, 404, "", "file not found\r\n");
+            return true;
+        }
+        size_t fsize = file.size();
+        uint8_t *fbuf = (uint8_t *)malloc(fsize);
+        if (!fbuf) {
+            file.close();
+            mg_http_reply(c, 500, "", "out of memory\r\n");
+            return true;
+        }
+        file.read(fbuf, fsize);
+        file.close();
+
+        mg_printf(c,
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: application/octet-stream\r\n"
+                  "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                  "Content-Length: %u\r\n\r\n",
+                  fname, (unsigned)fsize);
+        mg_send(c, fbuf, fsize);
+        c->is_resp = 0;
+        free(fbuf);
+        return true;
+
+    } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("DELETE", hm->method.buf, hm->method.len)) {
+        struct mg_str uri = hm->uri;
+        const char *prefix = "/diag/file/";
+        size_t prefix_len = strlen(prefix);
+        if (uri.len <= prefix_len) {
+            mg_http_reply(c, 400, "", "missing filename\r\n");
+            return true;
+        }
+        char fname[48];
+        size_t fname_len = uri.len - prefix_len;
+        if (fname_len >= sizeof(fname)) fname_len = sizeof(fname) - 1;
+        memcpy(fname, uri.buf + prefix_len, fname_len);
+        fname[fname_len] = '\0';
+
+        bool ok = diag_storage_delete(fname);
+        mg_http_reply(c, ok ? 200 : 404, "Content-Type: application/json\r\n",
+                      "{\"deleted\":%s}\r\n", ok ? "true" : "false");
         return true;
     // END PLAN-06
   }

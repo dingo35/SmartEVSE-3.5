@@ -52,6 +52,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "evse_bridge.h"
 #include "solar_debug_json.h"
 #include "diag_sampler.h"
+#include "diag_storage.h"
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
@@ -805,6 +806,15 @@ void mqtt_receive_callback(const String topic, const String payload) {
         case MQTT_CMD_SOLAR_DEBUG:
             mqttSetSolarDebug(cmd.solar_debug);
             break;
+
+        // BEGIN PLAN-06: Diagnostic telemetry
+        case MQTT_CMD_DIAG_PROFILE:
+            if (cmd.diag_profile == 0)
+                diag_stop();
+            else
+                diag_start((diag_profile_t)cmd.diag_profile);
+            break;
+        // END PLAN-06
 
         default:
             return;
@@ -2559,6 +2569,7 @@ extern void Timer20ms(void * parameter);
     // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
     evse_bridge_init();
     diag_sampler_init();
+    diag_storage_init();
 
     // Create Task EVSEStates, that handles changes in the CP signal
     xTaskCreate(
