@@ -165,9 +165,15 @@ Tibber, SteVe) and configuration reference.
 - **Entity naming cleanup** — snake_case entity IDs for HA 2025.10+ compatibility
 - **New entities**: MaxSumMains (settable), FreeHeap, MQTTMsgCount, LoadBl,
   PairingPin, FirmwareVersion (diagnostic)
-
 - **Per-phase power via MQTT** — 6 new topics (`MainsPowerL1/L2/L3`,
   `EVPowerL1/L2/L3`) with HA auto-discovery (device_class=power, unit=W)
+  ([PR #82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82))
+- **Per-phase energy via MQTT** — 6 new topics for per-phase energy data with
+  HA auto-discovery (state_class=total_increasing)
+  ([PR #82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82))
+- **Metering diagnostic counters** — `MeterTimeoutCount`, `MeterRecoveryCount`,
+  `ApiStaleCount` published as HA diagnostic entities for monitoring metering health
+  ([PR #86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86))
 
 See [MQTT & Home Assistant](docs/mqtt-home-assistant.md) for full topic reference
 and configuration.
@@ -195,6 +201,20 @@ and configuration.
   counters for diagnosing communication issues
 - **Modbus frame event logger** — 32-entry ring buffer capturing TX/RX/ERR frames
   with address, function code, register, and timestamp for debugging
+- **API/MQTT staleness detection** — configurable timeout (default 120s) for
+  API-fed mains current; falls back to MaxMains on expiry instead of stopping
+  charging ([PR #86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86))
+- **HomeWizard P1 energy data** — reads `total_power_import_kwh` /
+  `total_power_export_kwh` for the HA energy dashboard
+  ([PR #86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86))
+- **HomeWizard P1 manual IP fallback** — `Set/HomeWizardIP` MQTT command bypasses
+  mDNS discovery for networks where it's unreliable
+  ([PR #86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86))
+- **Comprehensive power input guide** — [5-method comparison](docs/power-input-methods.md)
+  with reliability ranking, decision tree, setup guides, and troubleshooting
+
+See [Power Input Methods](docs/power-input-methods.md) for choosing and configuring
+your metering method.
 
 ## EVCC Integration
 
@@ -218,6 +238,21 @@ and configuration.
 See [EVCC Integration](docs/evcc-integration.md) for setup guide and charger
 template.
 
+## Diagnostic Telemetry
+
+### Fork improvements ([PR #84](https://github.com/basmeerman/SmartEVSE-3.5/pull/84))
+
+- **Ring buffer event capture** — captures state machine events, errors, meter
+  readings, and load balancing data in a 64-entry ring buffer
+- **LittleFS persistence** — diagnostic snapshots survive reboots; auto-triggered
+  on errors and configurable profiles (general, solar, loadbal, modbus, fast)
+- **WebSocket live stream** — real-time diagnostic events via WebSocket for the
+  web UI diagnostic viewer
+- **Test replay framework** — replay recorded diagnostic sessions through the
+  native test suite for offline debugging
+- **MQTT profile control** — `Set/DiagProfile` command to start/stop diagnostic
+  capture remotely
+
 ## Web & Connectivity
 
 - WiFi status page with real-time monitoring
@@ -225,6 +260,23 @@ template.
 - Remote control with Smartphone App
 - LCD remote control via WebSockets
 - Firmware upgradable through USB-C or built-in webserver
+
+### Fork improvements ([PR #85](https://github.com/basmeerman/SmartEVSE-3.5/pull/85))
+
+- **Offline-first web UI** — all CSS/JS/fonts bundled into firmware, no CDN
+  dependencies; works on isolated networks
+- **WebSocket data channel** — real-time dashboard updates via WebSocket instead
+  of HTTP polling; 1-second refresh with automatic reconnect
+- **Dashboard card redesign** — modern card-based layout with power flow diagram
+  showing grid → EVSE → EV energy flow
+- **Dark mode** — automatic dark/light theme based on system preference, with
+  manual toggle
+- **Load balancing node overview** — live multi-node status panel showing all
+  connected EVSEs with per-node current, state, and priority
+- **Diagnostic telemetry viewer** — browse, filter, and replay diagnostic
+  captures directly in the web UI
+- **LCD widget modernization** — redesigned LCD remote control widget with
+  responsive layout
 
 ## Privacy
 
@@ -251,6 +303,7 @@ Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update
 | Document | Description |
 |----------|-------------|
 | [Hardware installation](docs/installation.md) | Wiring, mounting, contactor setup |
+| [Power Input Methods](docs/power-input-methods.md) | Metering options: Modbus, Sensorbox, HomeWizard, MQTT — reliability ranking, setup, troubleshooting |
 | [Configuration](docs/configuration.md) | LCD menu settings reference |
 | [Operation](docs/operation.md) | Day-to-day usage guide |
 | [Solar & Smart Mode Stability](docs/solar-smart-stability.md) | EMA smoothing, dead bands, phase switch timers, cycling prevention |
@@ -272,9 +325,9 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 37 |
-| Test scenarios | 850+ |
-| Features covered | 65+ |
+| Test suites | 43 |
+| Test scenarios | 870+ |
+| Features covered | 60+ |
 | Requirement traceability | 100% |
 
 **Test areas** include IEC 61851-1 state transitions, load balancing (single and
@@ -282,7 +335,8 @@ multi-node with convergence simulation), Smart/Solar operating modes, OCPP
 authorization/connector state/settings validation/telemetry, MQTT command parsing
 and publishing, HTTP API validation, EVCC IEC 61851 state mapping, Modbus frame
 decoding (FC03/04/06/10), meter byte decoding (4 endianness modes), HomeWizard P1
-JSON parsing, meter telemetry counters, error handling & safety, modem/ISO15118
+JSON parsing, meter telemetry counters, API staleness detection, metering
+diagnostics, diagnostic telemetry, error handling & safety, modem/ISO15118
 negotiation, phase switching, bridge transaction integrity, and end-to-end
 charging flows.
 
@@ -303,20 +357,20 @@ cd SmartEVSE-3/test/native && make clean test
 
 # Roadmap
 
-Active improvement projects tracked via
+All improvement plans are complete. Tracked via
 [GitHub Projects](https://github.com/basmeerman?tab=projects):
 
-| Status | Project | Upstream issues |
-|--------|---------|----------------|
-| Done | Plan 01: Solar & Smart Mode Stability | [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
-| Done | Plan 02: Multi-Node Load Balancing | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
-| Done | Plan 04: EVCC Integration | [EVCC #13852](https://github.com/evcc-io/evcc/pull/13852) |
-| Done | Plan 08: HA MQTT Integration | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
-| Done | Plan 03: OCPP Robustness | — |
-| Done | Plan 05: Meter Compatibility & Modbus | — |
-| Planned | Plan 06: Diagnostic Telemetry | — |
-| Planned | Plan 07: Web UI Modernization | — |
-| Planned | Plan 09: Power Input Methods | — |
+| Status | Project | PRs | Upstream issues |
+|--------|---------|-----|----------------|
+| Done | Plan 01: Solar & Smart Mode Stability | [#65](https://github.com/basmeerman/SmartEVSE-3.5/pull/65), [#83](https://github.com/basmeerman/SmartEVSE-3.5/pull/83) | [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Done | Plan 02: Multi-Node Load Balancing | [#69](https://github.com/basmeerman/SmartEVSE-3.5/pull/69) | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
+| Done | Plan 03: OCPP Robustness | [#77](https://github.com/basmeerman/SmartEVSE-3.5/pull/77), [#79](https://github.com/basmeerman/SmartEVSE-3.5/pull/79), [#80](https://github.com/basmeerman/SmartEVSE-3.5/pull/80) | — |
+| Done | Plan 04: EVCC Integration | [#70](https://github.com/basmeerman/SmartEVSE-3.5/pull/70) | [EVCC #13852](https://github.com/evcc-io/evcc/pull/13852) |
+| Done | Plan 05: Meter Compatibility & Modbus | [#76](https://github.com/basmeerman/SmartEVSE-3.5/pull/76) | — |
+| Done | Plan 06: Diagnostic Telemetry | [#84](https://github.com/basmeerman/SmartEVSE-3.5/pull/84) | — |
+| Done | Plan 07: Web UI Modernization | [#85](https://github.com/basmeerman/SmartEVSE-3.5/pull/85) | — |
+| Done | Plan 08: HA MQTT Integration | [#64](https://github.com/basmeerman/SmartEVSE-3.5/pull/64), [#68](https://github.com/basmeerman/SmartEVSE-3.5/pull/68), [#82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82) | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
+| Done | Plan 09: Power Input Methods | [#86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86) | — |
 
 # SmartEVSE App
 

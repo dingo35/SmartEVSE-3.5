@@ -130,6 +130,16 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->MainsMeterTimeout = COMM_TIMEOUT;
     ctx->EVMeterTimeout = COMM_EVTIMEOUT;
 
+    // API mains staleness detection
+    ctx->api_mains_staleness_timer = API_MAINS_STALENESS_DEFAULT;
+    ctx->api_mains_timeout = API_MAINS_STALENESS_DEFAULT;
+    ctx->api_mains_stale = false;
+
+    // Metering diagnostic counters
+    ctx->meter_timeout_count = 0;
+    ctx->meter_recovery_count = 0;
+    ctx->api_stale_count = 0;
+
     // Error handling
     ctx->ErrorFlags = NO_ERROR;
     ctx->ChargeDelay = 0;
@@ -1568,8 +1578,13 @@ void evse_tick_1s(evse_ctx_t *ctx) {
     // MainsMeter timeout (lines 1732-1755)
     if (ctx->MainsMeterType && ctx->LoadBl < 2) {
         if (ctx->MainsMeterTimeout == 0 && !(ctx->ErrorFlags & CT_NOCOMM) && ctx->Mode != MODE_NORMAL) {
-            evse_set_error_flags(ctx, CT_NOCOMM);
-            evse_set_power_unavailable(ctx);
+            // For API metering with staleness enabled, suppress CT_NOCOMM —
+            // the staleness mechanism handles the timeout with graceful fallback.
+            if (!(ctx->MainsMeterType == EM_API_METER && ctx->api_mains_timeout > 0)) {
+                evse_set_error_flags(ctx, CT_NOCOMM);
+                evse_set_power_unavailable(ctx);
+                ctx->meter_timeout_count++;
+            }
         } else if (ctx->MainsMeterTimeout > 0) {
             ctx->MainsMeterTimeout--;
         }
@@ -1577,6 +1592,7 @@ void evse_tick_1s(evse_ctx_t *ctx) {
         if (ctx->MainsMeterTimeout == 0 && !(ctx->ErrorFlags & CT_NOCOMM)) {
             evse_set_error_flags(ctx, CT_NOCOMM);
             evse_set_power_unavailable(ctx);
+            ctx->meter_timeout_count++;
         } else if (ctx->MainsMeterTimeout > 0) {
             ctx->MainsMeterTimeout--;
         }
@@ -1599,11 +1615,37 @@ void evse_tick_1s(evse_ctx_t *ctx) {
     // CT_NOCOMM recovery (line 1769)
     if ((ctx->ErrorFlags & CT_NOCOMM) && ctx->MainsMeterTimeout > 0) {
         evse_clear_error_flags(ctx, CT_NOCOMM);
+        ctx->meter_recovery_count++;
     }
 
     // EV_NOCOMM recovery (line 1771)
     if ((ctx->ErrorFlags & EV_NOCOMM) && ctx->EVMeterTimeout > 0) {
         evse_clear_error_flags(ctx, EV_NOCOMM);
+    }
+
+    // API mains staleness detection
+    // For API metering (EM_API_METER) with staleness enabled, count down a
+    // separate timer. On expiry, fall back to MaxMains (safe limit that still
+    // allows charging) instead of CT_NOCOMM (which stops charging entirely).
+    if (ctx->MainsMeterType == EM_API_METER && ctx->api_mains_timeout > 0 && ctx->LoadBl < 2) {
+        // Recovery: clear stale flag when timer is reset by incoming data
+        if (ctx->api_mains_stale && ctx->api_mains_staleness_timer > 0) {
+            ctx->api_mains_stale = false;
+        }
+        // Countdown
+        if (ctx->api_mains_staleness_timer > 0) {
+            ctx->api_mains_staleness_timer--;
+        }
+        // On expiry: set stale flag and fall back to MaxMains (once)
+        if (ctx->api_mains_staleness_timer == 0 && !ctx->api_mains_stale) {
+            ctx->api_mains_stale = true;
+            ctx->api_stale_count++;
+            for (int i = 0; i < 3; i++) {
+                ctx->MainsMeterIrms[i] = (int16_t)(ctx->MaxMains * 10);
+            }
+        }
+    } else if (ctx->MainsMeterType != EM_API_METER) {
+        ctx->api_mains_stale = false;
     }
 
     // Temperature check (lines 1773-1778)

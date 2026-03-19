@@ -49,6 +49,8 @@
 #include <soc/sens_struct.h>
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+#include "diag_sampler.h"
+#include "diag_storage.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -1153,6 +1155,7 @@ void Timer1S_singlerun(void) {
     TempEVSE = TemperatureSensor();
     uint16_t oldSolarStopTimer = SolarStopTimer;
     uint8_t  oldErrorFlags = ErrorFlags;
+    uint8_t  oldState = State;
 
     evse_bridge_lock();
     evse_sync_globals_to_ctx();
@@ -1161,6 +1164,9 @@ void Timer1S_singlerun(void) {
     evse_bridge_unlock();
 
     timer1s_check_error_transitions(oldErrorFlags, oldSolarStopTimer);
+#ifdef SMARTEVSE_VERSION
+    diag_storage_check_triggers(oldErrorFlags, oldState, oldSolarStopTimer);
+#endif
 #if MODEM
     timer1s_modem_disconnect();
 #endif
@@ -1177,6 +1183,10 @@ void Timer1S_singlerun(void) {
 
 #if MQTT
     timer1s_mqtt_publish();
+#endif
+
+#ifdef SMARTEVSE_VERSION //ESP32
+    diag_sample();
 #endif
 
 #ifndef SMARTEVSE_VERSION //CH32

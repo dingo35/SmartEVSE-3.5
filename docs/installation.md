@@ -16,6 +16,10 @@ It's also possible to connect it directly to the P1 port of the smartmeter, as l
 > The EVSE needs to be protected with a circuit breaker and residual- current circuit breaker.
 
 # Supported modbus kWh meters
+
+> [!TIP]
+> For a comprehensive guide to all power input methods (Modbus, Sensorbox, HomeWizard P1, API/MQTT) including a reliability ranking and decision tree, see [Power Input Methods](power-input-methods.md).
+
 The following meters are directly supported as Mains or EV meter:
 - PHOENIX CONTACT EEM-350-D-MCB
 - Finder 7E.78.8.400.0212

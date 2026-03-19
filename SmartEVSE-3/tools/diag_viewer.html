@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartEVSE Diagnostic Viewer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;padding:10px}
+h1{font-size:16px;color:#0f3460;background:#e0e0e0;padding:6px 12px;margin-bottom:8px}
+.ctrl{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.ctrl label{font-size:12px}
+.ctrl input,.ctrl select,.ctrl button{font-family:monospace;font-size:12px;padding:3px 6px;background:#16213e;color:#e0e0e0;border:1px solid #0f3460}
+.ctrl button{cursor:pointer;background:#0f3460}
+.ctrl button:hover{background:#533483}
+#status{font-size:12px;padding:4px;background:#16213e;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th,td{border:1px solid #0f3460;padding:2px 4px;text-align:right}
+th{background:#16213e;position:sticky;top:0}
+td.state{text-align:left}
+.err{color:#e94560}
+.ok{color:#53bf9d}
+#log{height:200px;overflow-y:auto;background:#0a0a1a;padding:4px;font-size:11px;margin-top:8px;border:1px solid #0f3460}
+</style>
+</head>
+<body>
+<h1>SmartEVSE Diagnostic Stream</h1>
+<div class="ctrl">
+<label>Host:</label><input id="host" value="" placeholder="smartevse-xxx.lan" size="20">
+<button onclick="connect()">Connect</button>
+<button onclick="disconnect()">Disconnect</button>
+<label>Profile:</label>
+<select id="profile">
+<option value="general">General</option>
+<option value="solar">Solar</option>
+<option value="loadbal">Load Balance</option>
+<option value="modbus">Modbus</option>
+<option value="fast">Fast</option>
+</select>
+<button onclick="startCapture()">Start</button>
+<button onclick="stopCapture()">Stop</button>
+<button onclick="downloadDiag()">Download .diag</button>
+</div>
+<div id="status">Disconnected</div>
+<table>
+<thead><tr>
+<th>T</th><th>State</th><th>Err</th><th>Mode</th>
+<th>L1</th><th>L2</th><th>L3</th><th>Isum</th>
+<th>ChgA</th><th>Iset</th><th>SolTmr</th>
+<th>Phases</th><th>Temp</th><th>RSSI</th>
+</tr></thead>
+<tbody id="data"></tbody>
+</table>
+<div id="log"></div>
+
+<script>
+var ws=null,snapCount=0;
+var STATES=['A','B','C','D','COMM_B','COMM_B_OK','COMM_C','COMM_C_OK','ACT','B1','C1','MDM_REQ','MDM_WAIT','MDM_DONE','MDM_DEN'];
+var MODES=['NRM','SMA','SOL'];
+var ERRS={1:'<6A',2:'CT',4:'TMP',8:'EV',16:'RCM',32:'TST',64:'IO',128:'BL'};
+
+function host(){var h=document.getElementById('host').value;if(!h)h=location.hostname;return h}
+function log(m){var d=document.getElementById('log');d.innerHTML+=m+'<br>';d.scrollTop=d.scrollHeight}
+function setStatus(s){document.getElementById('status').textContent=s}
+
+function connect(){
+ if(ws)ws.close();
+ var url='ws://'+host()+'/diag/stream';
+ log('Connecting to '+url+'...');
+ ws=new WebSocket(url);
+ ws.binaryType='arraybuffer';
+ ws.onopen=function(){setStatus('Connected');log('Connected');snapCount=0};
+ ws.onclose=function(){setStatus('Disconnected');log('Disconnected');ws=null};
+ ws.onerror=function(e){log('<span class="err">Error: '+e.type+'</span>')};
+ ws.onmessage=function(e){
+  if(e.data instanceof ArrayBuffer&&e.data.byteLength>=64){
+   var v=new DataView(e.data);
+   var s=parseSnapshot(v);
+   addRow(s);
+  }
+ };
+}
+function disconnect(){if(ws){ws.close();ws=null}}
+
+function parseSnapshot(v){
+ var o={},p=0;
+ o.t=v.getUint32(p,true);p+=4;
+ o.state=v.getUint8(p++);o.err=v.getUint8(p++);o.delay=v.getUint8(p++);
+ o.access=v.getUint8(p++);o.mode=v.getUint8(p++);
+ o.mL1=v.getInt16(p,true);p+=2;o.mL2=v.getInt16(p,true);p+=2;o.mL3=v.getInt16(p,true);p+=2;
+ o.eL1=v.getInt16(p,true);p+=2;o.eL2=v.getInt16(p,true);p+=2;o.eL3=v.getInt16(p,true);p+=2;
+ o.isum=v.getInt16(p,true);p+=2;
+ o.chg=v.getUint16(p,true);p+=2;o.iset=v.getInt16(p,true);p+=2;o.ovr=v.getUint16(p,true);p+=2;
+ o.sol=v.getUint16(p,true);p+=2;p+=4;/*import,start*/
+ p+=4;/*timers*/o.phases=v.getUint8(p+24);/*nr_phases at offset 39 from start=4+5+14+6+6+4=39*/
+ /* re-read at correct offset */
+ p=39;o.phases=v.getUint8(p);
+ p=51;o.temp=v.getInt8(p);
+ p=55;o.rssi=v.getInt8(p);
+ return o;
+}
+
+function errStr(e){
+ if(!e)return'<span class="ok">-</span>';
+ var a=[];for(var b in ERRS)if(e&b)a.push(ERRS[b]);
+ return'<span class="err">'+(a.length?a.join('|'):'0x'+e.toString(16))+'</span>';
+}
+
+function addRow(s){
+ var tb=document.getElementById('data');
+ var tr=document.createElement('tr');
+ tr.innerHTML='<td>'+s.t+'</td><td class="state">'+(STATES[s.state]||s.state)+'</td>'
+  +'<td>'+errStr(s.err)+'</td><td>'+(MODES[s.mode]||s.mode)+'</td>'
+  +'<td>'+s.mL1+'</td><td>'+s.mL2+'</td><td>'+s.mL3+'</td><td>'+s.isum+'</td>'
+  +'<td>'+s.chg+'</td><td>'+s.iset+'</td><td>'+s.sol+'</td>'
+  +'<td>'+s.phases+'</td><td>'+s.temp+'</td><td>'+s.rssi+'</td>';
+ tb.insertBefore(tr,tb.firstChild);
+ snapCount++;
+ if(tb.children.length>200)tb.removeChild(tb.lastChild);
+ setStatus('Connected | '+snapCount+' snapshots');
+}
+
+function startCapture(){
+ var p=document.getElementById('profile').value;
+ fetch('http://'+host()+'/diag/start?profile='+p,{method:'POST'})
+  .then(function(r){return r.json()}).then(function(j){log('Started: '+JSON.stringify(j))})
+  .catch(function(e){log('<span class="err">Start failed: '+e+'</span>')});
+}
+function stopCapture(){
+ fetch('http://'+host()+'/diag/stop',{method:'POST'})
+  .then(function(r){return r.json()}).then(function(j){log('Stopped: '+JSON.stringify(j))})
+  .catch(function(e){log('<span class="err">Stop failed: '+e+'</span>')});
+}
+function downloadDiag(){
+ window.open('http://'+host()+'/diag/download','_blank');
+}
+
+/* Auto-detect host from current page */
+if(location.hostname&&location.hostname!=='localhost')
+ document.getElementById('host').value=location.hostname;
+</script>
+</body>
+</html>

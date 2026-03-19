@@ -148,6 +148,29 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
                                    &out->ev_meter.L3, &out->ev_meter.W, &out->ev_meter.Wh);
     }
 
+    /* API mains meter staleness timeout: 0=disabled, 10-3600 seconds */
+    if (match_topic(prefix, topic, "/Set/MainsMeterTimeout")) {
+        out->cmd = MQTT_CMD_MAINS_METER_TIMEOUT;
+        int val = atoi(payload);
+        if (val == 0 || (val >= 10 && val <= 3600)) {
+            out->mains_meter_timeout = (uint16_t)val;
+            return true;
+        }
+        return false;
+    }
+
+    /* HomeWizard P1 manual IP: skip mDNS, connect directly. Empty = use mDNS */
+    if (match_topic(prefix, topic, "/Set/HomeWizardIP")) {
+        out->cmd = MQTT_CMD_HOMEWIZARD_IP;
+        size_t len = strlen(payload);
+        if (len >= sizeof(out->homewizard_ip))
+            return false;
+        /* Allow empty string to clear manual IP (re-enable mDNS) */
+        strncpy(out->homewizard_ip, payload, sizeof(out->homewizard_ip) - 1);
+        out->homewizard_ip[sizeof(out->homewizard_ip) - 1] = '\0';
+        return true;
+    }
+
     /* Home battery current: positive = charging, negative = discharging */
     if (match_topic(prefix, topic, "/Set/HomeBatteryCurrent")) {
         out->cmd = MQTT_CMD_HOME_BATTERY_CURRENT;
@@ -272,6 +295,35 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         }
         if (strcmp(payload, "0") == 0 || strcmp(payload, "OFF") == 0) {
             out->solar_debug = false;
+            return true;
+        }
+        return false;
+    }
+
+    if (match_topic(prefix, topic, "/Set/DiagProfile")) {
+        out->cmd = MQTT_CMD_DIAG_PROFILE;
+        if (strcmp(payload, "off") == 0 || strcmp(payload, "0") == 0) {
+            out->diag_profile = 0;
+            return true;
+        }
+        if (strcmp(payload, "general") == 0 || strcmp(payload, "1") == 0) {
+            out->diag_profile = 1;
+            return true;
+        }
+        if (strcmp(payload, "solar") == 0 || strcmp(payload, "2") == 0) {
+            out->diag_profile = 2;
+            return true;
+        }
+        if (strcmp(payload, "loadbal") == 0 || strcmp(payload, "3") == 0) {
+            out->diag_profile = 3;
+            return true;
+        }
+        if (strcmp(payload, "modbus") == 0 || strcmp(payload, "4") == 0) {
+            out->diag_profile = 4;
+            return true;
+        }
+        if (strcmp(payload, "fast") == 0 || strcmp(payload, "5") == 0) {
+            out->diag_profile = 5;
             return true;
         }
         return false;

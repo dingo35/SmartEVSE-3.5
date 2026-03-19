@@ -29,6 +29,9 @@ typedef enum {
     MQTT_CMD_MQTT_HEARTBEAT,
     MQTT_CMD_MQTT_CHANGE_ONLY,
     MQTT_CMD_SOLAR_DEBUG,
+    MQTT_CMD_DIAG_PROFILE,
+    MQTT_CMD_MAINS_METER_TIMEOUT,
+    MQTT_CMD_HOMEWIZARD_IP,
 } mqtt_cmd_type_t;
 
 // Mode values matching firmware MODE_NORMAL/MODE_SOLAR/MODE_SMART
@@ -66,6 +69,9 @@ typedef struct {
         uint16_t mqtt_heartbeat;                // MQTT_CMD_MQTT_HEARTBEAT (10-300)
         bool mqtt_change_only;                  // MQTT_CMD_MQTT_CHANGE_ONLY (0/1)
         bool solar_debug;                       // MQTT_CMD_SOLAR_DEBUG (0/1)
+        uint8_t diag_profile;                   // MQTT_CMD_DIAG_PROFILE (0-5)
+        uint16_t mains_meter_timeout;           // MQTT_CMD_MAINS_METER_TIMEOUT (0, 10-3600)
+        char homewizard_ip[16];                 // MQTT_CMD_HOMEWIZARD_IP (IPv4 or empty)
     };
 } mqtt_command_t;
 
