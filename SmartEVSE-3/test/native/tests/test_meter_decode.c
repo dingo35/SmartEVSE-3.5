@@ -491,6 +491,86 @@ void test_eastron_float_current(void) {
     TEST_ASSERT_EQUAL_INT(16500, r.value);
 }
 
+/* ---- Real-world meter scenario: Orno WE-517 (3-phase) ---- */
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-066
+ * @scenario Orno WE-517 3-phase current reading at register 0x0C
+ * @given Orno response with 3 phase currents [8.5A, 12.3A, 6.7A] as FLOAT32 HBF_HWF
+ * @when meter_decode_value is called for indices 0, 1, 2 with divisor=0
+ * @then Returns 8, 12, 6 (truncated integer amps)
+ */
+void test_orno3p_current(void) {
+    /* 3 FLOAT32 values at register 0x0C: L1=8.5, L2=12.3, L3=6.7 */
+    uint8_t buf[12];
+    float_to_be_bytes(8.5f, buf);
+    float_to_be_bytes(12.3f, buf + 4);
+    float_to_be_bytes(6.7f, buf + 8);
+
+    meter_reading_t r0 = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                            METER_DATATYPE_FLOAT32, 0);
+    meter_reading_t r1 = meter_decode_value(buf, 1, ENDIANNESS_HBF_HWF,
+                                            METER_DATATYPE_FLOAT32, 0);
+    meter_reading_t r2 = meter_decode_value(buf, 2, ENDIANNESS_HBF_HWF,
+                                            METER_DATATYPE_FLOAT32, 0);
+    TEST_ASSERT_EQUAL_INT(8, r0.value);
+    TEST_ASSERT_EQUAL_INT(12, r1.value);
+    TEST_ASSERT_EQUAL_INT(6, r2.value);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-067
+ * @scenario Orno WE-517 total active power reading
+ * @given Orno response with total power 3456.7W as FLOAT32 HBF_HWF at register 0x1C
+ * @when meter_decode_value is called with divisor=0
+ * @then Returns 3456
+ */
+void test_orno3p_power(void) {
+    uint8_t buf[4];
+    float_to_be_bytes(3456.7f, buf);
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_FLOAT32, 0);
+    TEST_ASSERT_EQUAL_INT(1, r.valid);
+    TEST_ASSERT_EQUAL_INT(3456, r.value);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-068
+ * @scenario Orno WE-517 import energy reading in kWh
+ * @given Orno response with 1234.567 kWh as FLOAT32 HBF_HWF at register 0x0100
+ * @when meter_decode_value is called with divisor=-3 (multiply by 1000 to get Wh)
+ * @then Returns 1234567 (Wh)
+ */
+void test_orno3p_energy(void) {
+    uint8_t buf[4];
+    float_to_be_bytes(1234.567f, buf);
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_FLOAT32, -3);
+    TEST_ASSERT_EQUAL_INT(1, r.valid);
+    /* 1234.567 * 1000 = 1234567 (float precision allows exact representation) */
+    TEST_ASSERT_EQUAL_INT(1234567, r.value);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-069
+ * @scenario Orno WE-517 negative power during export (solar feed-in)
+ * @given Orno response with -1500.0W as FLOAT32 HBF_HWF
+ * @when meter_decode_value is called with divisor=0
+ * @then Returns -1500
+ */
+void test_orno3p_negative_power(void) {
+    uint8_t buf[4];
+    float_to_be_bytes(-1500.0f, buf);
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_FLOAT32, 0);
+    TEST_ASSERT_EQUAL_INT(1, r.valid);
+    TEST_ASSERT_EQUAL_INT(-1500, r.value);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Meter Decoding");
@@ -521,6 +601,10 @@ int main(void) {
     RUN_TEST(test_combine_null_safety);
     RUN_TEST(test_phoenix_contact_current);
     RUN_TEST(test_eastron_float_current);
+    RUN_TEST(test_orno3p_current);
+    RUN_TEST(test_orno3p_power);
+    RUN_TEST(test_orno3p_energy);
+    RUN_TEST(test_orno3p_negative_power);
 
     TEST_SUITE_RESULTS();
 }

@@ -48,8 +48,8 @@
 #define EM_SCHNEIDER 14
 #define EM_CHINT 15
 #define EM_CARLO_CAVAZZI 16
-#define EM_UNUSED_SLOT3 17
-#define EM_UNUSED_SLOT4 18
+#define EM_ORNO3P 17
+#define EM_ORNO1P 18
 #define EM_CUSTOM 19
 
 typedef enum mb_datatype {
