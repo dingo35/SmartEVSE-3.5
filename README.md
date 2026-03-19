@@ -28,7 +28,7 @@ logic:
   continue to work unchanged. Protected by a FreeRTOS mutex on ESP32
 - **HAL callbacks** — hardware operations (contactors, CP duty, pilot signal) are
   abstracted behind function pointers, replaced with no-ops in test builds
-- **680+ native tests** across 25 suites with full Specification-by-Example (SbE)
+- **850+ native tests** across 37 suites with full Specification-by-Example (SbE)
   traceability
 
 The purpose is to demonstrate how AI agents (Claude Code) can be used as collaborative
@@ -117,10 +117,10 @@ and configuration.
 See [Load Balancing Stability](docs/load-balancing-stability.md) for all settings
 and configuration.
 
-## RFID & Authorization
+## RFID, OCPP & Authorization
 
 - RFID reader support — restrict usage to up to 100 registered cards
-- OCPP 1.6j support for backend authorization
+- OCPP 1.6j support for backend authorization (Tap Electric, Tibber, SteVe, Monta)
 
 ### Fork improvements
 
@@ -129,6 +129,25 @@ and configuration.
   instead of ON
 - **Bridge transaction mutex** — FreeRTOS mutex prevents concurrent task corruption
   of the state context, fixing daily OCPP session failures after Tesla disconnects
+- **Pure C OCPP logic extraction** — authorization decisions, connector state
+  detection, RFID formatting, and settings validation extracted to `ocpp_logic.c`
+  for native testability (85 OCPP-specific tests)
+- **LoadBl exclusivity enforcement** — OCPP Smart Charging and internal load
+  balancing are mutually exclusive; now enforced at runtime with warnings when
+  conflict detected (previously only checked at init)
+- **FreeVend solar safety** — auto-authorize (FreeVend) no longer bypasses solar
+  surplus checks or ChargeDelay, preventing charging without sunlight
+- **OCPP settings validation** — backend URL (`ws://`/`wss://`), ChargeBoxId
+  (max 20 chars, printable ASCII), and auth key validated before passing to
+  MicroOcpp library
+- **OCPP connection telemetry** — WebSocket connect/disconnect counters,
+  transaction lifecycle tracking, authorization accept/reject/timeout metrics
+- **IEC 61851 → OCPP status mapping** — maps IEC states to OCPP 1.6
+  StatusNotification values (Available, Preparing, Charging, SuspendedEV/EVSE,
+  Finishing, Faulted)
+
+See [OCPP setup](docs/ocpp.md) for provider-specific guides (Tap Electric,
+Tibber, SteVe) and configuration reference.
 
 ## MQTT & Home Assistant
 
@@ -147,8 +166,35 @@ and configuration.
 - **New entities**: MaxSumMains (settable), FreeHeap, MQTTMsgCount, LoadBl,
   PairingPin, FirmwareVersion (diagnostic)
 
+- **Per-phase power via MQTT** — 6 new topics (`MainsPowerL1/L2/L3`,
+  `EVPowerL1/L2/L3`) with HA auto-discovery (device_class=power, unit=W)
+
 See [MQTT & Home Assistant](docs/mqtt-home-assistant.md) for full topic reference
 and configuration.
+
+## Metering & Modbus
+
+- 18 supported meter types via Modbus RTU (Eastron, ABB, Finder, Phoenix Contact,
+  Schneider, Chint, Carlo Gavazzi, SolarEdge, WAGO, Sinotimer, and more)
+- HomeWizard P1 meter support via WiFi/HTTP
+- Sensorbox v1/v2 with CT or P1 input
+- API/MQTT external current feed
+
+### Fork improvements
+
+- **New meter types: Orno WE-517 (3P) and WE-516 (1P)** — community-requested
+  bidirectional energy meters now officially supported
+- **Pure C Modbus frame decoder** — `ModbusDecode()` extracted to `modbus_decode.c`
+  for native testability, supporting FC03/04/06/10 and exception frames
+- **Pure C meter byte decoder** — `combineBytes()` and `decodeMeasurement()`
+  extracted to `meter_decode.c`, covering all 4 endianness modes and 3 data types
+  (INT16, INT32, FLOAT32) with 30 test scenarios
+- **Pure C HomeWizard P1 parser** — JSON response parsing extracted to `p1_parse.c`
+  with sign correction from power direction, tested with real Kaifa P1 responses
+- **Meter telemetry counters** — per-meter request/response/CRC-error/timeout
+  counters for diagnosing communication issues
+- **Modbus frame event logger** — 32-entry ring buffer capturing TX/RX/ERR frames
+  with address, function code, register, and timestamp for debugging
 
 ## EVCC Integration
 
@@ -212,7 +258,7 @@ Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update
 | [MQTT & Home Assistant](docs/mqtt-home-assistant.md) | Full topic reference, change-only publishing, entity naming |
 | [EVCC Integration](docs/evcc-integration.md) | EVCC charger template, IEC 61851 mapping, phase switching API |
 | [REST API reference](docs/REST_API.md) | HTTP endpoints for external integration |
-| [OCPP setup](docs/ocpp.md) | OCPP 1.6j backend configuration |
+| [OCPP setup](docs/ocpp.md) | OCPP 1.6j provider guides (Tap Electric, Tibber, SteVe) and configuration |
 | [Priority scheduling](docs/priority-scheduling.md) | Load balancing priority configuration |
 | [Building & Flashing](docs/building_flashing.md) | Compiling firmware from source |
 | [Coding standards](CODING_STANDARDS.md) | Code conventions for contributors |
@@ -226,16 +272,19 @@ The firmware is verified by a comprehensive native test suite that runs on the h
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 25 |
-| Test scenarios | 680+ |
-| Features covered | 50+ |
+| Test suites | 37 |
+| Test scenarios | 850+ |
+| Features covered | 65+ |
 | Requirement traceability | 100% |
 
 **Test areas** include IEC 61851-1 state transitions, load balancing (single and
-multi-node with convergence simulation), Smart/Solar operating modes, OCPP current
-limiting, MQTT command parsing and publishing, HTTP API validation, EVCC IEC 61851
-state mapping, error handling & safety, modem/ISO15118 negotiation, phase switching,
-bridge transaction integrity, and end-to-end charging flows.
+multi-node with convergence simulation), Smart/Solar operating modes, OCPP
+authorization/connector state/settings validation/telemetry, MQTT command parsing
+and publishing, HTTP API validation, EVCC IEC 61851 state mapping, Modbus frame
+decoding (FC03/04/06/10), meter byte decoding (4 endianness modes), HomeWizard P1
+JSON parsing, meter telemetry counters, error handling & safety, modem/ISO15118
+negotiation, phase switching, bridge transaction integrity, and end-to-end
+charging flows.
 
 Every test function carries Specification-by-Example (SbE) annotations (`@feature`,
 `@req`, `@scenario`, `@given`/`@when`/`@then`) that trace back to requirements. The
@@ -263,8 +312,8 @@ Active improvement projects tracked via
 | Done | Plan 02: Multi-Node Load Balancing | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
 | Done | Plan 04: EVCC Integration | [EVCC #13852](https://github.com/evcc-io/evcc/pull/13852) |
 | Done | Plan 08: HA MQTT Integration | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
-| Active | Plan 03: OCPP Robustness | — |
-| Active | Plan 05: Meter Compatibility & Modbus | — |
+| Done | Plan 03: OCPP Robustness | — |
+| Done | Plan 05: Meter Compatibility & Modbus | — |
 | Planned | Plan 06: Diagnostic Telemetry | — |
 | Planned | Plan 07: Web UI Modernization | — |
 | Planned | Plan 09: Power Input Methods | — |
