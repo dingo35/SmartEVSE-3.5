@@ -790,6 +790,90 @@ function postRequiredEVCCID() {
     fetch("/settings?required_evccid=" + $id('required_evccid').value, { method: 'POST' });
 }
 
+/* ========== Diagnostic Telemetry Viewer ========== */
+var diagWs = null;
+var diagMaxRows = 100;
+var diagStateNames = ['A','B','C','D','COMM_B','COMM_B_OK','COMM_C','COMM_C_OK','Activate','B1','C1','MODEM_REQ','MODEM_WAIT','MODEM_DONE','MODEM_DEN'];
+var diagModeNames = ['NRM','SMT','SOL'];
+var diagAccessNames = ['OFF','ON','PAUSE'];
+var diagPrevState = -1;
+
+function diagParseSnapshot(buf) {
+    var dv = new DataView(buf);
+    return {
+        ts: dv.getUint32(0, true), state: dv.getUint8(4), err: dv.getUint8(5),
+        delay: dv.getUint8(6), access: dv.getUint8(7), mode: dv.getUint8(8),
+        mL1: dv.getInt16(9, true), mL2: dv.getInt16(11, true), mL3: dv.getInt16(13, true),
+        chgA: dv.getUint16(23, true), solTmr: dv.getUint16(29, true),
+        temp: dv.getInt8(49), rssi: dv.getInt8(55)
+    };
+}
+
+function diagFormatRow(s) {
+    var sev = s.err > 0 ? ' sev-err' : (s.solTmr > 0 || s.delay > 0) ? ' sev-warn' : '';
+    var stName = diagStateNames[s.state] || s.state;
+    var stChanged = (diagPrevState !== -1 && s.state !== diagPrevState);
+    diagPrevState = s.state;
+    var m = Math.floor(s.ts / 60), sec = s.ts % 60;
+    return '<div class="diag-row' + sev + '"><span class="diag-ts">' + m + ':' + (sec < 10 ? '0' : '') + sec +
+        '</span><span class="diag-state">' + stName + (stChanged ? ' &larr;' : '') + '</span>' +
+        (diagAccessNames[s.access] || '?') + '/' + (diagModeNames[s.mode] || '?') +
+        ' | ' + (s.chgA / 10).toFixed(1) + 'A | M:' +
+        (s.mL1 / 10).toFixed(0) + '/' + (s.mL2 / 10).toFixed(0) + '/' + (s.mL3 / 10).toFixed(0) +
+        ' | ' + s.temp + '\u00B0C' +
+        (s.err > 0 ? ' | ERR:0x' + s.err.toString(16) : '') +
+        (s.solTmr > 0 ? ' | sol:' + s.solTmr + 's' : '') + '</div>';
+}
+
+function diagStart() {
+    var profile = $id('diag_profile').value;
+    fetch('/diag/start?profile=' + profile, { method: 'POST' }).then(function() {
+        diagConnectWs();
+        $id('diag_status_badge').className = 'diag-badge diag-badge-on';
+        $id('diag_status_badge').textContent = 'Capturing';
+    });
+}
+
+function diagStop() {
+    fetch('/diag/stop', { method: 'POST' }).then(function() {
+        $id('diag_status_badge').className = 'diag-badge diag-badge-off';
+        $id('diag_status_badge').textContent = 'Stopped';
+    });
+    if (diagWs) diagWs.close();
+}
+
+function diagConnectWs() {
+    if (diagWs && diagWs.readyState === WebSocket.OPEN) return;
+    var url = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/diag/stream';
+    var ws = new WebSocket(url);
+    diagWs = ws;
+    ws.binaryType = 'arraybuffer';
+    var rowCount = 0;
+    ws.onmessage = function(ev) {
+        if (!(ev.data instanceof ArrayBuffer) || ev.data.byteLength < 56) return;
+        var snap = diagParseSnapshot(ev.data);
+        var log = $id('diag_log');
+        if (!log) return;
+        log.insertAdjacentHTML('beforeend', diagFormatRow(snap));
+        rowCount++;
+        while (log.children.length > diagMaxRows) log.removeChild(log.firstChild);
+        log.scrollTop = log.scrollHeight;
+        var c = $id('diag_count');
+        if (c) c.textContent = rowCount + ' samples';
+    };
+    ws.onclose = function() { diagWs = null; };
+    ws.onerror = function() { if (ws.readyState !== WebSocket.CLOSED) ws.close(); };
+}
+
+/* Check diag status on load */
+fetch('/diag/status').then(function(r) { return r.json(); }).then(function(d) {
+    if (d && d.profile && d.profile !== 'off') {
+        $id('diag_status_badge').className = 'diag-badge diag-badge-on';
+        $id('diag_status_badge').textContent = d.profile;
+        diagConnectWs();
+    }
+}).catch(function() {});
+
 /* ========== LCD WebSocket (IIFE) ========== */
 (function() {
     var LCD_SCREEN = $qs('#lcd .lcd-screen');

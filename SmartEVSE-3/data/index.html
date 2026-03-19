@@ -856,6 +856,31 @@
                     </div>
                 </div>
             </div>
+
+                  <!-- Diagnostic Telemetry Viewer -->
+                  <div style="margin-bottom: 20px;">
+                    <div class="card border-left-info shadow py-2">
+                      <div class="card-body">
+                        <div class="text font-weight-bold text-info text-uppercase mb-1">Diagnostics</div>
+                        <div class="diag-controls">
+                          <select id="diag_profile">
+                            <option value="general">General (1Hz)</option>
+                            <option value="solar">Solar (1Hz)</option>
+                            <option value="loadbal">Load Bal (1Hz)</option>
+                            <option value="modbus">Modbus (10Hz)</option>
+                            <option value="fast">Fast (10Hz)</option>
+                          </select>
+                          <button type="button" id="diag_start_btn" onclick="diagStart()">Start</button>
+                          <button type="button" id="diag_stop_btn" onclick="diagStop()">Stop</button>
+                          <a class="btn" href="/diag/download" title="Download capture file">Download</a>
+                          <span id="diag_status_badge" class="diag-badge diag-badge-off">Off</span>
+                          <span id="diag_count" style="font-size:.8rem;color:#858796;"></span>
+                        </div>
+                        <div class="diag-log" id="diag_log"></div>
+                      </div>
+                    </div>
+                  </div>
+
         </div>
       </div>
   </div>
