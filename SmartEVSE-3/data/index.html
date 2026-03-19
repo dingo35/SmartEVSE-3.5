@@ -2,404 +2,12 @@
 <html lang="en">
 <head>
 	<title>Smart EVSE V3</title>
-
-  <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
-	<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
-	<script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
-
-  <!-- Required meta tags -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-
-  <link href="styling.css" rel="stylesheet">
-  <style>
-    .tooltip {
-      position: relative;
-      display: inline-block;
-      border-bottom: 1px dotted black;
-      opacity: unset;
-      font-size: inherit;
-    }
-    .tooltip .tooltiptext {
-      visibility: hidden;
-      width: 220px;
-      background-color: black;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 5px 0;
-      position: absolute;
-      z-index: 1;
-      bottom: 100%;
-      left: 50%;
-      margin-left: -110px;
-      font-size: .875rem;
-    }
-    .tooltip:hover .tooltiptext {
-      visibility: visible;
-    }
-  </style>
+  <link href="style.css" rel="stylesheet">
 </head>
 
 <body>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
-
-  <script>
-      let endpoint = document.location + 'settings';
-      // let endpoint = 'http://10.0.0.36/settings';
-      let initiated=false;
-      let mqttEditMode = false;
-      let ocppEditMode = false;
-      let last_evse_state_id=0;
-
-      $(document).ready(loadData());
-
-      // Function to toggle cert visibility
-      function toggleCertVisibility() {
-          if ($('#mqtt_tls').is(':checked')) {
-              $('#mqtt_ca_cert_wrapper').show();
-          } else {
-              $('#mqtt_ca_cert_wrapper').hide();
-          }
-      }
-
-      /**
-       * Helper function to query the DOM for a single element.
-       */
-      const $qs = (selector) => document.querySelector(selector);
-
-      function loadData(){
-        $.ajax({
-              url: endpoint
-          }).then(function(data) {
-            if(!initiated) {
-              initiated = true;
-              // Set the text and the data-version attribute dynamically
-              $('#version')
-                .text(data.version)         // fill visible text with version string
-                .attr('data-version', data.version); // update data-version attribute
-              sessionStorage.setItem("version",JSON.stringify(data.version));
-              $('#serialnr').append(data.serialnr);
-              sessionStorage.setItem("serialnr",JSON.stringify(data.serialnr));
-
-              let minCurrent=parseInt(data.settings.current_min.toFixed(1));
-              let maxCurrent=parseInt(data.settings.current_max.toFixed(1));
-
-              // Initialize at page load
-              // value 0 = no override
-              if(data.evse.loadbl < 2) {
-                $('#mode_override_current').append($('<option>', {
-                    value: 0,
-                    text: 'no override'
-                }));
-                for(let x = minCurrent ; x <= maxCurrent ; x++) {
-                  $('#mode_override_current').append($('<option>', {
-                      value: x,
-                      text: x + 'A'
-                  }));
-                }
-              }
-              $('#required_evccid').val(data.settings.required_evccid || "");
-            }
-
-            // Show the active mode and active mode-button (in green).
-            $qs('#mode').textContent = data.mode;
-            for (let x of [0, 1, 2, 3, 4]) {
-                $qs(`#mode_${x}`).classList.toggle('ui-btn-active', x === data.mode_id);
-            }
-
-            $('#dutycycle').text((data.evse.pwm*100/1024).toFixed(0) + " %");
-            if(data.mode_id == 2) { //SOLAR MODE
-              $('.with_solar').show();
-              $('[id=override_current_box]').hide();
-              $('[id=override_current_box2]').hide();
-            } else {
-              $('.with_solar').hide();
-              $('[id=override_current_box]').show();
-              $('[id=override_current_box2]').show();
-            }
-
-            if (data.ev_state) {
-              let full_soc = data.ev_state.full_soc;
-              let initial_soc = data.ev_state.initial_soc;
-              let computed_soc = data.ev_state.computed_soc;
-              let time_until_full = data.ev_state.time_until_full;
-              let energy_capacity = data.ev_state.energy_capacity;
-              let energy_request = data.ev_state.energy_request;
-              let evccid = data.ev_state.evccid;
-
-              $('#computed_soc').html(computed_soc >= 0 ? computed_soc + " &#37;" : "N/A");
-              $('#full_soc').html(full_soc >= 0 ? full_soc + " &#37;" : "N/A");
-              $('#initial_soc').html(initial_soc >= 0 ? initial_soc + " &#37;" : "N/A");
-              $('#energy_capacity').html(energy_capacity >= 0 ? (energy_capacity/1000).toFixed(1) + " kWh" : "N/A");
-              $('#evccid').html(evccid || "N/A");
-              $('#full_at')
-                .text(time_until_full > 0 ? new Date(+Date.now()+(time_until_full * 1000)).toLocaleString(undefined, { timeStyle: 'short', dateStyle: "short" }) : 'N/A')
-                .attr('title', (time_until_full > 0 ? Math.round(time_until_full / 60) + ' min to go' : 'N/A'));
-            }
-
-            if (data.mqtt) {
-              $('#mqtt').text((data.mqtt.status) || 'N/A').show();
-              $('#mqtt_config').show();
-            } else {
-              $('#mqtt').text('').hide();
-              $('.config').hide();
-              $('#mqtt_config').hide();
-            }
-
-            if(data.evse.loadbl > 1) {
-              $('[id=loadbl]').show();
-              $('[id=loadbl_text]').show();
-              $('[id=loadbl_node]').text("Slave Node "+(data.evse.loadbl-1));
-              //$('[id=loadbl_text_slave]').show();
-              //$('[id=loadbl_text_master]').hide();
-              $('[id=contactor2]').hide();
-              //$('[id=form_mode] :input').prop('disabled',true);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              $('.with_solar').hide();
-              //$('[id=mode_override_current]').prop('disabled',true);
-              $('[id=override_current_box]').hide();
-              $('[id=override_current_box2]').hide();
-              $('[id=form_pwm] :input').prop('disabled',true);
-            } else if (data.evse.loadbl == 1) {
-              $('[id=loadbl]').show();
-              $('[id=loadbl_text]').show();
-              $('[id=loadbl_node]').text("Master");
-              //$('[id=loadbl_text_slave]').hide();
-              //$('[id=loadbl_text_master]').show();
-              $('[id=contactor2]').hide();
-              //$('[id=form_mode] :input').prop('disabled',false);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              $('.with_solar').hide();
-              //$('[id=mode_override_current]').prop('disabled',false);
-              $('[id=form_pwm] :input').prop('disabled',false);
-            } else {
-              $('[id=loadbl]').hide();
-              $('[id=loadbl_text]').hide();
-              //$('[id=loadbl_text_slave]').hide();
-              //$('[id=loadbl_text_master]').hide();
-              $('[id=contactor2]').show();
-              //$('[id=form_mode] :input').prop('disabled',false);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              //$('[id=mode_override_current]').prop('disabled',false);
-              $('[id=form_pwm] :input').prop('disabled',false);
-            }
-            if(data.evse.loadbl == 1) {
-              $('.with_scheduling').show();
-              $('#prio_strategy').val(data.settings.prio_strategy);
-              $('#rotation_interval').val(data.settings.rotation_interval);
-              $('#idle_timeout').val(data.settings.idle_timeout);
-              if(data.schedule) {
-                let states = data.schedule.state.join(', ');
-                $('#schedule_state').text(states);
-                $('#rotation_timer').text(data.schedule.rotation_timer + 's');
-              }
-            } else {
-              $('.with_scheduling').hide();
-            }
-            $('#car_connected').text(data.car_connected ? "Yes" : "No");
-            $('#state').text(data.evse.state);
-            last_evse_state_id = data.evse.last_state_id;
-            $('#temp').text(data.evse.temp + " °C / " + data.evse.temp_max + " °C");
-            if(data.evse.error != "None") {
-              $('#error').text(data.evse.error);
-              $('[id=with_errors]').show();
-            } else {
-              $('[id=with_errors]').hide();
-            }
-
-            if(data.evse.rfid != "Not Installed") {
-              $('#rfid').text(data.evse.rfid);
-            } else {
-              $('#show_rfid').hide();
-            }
-
-            // if(data.evse.charge_timer > 0) {
-            //   $('#state').append(" (Starting in " + data.evse.charge_timer + "s)");
-            // }
-            if(data.evse.solar_stop_timer > 0) {
-              $('#state').append(" (Stopping in " + data.evse.solar_stop_timer + "s)");
-            }
-
-            $('#current_min').text(data.settings.current_min.toFixed(1) + " A");
-            $('#current_max').text(data.settings.current_max.toFixed(1) + " A");
-            $('#override_current').text((data.settings.override_current/10).toFixed(1) + " A");
-            $('#enable_C2').text(data.settings.enable_C2);
-            if (data.settings.starttime) {
-                $('#starttime_date_time').text(new Date(data.settings.starttime * 1000).toLocaleDateString() + " " + new Date(data.settings.starttime * 1000).toLocaleTimeString());
-            } else {
-                $('#starttime_date_time').text("none");
-            }
-            if (data.settings.stoptime) {
-                $('#stoptime_date_time').text(new Date(data.settings.stoptime * 1000).toLocaleDateString() + " " + new Date(data.settings.stoptime * 1000).toLocaleTimeString());
-            } else {
-                $('#stoptime_date_time').text("none");
-            }
-            if (data.settings.repeat == 1) {
-                $('#repeat').text("Daily");
-            }
-            else {
-                $('#repeat').text("none");
-            }
-            $('#battery_current').text((data.home_battery.current/10).toFixed(1) + " A");
-
-            $('#phase_total').text((data.phase_currents.TOTAL/10).toFixed(1) + " A");
-            $('#phase_1').text((data.phase_currents.L1/10).toFixed(1) + " A");
-            $('#phase_2').text((data.phase_currents.L2/10).toFixed(1) + " A");
-            $('#phase_3').text((data.phase_currents.L3/10).toFixed(1) + " A");
-            $('#evmeter_currents_total').text((data.ev_meter.currents.TOTAL/10).toFixed(1) + " A");
-            $('#evmeter_currents_1').text((data.ev_meter.currents.L1/10).toFixed(1) + " A");
-            $('#evmeter_currents_2').text((data.ev_meter.currents.L2/10).toFixed(1) + " A");
-            $('#evmeter_currents_3').text((data.ev_meter.currents.L3/10).toFixed(1) + " A");
-            $('#charge_current').text((data.settings.charge_current/10).toFixed(1) + " A");
-
-            $('#phase_original_total').text((data.phase_currents.original_data.TOTAL/10).toFixed(1) + " A");
-            $('#phase_original_1').text((data.phase_currents.original_data.L1/10).toFixed(1) + " A");
-            $('#phase_original_2').text((data.phase_currents.original_data.L2/10).toFixed(1) + " A");
-            $('#phase_original_3').text((data.phase_currents.original_data.L3/10).toFixed(1) + " A");
-
-            if(data.phase_currents.last_data_update > 0) {
-              $('#p1_data_time').text(new Date(data.phase_currents.last_data_update * 1000).toLocaleTimeString());
-              $('#p1_data_date').text(new Date(data.phase_currents.last_data_update * 1000).toLocaleDateString());
-              $('[id=with_p1_api_data_date]').show();
-              $('[id=with_p1_api_data_time]').show();
-            } else {
-              $('[id=with_p1_api_data_date]').hide();
-              $('[id=with_p1_api_data_time]').hide();
-            }
-
-            if(data.home_battery.last_update > 0) {
-              $('#battery_last_update_time').text(new Date(data.home_battery.last_update * 1000).toLocaleTimeString());
-              $('#battery_last_update_date').text(new Date(data.home_battery.last_update * 1000).toLocaleDateString());
-              $('[id=with_homebattery]').show();
-            } else {
-              $('[id=with_homebattery]').hide();
-            }
-
-            if(data.home_battery.current == 0) {
-              $('#battery_status').text("Idle");
-            } else {
-              $('#battery_status').text(data.home_battery.current < 0 ? "Discharging" : "Charging");
-            }
-
-            if(data.settings.mains_meter === "Disabled") {
-              $('.with_mainsmeter').hide();
-            } else {
-              $('.with_mainsmeter').show();
-            }
-
-            if(data.ev_meter.description == "Disabled") {
-              $('[id=with_evmeter]').hide();
-            } else {
-              $('[id=with_evmeter]').show();
-              $('#evmeter_description').text(data.ev_meter.description);
-              $('#evmeter_power').text((data.ev_meter.import_active_power/1000).toFixed(1) + " kW");
-              $('#evmeter_total_kwh').text((data.ev_meter.total_wh/1000).toFixed(1) + " kWh");
-              $('#evmeter_charged_kwh').text((data.ev_meter.charged_wh/1000).toFixed(1) + " kWh");
-            }
-
-            $('#solar_start_current').val(data.settings.solar_start_current);
-            $('#solar_max_import_current').val(data.settings.solar_max_import);
-            $('#solar_stop_time').val(data.settings.solar_stop_time);
-
-            if(data.settings.modem == "Experiment" || data.settings.modem == "QCA7000") {
-              $('.with_modem').show();
-            } else {
-              $('.with_modem').hide();
-            }
-
-            if (data.mqtt && !mqttEditMode) {
-                $('#mqtt_host').val(data.mqtt.host);
-                $('#mqtt_port').val(data.mqtt.port);
-                $('#mqtt_username').val(data.mqtt.username);
-                $('#mqtt_password').val(data.mqtt.password);
-                $('#mqtt_topic_prefix').val(data.mqtt.topic_prefix);
-                $('#mqtt_tls').prop('checked', data.mqtt.tls).checkboxradio("refresh");  // Set and refresh widget
-                if (data.mqtt.change_only !== undefined)
-                    $('#mqtt_change_only').prop('checked', data.mqtt.change_only);
-                if (data.mqtt.heartbeat !== undefined)
-                    $('#mqtt_heartbeat').val(data.mqtt.heartbeat);
-                $('#mqtt_ca_cert').val(data.mqtt.ca_cert || '');
-                toggleCertVisibility();
-            }
-
-            if (data.settings.lcdlock == 1) {
-              document.getElementById("lcdlock").checked = true;
-              document.getElementById("lcdlock_label").classList.remove("ui-checkbox-off")
-              document.getElementById("lcdlock_label").classList.add("ui-checkbox-on")
-            } else {
-              document.getElementById("lcdlock").checked = false;
-              document.getElementById("lcdlock_label").classList.remove("ui-checkbox-on")
-              document.getElementById("lcdlock_label").classList.add("ui-checkbox-off")
-            }            
-
-            if (data.settings.lock != 0) {
-              if (data.settings.cablelock == 1) {
-                  document.getElementById("cablelock").checked = true;
-                  document.getElementById("cablelock_label").classList.remove("ui-checkbox-off")
-                  document.getElementById("cablelock_label").classList.add("ui-checkbox-on")
-              } else {
-                  document.getElementById("cablelock").checked = false;
-                  document.getElementById("cablelock_label").classList.remove("ui-checkbox-on")
-                  document.getElementById("cablelock_label").classList.add("ui-checkbox-off")
-              }
-            } else {
-              $('[id=cablelock]').hide();
-              $('[id=cablelock_label]').hide();
-            }
-
-            if (data.ocpp) {
-              if (data.ocpp.mode == "Enabled") {
-                $('[id=ocpp_settings]').show();
-                document.getElementById("enable_ocpp").checked = true;
-                document.getElementById("enable_ocpp_label").classList.remove("ui-checkbox-off")
-                document.getElementById("enable_ocpp_label").classList.add("ui-checkbox-on")
-              } else {
-                $('[id=ocpp_settings]').hide();
-                document.getElementById("enable_ocpp").checked = false;
-                document.getElementById("enable_ocpp_label").classList.remove("ui-checkbox-on")
-                document.getElementById("enable_ocpp_label").classList.add("ui-checkbox-off")
-              }
-
-              if (data.ocpp.auto_auth == "Enabled") {
-                $('[id=ocpp_auto_auth_idtag_wrapper]').show();
-                document.getElementById("ocpp_auto_auth").checked = true;
-                document.getElementById("ocpp_auto_auth_label").classList.remove("ui-checkbox-off")
-                document.getElementById("ocpp_auto_auth_label").classList.add("ui-checkbox-on")
-              } else {
-                $('[id=ocpp_auto_auth_idtag_wrapper]').hide();
-                document.getElementById("ocpp_auto_auth").checked = false;
-                document.getElementById("ocpp_auto_auth_label").classList.remove("ui-checkbox-on")
-                document.getElementById("ocpp_auto_auth_label").classList.add("ui-checkbox-off")
-              }
-
-              if (!ocppEditMode) {
-                $('#ocpp_backend_url').val(data.ocpp.backend_url);
-                $('#ocpp_cb_id').val(data.ocpp.cb_id);
-                $('#ocpp_auth_key').val(data.ocpp.auth_key);
-                $('#ocpp_auto_auth_idtag').val(data.ocpp.auto_auth_idtag);
-              }
-
-              $('#ocpp_ws_status').text(data.ocpp.status);
-
-            } else {
-              $('[id=ocpp_config_outer]').hide();
-            }
-
-            setTimeout("loadData()", 5000);
-          });
-      }
-
-      // Add event listener for TLS checkbox
-      $(document).on('change', '#mqtt_tls', toggleCertVisibility);
-  </script>
-
 
   <!-- Page Wrapper -->
   <div id="wrapper">
@@ -418,14 +26,16 @@
                             <span id="version" data-version=""></span>
                           </h1>
                           <h1 id="serialnr" class="h5 mb-0 text-white-800">SmartEVSE-</h1>
+                          <span id="conn_status" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e74a3b;margin-left:8px;vertical-align:middle;" title="Polling (HTTP)"></span>
+                          <button type="button" class="theme-toggle" id="theme_toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9790;</button>
                         </div>
                     </div>
                 </div>
 
-                  <div class="row">
+                  <div class="dashboard-grid">
 
-                    <!-- Earnings (Monthly) Card Example -->
-                    <div class="col-md-6" style="margin-bottom: 20px;">
+                    <!-- EVSE Status Card -->
+                    <div>
                         <div class="card border-left-primary shadow h-100 py-2">
                             <div class="card-body">
                                 <div class="row no-gutters align-items-center">
@@ -468,7 +78,7 @@
                                               State:
                                             </div>
                                             <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="state"></div>
+                                              <span id="state_dot" class="state-dot" style="background:#858796;"></span><span class="h5 mb-0 mr-3 text-gray-800" id="state"></span>
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center" id="with_errors">
@@ -544,24 +154,19 @@
                                             </div>
                                         </div>
                                     </div>
-                                  <!--  <div class="col-auto">
-                                  //      <i class="fas fa-calendar fa-2x text-gray-300">
-                                  //        <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                  //          <path fill="currentColor" d="M17.3 5C19 6.5 20 8.6 20 11C20 15.4 16.4 19 12 19S4 15.4 4 11C4 8.6 5.1 6.5 6.7 5H17.3M18 3H6L5.4 3.5C3.2 5.4 2 8.1 2 11C2 16.5 6.5 21 12 21S22 16.5 22 11C22 8.1 20.8 5.4 18.6 3.5L18 3M13 7.5C13 8.3 13.7 9 14.5 9S16 8.3 16 7.5 15.3 6 14.5 6 13 6.7 13 7.5M8 7.5C8 8.3 8.7 9 9.5 9S11 8.3 11 7.5 10.3 6 9.5 6 8 6.7 8 7.5M7 13C8.1 13 9 12.1 9 11C9 9.9 8.1 9 7 9S5 9.9 5 11C5 12.1 5.9 13 7 13M11.5 15C11.5 13.9 10.6 13 9.5 13S7.5 13.9 7.5 15C7.5 16.1 8.4 17 9.5 17S11.5 16.1 11.5 15M12 13C13.1 13 14 12.1 14 11C14 9.9 13.1 9 12 9S10 9.9 10 11C10 12.1 10.9 13 12 13M16.5 15C16.5 13.9 15.6 13 14.5 13S12.5 13.9 12.5 15C12.5 16.1 13.4 17 14.5 17S16.5 16.1 16.5 15M19 11C19 9.9 18.1 9 17 9S15 9.9 15 11C15 12.1 15.9 13 17 13S19 12.1 19 11" />
-                                  //        </svg>
-                                  //      </i>
-                                  //  </div> -->
                                 </div>
                             </div>
                         </div>
                     </div>
-                      <div class="col-md-6" style="margin-bottom: 20px;">
+
+                    <!-- LCD Card -->
+                      <div>
                           <div class="card border-left-primary shadow h-100 py-2">
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
-                                          <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
+                                          <img class="lcd-device" src="SmartEVSE.webp" alt="SmartEVSE"/>
+                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" alt="LCD"/>
                                           <div class="lcd-display-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
@@ -580,344 +185,73 @@
                                           <div id="lcd-lock-hint">
                                               LCD buttons are locked. Enter your PIN to unlock them.
                                           </div>
+                                          <div class="lcd-kbd-hint">Keyboard: &larr; Left &middot; Enter Middle &middot; &rarr; Right</div>
                                       </div>
-<script>
-    (() => {
-        const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
-        const LCD_BUTTON_CONTAINERS = document.querySelectorAll('#lcd .lcd-buttons, #lcd .lcd-display-buttons');
-        let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
-        const PASSWORD_FIELD = document.querySelector('#lcd-password');
-        const PASSWORD_FORM = document.querySelector('#lcd-password-form');
-        const LOCK_STATUS = document.querySelector('#lcd-lock-status');
-        const LOCK_HINT = document.querySelector('#lcd-lock-hint');
-        const SESSION_STORAGE_PIN_KEY = 'lcdPinCode';
-        const LOCKED_PRESS_ALERT_THRESHOLD = 3;
-        const MIN_BUTTON_PRESS_MS = 300;
-        const WS_RECONNECT_BASE_MS = 1000;
-        const WS_RECONNECT_MAX_MS = 10000;
-        const WS_RECONNECT_JITTER_MS = 400;
-        const WS_INITIAL_RETRY_MS = 750;
-        const WS_INITIAL_RETRY_JITTER_MS = 250;
-        const WS_CONNECT_TIMEOUT_MS = 5000;
-        const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
-        let passwordVerified = false;
-        let blockedButtonPressCount = 0;
-        let lcdSocket = null;
-        let reconnectTimer = null;
-        let connectTimeoutTimer = null;
-        let reconnectAttempts = 0;
-        let hasConnectedOnce = false;
-        let wsPausedByVisibility = false;
-        let activeFrameUrl = null;
-        const activePointers = new Map();
-
-        function setActivateText(text) {
-            if (LCD_ACTIVATE) {
-                LCD_ACTIVATE.textContent = text;
-            }
-        }
-
-        function clearConnectTimeout() {
-            if (connectTimeoutTimer !== null) {
-                window.clearTimeout(connectTimeoutTimer);
-                connectTimeoutTimer = null;
-            }
-        }
-
-        function clearReconnectTimer() {
-            if (reconnectTimer !== null) {
-                window.clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-        }
-
-        function shouldKeepWsActive() {
-            return !wsPausedByVisibility;
-        }
-
-        function requestImmediateReconnect() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
-            reconnectAttempts = 0;
-            clearReconnectTimer();
-            connectLCDWebSocket();
-        }
-
-        function disconnectLCDWebSocket() {
-            clearConnectTimeout();
-            clearReconnectTimer();
-            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
-                lcdSocket.close();
-            }
-        }
-
-        function scheduleReconnect() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
-            if (reconnectTimer !== null) {
-                return;
-            }
-            const backoffMs = hasConnectedOnce
-                ? Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS)
-                : WS_INITIAL_RETRY_MS;
-            const jitterMs = hasConnectedOnce
-                ? Math.floor(Math.random() * WS_RECONNECT_JITTER_MS)
-                : Math.floor(Math.random() * WS_INITIAL_RETRY_JITTER_MS);
-            const reconnectDelayMs = backoffMs + jitterMs;
-            reconnectAttempts += 1;
-            setActivateText(`Reconnecting in ${Math.ceil(reconnectDelayMs / 1000)}s...`);
-            reconnectTimer = window.setTimeout(() => {
-                reconnectTimer = null;
-                connectLCDWebSocket();
-            }, reconnectDelayMs);
-        }
-
-        function activateLCD() {
-            if (!LCD_ACTIVATE) {
-                return;
-            }
-            LCD_ACTIVATE.remove();
-            LCD_ACTIVATE = null;
-        }
-
-        function getStoredPin() {
-            try {
-                return sessionStorage.getItem(SESSION_STORAGE_PIN_KEY);
-            } catch (e) {
-                return null;
-            }
-        }
-
-        function storePin(pin) {
-            try {
-                sessionStorage.setItem(SESSION_STORAGE_PIN_KEY, pin);
-            } catch (e) {
-                // Ignore storage issues (e.g. restricted browser mode)
-            }
-        }
-
-        function clearStoredPin() {
-            try {
-                sessionStorage.removeItem(SESSION_STORAGE_PIN_KEY);
-            } catch (e) {
-                // Ignore storage issues (e.g. restricted browser mode)
-            }
-        }
-
-        function updateLockUi(isUnlocked) {
-            if (isUnlocked) {
-                LOCK_STATUS.textContent = 'Unlocked';
-                LOCK_STATUS.style.color = '#1cc88a';
-                LOCK_HINT.textContent = 'Buttons are unlocked. You can use Left, Middle and Right.';
-            } else {
-                LOCK_STATUS.textContent = 'Locked - Enter PIN';
-                LOCK_STATUS.style.color = '#e74a3b';
-                LOCK_HINT.textContent = 'LCD buttons are locked. Enter your PIN to unlock them.';
-            }
-        }
-
-        function connectLCDWebSocket() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
-            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
-                return;
-            }
-
-            setActivateText('Connecting...');
-            const socket = new WebSocket(WS_URL);
-            lcdSocket = socket;
-            socket.binaryType = 'arraybuffer';
-
-            clearConnectTimeout();
-            connectTimeoutTimer = window.setTimeout(() => {
-                if (socket.readyState === WebSocket.CONNECTING) {
-                    socket.close();
-                }
-            }, WS_CONNECT_TIMEOUT_MS);
-
-            socket.onopen = () => {
-                clearConnectTimeout();
-                reconnectAttempts = 0;
-                hasConnectedOnce = true;
-                activateLCD();
-            };
-
-            socket.onmessage = (event) => {
-                if (!(event.data instanceof ArrayBuffer)) {
-                    return;
-                }
-                const frameUrl = URL.createObjectURL(new Blob([event.data], {type: 'image/bmp'}));
-                if (activeFrameUrl) {
-                    URL.revokeObjectURL(activeFrameUrl);
-                }
-                activeFrameUrl = frameUrl;
-                LCD_SCREEN.src = frameUrl;
-            };
-
-            socket.onerror = () => {
-                if (socket.readyState !== WebSocket.CLOSED) {
-                    socket.close();
-                }
-            };
-
-            socket.onclose = () => {
-                clearConnectTimeout();
-                if (lcdSocket === socket) {
-                    lcdSocket = null;
-                }
-                if (shouldKeepWsActive()) {
-                    scheduleReconnect();
-                }
-            };
-        }
-
-        function sendButtonState(btnName, stateDown) {
-            if (!passwordVerified) {
-                blockedButtonPressCount += 1;
-                updateLockUi(false);
-                PASSWORD_FIELD.focus();
-                PASSWORD_FIELD.select();
-                if (blockedButtonPressCount >= LOCKED_PRESS_ALERT_THRESHOLD) {
-                    alert("Buttons are locked. Enter your PIN first to unlock.");
-                    blockedButtonPressCount = 0;
-                }
-                return;
-            }
-
-            if (!lcdSocket || lcdSocket.readyState !== WebSocket.OPEN) {
-                requestImmediateReconnect();
-                return;
-            }
-
-            lcdSocket.send(JSON.stringify({
-                button: btnName,
-                state: stateDown ? 1 : 0
-            }));
-        }
-
-        function releasePointerButton(pointerId) {
-            const pointerInfo = activePointers.get(pointerId);
-            if (!pointerInfo || pointerInfo.released) {
-                return;
-            }
-
-            pointerInfo.released = true;
-            const elapsed = Date.now() - pointerInfo.pressTime;
-            const sendRelease = () => {
-                sendButtonState(pointerInfo.button, false);
-                activePointers.delete(pointerId);
-            };
-
-            if (elapsed < MIN_BUTTON_PRESS_MS) {
-                window.setTimeout(sendRelease, MIN_BUTTON_PRESS_MS - elapsed);
-            } else {
-                sendRelease();
-            }
-        }
-
-        function verifyPassword(options = {}) {
-            const enteredPassword = options.password ?? PASSWORD_FIELD.value;
-            const showErrorAlert = options.showErrorAlert ?? true;
-            const rememberPin = options.rememberPin ?? true;
-            $.post('/lcd-verify-password', { password: enteredPassword })
-            .done(function(data) {
-                if (data.success) {
-                    passwordVerified = true;
-                    blockedButtonPressCount = 0;
-                    updateLockUi(true);
-                    if (rememberPin) {
-                        storePin(enteredPassword);
-                    }
-                } else {
-                    passwordVerified = false;
-                    updateLockUi(false);
-                    clearStoredPin();
-                    if (showErrorAlert) {
-                        alert("Incorrect PIN. Please try again.");
-                    }
-                }
-            });
-        }
-
-        PASSWORD_FORM.addEventListener('submit', event => {
-            event.preventDefault();
-            verifyPassword();
-        });
-
-        LCD_BUTTON_CONTAINERS.forEach(buttonContainer => {
-            buttonContainer.addEventListener('pointerdown', event => {
-                const button = event.target.closest('button[data-name]');
-                if (!button) {
-                    return;
-                }
-                event.preventDefault();
-                activePointers.set(event.pointerId, {
-                    button: button.dataset.name,
-                    pressTime: Date.now(),
-                    released: false
-                });
-                sendButtonState(button.dataset.name, true);
-            });
-        });
-
-        ['pointerup', 'pointercancel'].forEach(eventName => {
-            window.addEventListener(eventName, event => {
-                releasePointerButton(event.pointerId);
-            });
-        });
-
-        window.addEventListener('online', () => {
-            requestImmediateReconnect();
-        });
-
-        window.addEventListener('offline', () => {
-            setActivateText('Offline - waiting for network...');
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                wsPausedByVisibility = true;
-                setActivateText('Paused in background');
-                disconnectLCDWebSocket();
-                return;
-            }
-
-            wsPausedByVisibility = false;
-            setActivateText('Reconnecting...');
-            requestImmediateReconnect();
-        });
-
-        const storedPin = getStoredPin();
-        if (storedPin) {
-            PASSWORD_FIELD.value = storedPin;
-            verifyPassword({ password: storedPin, showErrorAlert: false, rememberPin: false });
-        } else {
-            updateLockUi(false);
-        }
-
-        if (document.hidden) {
-            wsPausedByVisibility = true;
-            setActivateText('Paused in background');
-        } else {
-            requestImmediateReconnect();
-        }
-    })();
-</script>
                                   </div>
                               </div>
                           </div>
                       </div>
 
-
-
                     </div>
-                    <!-- END ROW -->
-                    <div class="row">
+                    </div><!-- end dashboard-grid -->
 
-                    <div class="col-xl-4 col-md-6 mb-4 with_modem">
+                    <!-- Power Flow Diagram -->
+                    <div class="with_mainsmeter power-flow-card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
+                      <div class="card shadow py-2">
+                        <div class="card-body" style="padding:.75rem;">
+                          <svg id="power_flow" viewBox="0 0 520 160" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Grid node -->
+                            <g id="pf_grid" transform="translate(50,80)">
+                              <path class="pf-icon" d="M-8,-20 L8,-20 L12,-8 L4,-8 L8,20 L-4,-2 L2,-2 L-4,-20 Z" opacity=".7"/>
+                              <text class="pf-node-label" y="34">Grid</text>
+                              <text class="pf-node-value" id="pf_grid_val" y="46">-</text>
+                            </g>
+                            <!-- Home node -->
+                            <g id="pf_home" transform="translate(260,80)">
+                              <path class="pf-icon" d="M0,-22 L18,-8 L14,-8 L14,12 L-14,12 L-14,-8 L-18,-8 Z" opacity=".7"/>
+                              <text class="pf-node-label" y="30">Home</text>
+                            </g>
+                            <!-- EVSE/Car node -->
+                            <g id="pf_evse" transform="translate(470,80)">
+                              <path class="pf-icon" d="M-16,4 L-12,-10 L-4,-10 L-2,-18 L14,-18 L18,-10 L18,4 Z M-10,4 L-10,10 L-4,10 L-4,4 M10,4 L10,10 L16,10 L16,4" opacity=".7"/>
+                              <text class="pf-node-label" y="30">EVSE</text>
+                              <text class="pf-node-value" id="pf_evse_val" y="42">-</text>
+                            </g>
+                            <!-- Battery node (optional) -->
+                            <g id="pf_battery" transform="translate(260,148)" style="display:none;">
+                              <path class="pf-icon" d="M-10,-6 L10,-6 L10,6 L-10,6 Z M10,-3 L13,-3 L13,3 L10,3" opacity=".7" transform="scale(.8)"/>
+                              <text class="pf-node-label" x="20" y="4" style="text-anchor:start;">Bat</text>
+                              <text class="pf-node-value" id="pf_bat_val" x="44" y="4" style="text-anchor:start;">-</text>
+                            </g>
+                            <!-- Flow lines -->
+                            <line id="pf_line_gh" class="pf-line flow-none" x1="80" y1="80" x2="230" y2="80"/>
+                            <line id="pf_line_he" class="pf-line flow-none" x1="290" y1="80" x2="440" y2="80"/>
+                            <line id="pf_line_bh" class="pf-line flow-none" x1="260" y1="100" x2="260" y2="138" style="display:none;"/>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Load Balancing Node Overview (master only) -->
+                    <div class="with_scheduling" id="node_overview_card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
+                      <div class="card border-left-info shadow py-2">
+                        <div class="card-body">
+                          <div class="text font-weight-bold text-info text-uppercase mb-1">Load Balancing Nodes</div>
+                          <div id="node_list"></div>
+                          <div style="margin-top:8px;">
+                            <div class="phase-bar-row">
+                              <span class="phase-bar-label" style="width:50px;">Total</span>
+                              <div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="lb_total_bar" style="width:0%"></div></div>
+                              <span class="phase-bar-value" id="lb_total_val">-</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="dashboard-grid" style="margin-top:1rem;">
+
+                    <div class="with_modem">
                         <div class="card border-left-danger shadow h-100 py-2">
                             <div class="card-body">
                                 <div class="row no-gutters align-items-center">
@@ -984,7 +318,7 @@
                         </div>
                     </div>
 
-                    <div class="col-xl-4 col-md-6 mb-4">
+                    <div class="">
                       <div class="card border-left-info shadow h-100 py-2">
                           <div class="card-body">
                               <div class="row no-gutters align-items-center">
@@ -1027,7 +361,7 @@
                       </div>
                   </div>
 
-                  <div class="col-xl-4 col-md-6 mb-4 with_mainsmeter" style="display: none;">
+                  <div class="with_mainsmeter" style="display: none;">
                     <div class="card border-left-success shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -1065,6 +399,11 @@
                                           <div class="h5 mb-0 mr-3 text-gray-800" id="phase_3" style="text-align: right;"></div>
                                         </div>
                                     </div>
+                                    <div class="phase-bars" id="mains_phase_bars">
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L1</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="mains_bar_L1" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L1">-</span></div>
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L2</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L2" id="mains_bar_L2" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L2">-</span></div>
+                                      <div class="phase-bar-row"><span class="phase-bar-label">L3</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L3" id="mains_bar_L3" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L3">-</span></div>
+                                    </div>
                                     <div class="row no-gutters align-items-center" id="with_p1_api_data_date">
                                       <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
                                           Date:
@@ -1094,7 +433,7 @@
                     </div>
                 </div>
 
-                <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery">
+                <div class="" id="with_homebattery">
                   <div class="card border-left-success shadow h-100 py-2">
                       <div class="card-body">
                           <div class="row no-gutters align-items-center">
@@ -1147,7 +486,7 @@
               </div>
 
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_evmeter" style="display: none;">
+              <div class="" id="with_evmeter" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -1199,7 +538,7 @@
               </div>
 
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_evmeter" style="display: none;">
+              <div class="" id="with_evmeter" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -1250,7 +589,7 @@
                 </div>
               </div>
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery" style="display: none;">
+              <div class="" id="with_homebattery" style="display: none;">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -1301,232 +640,15 @@
                 </div>
               </div>
             </div>
-            <!-- END ROW -->
-              <div class="row">
+            </div><!-- end dashboard-grid -->
 
-                <script>
-                    function SolStartCurr() {
-                      let val = $('#solar_start_current').val();
-                      $.post( "/settings?solar_start_current=" + val);
-                    }
-                    function SolImportCurr() {
-                      let val = $('#solar_max_import_current').val();
-                      $.post( "/settings?solar_max_import=" + val);
-                    }
-                    function SolStopTime() {
-                      let val = $('#solar_stop_time').val();
-                      $.post( "/settings?stop_timer=" + val);
-                    }
-                    function setPrioStrategy() {
-                      let val = $('#prio_strategy').val();
-                      $.post( "/settings?prio_strategy=" + val);
-                    }
-                    function setRotationInterval() {
-                      let val = $('#rotation_interval').val();
-                      $.post( "/settings?rotation_interval=" + val);
-                    }
-                    function setIdleTimeout() {
-                      let val = $('#idle_timeout').val();
-                      $.post( "/settings?idle_timeout=" + val);
-                    }
-
-                    /**
-                     * Activates a mode by sending configuration data to the server.
-                     * @param {0|1|2|3|4} mode - The operating mode to activate; off | normal | solar | smart | pause
-                     */
-                    function activate(mode) {
-                        const starttime = $qs('input[name="starttime"]').value;
-                        const stoptime = $qs('input[name="stoptime"]').value;
-                        const repeat2 = +$qs('#daily_repeat').checked;
-
-                        // Sanitize the user input.
-                        const params = new URLSearchParams({
-                            mode: `${mode}`,
-                            starttime: starttime,
-                            stoptime: stoptime,
-                            repeat: `${repeat2}`
-                        });
-                        if ([1,2,3].includes(mode)) {
-                            const override_current = $qs('#mode_override_current').value;
-                            params.append('override_current', `${override_current * 10}`);
-                        }
-                        void fetch(`${endpoint}?${params}`, {method: 'POST'});
-
-                        // Update the button state visually for immediate user feedback.
-                        // Backend sync will correct the state in case of failure.
-                        $qs('#mode').textContent = $qs(`#mode_${mode}`).textContent;
-                        for (let x of [0, 1, 2, 3, 4]) {
-                            $qs(`#mode_${x}`).classList.toggle('ui-btn-active', x === mode);
-                        }
-                    }
-
-                    function toggleMqttEdit() {
-                        mqttEditMode = !mqttEditMode;
-                        $('.mqtt_settings').toggle();
-                        if (mqttEditMode) {
-                            $('#edit_mqtt_button').text("Close Settings")
-                            $.get("/mqtt_ca_cert", function(certData) {
-                                $('#mqtt_ca_cert').val(certData);
-                            });
-                        } else {
-                            $('#edit_mqtt_button').text("Edit Settings")
-                        }
-                    }
-                    function configureMqtt() {
-                        var params = {
-                            mqtt_update:       1,
-                            mqtt_host:         $('#mqtt_host').val(),
-                            mqtt_port:         $('#mqtt_port').val(),
-                            mqtt_username:     $('#mqtt_username').val(),
-                            mqtt_password:     $('#mqtt_password').val(),
-                            mqtt_topic_prefix: $('#mqtt_topic_prefix').val(),
-                            mqtt_tls:          $('#mqtt_tls').is(':checked') ? 1 : 0,
-                            mqtt_ca_cert:      $('#mqtt_ca_cert').val(),
-                            mqtt_change_only:  $('#mqtt_change_only').is(':checked') ? 1 : 0,
-                            mqtt_heartbeat:    $('#mqtt_heartbeat').val()
-                        };
-                        // Build query string with proper encoding
-                        var query = Object.keys(params)
-                            .map(k => k + "=" + encodeURIComponent(params[k]))
-                            .join("&");
-
-                        $.post("/settings?" + query);
-                        alert('Settings applied');
-                        toggleMqttEdit();
-                        event.preventDefault();
-                    }
-                    function toggleLCDlock() {
-                      var LCDlockCheckbox = document.getElementById("lcdlock");
-                      $.post( "/settings?lcdlock=" + (LCDlockCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleCableLock() {
-                      var CableLockCheckbox = document.getElementById("cablelock");
-                      $.post( "/settings?cablelock=" + (CableLockCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleEnableOcpp() {
-                      var enableOcppCheckbox = document.getElementById("enable_ocpp");
-                      $.post( "/settings?ocpp_update=1&ocpp_mode=" + (enableOcppCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleEnableOcppAutoAuth() {
-                      var autoAuthCheckbox = document.getElementById("ocpp_auto_auth");
-                      $.post( "/settings?ocpp_update=1&ocpp_auto_auth=" + (autoAuthCheckbox.checked == true ? 1 : 0));
-                      //show idTag box immediately if Auto auth checkbox is checked
-                      if (autoAuthCheckbox.checked) {
-                        loadData();
-                      }
-                    }
-                    function toggleOcppEdit() {
-                        ocppEditMode = !ocppEditMode;
-                        if (ocppEditMode) {
-                            $('#ocpp_save_btn').text("Save");
-                            $('#ocpp_backend_url').prop("disabled",false);
-                            $('#ocpp_cb_id').prop("disabled",false);
-                            $('#ocpp_auth_key').prop("disabled",false);
-                            $('#ocpp_auto_auth').prop("disabled",false);
-                            $('#ocpp_auto_auth_label').prop("disabled",false);
-                            $('#ocpp_auto_auth_idtag').prop("disabled",false);
-                            document.getElementById("ocpp_backend_url").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_cb_id").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auth_key").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_label").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_idtag").classList.remove("ui-state-disabled");
-                        } else {
-                            configureOcpp();
-                            $('#ocpp_save_btn').text("Edit Settings");
-                            $('#ocpp_backend_url').prop("disabled",true);
-                            $('#ocpp_cb_id').prop("disabled",true);
-                            $('#ocpp_auth_key').prop("disabled",true);
-                            $('#ocpp_auto_auth').prop("disabled",true);
-                            $('#ocpp_auto_auth_label').prop("disabled",true);
-                            $('#ocpp_auto_auth_idtag').prop("disabled",true);
-                            document.getElementById("ocpp_backend_url").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_cb_id").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auth_key").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_label").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_idtag").classList.add("ui-state-disabled");
-                        }
-                    }
-                    function configureOcpp() {
-                        var params = {
-                            ocpp_update:          1,
-                            ocpp_backend_url:     $('#ocpp_backend_url').val(),
-                            ocpp_cb_id:           $('#ocpp_cb_id').val(),
-                            ocpp_auth_key:        $('#ocpp_auth_key').val(),
-                            ocpp_auto_auth_idtag: $('#ocpp_auto_auth_idtag').val()
-                        };
-                        // Build query string with proper encoding
-                        var query = Object.keys(params)
-                            .map(k => k + "=" + encodeURIComponent(params[k]))
-                            .join("&");
-
-                        $.post("/settings?" + query);
-                        event.preventDefault();
-                    }
-                    function reboot(event) {
-                      event?.preventDefault();
-                      let httpStatus;
-                      fetch("/reboot")
-                          .then(response => {
-                            httpStatus = response.status;
-                            return response.text();
-                          })
-                          .then(message => {
-                            document.body.innerHTML = `<div id="rebootMsg" class="alert alert-success" role="alert"></div>`;
-                            document.querySelector('#rebootMsg').innerText = message
-                            if (httpStatus === 200) {
-                              setInterval(() => document.querySelector('#rebootMsg').innerText += '.', 500);
-                              // Keep retrying until the device responds.
-                              setInterval(() => window.location.reload(), 5000);
-                            } else {
-                              document.querySelector('#rebootMsg').innerHTML
-                                  += '<br><br><a href="#" class="alert-link" onclick="window.location.reload()">Return to webinterface</a>';
-                            }
-                          })
-                          .catch(error => {
-                            document.body.innerHTML = `<div id="errorMsg" class="alert alert-danger" role="alert"></div>`;
-                            document.querySelector('#errorMsg').innerText = `Error: ${error}`;
-                          });
-                    }
-
-                    function gotoDoc(event) {
-                        const version = $('#version').data('version') || '';
-                        const gitHub = `https://github.com/dingo35/SmartEVSE-3.5/tree/`;
-                        const docPath = version.startsWith('v') ? version : 'master?tab=readme-ov-file';
-                        window.location.href = `${gitHub}${docPath}#documentation`;
-                        event?.preventDefault();
-                    }
-
-                    function postPWM(value) {
-                       $.post("/settings?override_pwm=" + value);
-                       event.preventDefault();
-                     }
-                     function postRequiredEVCCID() {
-                      var required_evccid=$('#required_evccid').val();
-                       $.post("/settings?required_evccid=" + required_evccid);
-                       event.preventDefault();
-                     }
-                </script>
-
-                <!-- Earnings (Monthly) Card Example -->
-                <div style="margin-bottom: 20px;">
+                <!-- Control Card -->
+                <div style="margin-top: 1rem; margin-bottom: 20px;">
                     <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
                                 <div class="col mr-2">
                                     <div class="text font-weight-bold text-primary text-uppercase mb-1">Control</div>
-<!--
-                                      <div class="row no-gutters align-items-center" id="loadbl_text">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                         Load Balance:
-                                        </div>
-                                      <div class="col h5 mb-0 mr-3 font-weight-bold text-gray-800">
-                                          <span id="loadbl_text_slave">Slave node - control is disabled, perform changes on Master node.</span>
-                                          <span id="loadbl_text_master">Master node - control changes are propagated to Slave node(s).</span>
-                                      </div>
-                                    </div>
--->                                    
                                     <div class="row no-gutters align-items-center">
                                         <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;">
                                           <div class="tooltip font-weight-bold text-gray-800">
@@ -1558,7 +680,7 @@
                                             <div class="form-group" id="daily_repeat_group">
                                               <label for="daily_repeat"> Daily</label>
                                               <div class="input-group">
-                                                <input type="checkbox" id="daily_repeat" name="daily_repeat" class="form-control" value="daily" style="max-width: 60px;">
+                                                <input type="checkbox" id="daily_repeat" name="daily_repeat" value="daily" style="max-width: 60px;">
                                               </div>
                                             </div>
                                           </form>
@@ -1567,9 +689,9 @@
                                     <div class="row no-gutters align-items-center with_solar">
                                       <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">Solar:</div>
                                       <div class="col">
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_start_current">Start Current   </label><input type="number" onchange="SolStartCurr()" id="solar_start_current" name="solar_start_current" min="0" max="16" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;A</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_max_import_current">Max Import </label><input type="number" onchange="SolImportCurr()" id="solar_max_import_current" name="solar_max_import_current" min="0" max="16" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;A</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_stop_time">Stop Time           </label><input type="number" onchange="SolStopTime()" id="solar_stop_time" name="solar_stop_time" min="0" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;minutes</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_start_current">Start Current   </label><input type="number" onchange="SolStartCurr()" id="solar_start_current" name="solar_start_current" min="0" max="16" style="width:80px;"/>&nbsp;A</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_max_import_current">Max Import </label><input type="number" onchange="SolImportCurr()" id="solar_max_import_current" name="solar_max_import_current" min="0" max="16" style="width:80px;"/>&nbsp;A</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_stop_time">Stop Time           </label><input type="number" onchange="SolStopTime()" id="solar_stop_time" name="solar_stop_time" min="0" style="width:80px;"/>&nbsp;minutes</div></div>
                                       </div>
                                     </div>
                                     <div class="row no-gutters align-items-center">
@@ -1581,7 +703,6 @@
                                       </div>
                                         <div class="col" id="override_current_box2" style="max-width:425px;">
                                           <select id="mode_override_current">
-                                              <!--<option value="0">No Override</option>-->
                                           </select>
                                         </div>
                                     </div>
@@ -1590,10 +711,10 @@
                                           Actions:
                                         </div>
                                         <div class="col form-inline">
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot your device">Reboot</a>
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="/update" data-ajax="false" title="Update your firmware">Update</a>
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="/settings" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="#" onclick="gotoDoc(event)" title="Show the online documentation">Help</a>
+                                          <a class="btn" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot your device">Reboot</a>
+                                          <a class="btn" href="/update" data-ajax="false" title="Update your firmware">Update</a>
+                                          <a class="btn" href="/settings" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
+                                          <a class="btn" href="#" onclick="gotoDoc(event)" title="Show the online documentation">Help</a>
                                         </div>
                                     </div>
                                     <div class="row no-gutters align-items-center">
@@ -1615,9 +736,9 @@
                                         </div>
                                       </div>
                                       <div class="col">
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="prio_strategy">Strategy</label><select onchange="setPrioStrategy()" id="prio_strategy" style="width:140px;" class="ui-corner-all ui-shadow-inset"><option value="0">Modbus Addr</option><option value="1">First Conn</option><option value="2">Last Conn</option></select></div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="rotation_interval">Rotation</label><input type="number" onchange="setRotationInterval()" id="rotation_interval" min="0" max="1440" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;min (0=off)</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="idle_timeout">Idle Timeout</label><input type="number" onchange="setIdleTimeout()" id="idle_timeout" min="30" max="300" style="width:80px;" class="ui-corner-all ui-shadow-inset"/>&nbsp;s</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="prio_strategy">Strategy</label><select onchange="setPrioStrategy()" id="prio_strategy" style="width:140px;"><option value="0">Modbus Addr</option><option value="1">First Conn</option><option value="2">Last Conn</option></select></div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="rotation_interval">Rotation</label><input type="number" onchange="setRotationInterval()" id="rotation_interval" min="0" max="1440" style="width:80px;"/>&nbsp;min (0=off)</div></div>
+                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="idle_timeout">Idle Timeout</label><input type="number" onchange="setIdleTimeout()" id="idle_timeout" min="30" max="300" style="width:80px;"/>&nbsp;s</div></div>
                                         <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">State</label><span id="schedule_state" class="text-gray-800">-</span></div></div>
                                         <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">Rot. Timer</label><span id="rotation_timer" class="text-gray-800">-</span></div></div>
                                       </div>
@@ -1628,10 +749,10 @@
                                         </div>
                                         <div class="col">
                                           <form class="form-inline" id="form_pwm">
-                                            <button onclick="postPWM(0)" style="width: 120px; display:inline-block;">0&#37;</button>
-                                            <button onclick="postPWM(50)" style="width: 120px; display:inline-block;">5&#37;</button>
-                                            <button onclick="postPWM(1024)" style="width: 120px; display:inline-block;">100&#37;</button>
-                                            <button onclick="postPWM(-1)" style="width: 120px; display:inline-block;">reset</button>
+                                            <button type="button" onclick="postPWM(0)" style="width: 120px; display:inline-block;">0&#37;</button>
+                                            <button type="button" onclick="postPWM(50)" style="width: 120px; display:inline-block;">5&#37;</button>
+                                            <button type="button" onclick="postPWM(1024)" style="width: 120px; display:inline-block;">100&#37;</button>
+                                            <button type="button" onclick="postPWM(-1)" style="width: 120px; display:inline-block;">reset</button>
                                           </form>
                                         </div>
                                     </div>
@@ -1642,7 +763,7 @@
                                       <div class="col">
                                         <form class="form-inline" id="form_required_evccid">
                                           <input placeholder="EVCCID to require" id="required_evccid">
-                                          <button onclick="postRequiredEVCCID()" style="width: 120px; display:inline-block;">Update</button>
+                                          <button type="button" onclick="postRequiredEVCCID()" style="width: 120px; display:inline-block;">Update</button>
                                         </form>
                                       </div>
                                     </div>
@@ -1651,6 +772,8 @@
                             </div>
                         </div>
                     </div>
+
+                  <!-- MQTT Config Card -->
                   <div style="margin-bottom: 20px;" class="config">
                       <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
@@ -1662,7 +785,7 @@
                                             MQTT:
                                         </div>
                                         <div class="col">
-                                                <button onclick="toggleMqttEdit()" style="display:inline-block;" id="edit_mqtt_button">Edit Settings</button>
+                                                <button type="button" onclick="toggleMqttEdit()" style="display:inline-block;" id="edit_mqtt_button">Edit Settings</button>
                                             <div class="mqtt_settings" style="display:none">
                                                 <label>Host: <input id="mqtt_host" title="Leave empty to disable MQTT"></label>
                                                 <label>Port: <input id="mqtt_port" title="Usually 1883 for MQTT, and 8883 for secure MQTTS"></label>
@@ -1675,7 +798,7 @@
                                                 <div id="mqtt_ca_cert_wrapper" style="display:none;">
                                                     <label>CA Certificate (PEM): <textarea id="mqtt_ca_cert" rows="10" style="width:100%; font-family:monospace;" title="Paste the PEM-formatted CA certificate here for TLS. if left empty, LetsEncrypt will be used as default"></textarea></label>
                                                 </div>
-                                                <button onclick="configureMqtt()" style="display:inline-block;">Save</button>
+                                                <button type="button" onclick="configureMqtt()" style="display:inline-block;">Save</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1684,6 +807,8 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- OCPP Config Card -->
                     <div id="ocpp_config_outer" style="margin-bottom: 20px;" class="config">
                       <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
@@ -1706,21 +831,21 @@
                                                   <div class="h5 mb-0 mr-3 text-gray-800" id="ocpp_ws_status"></div>
                                                 </div>
                                               </div>
-                                              <label>Backend URL: <input id="ocpp_backend_url" class="ui-state-disabled" title="Enter URL that your provider provided, up until the last /"></label>
-                                              <label>Charge Box Id: <input id="ocpp_cb_id" class="ui-state-disabled" title="Identifies your charger; enter URL part after the last / of the URL your provider gave you"></label>
-                                              <label>Password(optional): <input id="ocpp_auth_key" class="ui-state-disabled" title="Only necessary for SP2 connections"></label>
+                                              <label>Backend URL: <input id="ocpp_backend_url" disabled title="Enter URL that your provider provided, up until the last /"></label>
+                                              <label>Charge Box Id: <input id="ocpp_cb_id" disabled title="Identifies your charger; enter URL part after the last / of the URL your provider gave you"></label>
+                                              <label>Password(optional): <input id="ocpp_auth_key" disabled title="Only necessary for SP2 connections"></label>
                                               <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
                                                 <div class="col-auto mb-0 mr-3" style="width: 200px">
-                                                  <input type="checkbox" class="form-check-input ui-state-disabled" id="ocpp_auto_auth" onclick="toggleEnableOcppAutoAuth()">
-                                                  <label class="form-check-label ui-state-disabled" for="ocpp_auto_auth" id="ocpp_auto_auth_label">Auto-authorize</label>
+                                                  <input type="checkbox" class="form-check-input" id="ocpp_auto_auth" disabled onclick="toggleEnableOcppAutoAuth()">
+                                                  <label class="form-check-label" for="ocpp_auto_auth" id="ocpp_auto_auth_label">Auto-authorize</label>
                                                 </div>
                                                 <div class="col">
                                                   <div class="mb-0" id="ocpp_auto_auth_idtag_wrapper">
-                                                    <input id="ocpp_auto_auth_idtag" class="ui-state-disabled" placeholder="Default idTag">
+                                                    <input id="ocpp_auto_auth_idtag" disabled placeholder="Default idTag">
                                                   </div>
                                                 </div>
                                               </div>
-                                              <button id="ocpp_save_btn" onclick="toggleOcppEdit()" style="display:inline-block;">Edit Settings</button>
+                                              <button type="button" id="ocpp_save_btn" onclick="toggleOcppEdit()" style="display:inline-block;">Edit Settings</button>
                                           </div>
                                         </div>
                                     </div>
@@ -1731,30 +856,44 @@
                     </div>
                 </div>
             </div>
+
+                  <!-- Diagnostic Telemetry Viewer -->
+                  <div style="margin-bottom: 20px;">
+                    <div class="card border-left-info shadow py-2">
+                      <div class="card-body">
+                        <div class="text font-weight-bold text-info text-uppercase mb-1">Diagnostics</div>
+                        <div class="diag-controls">
+                          <select id="diag_profile">
+                            <option value="general">General (1Hz)</option>
+                            <option value="solar">Solar (1Hz)</option>
+                            <option value="loadbal">Load Bal (1Hz)</option>
+                            <option value="modbus">Modbus (10Hz)</option>
+                            <option value="fast">Fast (10Hz)</option>
+                          </select>
+                          <button type="button" id="diag_start_btn" onclick="diagStart()">Start</button>
+                          <button type="button" id="diag_stop_btn" onclick="diagStop()">Stop</button>
+                          <a class="btn" href="/diag/download" title="Download capture file">Download</a>
+                          <span id="diag_status_badge" class="diag-badge diag-badge-off">Off</span>
+                          <span id="diag_count" style="font-size:.8rem;color:#858796;"></span>
+                        </div>
+                        <div class="diag-log" id="diag_log"></div>
+                      </div>
+                    </div>
+                  </div>
+
         </div>
       </div>
   </div>
-  <script>
-    // Get the current date and time
-    var now = new Date();
-    $('[id=stoptime_group]').hide();
-    $('[id=daily_repeat_group]').hide();
 
-    // Format the date and time as a string that can be used as the value of the input field
-    var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
-    var dateTimeString = dateString + 'T' + timeString;
+  <!-- Mobile bottom navigation -->
+  <nav class="mobile-nav" id="mobile_nav">
+    <button type="button" id="mnav_0" onclick="activate(0)">OFF</button>
+    <button type="button" id="mnav_4" onclick="activate(4)">PAUSE</button>
+    <button type="button" id="mnav_1" onclick="activate(1)">NORMAL</button>
+    <button type="button" id="mnav_2" onclick="activate(2)">SOLAR</button>
+    <button type="button" id="mnav_3" onclick="activate(3)">SMART</button>
+  </nav>
 
-    // Set the value of the input field to the current date and time
-    document.getElementById('starttime').value = dateTimeString;
-    document.getElementById('stoptime').value = dateTimeString;
-    document.getElementById('starttime').onchange = function () {
-        $('[id=stoptime_group]').show();
-    }
-    document.getElementById('stoptime').onchange = function () {
-        $('[id=daily_repeat_group]').show();
-    }
-    $('daily_repeat').prop('checked', false);
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>

@@ -23,6 +23,7 @@
 #endif
 
 #include "firmware_manager.h"
+#include "meter.h"
 
 #if SMARTEVSE_VERSION >=30
 #include "OneWire.h"
@@ -85,6 +86,225 @@ static bool isTrackedLcdWsConnection(const mg_connection *connection) {
     }
     return false;
 }
+
+// BEGIN PLAN-07: WebSocket data channel
+#define WS_DATA_MAX_CONNECTIONS 4
+#define WS_DATA_INTERVAL_MS 500
+#define WS_DATA_SYNC_TICKS 60   // 60 * 500ms = 30 seconds
+
+// Externs for globals accessed by the data channel
+extern uint8_t pilot;
+extern uint32_t CurrentPWM;
+extern uint16_t OverrideCurrent;
+extern int8_t TempEVSE;
+extern uint16_t maxTemp;
+extern int16_t homeBatteryCurrent;
+extern time_t homeBatteryLastUpdate;
+extern int phasesLastUpdate;
+extern uint8_t ErrorFlags;
+extern uint16_t MinCurrent;
+extern uint16_t MaxCurrent;
+
+std::vector<mg_connection*> wsDataConnections;
+static mg_timer *wsDataTimer = nullptr;
+static int wsDataSyncCounter = 0;
+
+// Previous state for differential updates
+struct WsDataPrev {
+    uint8_t mode_id;
+    uint8_t state_id;
+    uint8_t error_flags;
+    uint16_t charge_current;
+    int8_t temp;
+    uint32_t pwm;
+    uint16_t solar_stop_timer;
+    bool car_connected;
+    uint8_t loadbl;
+    int32_t phase[3];
+    int32_t evmeter_irms[3];
+    int32_t evmeter_power;
+    int32_t evmeter_charged_wh;
+    int16_t battery_current;
+    uint16_t override_current;
+    bool initialized;
+};
+static WsDataPrev wsPrev = {};
+
+static uint8_t wsGetModeId() {
+    if (AccessStatus == OFF)   return 0;
+    if (AccessStatus == PAUSE) return 4;
+    switch (Mode) {
+        case MODE_NORMAL: return 1;
+        case MODE_SOLAR:  return 2;
+        case MODE_SMART:  return 3;
+        default:          return 255;
+    }
+}
+
+static void stopWsDataTimer(struct mg_mgr *manager) {
+    if (wsDataTimer != nullptr && manager != nullptr) {
+        mg_timer_free(&manager->timers, wsDataTimer);
+        wsDataTimer = nullptr;
+        _LOG_V("Stopped WS data timer\n");
+    }
+}
+
+static bool isTrackedDataWsConnection(const mg_connection *connection) {
+    for (const auto *tracked : wsDataConnections) {
+        if (tracked == connection) return true;
+    }
+    return false;
+}
+
+// Build full state JSON for sync messages
+static void wsBuildFullState(DynamicJsonDocument &doc) {
+    doc["type"] = "sync";
+    JsonObject d = doc.createNestedObject("d");
+    uint8_t mid = wsGetModeId();
+    d["mode_id"] = mid;
+    d["state_id"] = State;
+    d["error_flags"] = ErrorFlags;
+    d["charge_current"] = Balanced[0];
+    d["temp"] = TempEVSE;
+    d["temp_max"] = maxTemp;
+    d["pwm"] = CurrentPWM;
+    d["solar_stop_timer"] = SolarStopTimer;
+    d["car_connected"] = (pilot != PILOT_12V);
+    d["loadbl"] = LoadBl;
+    d["override_current"] = OverrideCurrent;
+    d["current_min"] = MinCurrent;
+    d["current_max"] = MaxCurrent;
+    d["phase_L1"] = MainsMeter.Irms[0];
+    d["phase_L2"] = MainsMeter.Irms[1];
+    d["phase_L3"] = MainsMeter.Irms[2];
+    d["evmeter_L1"] = EVMeter.Irms[0];
+    d["evmeter_L2"] = EVMeter.Irms[1];
+    d["evmeter_L3"] = EVMeter.Irms[2];
+    d["evmeter_power"] = EVMeter.PowerMeasured;
+    d["evmeter_charged_wh"] = EVMeter.EnergyCharged;
+    d["battery_current"] = homeBatteryCurrent;
+    d["battery_last_update"] = homeBatteryLastUpdate;
+    d["phases_last_update"] = phasesLastUpdate;
+}
+
+// Timer function - sends state updates to all connected websocket clients
+static void ws_data_timer_fn(void *arg) {
+    struct mg_mgr *mgr_ptr = (struct mg_mgr *) arg;
+
+    if (wsDataConnections.empty()) {
+        stopWsDataTimer(mgr_ptr);
+        return;
+    }
+
+    // Remove stale connections
+    for (size_t i = wsDataConnections.size(); i > 0; --i) {
+        const size_t idx = i - 1;
+        mg_connection *c = wsDataConnections[idx];
+        if (c == nullptr || c->is_closing) {
+            wsDataConnections.erase(wsDataConnections.begin() + idx);
+        }
+    }
+    if (wsDataConnections.empty()) {
+        stopWsDataTimer(mgr_ptr);
+        return;
+    }
+
+    wsDataSyncCounter++;
+    bool fullSync = (wsDataSyncCounter >= WS_DATA_SYNC_TICKS);
+    if (fullSync) wsDataSyncCounter = 0;
+
+    // Build JSON
+    DynamicJsonDocument doc(fullSync ? 640 : 384);
+
+    if (fullSync) {
+        wsBuildFullState(doc);
+    } else {
+        // Differential update - only send changed fields
+        uint8_t mid = wsGetModeId();
+        bool changed = false;
+        JsonObject d = doc.createNestedObject("d");
+
+        #define WS_DIFF(field, val) do { \
+            if (!wsPrev.initialized || wsPrev.field != (val)) { \
+                d[#field] = (val); wsPrev.field = (val); changed = true; \
+            } \
+        } while(0)
+
+        WS_DIFF(mode_id, mid);
+        WS_DIFF(state_id, State);
+        WS_DIFF(error_flags, ErrorFlags);
+        WS_DIFF(charge_current, Balanced[0]);
+        WS_DIFF(temp, TempEVSE);
+        WS_DIFF(pwm, CurrentPWM);
+        WS_DIFF(solar_stop_timer, SolarStopTimer);
+
+        bool connected = (pilot != PILOT_12V);
+        if (!wsPrev.initialized || wsPrev.car_connected != connected) {
+            d["car_connected"] = connected; wsPrev.car_connected = connected; changed = true;
+        }
+
+        WS_DIFF(loadbl, LoadBl);
+        WS_DIFF(override_current, OverrideCurrent);
+
+        // Phase currents
+        for (int i = 0; i < 3; i++) {
+            if (!wsPrev.initialized || wsPrev.phase[i] != MainsMeter.Irms[i]) {
+                const char *keys[] = {"phase_L1", "phase_L2", "phase_L3"};
+                d[keys[i]] = MainsMeter.Irms[i];
+                wsPrev.phase[i] = MainsMeter.Irms[i];
+                changed = true;
+            }
+        }
+        for (int i = 0; i < 3; i++) {
+            if (!wsPrev.initialized || wsPrev.evmeter_irms[i] != EVMeter.Irms[i]) {
+                const char *keys[] = {"evmeter_L1", "evmeter_L2", "evmeter_L3"};
+                d[keys[i]] = EVMeter.Irms[i];
+                wsPrev.evmeter_irms[i] = EVMeter.Irms[i];
+                changed = true;
+            }
+        }
+
+        WS_DIFF(evmeter_power, EVMeter.PowerMeasured);
+        WS_DIFF(evmeter_charged_wh, EVMeter.EnergyCharged);
+        WS_DIFF(battery_current, homeBatteryCurrent);
+
+        #undef WS_DIFF
+
+        wsPrev.initialized = true;
+
+        if (!changed) return; // Nothing changed, skip sending
+        doc["type"] = "state";
+    }
+
+    String json;
+    serializeJson(doc, json);
+    for (auto *c : wsDataConnections) {
+        mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+    }
+
+    // After full sync, update prev state
+    if (fullSync) {
+        wsPrev.mode_id = wsGetModeId();
+        wsPrev.state_id = State;
+        wsPrev.error_flags = ErrorFlags;
+        wsPrev.charge_current = Balanced[0];
+        wsPrev.temp = TempEVSE;
+        wsPrev.pwm = CurrentPWM;
+        wsPrev.solar_stop_timer = SolarStopTimer;
+        wsPrev.car_connected = (pilot != PILOT_12V);
+        wsPrev.loadbl = LoadBl;
+        wsPrev.override_current = OverrideCurrent;
+        for (int i = 0; i < 3; i++) {
+            wsPrev.phase[i] = MainsMeter.Irms[i];
+            wsPrev.evmeter_irms[i] = EVMeter.Irms[i];
+        }
+        wsPrev.evmeter_power = EVMeter.PowerMeasured;
+        wsPrev.evmeter_charged_wh = EVMeter.EnergyCharged;
+        wsPrev.battery_current = homeBatteryCurrent;
+        wsPrev.initialized = true;
+    }
+}
+// END PLAN-07: WebSocket data channel
 
 static void sendWsError(struct mg_connection *c, const char *reason) {
     DynamicJsonDocument response(96);
@@ -1071,6 +1291,16 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         }
     }
     // END PLAN-06
+    // BEGIN PLAN-07: Clean up data WS connections on close
+    for (auto it = wsDataConnections.begin(); it != wsDataConnections.end(); ++it) {
+        if (*it == c) {
+            wsDataConnections.erase(it);
+            _LOG_V("Removed websocket data connection, remaining: %d\n", wsDataConnections.size());
+            if (wsDataConnections.empty()) stopWsDataTimer(c->mgr);
+            break;
+        }
+    }
+    // END PLAN-07
   } else if (ev == MG_EV_WS_OPEN) {
     // Websocket connection opened - check if it's for /ws/lcd endpoint
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;
@@ -1090,16 +1320,44 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         _LOG_V("New diag WS connection, total: %d\n", wsDiagConnections.size());
     }
     // END PLAN-06
+    // BEGIN PLAN-07: Track data WS connections
+    if (mg_match(hm->uri, mg_str("/ws/data"), NULL)) {
+        if ((int)wsDataConnections.size() >= WS_DATA_MAX_CONNECTIONS) {
+            _LOG_W("Max data WS connections reached (%d), rejecting\n", WS_DATA_MAX_CONNECTIONS);
+            c->is_closing = 1;
+        } else {
+            wsDataConnections.push_back(c);
+            _LOG_V("New websocket data connection, total: %d\n", wsDataConnections.size());
+
+            // Start timer if this is the first connection
+            if (wsDataConnections.size() == 1 && wsDataTimer == nullptr) {
+                wsDataSyncCounter = 0;
+                wsPrev.initialized = false;
+                wsDataTimer = mg_timer_add(&mgr, WS_DATA_INTERVAL_MS, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, ws_data_timer_fn, &mgr);
+                _LOG_V("Started WS data timer\n");
+            }
+
+            // Send immediate full sync to newly connected client
+            DynamicJsonDocument doc(640);
+            wsBuildFullState(doc);
+            String json;
+            serializeJson(doc, json);
+            mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+        }
+    }
+    // END PLAN-07
   } else if (ev == MG_EV_WS_MSG) {
     // Websocket message received - handle button commands
     struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
-    if (!isTrackedLcdWsConnection(c)) return;
-
-    // Check if this is a text message (button commands are JSON text)
-    if ((wm->flags & 0x0f) == WEBSOCKET_OP_TEXT) {
-        handleButtonCommand(c, (const char*)wm->data.buf, wm->data.len);
+    if (isTrackedLcdWsConnection(c)) {
+        // Check if this is a text message (button commands are JSON text)
+        if ((wm->flags & 0x0f) == WEBSOCKET_OP_TEXT) {
+            handleButtonCommand(c, (const char*)wm->data.buf, wm->data.len);
+        }
+        // Binary messages are ignored (only server sends binary BMP images)
     }
-    // Binary messages are ignored (only server sends binary BMP images)
+    // BEGIN PLAN-07: Data WS messages (subscribe, etc.) - acknowledged silently
+    // END PLAN-07
   } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
 
@@ -1114,6 +1372,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         return;
     }
     // END PLAN-06
+
+    // BEGIN PLAN-07: WebSocket upgrade for data channel
+    if (mg_match(hm->uri, mg_str("/ws/data"), NULL)) {
+        mg_ws_upgrade(c, hm, NULL);
+        return;
+    }
+    // END PLAN-07
 
     static webServerRequest requestObj;  // Static to avoid heap allocation on every request
     webServerRequest* request = &requestObj;
