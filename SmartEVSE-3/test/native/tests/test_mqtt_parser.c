@@ -943,6 +943,76 @@ void test_solar_debug_invalid(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/SolarDebug", "2", &cmd));
 }
 
+// ---- DiagProfile ----
+
+/*
+ * @feature Diagnostic Telemetry
+ * @req REQ-E2E-048
+ * @scenario DiagProfile set to general via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/DiagProfile with payload "general"
+ * @then The parser returns true with diag_profile = 1
+ */
+void test_diag_profile_general(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "general", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_DIAG_PROFILE, cmd.cmd);
+    TEST_ASSERT_EQUAL(1, cmd.diag_profile);
+}
+
+/*
+ * @feature Diagnostic Telemetry
+ * @req REQ-E2E-048
+ * @scenario DiagProfile set to solar via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/DiagProfile with payload "solar"
+ * @then The parser returns true with diag_profile = 2
+ */
+void test_diag_profile_solar(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "solar", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_DIAG_PROFILE, cmd.cmd);
+    TEST_ASSERT_EQUAL(2, cmd.diag_profile);
+}
+
+/*
+ * @feature Diagnostic Telemetry
+ * @req REQ-E2E-048
+ * @scenario DiagProfile set to off via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/DiagProfile with payload "off"
+ * @then The parser returns true with diag_profile = 0
+ */
+void test_diag_profile_off(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "off", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_DIAG_PROFILE, cmd.cmd);
+    TEST_ASSERT_EQUAL(0, cmd.diag_profile);
+}
+
+/*
+ * @feature Diagnostic Telemetry
+ * @req REQ-E2E-048
+ * @scenario DiagProfile set via numeric value
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/DiagProfile with payload "5"
+ * @then The parser returns true with diag_profile = 5 (FAST)
+ */
+void test_diag_profile_numeric(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "5", &cmd));
+    TEST_ASSERT_EQUAL(MQTT_CMD_DIAG_PROFILE, cmd.cmd);
+    TEST_ASSERT_EQUAL(5, cmd.diag_profile);
+}
+
+/*
+ * @feature Diagnostic Telemetry
+ * @req REQ-E2E-048
+ * @scenario DiagProfile rejects invalid payload
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/DiagProfile with payload "invalid"
+ * @then The parser returns false
+ */
+void test_diag_profile_invalid(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "invalid", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -1081,6 +1151,13 @@ int main(void) {
     RUN_TEST(test_solar_debug_enable);
     RUN_TEST(test_solar_debug_disable);
     RUN_TEST(test_solar_debug_invalid);
+
+    // DiagProfile
+    RUN_TEST(test_diag_profile_general);
+    RUN_TEST(test_diag_profile_solar);
+    RUN_TEST(test_diag_profile_off);
+    RUN_TEST(test_diag_profile_numeric);
+    RUN_TEST(test_diag_profile_invalid);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);
