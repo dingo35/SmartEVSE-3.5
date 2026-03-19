@@ -618,6 +618,8 @@ void writeMqttCaCert(const String& cert) {
 }
 
 #if MQTT
+static void mqttSetSolarDebug(bool enabled);  // forward declaration
+
 void mqtt_receive_callback(const String topic, const String payload) {
     mqtt_command_t cmd;
     if (!mqtt_parse_command(MQTTprefix.c_str(), topic.c_str(), payload.c_str(), &cmd))
@@ -1304,7 +1306,7 @@ void mqttPublishSolarDebug(void) {
     }
 }
 
-void mqttSetSolarDebug(bool enabled) {
+static void mqttSetSolarDebug(bool enabled) {
     SolarDebugEnabled = enabled;
     if (!enabled) SolarDebugLastPublish = 0;
 }

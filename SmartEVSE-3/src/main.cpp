@@ -326,7 +326,6 @@ extern void CheckRFID(void);
 extern void mqttPublishData();
 extern void mqttSmartEVSEPublishData();
 extern void mqttPublishSolarDebug(void);
-extern void mqttSetSolarDebug(bool enabled);
 extern bool MQTTclientSmartEVSE_AppConnected;
 extern void DisconnectEvent(void);
 extern char EVCCID[32];
