@@ -1065,8 +1065,7 @@ void evse_schedule_tick_1s(evse_ctx_t *ctx) {
             ctx->ConnectedTime[i] = ctx->Uptime;
         } else if (ctx->BalancedState[i] != STATE_C) {
             ctx->ConnectedTime[i] = 0;
-            if (ctx->ScheduleState[i] != SCHED_INACTIVE)
-                ctx->ScheduleState[i] = SCHED_INACTIVE;
+            ctx->ScheduleState[i] = SCHED_INACTIVE;
         }
     }
 

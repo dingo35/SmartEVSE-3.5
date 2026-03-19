@@ -24,6 +24,7 @@ MQTT_PUBLISH_SRC   := $(SRC_DIR)/mqtt_publish.c
 HTTP_API_SRC       := $(SRC_DIR)/http_api.c
 SERIAL_PARSER_SRC  := $(SRC_DIR)/serial_parser.c
 LED_COLOR_SRC      := $(SRC_DIR)/led_color.c
+METER_TELEMETRY_SRC := $(SRC_DIR)/meter_telemetry.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -49,6 +50,9 @@ $(BUILD)/test_serial_parser: $(TEST_DIR)/test_serial_parser.c $(SERIAL_PARSER_SR
 
 $(BUILD)/test_led_color: $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC) $(SRC_DIR)/led_color.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_led_color.c $(LED_COLOR_SRC)
+
+$(BUILD)/test_meter_telemetry: $(TEST_DIR)/test_meter_telemetry.c $(METER_TELEMETRY_SRC) $(SRC_DIR)/meter_telemetry.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_meter_telemetry.c $(METER_TELEMETRY_SRC)
 
 # Build each state machine test binary (generic rule)
 $(BUILD)/test_%: $(TEST_DIR)/test_%.c $(EVSE_SRC) include/*.h $(SRC_DIR)/*.h | $(BUILD)
