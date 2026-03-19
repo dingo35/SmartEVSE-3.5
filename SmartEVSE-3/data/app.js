@@ -19,6 +19,159 @@ let mqttEditMode = false;
 let ocppEditMode = false;
 let last_evse_state_id = 0;
 
+/* ========== WebSocket Data Channel ========== */
+var dataWs = null;
+var dataWsReconnectTimer = null;
+var dataWsReconnectAttempts = 0;
+var wsConnected = false;
+/* Cache of last known WS values for computing totals */
+var wsCache = {
+    phase_L1: 0, phase_L2: 0, phase_L3: 0,
+    evmeter_L1: 0, evmeter_L2: 0, evmeter_L3: 0
+};
+
+function updateConnStatus(connected) {
+    var el = $id('conn_status');
+    if (!el) return;
+    el.style.backgroundColor = connected ? '#1cc88a' : '#e74a3b';
+    el.title = connected ? 'Live (WebSocket)' : 'Polling (HTTP)';
+}
+
+/* Apply flat WS data fields to the DOM */
+function applyWsData(d) {
+    if (d.mode_id !== undefined) {
+        var modeNames = {0:'OFF', 1:'NORMAL', 2:'SOLAR', 3:'SMART', 4:'PAUSE'};
+        $qs('#mode').textContent = modeNames[d.mode_id] || 'N/A';
+        for (var x of [0, 1, 2, 3, 4]) {
+            $qs('#mode_' + x).classList.toggle('active', x === d.mode_id);
+        }
+        if (d.mode_id == 2) {
+            showAll('.with_solar');
+            hideById('override_current_box');
+            hideById('override_current_box2');
+        } else {
+            hideAll('.with_solar');
+            showById('override_current_box');
+            showById('override_current_box2');
+        }
+    }
+    if (d.charge_current !== undefined)
+        $id('charge_current').textContent = (d.charge_current / 10).toFixed(1) + " A";
+    if (d.temp !== undefined) {
+        var maxT = d.temp_max !== undefined ? d.temp_max : '';
+        if (maxT !== '') $id('temp').textContent = d.temp + " \u00B0C / " + maxT + " \u00B0C";
+    }
+    if (d.pwm !== undefined)
+        $id('dutycycle').textContent = (d.pwm * 100 / 1024).toFixed(0) + " %";
+    if (d.car_connected !== undefined)
+        $id('car_connected').textContent = d.car_connected ? "Yes" : "No";
+    if (d.override_current !== undefined)
+        $id('override_current').textContent = (d.override_current / 10).toFixed(1) + " A";
+    if (d.current_min !== undefined)
+        $id('current_min').textContent = (d.current_min / 10).toFixed(1) + " A";
+    if (d.current_max !== undefined)
+        $id('current_max').textContent = (d.current_max / 10).toFixed(1) + " A";
+
+    /* Phase currents - update cache and recompute totals */
+    var phaseChanged = false;
+    if (d.phase_L1 !== undefined) { wsCache.phase_L1 = d.phase_L1; phaseChanged = true; }
+    if (d.phase_L2 !== undefined) { wsCache.phase_L2 = d.phase_L2; phaseChanged = true; }
+    if (d.phase_L3 !== undefined) { wsCache.phase_L3 = d.phase_L3; phaseChanged = true; }
+    if (phaseChanged) {
+        $id('phase_1').textContent = (wsCache.phase_L1 / 10).toFixed(1) + " A";
+        $id('phase_2').textContent = (wsCache.phase_L2 / 10).toFixed(1) + " A";
+        $id('phase_3').textContent = (wsCache.phase_L3 / 10).toFixed(1) + " A";
+        $id('phase_total').textContent = ((wsCache.phase_L1 + wsCache.phase_L2 + wsCache.phase_L3) / 10).toFixed(1) + " A";
+    }
+
+    var evChanged = false;
+    if (d.evmeter_L1 !== undefined) { wsCache.evmeter_L1 = d.evmeter_L1; evChanged = true; }
+    if (d.evmeter_L2 !== undefined) { wsCache.evmeter_L2 = d.evmeter_L2; evChanged = true; }
+    if (d.evmeter_L3 !== undefined) { wsCache.evmeter_L3 = d.evmeter_L3; evChanged = true; }
+    if (evChanged) {
+        $id('evmeter_currents_1').textContent = (wsCache.evmeter_L1 / 10).toFixed(1) + " A";
+        $id('evmeter_currents_2').textContent = (wsCache.evmeter_L2 / 10).toFixed(1) + " A";
+        $id('evmeter_currents_3').textContent = (wsCache.evmeter_L3 / 10).toFixed(1) + " A";
+        $id('evmeter_currents_total').textContent = ((wsCache.evmeter_L1 + wsCache.evmeter_L2 + wsCache.evmeter_L3) / 10).toFixed(1) + " A";
+    }
+
+    if (d.evmeter_power !== undefined)
+        $id('evmeter_power').textContent = (d.evmeter_power / 1000).toFixed(1) + " kW";
+    if (d.evmeter_charged_wh !== undefined)
+        $id('evmeter_charged_kwh').textContent = (d.evmeter_charged_wh / 1000).toFixed(1) + " kWh";
+    if (d.battery_current !== undefined) {
+        $id('battery_current').textContent = (d.battery_current / 10).toFixed(1) + " A";
+        if (d.battery_current == 0) $id('battery_status').textContent = "Idle";
+        else $id('battery_status').textContent = d.battery_current < 0 ? "Discharging" : "Charging";
+    }
+    if (d.solar_stop_timer !== undefined && d.solar_stop_timer > 0) {
+        var stateEl = $id('state');
+        if (stateEl && stateEl.textContent.indexOf('Stopping') === -1)
+            stateEl.textContent += " (Stopping in " + d.solar_stop_timer + "s)";
+    }
+    if (d.loadbl !== undefined) {
+        if (d.loadbl > 1) {
+            showById('loadbl'); showById('loadbl_text');
+            $id('loadbl_node').textContent = "Slave Node " + (d.loadbl - 1);
+            hideById('contactor2');
+        } else if (d.loadbl == 1) {
+            showById('loadbl'); showById('loadbl_text');
+            $id('loadbl_node').textContent = "Master";
+            hideById('contactor2');
+        } else {
+            hideById('loadbl'); hideById('loadbl_text');
+            showById('contactor2');
+        }
+    }
+}
+
+function connectDataWs() {
+    if (dataWs && (dataWs.readyState === WebSocket.OPEN || dataWs.readyState === WebSocket.CONNECTING)) return;
+    var wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws/data';
+    var socket = new WebSocket(wsUrl);
+    dataWs = socket;
+
+    socket.onopen = function() {
+        dataWsReconnectAttempts = 0;
+        wsConnected = true;
+        updateConnStatus(true);
+        socket.send(JSON.stringify({subscribe: ['state']}));
+    };
+
+    socket.onmessage = function(event) {
+        try {
+            var msg = JSON.parse(event.data);
+            if (msg.d) applyWsData(msg.d);
+        } catch(e) { /* ignore parse errors */ }
+    };
+
+    socket.onerror = function() {
+        if (socket.readyState !== WebSocket.CLOSED) socket.close();
+    };
+
+    socket.onclose = function() {
+        if (dataWs === socket) dataWs = null;
+        wsConnected = false;
+        updateConnStatus(false);
+        var delay = Math.min(1000 * Math.pow(2, dataWsReconnectAttempts), 10000) + Math.floor(Math.random() * 500);
+        dataWsReconnectAttempts++;
+        dataWsReconnectTimer = setTimeout(connectDataWs, delay);
+        /* Resume polling while WS is disconnected */
+        loadData();
+    };
+
+    /* Pause/resume on visibility change */
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            if (dataWs) dataWs.close();
+        } else if (!dataWs || dataWs.readyState !== WebSocket.OPEN) {
+            clearTimeout(dataWsReconnectTimer);
+            dataWsReconnectAttempts = 0;
+            connectDataWs();
+        }
+    });
+}
+
 /* ========== Cert visibility ========== */
 function toggleCertVisibility() {
     $id('mqtt_ca_cert_wrapper').style.display =
@@ -305,7 +458,8 @@ function loadData() {
                 hideById('ocpp_config_outer');
             }
 
-            setTimeout(loadData, 5000);
+            /* Only continue polling if WebSocket is not connected */
+            if (!wsConnected) setTimeout(loadData, 5000);
         });
 }
 
@@ -774,6 +928,7 @@ function postRequiredEVCCID() {
     /* MQTT TLS checkbox listener */
     $id('mqtt_tls').addEventListener('change', toggleCertVisibility);
 
-    /* Start data polling */
+    /* Start data polling, then connect WebSocket for real-time updates */
     loadData();
+    setTimeout(connectDataWs, 2000);
 })();
