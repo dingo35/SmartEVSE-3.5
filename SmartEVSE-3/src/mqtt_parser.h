@@ -28,6 +28,7 @@ typedef enum {
     MQTT_CMD_IDLE_TIMEOUT,
     MQTT_CMD_MQTT_HEARTBEAT,
     MQTT_CMD_MQTT_CHANGE_ONLY,
+    MQTT_CMD_SOLAR_DEBUG,
 } mqtt_cmd_type_t;
 
 // Mode values matching firmware MODE_NORMAL/MODE_SOLAR/MODE_SMART
@@ -64,6 +65,7 @@ typedef struct {
         uint16_t idle_timeout;                  // MQTT_CMD_IDLE_TIMEOUT (30-300)
         uint16_t mqtt_heartbeat;                // MQTT_CMD_MQTT_HEARTBEAT (10-300)
         bool mqtt_change_only;                  // MQTT_CMD_MQTT_CHANGE_ONLY (0/1)
+        bool solar_debug;                       // MQTT_CMD_SOLAR_DEBUG (0/1)
     };
 } mqtt_command_t;
 

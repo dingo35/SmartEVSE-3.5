@@ -326,6 +326,7 @@ extern void BroadcastCurrent(void);
 extern void CheckRFID(void);
 extern void mqttPublishData();
 extern void mqttSmartEVSEPublishData();
+extern void mqttPublishSolarDebug(void);
 extern bool MQTTclientSmartEVSE_AppConnected;
 extern void DisconnectEvent(void);
 extern char EVCCID[32];
@@ -1111,6 +1112,8 @@ static void timer1s_mqtt_publish(void) {
         lastSmartEVSEUpdate = 0;
         mqttSmartEVSEPublishData();
     }
+    // Solar debug publishing — rate-limited internally (5s default)
+    mqttPublishSolarDebug();
 }
 #endif
 

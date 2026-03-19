@@ -22,6 +22,7 @@ void evse_sync_globals_to_ctx(void);
 void evse_sync_ctx_to_globals(void);
 void evse_bridge_lock(void);
 void evse_bridge_unlock(void);
+void evse_get_solar_debug(evse_solar_debug_t *out);
 
 #ifdef __cplusplus
 }
