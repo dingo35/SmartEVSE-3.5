@@ -162,6 +162,7 @@ struct HomeWizardP1Result {
 };
 extern HomeWizardP1Result getMainsFromHomeWizardP1();
 extern String homeWizardHost;
+extern String homeWizardManualIP;
 #endif
 
 #define FW_DOWNLOAD_PATH "http://smartevse-3.s3.eu-west-2.amazonaws.com"

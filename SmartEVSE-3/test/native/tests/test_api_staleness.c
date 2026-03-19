@@ -300,10 +300,55 @@ void test_mqtt_parse_staleness_timeout_too_high(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command("SmartEVSE/1234", "SmartEVSE/1234/Set/MainsMeterTimeout", "4000", &cmd));
 }
 
+/* ---- HomeWizard IP MQTT parser tests ---- */
+
+/*
+ * @feature HomeWizard P1 Manual IP Fallback
+ * @req REQ-MQTT-034
+ * @scenario Parse HomeWizardIP MQTT command with valid IP
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/HomeWizardIP with payload "192.168.1.50"
+ * @then Command type is MQTT_CMD_HOMEWIZARD_IP with the IP string
+ */
+void test_mqtt_parse_homewizard_ip_valid(void) {
+    mqtt_command_t cmd;
+    TEST_ASSERT_TRUE(mqtt_parse_command("SmartEVSE/1234", "SmartEVSE/1234/Set/HomeWizardIP", "192.168.1.50", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_HOMEWIZARD_IP, cmd.cmd);
+    TEST_ASSERT_EQUAL_STRING("192.168.1.50", cmd.homewizard_ip);
+}
+
+/*
+ * @feature HomeWizard P1 Manual IP Fallback
+ * @req REQ-MQTT-035
+ * @scenario Parse HomeWizardIP with empty string clears manual IP (re-enable mDNS)
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/HomeWizardIP with empty payload
+ * @then Command type is MQTT_CMD_HOMEWIZARD_IP with empty string
+ */
+void test_mqtt_parse_homewizard_ip_empty(void) {
+    mqtt_command_t cmd;
+    TEST_ASSERT_TRUE(mqtt_parse_command("SmartEVSE/1234", "SmartEVSE/1234/Set/HomeWizardIP", "", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_HOMEWIZARD_IP, cmd.cmd);
+    TEST_ASSERT_EQUAL_STRING("", cmd.homewizard_ip);
+}
+
+/*
+ * @feature HomeWizard P1 Manual IP Fallback
+ * @req REQ-MQTT-036
+ * @scenario Reject HomeWizardIP that exceeds buffer size
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/HomeWizardIP with a 16+ character payload
+ * @then Parsing returns false
+ */
+void test_mqtt_parse_homewizard_ip_too_long(void) {
+    mqtt_command_t cmd;
+    TEST_ASSERT_FALSE(mqtt_parse_command("SmartEVSE/1234", "SmartEVSE/1234/Set/HomeWizardIP", "1234567890123456", &cmd));
+}
+
 /* ---- Test runner ---- */
 
 int main(void) {
-    TEST_SUITE_BEGIN("API Mains Staleness Detection");
+    TEST_SUITE_BEGIN("API Mains Staleness & HomeWizard IP");
 
     /* State machine staleness tests */
     RUN_TEST(test_staleness_timer_countdown);
@@ -315,11 +360,16 @@ int main(void) {
     RUN_TEST(test_ct_nocomm_fires_when_staleness_disabled);
     RUN_TEST(test_staleness_only_fires_once);
 
-    /* MQTT parser tests */
+    /* MQTT parser tests — staleness timeout */
     RUN_TEST(test_mqtt_parse_staleness_timeout_valid);
     RUN_TEST(test_mqtt_parse_staleness_timeout_disabled);
     RUN_TEST(test_mqtt_parse_staleness_timeout_too_low);
     RUN_TEST(test_mqtt_parse_staleness_timeout_too_high);
+
+    /* MQTT parser tests — HomeWizard IP */
+    RUN_TEST(test_mqtt_parse_homewizard_ip_valid);
+    RUN_TEST(test_mqtt_parse_homewizard_ip_empty);
+    RUN_TEST(test_mqtt_parse_homewizard_ip_too_long);
 
     TEST_SUITE_RESULTS();
 }

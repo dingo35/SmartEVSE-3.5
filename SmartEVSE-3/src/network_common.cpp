@@ -533,6 +533,9 @@ void setTimeZone(void * parameter) {
 
 #ifndef SENSORBOX_VERSION
 String homeWizardHost;
+// BEGIN PLAN-09: HomeWizard manual IP fallback
+String homeWizardManualIP;  // When set, skip mDNS and connect directly to this IP
+// END PLAN-09
 HTTPClient* homeWizardHttpClient=nullptr;
 bool homeWizardHttpClientInitialized = false;
 static bool mdnsDiscoveryInProgress = false;            // True when async mDNS task is running
@@ -588,6 +591,14 @@ void mdnsDiscoveryTask(void* parameter) {
  * @return The cached hostname if available, empty string if discovery is pending or not found
  */
 String discoverHomeWizardP1() {
+
+    // BEGIN PLAN-09: HomeWizard manual IP fallback
+    // If a manual IP is configured, use it directly — skip mDNS entirely
+    if (!homeWizardManualIP.isEmpty()) {
+        _LOG_D("discoverHWP1(): Using manual IP '%s'.\n", homeWizardManualIP.c_str());
+        return homeWizardManualIP;
+    }
+    // END PLAN-09
 
     // If there's a cached result, return it immediately
     if (!homeWizardHost.isEmpty()) {

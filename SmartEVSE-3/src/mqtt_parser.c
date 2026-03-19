@@ -159,6 +159,18 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    /* HomeWizard P1 manual IP: skip mDNS, connect directly. Empty = use mDNS */
+    if (match_topic(prefix, topic, "/Set/HomeWizardIP")) {
+        out->cmd = MQTT_CMD_HOMEWIZARD_IP;
+        size_t len = strlen(payload);
+        if (len >= sizeof(out->homewizard_ip))
+            return false;
+        /* Allow empty string to clear manual IP (re-enable mDNS) */
+        strncpy(out->homewizard_ip, payload, sizeof(out->homewizard_ip) - 1);
+        out->homewizard_ip[sizeof(out->homewizard_ip) - 1] = '\0';
+        return true;
+    }
+
     /* Home battery current: positive = charging, negative = discharging */
     if (match_topic(prefix, topic, "/Set/HomeBatteryCurrent")) {
         out->cmd = MQTT_CMD_HOME_BATTERY_CURRENT;

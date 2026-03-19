@@ -200,6 +200,12 @@ and exposes data via a local HTTP REST API.
 2. Enable the "Local API" in the HomeWizard app settings
 3. Set SmartEVSE `MainsMeter` to type 13 (HomeWizard P1)
 4. SmartEVSE will automatically discover the P1 meter via mDNS
+5. **(Optional) Manual IP fallback:** If mDNS discovery is unreliable on your
+   network, set a static IP via MQTT: publish to
+   `SmartEVSE/<serial>/Set/HomeWizardIP` with the P1 meter's IP address
+   (e.g., `192.168.1.50`). This bypasses mDNS entirely. Send an empty
+   payload to re-enable mDNS discovery. Ensure the P1 meter has a static
+   IP or DHCP reservation.
 
 **How discovery works:**
 - SmartEVSE searches for `_hwenergy._tcp` mDNS services on the local network
@@ -232,7 +238,7 @@ energy totals.
 **Troubleshooting:**
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| No readings, no error | mDNS not working | Check that devices are on same VLAN, try `ping p1meter-<id>.local` from a computer on the same network |
+| No readings, no error | mDNS not working | Check same VLAN, try `ping p1meter-<id>.local`, or set manual IP via `Set/HomeWizardIP` |
 | Intermittent dropouts | WiFi instability | Move P1 meter closer to WiFi AP, or use a WiFi repeater |
 | All readings zero | P1 meter local API disabled | Enable "Local API" in HomeWizard app |
 | `CT_NOCOMM` after 11s | HTTP connection failures | Check WiFi signal strength, network congestion |

@@ -805,6 +805,21 @@ void mqtt_receive_callback(const String topic, const String payload) {
             mqttSetSolarDebug(cmd.solar_debug);
             break;
 
+        // BEGIN PLAN-09: API staleness timeout
+        case MQTT_CMD_MAINS_METER_TIMEOUT:
+            // Applied via bridge layer to evse_ctx.api_mains_timeout
+            break;
+        // END PLAN-09
+
+        // BEGIN PLAN-09: HomeWizard manual IP fallback
+        case MQTT_CMD_HOMEWIZARD_IP:
+            homeWizardManualIP = cmd.homewizard_ip;
+            // Clear cached mDNS result so next poll uses the new IP
+            homeWizardHost = "";
+            _LOG_A("HomeWizard manual IP set to '%s'\n", cmd.homewizard_ip);
+            break;
+        // END PLAN-09
+
         default:
             return;
     }
