@@ -5,7 +5,7 @@
 
 1. **Start in Normal mode.** Walk through the settings shown on the LCD. At first, leave MAINS MET unconfigured. Set CONFIG, PWR SHARE, MAX, and the hardware settings (SWITCH, RCMON, RFID, WIFI).
 2. **Test Normal mode.** Verify your EV charges at MAX current. If you don't need Smart/Solar charging and have no mains meter, you are done.
-3. **Configure your mains meter.** Set MODE to Smart or Solar, then configure MAINS MET. New settings will appear in the menu (MAINS, MIN, and more). Browse through them again.
+3. **Configure your mains meter.** Set MODE to Smart or Solar, then configure MAINS MET. New settings will appear in the menu (MAINS, MIN, and more). Browse through them again. See the [Power Input Methods guide](power-input-methods.md) for help choosing and configuring your metering method.
 4. **If using API or MQTT meter feeds**, set up the data feeds before selecting "API" for the meter type. Data is expected within 11 seconds of selecting API. Test scripts are available in the test directory.
 5. **For multiple SmartEVSEs**, see [Power Share setup](#multiple-smartevse-controllers-on-one-mains-supply-power-share) below.
 6. **For Solar mode**, switch to Solar and configure the solar-specific settings (START, STOP, IMPORT) that appear.

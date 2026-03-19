@@ -251,6 +251,7 @@ Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update
 | Document | Description |
 |----------|-------------|
 | [Hardware installation](docs/installation.md) | Wiring, mounting, contactor setup |
+| [Power Input Methods](docs/power-input-methods.md) | Metering options: Modbus, Sensorbox, HomeWizard, MQTT — reliability ranking, setup, troubleshooting |
 | [Configuration](docs/configuration.md) | LCD menu settings reference |
 | [Operation](docs/operation.md) | Day-to-day usage guide |
 | [Solar & Smart Mode Stability](docs/solar-smart-stability.md) | EMA smoothing, dead bands, phase switch timers, cycling prevention |
