@@ -25,6 +25,10 @@ void session_init(void) {
 }
 
 void session_start(uint32_t timestamp, int32_t start_energy_wh, uint8_t mode) {
+    /* Reject garbage timestamps before NTP has synced */
+    if (timestamp < SESSION_MIN_VALID_TIME) {
+        return;
+    }
     /* Discard any active session — caller's responsibility to end first */
     memset(&s_active, 0, sizeof(s_active));
     s_active.session_id = s_next_id++;
@@ -41,6 +45,14 @@ void session_end(uint32_t timestamp, int32_t end_energy_wh,
     }
 
     s_active.end_time = timestamp;
+
+    /* Discard sessions shorter than minimum duration (rapid reconnect filter) */
+    if ((timestamp - s_active.start_time) < SESSION_MIN_DURATION_S) {
+        s_session_active = 0;
+        memset(&s_active, 0, sizeof(s_active));
+        return;
+    }
+
     s_active.end_energy_wh = end_energy_wh;
     s_active.energy_charged_wh = end_energy_wh - s_active.start_energy_wh;
     s_active.max_current_da = max_current_da;

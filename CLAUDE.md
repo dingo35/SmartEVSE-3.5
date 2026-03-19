@@ -149,7 +149,23 @@ cppcheck --enable=warning,style,performance \
   --inline-suppr \
   -I SmartEVSE-3/src \
   -I SmartEVSE-3/test/native/include \
-  SmartEVSE-3/src/evse_state_machine.c
+  SmartEVSE-3/src/evse_state_machine.c \
+  SmartEVSE-3/src/session_log.c \
+  SmartEVSE-3/src/mqtt_parser.c \
+  SmartEVSE-3/src/mqtt_publish.c \
+  SmartEVSE-3/src/http_api.c \
+  SmartEVSE-3/src/serial_parser.c \
+  SmartEVSE-3/src/led_color.c \
+  SmartEVSE-3/src/meter_telemetry.c \
+  SmartEVSE-3/src/modbus_decode.c \
+  SmartEVSE-3/src/meter_decode.c \
+  SmartEVSE-3/src/p1_parse.c \
+  SmartEVSE-3/src/modbus_log.c \
+  SmartEVSE-3/src/ocpp_logic.c \
+  SmartEVSE-3/src/ocpp_telemetry.c \
+  SmartEVSE-3/src/solar_debug_json.c \
+  SmartEVSE-3/src/diag_telemetry.c \
+  SmartEVSE-3/src/diag_modbus.c
 
 # Build ESP32 firmware
 pio run -e release -d SmartEVSE-3/
@@ -185,7 +201,23 @@ cppcheck --enable=warning,style,performance \
   --inline-suppr \
   -I SmartEVSE-3/src \
   -I SmartEVSE-3/test/native/include \
-  SmartEVSE-3/src/evse_state_machine.c
+  SmartEVSE-3/src/evse_state_machine.c \
+  SmartEVSE-3/src/session_log.c \
+  SmartEVSE-3/src/mqtt_parser.c \
+  SmartEVSE-3/src/mqtt_publish.c \
+  SmartEVSE-3/src/http_api.c \
+  SmartEVSE-3/src/serial_parser.c \
+  SmartEVSE-3/src/led_color.c \
+  SmartEVSE-3/src/meter_telemetry.c \
+  SmartEVSE-3/src/modbus_decode.c \
+  SmartEVSE-3/src/meter_decode.c \
+  SmartEVSE-3/src/p1_parse.c \
+  SmartEVSE-3/src/modbus_log.c \
+  SmartEVSE-3/src/ocpp_logic.c \
+  SmartEVSE-3/src/ocpp_telemetry.c \
+  SmartEVSE-3/src/solar_debug_json.c \
+  SmartEVSE-3/src/diag_telemetry.c \
+  SmartEVSE-3/src/diag_modbus.c
 
 # 4. ESP32 firmware build
 pio run -e release -d SmartEVSE-3/

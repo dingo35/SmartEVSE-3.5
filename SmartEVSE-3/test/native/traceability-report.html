@@ -124,10 +124,139 @@ footer {
 <body>
 <h1>SmartEVSE-3 Traceability Report</h1>
 <div class="summary">
-<div class="stat"><div class="number">59</div><div class="label">Features</div></div>
-<div class="stat"><div class="number">867</div><div class="label">Test Scenarios</div></div>
-<div class="stat"><div class="number">867</div><div class="label">With Requirements</div></div>
+<div class="stat"><div class="number">63</div><div class="label">Features</div></div>
+<div class="stat"><div class="number">945</div><div class="label">Test Scenarios</div></div>
+<div class="stat"><div class="number">945</div><div class="label">With Requirements</div></div>
 <div class="stat"><div class="number">100%</div><div class="label">Requirement Coverage</div></div>
+</div>
+<div class="feature-section">
+<div class="feature-title">API Mains Staleness Detection (12 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-MTR-020</span></td>
+<td>Staleness timer counts down each second and sets stale flag on expiry</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with MainsMeterType=EM_API_METER and api_mains_timeout=3</li><li class="step-when"><span class="step-keyword">When</span> 3 seconds elapse with no data update</li><li class="step-then"><span class="step-keyword">Then</span> api_mains_stale is set to true</li></ul></td>
+<td><code>test_staleness_timer_countdown</code></td>
+<td><span class="file-ref">test_api_staleness.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-021</span></td>
+<td>When API data goes stale, all phases fall back to MaxMains</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with API metering, MaxMains=25, current readings are 10A/phase</li><li class="step-when"><span class="step-keyword">When</span> Staleness timer expires</li><li class="step-then"><span class="step-keyword">Then</span> MainsMeterIrms for all 3 phases is set to MaxMains * 10 (250 dA)</li></ul></td>
+<td><code>test_staleness_fallback_to_maxmains</code></td>
+<td><span class="file-ref">test_api_staleness.c:58</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-022</span></td>
+<td>Stale flag is cleared when staleness timer is reset (data received)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in API mode with stale data (api_mains_stale=true, timer=0)</li><li class="step-when"><span class="step-keyword">When</span> External code resets api_mains_staleness_timer to a positive value</li><li class="step-then"><span class="step-keyword">Then</span> api_mains_stale is cleared on the next tick</li></ul></td>
+<td><code>test_staleness_recovery_on_timer_reset</code></td>
+<td><span class="file-ref">test_api_staleness.c:92</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-023</span></td>
+<td>Staleness check is skipped for non-API metering modes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with MainsMeterType=1 (Sensorbox) and api_mains_timeout=120</li><li class="step-when"><span class="step-keyword">When</span> Staleness timer is 0</li><li class="step-then"><span class="step-keyword">Then</span> api_mains_stale remains false</li></ul></td>
+<td><code>test_staleness_skipped_for_non_api</code></td>
+<td><span class="file-ref">test_api_staleness.c:118</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-024</span></td>
+<td>Staleness detection is disabled when api_mains_timeout is 0</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with API metering and api_mains_timeout=0</li><li class="step-when"><span class="step-keyword">When</span> Staleness timer reaches 0</li><li class="step-then"><span class="step-keyword">Then</span> api_mains_stale remains false, normal CT_NOCOMM applies</li></ul></td>
+<td><code>test_staleness_disabled_when_timeout_zero</code></td>
+<td><span class="file-ref">test_api_staleness.c:142</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-025</span></td>
+<td>CT_NOCOMM is suppressed when API staleness detection is active</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with API metering, staleness enabled, MainsMeterTimeout=0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick occurs</li><li class="step-then"><span class="step-keyword">Then</span> CT_NOCOMM is NOT set (staleness mechanism handles the timeout instead)</li></ul></td>
+<td><code>test_ct_nocomm_suppressed_for_api_with_staleness</code></td>
+<td><span class="file-ref">test_api_staleness.c:166</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-026</span></td>
+<td>CT_NOCOMM fires normally when staleness detection is disabled for API mode</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with API metering, api_mains_timeout=0, MainsMeterTimeout=0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick occurs</li><li class="step-then"><span class="step-keyword">Then</span> CT_NOCOMM IS set (normal timeout behavior)</li></ul></td>
+<td><code>test_ct_nocomm_fires_when_staleness_disabled</code></td>
+<td><span class="file-ref">test_api_staleness.c:190</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-027</span></td>
+<td>Stale flag is set only once, not repeatedly overwriting Irms each tick</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in API mode, already stale</li><li class="step-when"><span class="step-keyword">When</span> Another tick occurs while stale</li><li class="step-then"><span class="step-keyword">Then</span> Irms values are not overwritten again (flag already set)</li></ul></td>
+<td><code>test_staleness_only_fires_once</code></td>
+<td><span class="file-ref">test_api_staleness.c:214</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-030</span></td>
+<td>Parse MainsMeterTimeout MQTT command with valid value</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MainsMeterTimeout with payload &quot;120&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_MAINS_METER_TIMEOUT with value 120</li></ul></td>
+<td><code>test_mqtt_parse_staleness_timeout_valid</code></td>
+<td><span class="file-ref">test_api_staleness.c:247</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-031</span></td>
+<td>Parse MainsMeterTimeout MQTT command with 0 (disabled)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MainsMeterTimeout with payload &quot;0&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_MAINS_METER_TIMEOUT with value 0</li></ul></td>
+<td><code>test_mqtt_parse_staleness_timeout_disabled</code></td>
+<td><span class="file-ref">test_api_staleness.c:262</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-032</span></td>
+<td>Reject MainsMeterTimeout values outside valid range</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MainsMeterTimeout with payload &quot;5&quot; (below minimum 10)</li><li class="step-then"><span class="step-keyword">Then</span> Parsing returns false</li></ul></td>
+<td><code>test_mqtt_parse_staleness_timeout_too_low</code></td>
+<td><span class="file-ref">test_api_staleness.c:277</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-033</span></td>
+<td>Reject MainsMeterTimeout values above maximum</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/MainsMeterTimeout with payload &quot;4000&quot; (above maximum 3600)</li><li class="step-then"><span class="step-keyword">Then</span> Parsing returns false</li></ul></td>
+<td><code>test_mqtt_parse_staleness_timeout_too_high</code></td>
+<td><span class="file-ref">test_api_staleness.c:290</span></td>
+</tr>
+</tbody></table>
+</div>
+<div class="feature-section">
+<div class="feature-title">HomeWizard P1 Manual IP Fallback (3 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-MQTT-034</span></td>
+<td>Parse HomeWizardIP MQTT command with valid IP</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/HomeWizardIP with payload &quot;192.168.1.50&quot;</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_HOMEWIZARD_IP with the IP string</li></ul></td>
+<td><code>test_mqtt_parse_homewizard_ip_valid</code></td>
+<td><span class="file-ref">test_api_staleness.c:305</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-035</span></td>
+<td>Parse HomeWizardIP with empty string clears manual IP (re-enable mDNS)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/HomeWizardIP with empty payload</li><li class="step-then"><span class="step-keyword">Then</span> Command type is MQTT_CMD_HOMEWIZARD_IP with empty string</li></ul></td>
+<td><code>test_mqtt_parse_homewizard_ip_empty</code></td>
+<td><span class="file-ref">test_api_staleness.c:320</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-036</span></td>
+<td>Reject HomeWizardIP that exceeds buffer size</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/HomeWizardIP with a 16+ character payload</li><li class="step-then"><span class="step-keyword">Then</span> Parsing returns false</li></ul></td>
+<td><code>test_mqtt_parse_homewizard_ip_too_long</code></td>
+<td><span class="file-ref">test_api_staleness.c:335</span></td>
+</tr>
+</tbody></table>
 </div>
 <div class="feature-section">
 <div class="feature-title">Authorization &amp; Access Control (22 scenarios)</div>
@@ -360,6 +489,375 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in STATE_A, AccessStatus=ON, AccessTimer=60, pilot 12V</li><li class="step-when"><span class="step-keyword">When</span> 60 rounds of (100x tick_10ms + 1x tick_1s) simulate real-world timing</li><li class="step-then"><span class="step-keyword">Then</span> AccessTimer reaches 0 and AccessStatus transitions to OFF</li></ul></td>
 <td><code>test_access_timer_real_world_timing</code></td>
 <td><span class="file-ref">test_bridge_transaction.c:277</span></td>
+</tr>
+</tbody></table>
+</div>
+<div class="feature-section">
+<div class="feature-title">Diagnostic Telemetry (51 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Modbus event ring initializes empty and disabled</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A diag_mb_ring_t</li><li class="step-when"><span class="step-keyword">When</span> diag_mb_init is called</li><li class="step-then"><span class="step-keyword">Then</span> count is 0, head is 0, enabled is false</li></ul></td>
+<td><code>test_mb_init</code></td>
+<td><span class="file-ref">test_diag_modbus.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Disabled ring rejects records</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized but disabled Modbus ring</li><li class="step-when"><span class="step-keyword">When</span> diag_mb_record is called</li><li class="step-then"><span class="step-keyword">Then</span> count stays 0</li></ul></td>
+<td><code>test_mb_disabled_rejects</code></td>
+<td><span class="file-ref">test_diag_modbus.c:27</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Record and read a single event</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An enabled Modbus ring</li><li class="step-when"><span class="step-keyword">When</span> One SENT event is recorded</li><li class="step-then"><span class="step-keyword">Then</span> diag_mb_read returns 1 event with correct fields</li></ul></td>
+<td><code>test_mb_record_and_read</code></td>
+<td><span class="file-ref">test_diag_modbus.c:42</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Ring wraps around after 32 events</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An enabled Modbus ring</li><li class="step-when"><span class="step-keyword">When</span> 35 events are recorded</li><li class="step-then"><span class="step-keyword">Then</span> count is 32 and oldest 3 events are overwritten</li></ul></td>
+<td><code>test_mb_wrap_around</code></td>
+<td><span class="file-ref">test_diag_modbus.c:68</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Reset clears all events</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 5 events</li><li class="step-when"><span class="step-keyword">When</span> diag_mb_reset is called</li><li class="step-then"><span class="step-keyword">Then</span> count is 0 and read returns 0</li></ul></td>
+<td><code>test_mb_reset</code></td>
+<td><span class="file-ref">test_diag_modbus.c:95</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Error events record error code</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An enabled Modbus ring</li><li class="step-when"><span class="step-keyword">When</span> An ERROR event with error code 0xE2 is recorded</li><li class="step-then"><span class="step-keyword">Then</span> The event has event_type ERROR and error_code 0xE2</li></ul></td>
+<td><code>test_mb_error_event</code></td>
+<td><span class="file-ref">test_diag_modbus.c:118</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>Event struct is exactly 8 bytes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The diag_mb_event_t struct</li><li class="step-when"><span class="step-keyword">When</span> sizeof is checked</li><li class="step-then"><span class="step-keyword">Then</span> The size is 8 bytes</li></ul></td>
+<td><code>test_mb_event_size</code></td>
+<td><span class="file-ref">test_diag_modbus.c:139</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-049</span></td>
+<td>NULL ring pointer is safe for all operations</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A NULL ring pointer</li><li class="step-when"><span class="step-keyword">When</span> init, record, read, reset, enable are called</li><li class="step-then"><span class="step-keyword">Then</span> No crash occurs</li></ul></td>
+<td><code>test_mb_null_safety</code></td>
+<td><span class="file-ref">test_diag_modbus.c:152</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-050</span></td>
+<td>Create synthetic capture with known parameters</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A request for 10 snapshots starting at uptime 1000</li><li class="step-when"><span class="step-keyword">When</span> diag_create_synthetic is called with GENERAL profile</li><li class="step-then"><span class="step-keyword">Then</span> 10 snapshots are created with timestamps 1000..1009</li></ul></td>
+<td><code>test_synthetic_capture</code></td>
+<td><span class="file-ref">test_diag_replay.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-050</span></td>
+<td>Load capture from serialized binary buffer</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring buffer with 3 snapshots serialized to binary</li><li class="step-when"><span class="step-keyword">When</span> diag_load_buffer is called</li><li class="step-then"><span class="step-keyword">Then</span> All 3 snapshots are loaded with correct timestamps and CRC is valid</li></ul></td>
+<td><code>test_load_from_serialized_buffer</code></td>
+<td><span class="file-ref">test_diag_replay.c:40</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-050</span></td>
+<td>Load from buffer detects corrupt magic</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A binary buffer with invalid magic bytes</li><li class="step-when"><span class="step-keyword">When</span> diag_load_buffer is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_load_corrupt_magic</code></td>
+<td><span class="file-ref">test_diag_replay.c:84</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-050</span></td>
+<td>Load from NULL buffer is safe</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> NULL data pointer</li><li class="step-when"><span class="step-keyword">When</span> diag_load_buffer is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false without crash</li></ul></td>
+<td><code>test_load_null_safe</code></td>
+<td><span class="file-ref">test_diag_replay.c:101</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-050</span></td>
+<td>Synthetic capture with zero count fails</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A request for 0 snapshots</li><li class="step-when"><span class="step-keyword">When</span> diag_create_synthetic is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_synthetic_zero_count</code></td>
+<td><span class="file-ref">test_diag_replay.c:115</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-051</span></td>
+<td>Replay snapshots into evse_ctx_t and verify field mapping</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A synthetic capture with 5 snapshots containing known current values</li><li class="step-when"><span class="step-keyword">When</span> Each snapshot&#x27;s fields are mapped to evse_ctx_t</li><li class="step-then"><span class="step-keyword">Then</span> The ctx fields match the snapshot values</li></ul></td>
+<td><code>test_replay_field_mapping</code></td>
+<td><span class="file-ref">test_diag_replay.c:130</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-051</span></td>
+<td>Replay sequence tracks state transitions across snapshots</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A capture with STATE_A→STATE_B→STATE_C→STATE_C→STATE_C transition</li><li class="step-when"><span class="step-keyword">When</span> Snapshots are replayed in sequence</li><li class="step-then"><span class="step-keyword">Then</span> Each snapshot&#x27;s state matches the expected transition</li></ul></td>
+<td><code>test_replay_state_transitions</code></td>
+<td><span class="file-ref">test_diag_replay.c:180</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-051</span></td>
+<td>Advisory replay detects solar current oscillation pattern</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A capture with charge_current oscillating between 0 and 80</li><li class="step-when"><span class="step-keyword">When</span> Snapshots are analyzed for oscillation</li><li class="step-then"><span class="step-keyword">Then</span> The oscillation is detected (&gt;2 zero-crossings in the window)</li></ul></td>
+<td><code>test_replay_solar_oscillation_detection</code></td>
+<td><span class="file-ref">test_diag_replay.c:207</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-051</span></td>
+<td>Round-trip: serialize ring → load → compare snapshots</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring buffer with 4 snapshots serialized to binary</li><li class="step-when"><span class="step-keyword">When</span> The binary is loaded back via diag_load_buffer</li><li class="step-then"><span class="step-keyword">Then</span> All snapshot fields match the originals exactly</li></ul></td>
+<td><code>test_roundtrip_serialize_load</code></td>
+<td><span class="file-ref">test_diag_replay.c:239</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-040</span></td>
+<td>Ring buffer initializes with zero entries</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A diag_ring_t and a buffer of 8 slots</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_init is called</li><li class="step-then"><span class="step-keyword">Then</span> count is 0, head is 0, profile is OFF, frozen is false</li></ul></td>
+<td><code>test_ring_init</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-040</span></td>
+<td>Ring buffer init with NULL pointer is safe</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A NULL ring pointer</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_init is called with NULL</li><li class="step-then"><span class="step-keyword">Then</span> No crash occurs</li></ul></td>
+<td><code>test_ring_init_null</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:58</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-041</span></td>
+<td>Push a single snapshot and read it back</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with GENERAL profile and capacity 8</li><li class="step-when"><span class="step-keyword">When</span> One snapshot with timestamp=42 is pushed</li><li class="step-then"><span class="step-keyword">Then</span> diag_ring_read returns 1 snapshot with timestamp=42</li></ul></td>
+<td><code>test_push_and_read_single</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:75</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-041</span></td>
+<td>Push fills buffer to capacity</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with capacity 4 and GENERAL profile</li><li class="step-when"><span class="step-keyword">When</span> 4 snapshots are pushed (timestamps 10,20,30,40)</li><li class="step-then"><span class="step-keyword">Then</span> count is 4 and read returns all 4 in chronological order</li></ul></td>
+<td><code>test_push_fills_to_capacity</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:98</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-042</span></td>
+<td>Ring buffer wraps around, overwriting oldest entries</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with capacity 4 and GENERAL profile</li><li class="step-when"><span class="step-keyword">When</span> 6 snapshots are pushed (timestamps 1..6)</li><li class="step-then"><span class="step-keyword">Then</span> count stays at 4 and read returns timestamps 3,4,5,6 (oldest overwritten)</li></ul></td>
+<td><code>test_wrap_around</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:130</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-042</span></td>
+<td>Read with smaller output buffer than ring count</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 4 entries</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_read is called with max_count=2</li><li class="step-then"><span class="step-keyword">Then</span> Only the 2 oldest snapshots are returned</li></ul></td>
+<td><code>test_read_partial</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:162</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-043</span></td>
+<td>Reset clears all entries but preserves capacity</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 3 entries and capacity 8</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_reset is called</li><li class="step-then"><span class="step-keyword">Then</span> count is 0, head is 0, capacity is still 8, profile is OFF</li></ul></td>
+<td><code>test_reset</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:192</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-043</span></td>
+<td>Reset with NULL is safe</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A NULL ring pointer</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_reset is called</li><li class="step-then"><span class="step-keyword">Then</span> No crash occurs</li></ul></td>
+<td><code>test_reset_null</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:223</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-044</span></td>
+<td>Frozen ring rejects new pushes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 2 entries and GENERAL profile, then frozen</li><li class="step-when"><span class="step-keyword">When</span> A new snapshot is pushed</li><li class="step-then"><span class="step-keyword">Then</span> count remains 2 (push rejected)</li></ul></td>
+<td><code>test_frozen_rejects_push</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:239</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-044</span></td>
+<td>Unfreezing allows pushes again</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A frozen ring with 2 entries</li><li class="step-when"><span class="step-keyword">When</span> The ring is unfrozen and a snapshot is pushed</li><li class="step-then"><span class="step-keyword">Then</span> count increases to 3</li></ul></td>
+<td><code>test_unfreeze_allows_push</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:268</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-044</span></td>
+<td>Frozen ring still allows reads</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A frozen ring with 2 entries</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_read is called</li><li class="step-then"><span class="step-keyword">Then</span> Both entries are returned correctly</li></ul></td>
+<td><code>test_frozen_allows_read</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:297</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-045</span></td>
+<td>Setting GENERAL profile sets divider to 1</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring</li><li class="step-when"><span class="step-keyword">When</span> diag_set_profile is called with DIAG_PROFILE_GENERAL</li><li class="step-then"><span class="step-keyword">Then</span> profile is GENERAL and sample_divider is 1</li></ul></td>
+<td><code>test_profile_general</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:324</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-045</span></td>
+<td>Setting FAST profile sets divider to 1 (sampled from 100ms tick)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring</li><li class="step-when"><span class="step-keyword">When</span> diag_set_profile is called with DIAG_PROFILE_FAST</li><li class="step-then"><span class="step-keyword">Then</span> profile is FAST and sample_divider is 1</li></ul></td>
+<td><code>test_profile_fast</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:343</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-045</span></td>
+<td>Setting OFF profile prevents pushes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with OFF profile</li><li class="step-when"><span class="step-keyword">When</span> A snapshot is pushed</li><li class="step-then"><span class="step-keyword">Then</span> count remains 0 (push rejected)</li></ul></td>
+<td><code>test_profile_off_rejects_push</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:362</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-045</span></td>
+<td>Setting profile resets tick counter</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with tick_counter at 5</li><li class="step-when"><span class="step-keyword">When</span> diag_set_profile is called</li><li class="step-then"><span class="step-keyword">Then</span> tick_counter is reset to 0</li></ul></td>
+<td><code>test_profile_resets_tick_counter</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:382</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-046</span></td>
+<td>Tick with divider=1 returns true every call</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with GENERAL profile (divider=1)</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_tick is called 3 times</li><li class="step-then"><span class="step-keyword">Then</span> All 3 calls return true</li></ul></td>
+<td><code>test_tick_divider_1</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:403</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-046</span></td>
+<td>Tick with divider=10 returns true every 10th call</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with sample_divider manually set to 10</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_tick is called 20 times</li><li class="step-then"><span class="step-keyword">Then</span> Returns true on calls 10 and 20 only</li></ul></td>
+<td><code>test_tick_divider_10</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:423</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-046</span></td>
+<td>Tick with OFF profile always returns false</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with OFF profile</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_tick is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_tick_off_profile</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:449</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-040</span></td>
+<td>diag_snapshot_t is exactly 64 bytes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The diag_snapshot_t struct definition</li><li class="step-when"><span class="step-keyword">When</span> sizeof is checked</li><li class="step-then"><span class="step-keyword">Then</span> The size is exactly 64 bytes</li></ul></td>
+<td><code>test_snapshot_size</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:469</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>Serialize empty ring produces valid header with zero snapshots</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with GENERAL profile and 0 entries</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_serialize is called</li><li class="step-then"><span class="step-keyword">Then</span> Output contains valid header with count=0 and CRC32</li></ul></td>
+<td><code>test_serialize_empty</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:484</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>Serialize ring with entries produces correct binary</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 2 snapshots (timestamps 100, 200)</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_serialize is called</li><li class="step-then"><span class="step-keyword">Then</span> Output contains header + 2 snapshots + CRC32</li></ul></td>
+<td><code>test_serialize_with_data</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:518</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>Serialize returns 0 when buffer is too small</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 2 snapshots</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_serialize is called with a 10-byte buffer</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0 (insufficient space)</li></ul></td>
+<td><code>test_serialize_buffer_too_small</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:551</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>Serialized data has valid CRC32</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with 1 snapshot serialized to binary</li><li class="step-when"><span class="step-keyword">When</span> CRC32 is computed over header+snapshots and compared to stored CRC</li><li class="step-then"><span class="step-keyword">Then</span> The CRC values match</li></ul></td>
+<td><code>test_serialize_crc_valid</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:574</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>CRC32 of empty data returns initial value</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An empty byte array</li><li class="step-when"><span class="step-keyword">When</span> diag_crc32 is called with length 0</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0 (CRC of empty data)</li></ul></td>
+<td><code>test_crc32_empty</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:607</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>CRC32 of known data matches expected value</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The string &quot;123456789&quot;</li><li class="step-when"><span class="step-keyword">When</span> diag_crc32 is computed</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0xCBF43926 (standard CRC32 test vector)</li></ul></td>
+<td><code>test_crc32_known_value</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:621</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-041</span></td>
+<td>Push with NULL snapshot is safe</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with GENERAL profile</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_push is called with NULL snapshot pointer</li><li class="step-then"><span class="step-keyword">Then</span> No crash, count stays 0</li></ul></td>
+<td><code>test_push_null_snap</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:639</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-041</span></td>
+<td>Read from empty ring returns 0</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An initialized ring with 0 entries</li><li class="step-when"><span class="step-keyword">When</span> diag_ring_read is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0</li></ul></td>
+<td><code>test_read_empty</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:658</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-042</span></td>
+<td>Wrap-around preserves all snapshot fields</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A ring with capacity 2 and GENERAL profile</li><li class="step-when"><span class="step-keyword">When</span> 3 snapshots are pushed with distinct state and current fields</li><li class="step-then"><span class="step-keyword">Then</span> The surviving 2 snapshots have all fields intact</li></ul></td>
+<td><code>test_wrap_preserves_fields</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:677</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-047</span></td>
+<td>File header struct is 34 bytes</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The diag_file_header_t struct definition</li><li class="step-when"><span class="step-keyword">When</span> sizeof is checked</li><li class="step-then"><span class="step-keyword">Then</span> The size is exactly 34 bytes</li></ul></td>
+<td><code>test_file_header_size</code></td>
+<td><span class="file-ref">test_diag_telemetry.c:723</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-048</span></td>
+<td>DiagProfile set to general via MQTT</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/DiagProfile with payload &quot;general&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns true with diag_profile = 1</li></ul></td>
+<td><code>test_diag_profile_general</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:948</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-048</span></td>
+<td>DiagProfile set to solar via MQTT</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/DiagProfile with payload &quot;solar&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns true with diag_profile = 2</li></ul></td>
+<td><code>test_diag_profile_solar</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:962</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-048</span></td>
+<td>DiagProfile set to off via MQTT</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/DiagProfile with payload &quot;off&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns true with diag_profile = 0</li></ul></td>
+<td><code>test_diag_profile_off</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:976</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-048</span></td>
+<td>DiagProfile set via numeric value</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/DiagProfile with payload &quot;5&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns true with diag_profile = 5 (FAST)</li></ul></td>
+<td><code>test_diag_profile_numeric</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:990</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-E2E-048</span></td>
+<td>DiagProfile rejects invalid payload</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid MQTT prefix</li><li class="step-when"><span class="step-keyword">When</span> Topic is prefix/Set/DiagProfile with payload &quot;invalid&quot;</li><li class="step-then"><span class="step-keyword">Then</span> The parser returns false</li></ul></td>
+<td><code>test_diag_profile_invalid</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1004</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -2717,6 +3215,67 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
+<div class="feature-title">Metering Diagnostics (7 scenarios)</div>
+<div class="coverage-bar">
+<div class="coverage-fill" style="width:100.0%"></div>
+</div>
+<table>
+<thead><tr>
+<th>Requirement</th><th>Scenario</th><th>Steps</th><th>Test Function</th><th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><span class="req-tag">REQ-MTR-030</span></td>
+<td>All diagnostic counters are zero after initialization</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A freshly initialized EVSE context</li><li class="step-when"><span class="step-keyword">When</span> evse_init completes</li><li class="step-then"><span class="step-keyword">Then</span> meter_timeout_count, meter_recovery_count, and api_stale_count are all 0</li></ul></td>
+<td><code>test_counters_zero_after_init</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:1</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-031</span></td>
+<td>meter_timeout_count increments when CT_NOCOMM is set</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in Smart mode with MainsMeterType=1 and MainsMeterTimeout=0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick triggers CT_NOCOMM</li><li class="step-then"><span class="step-keyword">Then</span> meter_timeout_count increments by 1</li></ul></td>
+<td><code>test_timeout_count_increments_on_ct_nocomm</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:37</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-032</span></td>
+<td>meter_timeout_count increments for node (LoadBl &gt; 1)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE as node with LoadBl=2 and MainsMeterTimeout=0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick triggers CT_NOCOMM</li><li class="step-then"><span class="step-keyword">Then</span> meter_timeout_count increments by 1</li></ul></td>
+<td><code>test_timeout_count_increments_on_node_ct_nocomm</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:59</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-033</span></td>
+<td>meter_recovery_count increments when CT_NOCOMM clears</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE with CT_NOCOMM set and MainsMeterTimeout restored to &gt;0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick clears CT_NOCOMM</li><li class="step-then"><span class="step-keyword">Then</span> meter_recovery_count increments by 1</li></ul></td>
+<td><code>test_recovery_count_increments</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:80</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-034</span></td>
+<td>api_stale_count increments when API data goes stale</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in API mode with staleness timer about to expire</li><li class="step-when"><span class="step-keyword">When</span> Timer reaches 0</li><li class="step-then"><span class="step-keyword">Then</span> api_stale_count increments by 1</li></ul></td>
+<td><code>test_api_stale_count_increments</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:109</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-035</span></td>
+<td>Counters accumulate across multiple events</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE that has already had one timeout and recovery</li><li class="step-when"><span class="step-keyword">When</span> Another timeout and recovery cycle occurs</li><li class="step-then"><span class="step-keyword">Then</span> Counters show 2 timeouts and 2 recoveries</li></ul></td>
+<td><code>test_counters_are_cumulative</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:135</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-036</span></td>
+<td>meter_timeout_count does NOT increment when CT_NOCOMM is suppressed for API mode</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> EVSE in API mode with staleness enabled and MainsMeterTimeout=0</li><li class="step-when"><span class="step-keyword">When</span> A 1-second tick occurs (CT_NOCOMM suppressed)</li><li class="step-then"><span class="step-keyword">Then</span> meter_timeout_count remains 0</li></ul></td>
+<td><code>test_timeout_count_not_incremented_when_suppressed</code></td>
+<td><span class="file-ref">test_metering_diagnostics.c:172</span></td>
+</tr>
+</tbody></table>
+</div>
+<div class="feature-section">
 <div class="feature-title">Modbus Frame Decoding (15 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
@@ -3605,14 +4164,14 @@ footer {
 <td>Unrecognized topic returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_unrecognized_topic</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:948</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:1018</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-MQTT-014</span></td>
 <td>Wrong prefix returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_wrong_prefix</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:957</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:1027</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -5897,7 +6456,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">Charge Session Logging (9 scenarios)</div>
+<div class="feature-title">Charge Session Logging (14 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -5968,6 +6527,41 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A session where start and end energy are the same</li><li class="step-when"><span class="step-keyword">When</span> The session ends</li><li class="step-then"><span class="step-keyword">Then</span> energy_charged_wh is 0</li></ul></td>
 <td><code>test_session_zero_energy</code></td>
 <td><span class="file-ref">test_session_log.c:323</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-ERE-020</span></td>
+<td>session_start with timestamp 0 is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The session logger is initialized</li><li class="step-when"><span class="step-keyword">When</span> session_start is called with timestamp 0 (NTP not synced)</li><li class="step-then"><span class="step-keyword">Then</span> No session is started and session_is_active returns 0</li></ul></td>
+<td><code>test_session_start_rejects_zero_timestamp</code></td>
+<td><span class="file-ref">test_session_log.c:343</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-ERE-021</span></td>
+<td>session_start with pre-2024 timestamp is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The session logger is initialized</li><li class="step-when"><span class="step-keyword">When</span> session_start is called with timestamp 1000 (pre-2024)</li><li class="step-then"><span class="step-keyword">Then</span> No session is started and session_is_active returns 0</li></ul></td>
+<td><code>test_session_start_rejects_pre2024_timestamp</code></td>
+<td><span class="file-ref">test_session_log.c:357</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-ERE-022</span></td>
+<td>session_start with valid 2024+ timestamp succeeds</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The session logger is initialized</li><li class="step-when"><span class="step-keyword">When</span> session_start is called with timestamp 1710000000 (March 2024)</li><li class="step-then"><span class="step-keyword">Then</span> A session is started and session_is_active returns 1</li></ul></td>
+<td><code>test_session_start_accepts_valid_timestamp</code></td>
+<td><span class="file-ref">test_session_log.c:371</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-ERE-025</span></td>
+<td>Session shorter than 60 seconds is discarded</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The session logger is initialized</li><li class="step-when"><span class="step-keyword">When</span> A session is started and ended after only 30 seconds</li><li class="step-then"><span class="step-keyword">Then</span> The session is discarded, session_is_active returns 0, and session_get_last returns NULL</li></ul></td>
+<td><code>test_session_short_duration_discarded</code></td>
+<td><span class="file-ref">test_session_log.c:387</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-ERE-026</span></td>
+<td>Session with duration exactly 60 seconds is kept</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> The session logger is initialized</li><li class="step-when"><span class="step-keyword">When</span> A session is started and ended after exactly 60 seconds</li><li class="step-then"><span class="step-keyword">Then</span> The session is stored and session_get_last returns a valid record with correct energy</li></ul></td>
+<td><code>test_session_exact_min_duration_kept</code></td>
+<td><span class="file-ref">test_session_log.c:405</span></td>
 </tr>
 </tbody></table>
 </div>

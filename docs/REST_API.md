@@ -346,3 +346,44 @@ If C2 is set to "Always Off", you are signalling a single phase system; in that 
 # POST: /reboot
 
 &emsp;&emsp;Note: no parameters, reboots your device.
+
+# GET: /session/last
+
+curl -X GET http://ipaddress/session/last
+
+Returns the last completed charge session. Useful for verifying ERE (Emissie Reductie Eenheden) session data and debugging.
+
+**Responses:**
+- `200 OK` — last session available, returns JSON
+- `204 No Content` — no session has completed since last reboot
+
+Example response:
+```json
+{
+  "session_id": 1,
+  "start": "2026-03-19T14:30:00Z",
+  "end": "2026-03-19T18:45:00Z",
+  "kwh": 12.345,
+  "start_energy_wh": 142300,
+  "end_energy_wh": 154645,
+  "max_current_a": 16.0,
+  "phases": 3,
+  "mode": "solar",
+  "ocpp_tx_id": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| session_id | integer | Auto-incrementing counter (resets on reboot) |
+| start | string | Session start time (ISO 8601 UTC) |
+| end | string | Session end time (ISO 8601 UTC) |
+| kwh | number | Energy charged in kWh |
+| start_energy_wh | integer | EV meter reading at session start (Wh) |
+| end_energy_wh | integer | EV meter reading at session end (Wh) |
+| max_current_a | number | Peak charge current (amps) |
+| phases | integer | Number of phases at session end |
+| mode | string | Charging mode: "normal", "smart", or "solar" |
+| ocpp_tx_id | integer/null | OCPP transaction ID when OCPP active, null otherwise |
+
+See [ERE Session Logging](ere-session-logging.md) for details on session tracking and Home Assistant integration.

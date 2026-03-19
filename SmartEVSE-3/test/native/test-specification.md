@@ -1,70 +1,232 @@
 # SmartEVSE-3 Test Specification
 
-**59 features** | **867 scenarios** | **867 with requirement IDs**
+**63 features** | **945 scenarios** | **945 with requirement IDs**
 
 ---
 
 ## Table of Contents
 
-1. [Authorization & Access Control](#authorization-&-access-control)
-2. [Bridge Transaction Integrity](#bridge-transaction-integrity)
-3. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
-4. [End-to-End Charging](#end-to-end-charging)
-5. [Error Handling & Safety](#error-handling-&-safety)
-6. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
-7. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
-8. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
-9. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
-10. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
-11. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
-12. [Fidelity: Config field](#fidelity:-config-field)
-13. [HTTP API Color Parsing](#http-api-color-parsing)
-14. [HTTP API Input Validation](#http-api-input-validation)
-15. [HTTP API Validation](#http-api-validation)
-16. [HTTP API Settings Validation](#http-api-settings-validation)
-17. [EVCC IEC 61851 State Mapping](#evcc-iec-61851-state-mapping)
-18. [EVCC Charging Enabled](#evcc-charging-enabled)
-19. [EVCC Phase Switch Validation](#evcc-phase-switch-validation)
-20. [LB Convergence](#lb-convergence)
-21. [LED Status Indication](#led-status-indication)
-22. [LED Color Configuration](#led-color-configuration)
-23. [Load Balancing](#load-balancing)
-24. [Meter Decoding](#meter-decoding)
-25. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
-26. [Meter Telemetry](#meter-telemetry)
-27. [Modbus Frame Decoding](#modbus-frame-decoding)
-28. [Modbus Frame Logging](#modbus-frame-logging)
-29. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
-30. [MQTT Command Parsing](#mqtt-command-parsing)
-31. [MQTT Input Validation](#mqtt-input-validation)
-32. [MQTT Meter Parsing](#mqtt-meter-parsing)
-33. [MQTT Color Parsing](#mqtt-color-parsing)
-34. [Solar Debug Telemetry](#solar-debug-telemetry)
-35. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
-36. [Multi-Node Load Balancing](#multi-node-load-balancing)
-37. [OCPP Current Limiting](#ocpp-current-limiting)
-38. [OCPP Authorization](#ocpp-authorization)
-39. [OCPP Connector State](#ocpp-connector-state)
-40. [OCPP IEC 61851 Status Mapping](#ocpp-iec-61851-status-mapping)
-41. [OCPP Load Balancing Exclusivity](#ocpp-load-balancing-exclusivity)
-42. [OCPP RFID Formatting](#ocpp-rfid-formatting)
-43. [OCPP Settings Validation](#ocpp-settings-validation)
-44. [OCPP Telemetry](#ocpp-telemetry)
-45. [Operating Modes](#operating-modes)
-46. [P1 Meter Parsing](#p1-meter-parsing)
-47. [Phase Switching](#phase-switching)
-48. [Power Availability](#power-availability)
-49. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
-50. [Serial Message Parsing](#serial-message-parsing)
-51. [Serial Input Validation](#serial-input-validation)
-52. [Battery Current Calculation](#battery-current-calculation)
-53. [Current Sum Calculation](#current-sum-calculation)
-54. [Charge Session Logging](#charge-session-logging)
-55. [Charge Session JSON Export](#charge-session-json-export)
-56. [Solar Balancing](#solar-balancing)
-57. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
-58. [10ms Tick Processing](#10ms-tick-processing)
-59. [1-Second Tick Processing](#1-second-tick-processing)
+1. [API Mains Staleness Detection](#api-mains-staleness-detection)
+2. [HomeWizard P1 Manual IP Fallback](#homewizard-p1-manual-ip-fallback)
+3. [Authorization & Access Control](#authorization-&-access-control)
+4. [Bridge Transaction Integrity](#bridge-transaction-integrity)
+5. [Diagnostic Telemetry](#diagnostic-telemetry)
+6. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
+7. [End-to-End Charging](#end-to-end-charging)
+8. [Error Handling & Safety](#error-handling-&-safety)
+9. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
+10. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
+11. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
+12. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
+13. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
+14. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
+15. [Fidelity: Config field](#fidelity:-config-field)
+16. [HTTP API Color Parsing](#http-api-color-parsing)
+17. [HTTP API Input Validation](#http-api-input-validation)
+18. [HTTP API Validation](#http-api-validation)
+19. [HTTP API Settings Validation](#http-api-settings-validation)
+20. [EVCC IEC 61851 State Mapping](#evcc-iec-61851-state-mapping)
+21. [EVCC Charging Enabled](#evcc-charging-enabled)
+22. [EVCC Phase Switch Validation](#evcc-phase-switch-validation)
+23. [LB Convergence](#lb-convergence)
+24. [LED Status Indication](#led-status-indication)
+25. [LED Color Configuration](#led-color-configuration)
+26. [Load Balancing](#load-balancing)
+27. [Meter Decoding](#meter-decoding)
+28. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
+29. [Meter Telemetry](#meter-telemetry)
+30. [Metering Diagnostics](#metering-diagnostics)
+31. [Modbus Frame Decoding](#modbus-frame-decoding)
+32. [Modbus Frame Logging](#modbus-frame-logging)
+33. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
+34. [MQTT Command Parsing](#mqtt-command-parsing)
+35. [MQTT Input Validation](#mqtt-input-validation)
+36. [MQTT Meter Parsing](#mqtt-meter-parsing)
+37. [MQTT Color Parsing](#mqtt-color-parsing)
+38. [Solar Debug Telemetry](#solar-debug-telemetry)
+39. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
+40. [Multi-Node Load Balancing](#multi-node-load-balancing)
+41. [OCPP Current Limiting](#ocpp-current-limiting)
+42. [OCPP Authorization](#ocpp-authorization)
+43. [OCPP Connector State](#ocpp-connector-state)
+44. [OCPP IEC 61851 Status Mapping](#ocpp-iec-61851-status-mapping)
+45. [OCPP Load Balancing Exclusivity](#ocpp-load-balancing-exclusivity)
+46. [OCPP RFID Formatting](#ocpp-rfid-formatting)
+47. [OCPP Settings Validation](#ocpp-settings-validation)
+48. [OCPP Telemetry](#ocpp-telemetry)
+49. [Operating Modes](#operating-modes)
+50. [P1 Meter Parsing](#p1-meter-parsing)
+51. [Phase Switching](#phase-switching)
+52. [Power Availability](#power-availability)
+53. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
+54. [Serial Message Parsing](#serial-message-parsing)
+55. [Serial Input Validation](#serial-input-validation)
+56. [Battery Current Calculation](#battery-current-calculation)
+57. [Current Sum Calculation](#current-sum-calculation)
+58. [Charge Session Logging](#charge-session-logging)
+59. [Charge Session JSON Export](#charge-session-json-export)
+60. [Solar Balancing](#solar-balancing)
+61. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
+62. [10ms Tick Processing](#10ms-tick-processing)
+63. [1-Second Tick Processing](#1-second-tick-processing)
+
+## API Mains Staleness Detection
+
+### Staleness timer counts down each second and sets stale flag on expiry
+
+**Requirement:** `REQ-MTR-020`
+
+- **Given** EVSE in Smart mode with MainsMeterType=EM_API_METER and api_mains_timeout=3
+- **When** 3 seconds elapse with no data update
+- **Then** api_mains_stale is set to true
+
+> Test: `test_staleness_timer_countdown` in `test_api_staleness.c:1`
+
+### When API data goes stale, all phases fall back to MaxMains
+
+**Requirement:** `REQ-MTR-021`
+
+- **Given** EVSE in Smart mode with API metering, MaxMains=25, current readings are 10A/phase
+- **When** Staleness timer expires
+- **Then** MainsMeterIrms for all 3 phases is set to MaxMains * 10 (250 dA)
+
+> Test: `test_staleness_fallback_to_maxmains` in `test_api_staleness.c:58`
+
+### Stale flag is cleared when staleness timer is reset (data received)
+
+**Requirement:** `REQ-MTR-022`
+
+- **Given** EVSE in API mode with stale data (api_mains_stale=true, timer=0)
+- **When** External code resets api_mains_staleness_timer to a positive value
+- **Then** api_mains_stale is cleared on the next tick
+
+> Test: `test_staleness_recovery_on_timer_reset` in `test_api_staleness.c:92`
+
+### Staleness check is skipped for non-API metering modes
+
+**Requirement:** `REQ-MTR-023`
+
+- **Given** EVSE in Smart mode with MainsMeterType=1 (Sensorbox) and api_mains_timeout=120
+- **When** Staleness timer is 0
+- **Then** api_mains_stale remains false
+
+> Test: `test_staleness_skipped_for_non_api` in `test_api_staleness.c:118`
+
+### Staleness detection is disabled when api_mains_timeout is 0
+
+**Requirement:** `REQ-MTR-024`
+
+- **Given** EVSE in Smart mode with API metering and api_mains_timeout=0
+- **When** Staleness timer reaches 0
+- **Then** api_mains_stale remains false, normal CT_NOCOMM applies
+
+> Test: `test_staleness_disabled_when_timeout_zero` in `test_api_staleness.c:142`
+
+### CT_NOCOMM is suppressed when API staleness detection is active
+
+**Requirement:** `REQ-MTR-025`
+
+- **Given** EVSE in Smart mode with API metering, staleness enabled, MainsMeterTimeout=0
+- **When** A 1-second tick occurs
+- **Then** CT_NOCOMM is NOT set (staleness mechanism handles the timeout instead)
+
+> Test: `test_ct_nocomm_suppressed_for_api_with_staleness` in `test_api_staleness.c:166`
+
+### CT_NOCOMM fires normally when staleness detection is disabled for API mode
+
+**Requirement:** `REQ-MTR-026`
+
+- **Given** EVSE in Smart mode with API metering, api_mains_timeout=0, MainsMeterTimeout=0
+- **When** A 1-second tick occurs
+- **Then** CT_NOCOMM IS set (normal timeout behavior)
+
+> Test: `test_ct_nocomm_fires_when_staleness_disabled` in `test_api_staleness.c:190`
+
+### Stale flag is set only once, not repeatedly overwriting Irms each tick
+
+**Requirement:** `REQ-MTR-027`
+
+- **Given** EVSE in API mode, already stale
+- **When** Another tick occurs while stale
+- **Then** Irms values are not overwritten again (flag already set)
+
+> Test: `test_staleness_only_fires_once` in `test_api_staleness.c:214`
+
+### Parse MainsMeterTimeout MQTT command with valid value
+
+**Requirement:** `REQ-MQTT-030`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MainsMeterTimeout with payload "120"
+- **Then** Command type is MQTT_CMD_MAINS_METER_TIMEOUT with value 120
+
+> Test: `test_mqtt_parse_staleness_timeout_valid` in `test_api_staleness.c:247`
+
+### Parse MainsMeterTimeout MQTT command with 0 (disabled)
+
+**Requirement:** `REQ-MQTT-031`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MainsMeterTimeout with payload "0"
+- **Then** Command type is MQTT_CMD_MAINS_METER_TIMEOUT with value 0
+
+> Test: `test_mqtt_parse_staleness_timeout_disabled` in `test_api_staleness.c:262`
+
+### Reject MainsMeterTimeout values outside valid range
+
+**Requirement:** `REQ-MQTT-032`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MainsMeterTimeout with payload "5" (below minimum 10)
+- **Then** Parsing returns false
+
+> Test: `test_mqtt_parse_staleness_timeout_too_low` in `test_api_staleness.c:277`
+
+### Reject MainsMeterTimeout values above maximum
+
+**Requirement:** `REQ-MQTT-033`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MainsMeterTimeout with payload "4000" (above maximum 3600)
+- **Then** Parsing returns false
+
+> Test: `test_mqtt_parse_staleness_timeout_too_high` in `test_api_staleness.c:290`
+
+---
+
+## HomeWizard P1 Manual IP Fallback
+
+### Parse HomeWizardIP MQTT command with valid IP
+
+**Requirement:** `REQ-MQTT-034`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/HomeWizardIP with payload "192.168.1.50"
+- **Then** Command type is MQTT_CMD_HOMEWIZARD_IP with the IP string
+
+> Test: `test_mqtt_parse_homewizard_ip_valid` in `test_api_staleness.c:305`
+
+### Parse HomeWizardIP with empty string clears manual IP (re-enable mDNS)
+
+**Requirement:** `REQ-MQTT-035`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/HomeWizardIP with empty payload
+- **Then** Command type is MQTT_CMD_HOMEWIZARD_IP with empty string
+
+> Test: `test_mqtt_parse_homewizard_ip_empty` in `test_api_staleness.c:320`
+
+### Reject HomeWizardIP that exceeds buffer size
+
+**Requirement:** `REQ-MQTT-036`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/HomeWizardIP with a 16+ character payload
+- **Then** Parsing returns false
+
+> Test: `test_mqtt_parse_homewizard_ip_too_long` in `test_api_staleness.c:335`
+
+---
 
 ## Authorization & Access Control
 
@@ -374,6 +536,520 @@
 - **Then** AccessTimer reaches 0 and AccessStatus transitions to OFF
 
 > Test: `test_access_timer_real_world_timing` in `test_bridge_transaction.c:277`
+
+---
+
+## Diagnostic Telemetry
+
+### Modbus event ring initializes empty and disabled
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** A diag_mb_ring_t
+- **When** diag_mb_init is called
+- **Then** count is 0, head is 0, enabled is false
+
+> Test: `test_mb_init` in `test_diag_modbus.c:1`
+
+### Disabled ring rejects records
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** An initialized but disabled Modbus ring
+- **When** diag_mb_record is called
+- **Then** count stays 0
+
+> Test: `test_mb_disabled_rejects` in `test_diag_modbus.c:27`
+
+### Record and read a single event
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** An enabled Modbus ring
+- **When** One SENT event is recorded
+- **Then** diag_mb_read returns 1 event with correct fields
+
+> Test: `test_mb_record_and_read` in `test_diag_modbus.c:42`
+
+### Ring wraps around after 32 events
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** An enabled Modbus ring
+- **When** 35 events are recorded
+- **Then** count is 32 and oldest 3 events are overwritten
+
+> Test: `test_mb_wrap_around` in `test_diag_modbus.c:68`
+
+### Reset clears all events
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** A ring with 5 events
+- **When** diag_mb_reset is called
+- **Then** count is 0 and read returns 0
+
+> Test: `test_mb_reset` in `test_diag_modbus.c:95`
+
+### Error events record error code
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** An enabled Modbus ring
+- **When** An ERROR event with error code 0xE2 is recorded
+- **Then** The event has event_type ERROR and error_code 0xE2
+
+> Test: `test_mb_error_event` in `test_diag_modbus.c:118`
+
+### Event struct is exactly 8 bytes
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** The diag_mb_event_t struct
+- **When** sizeof is checked
+- **Then** The size is 8 bytes
+
+> Test: `test_mb_event_size` in `test_diag_modbus.c:139`
+
+### NULL ring pointer is safe for all operations
+
+**Requirement:** `REQ-E2E-049`
+
+- **Given** A NULL ring pointer
+- **When** init, record, read, reset, enable are called
+- **Then** No crash occurs
+
+> Test: `test_mb_null_safety` in `test_diag_modbus.c:152`
+
+### Create synthetic capture with known parameters
+
+**Requirement:** `REQ-E2E-050`
+
+- **Given** A request for 10 snapshots starting at uptime 1000
+- **When** diag_create_synthetic is called with GENERAL profile
+- **Then** 10 snapshots are created with timestamps 1000..1009
+
+> Test: `test_synthetic_capture` in `test_diag_replay.c:1`
+
+### Load capture from serialized binary buffer
+
+**Requirement:** `REQ-E2E-050`
+
+- **Given** A ring buffer with 3 snapshots serialized to binary
+- **When** diag_load_buffer is called
+- **Then** All 3 snapshots are loaded with correct timestamps and CRC is valid
+
+> Test: `test_load_from_serialized_buffer` in `test_diag_replay.c:40`
+
+### Load from buffer detects corrupt magic
+
+**Requirement:** `REQ-E2E-050`
+
+- **Given** A binary buffer with invalid magic bytes
+- **When** diag_load_buffer is called
+- **Then** Returns false
+
+> Test: `test_load_corrupt_magic` in `test_diag_replay.c:84`
+
+### Load from NULL buffer is safe
+
+**Requirement:** `REQ-E2E-050`
+
+- **Given** NULL data pointer
+- **When** diag_load_buffer is called
+- **Then** Returns false without crash
+
+> Test: `test_load_null_safe` in `test_diag_replay.c:101`
+
+### Synthetic capture with zero count fails
+
+**Requirement:** `REQ-E2E-050`
+
+- **Given** A request for 0 snapshots
+- **When** diag_create_synthetic is called
+- **Then** Returns false
+
+> Test: `test_synthetic_zero_count` in `test_diag_replay.c:115`
+
+### Replay snapshots into evse_ctx_t and verify field mapping
+
+**Requirement:** `REQ-E2E-051`
+
+- **Given** A synthetic capture with 5 snapshots containing known current values
+- **When** Each snapshot's fields are mapped to evse_ctx_t
+- **Then** The ctx fields match the snapshot values
+
+> Test: `test_replay_field_mapping` in `test_diag_replay.c:130`
+
+### Replay sequence tracks state transitions across snapshots
+
+**Requirement:** `REQ-E2E-051`
+
+- **Given** A capture with STATE_A→STATE_B→STATE_C→STATE_C→STATE_C transition
+- **When** Snapshots are replayed in sequence
+- **Then** Each snapshot's state matches the expected transition
+
+> Test: `test_replay_state_transitions` in `test_diag_replay.c:180`
+
+### Advisory replay detects solar current oscillation pattern
+
+**Requirement:** `REQ-E2E-051`
+
+- **Given** A capture with charge_current oscillating between 0 and 80
+- **When** Snapshots are analyzed for oscillation
+- **Then** The oscillation is detected (>2 zero-crossings in the window)
+
+> Test: `test_replay_solar_oscillation_detection` in `test_diag_replay.c:207`
+
+### Round-trip: serialize ring → load → compare snapshots
+
+**Requirement:** `REQ-E2E-051`
+
+- **Given** A ring buffer with 4 snapshots serialized to binary
+- **When** The binary is loaded back via diag_load_buffer
+- **Then** All snapshot fields match the originals exactly
+
+> Test: `test_roundtrip_serialize_load` in `test_diag_replay.c:239`
+
+### Ring buffer initializes with zero entries
+
+**Requirement:** `REQ-E2E-040`
+
+- **Given** A diag_ring_t and a buffer of 8 slots
+- **When** diag_ring_init is called
+- **Then** count is 0, head is 0, profile is OFF, frozen is false
+
+> Test: `test_ring_init` in `test_diag_telemetry.c:1`
+
+### Ring buffer init with NULL pointer is safe
+
+**Requirement:** `REQ-E2E-040`
+
+- **Given** A NULL ring pointer
+- **When** diag_ring_init is called with NULL
+- **Then** No crash occurs
+
+> Test: `test_ring_init_null` in `test_diag_telemetry.c:58`
+
+### Push a single snapshot and read it back
+
+**Requirement:** `REQ-E2E-041`
+
+- **Given** An initialized ring with GENERAL profile and capacity 8
+- **When** One snapshot with timestamp=42 is pushed
+- **Then** diag_ring_read returns 1 snapshot with timestamp=42
+
+> Test: `test_push_and_read_single` in `test_diag_telemetry.c:75`
+
+### Push fills buffer to capacity
+
+**Requirement:** `REQ-E2E-041`
+
+- **Given** An initialized ring with capacity 4 and GENERAL profile
+- **When** 4 snapshots are pushed (timestamps 10,20,30,40)
+- **Then** count is 4 and read returns all 4 in chronological order
+
+> Test: `test_push_fills_to_capacity` in `test_diag_telemetry.c:98`
+
+### Ring buffer wraps around, overwriting oldest entries
+
+**Requirement:** `REQ-E2E-042`
+
+- **Given** An initialized ring with capacity 4 and GENERAL profile
+- **When** 6 snapshots are pushed (timestamps 1..6)
+- **Then** count stays at 4 and read returns timestamps 3,4,5,6 (oldest overwritten)
+
+> Test: `test_wrap_around` in `test_diag_telemetry.c:130`
+
+### Read with smaller output buffer than ring count
+
+**Requirement:** `REQ-E2E-042`
+
+- **Given** A ring with 4 entries
+- **When** diag_ring_read is called with max_count=2
+- **Then** Only the 2 oldest snapshots are returned
+
+> Test: `test_read_partial` in `test_diag_telemetry.c:162`
+
+### Reset clears all entries but preserves capacity
+
+**Requirement:** `REQ-E2E-043`
+
+- **Given** A ring with 3 entries and capacity 8
+- **When** diag_ring_reset is called
+- **Then** count is 0, head is 0, capacity is still 8, profile is OFF
+
+> Test: `test_reset` in `test_diag_telemetry.c:192`
+
+### Reset with NULL is safe
+
+**Requirement:** `REQ-E2E-043`
+
+- **Given** A NULL ring pointer
+- **When** diag_ring_reset is called
+- **Then** No crash occurs
+
+> Test: `test_reset_null` in `test_diag_telemetry.c:223`
+
+### Frozen ring rejects new pushes
+
+**Requirement:** `REQ-E2E-044`
+
+- **Given** A ring with 2 entries and GENERAL profile, then frozen
+- **When** A new snapshot is pushed
+- **Then** count remains 2 (push rejected)
+
+> Test: `test_frozen_rejects_push` in `test_diag_telemetry.c:239`
+
+### Unfreezing allows pushes again
+
+**Requirement:** `REQ-E2E-044`
+
+- **Given** A frozen ring with 2 entries
+- **When** The ring is unfrozen and a snapshot is pushed
+- **Then** count increases to 3
+
+> Test: `test_unfreeze_allows_push` in `test_diag_telemetry.c:268`
+
+### Frozen ring still allows reads
+
+**Requirement:** `REQ-E2E-044`
+
+- **Given** A frozen ring with 2 entries
+- **When** diag_ring_read is called
+- **Then** Both entries are returned correctly
+
+> Test: `test_frozen_allows_read` in `test_diag_telemetry.c:297`
+
+### Setting GENERAL profile sets divider to 1
+
+**Requirement:** `REQ-E2E-045`
+
+- **Given** An initialized ring
+- **When** diag_set_profile is called with DIAG_PROFILE_GENERAL
+- **Then** profile is GENERAL and sample_divider is 1
+
+> Test: `test_profile_general` in `test_diag_telemetry.c:324`
+
+### Setting FAST profile sets divider to 1 (sampled from 100ms tick)
+
+**Requirement:** `REQ-E2E-045`
+
+- **Given** An initialized ring
+- **When** diag_set_profile is called with DIAG_PROFILE_FAST
+- **Then** profile is FAST and sample_divider is 1
+
+> Test: `test_profile_fast` in `test_diag_telemetry.c:343`
+
+### Setting OFF profile prevents pushes
+
+**Requirement:** `REQ-E2E-045`
+
+- **Given** An initialized ring with OFF profile
+- **When** A snapshot is pushed
+- **Then** count remains 0 (push rejected)
+
+> Test: `test_profile_off_rejects_push` in `test_diag_telemetry.c:362`
+
+### Setting profile resets tick counter
+
+**Requirement:** `REQ-E2E-045`
+
+- **Given** A ring with tick_counter at 5
+- **When** diag_set_profile is called
+- **Then** tick_counter is reset to 0
+
+> Test: `test_profile_resets_tick_counter` in `test_diag_telemetry.c:382`
+
+### Tick with divider=1 returns true every call
+
+**Requirement:** `REQ-E2E-046`
+
+- **Given** A ring with GENERAL profile (divider=1)
+- **When** diag_ring_tick is called 3 times
+- **Then** All 3 calls return true
+
+> Test: `test_tick_divider_1` in `test_diag_telemetry.c:403`
+
+### Tick with divider=10 returns true every 10th call
+
+**Requirement:** `REQ-E2E-046`
+
+- **Given** A ring with sample_divider manually set to 10
+- **When** diag_ring_tick is called 20 times
+- **Then** Returns true on calls 10 and 20 only
+
+> Test: `test_tick_divider_10` in `test_diag_telemetry.c:423`
+
+### Tick with OFF profile always returns false
+
+**Requirement:** `REQ-E2E-046`
+
+- **Given** A ring with OFF profile
+- **When** diag_ring_tick is called
+- **Then** Returns false
+
+> Test: `test_tick_off_profile` in `test_diag_telemetry.c:449`
+
+### diag_snapshot_t is exactly 64 bytes
+
+**Requirement:** `REQ-E2E-040`
+
+- **Given** The diag_snapshot_t struct definition
+- **When** sizeof is checked
+- **Then** The size is exactly 64 bytes
+
+> Test: `test_snapshot_size` in `test_diag_telemetry.c:469`
+
+### Serialize empty ring produces valid header with zero snapshots
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** An initialized ring with GENERAL profile and 0 entries
+- **When** diag_ring_serialize is called
+- **Then** Output contains valid header with count=0 and CRC32
+
+> Test: `test_serialize_empty` in `test_diag_telemetry.c:484`
+
+### Serialize ring with entries produces correct binary
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** A ring with 2 snapshots (timestamps 100, 200)
+- **When** diag_ring_serialize is called
+- **Then** Output contains header + 2 snapshots + CRC32
+
+> Test: `test_serialize_with_data` in `test_diag_telemetry.c:518`
+
+### Serialize returns 0 when buffer is too small
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** A ring with 2 snapshots
+- **When** diag_ring_serialize is called with a 10-byte buffer
+- **Then** Returns 0 (insufficient space)
+
+> Test: `test_serialize_buffer_too_small` in `test_diag_telemetry.c:551`
+
+### Serialized data has valid CRC32
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** A ring with 1 snapshot serialized to binary
+- **When** CRC32 is computed over header+snapshots and compared to stored CRC
+- **Then** The CRC values match
+
+> Test: `test_serialize_crc_valid` in `test_diag_telemetry.c:574`
+
+### CRC32 of empty data returns initial value
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** An empty byte array
+- **When** diag_crc32 is called with length 0
+- **Then** Returns 0 (CRC of empty data)
+
+> Test: `test_crc32_empty` in `test_diag_telemetry.c:607`
+
+### CRC32 of known data matches expected value
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** The string "123456789"
+- **When** diag_crc32 is computed
+- **Then** Returns 0xCBF43926 (standard CRC32 test vector)
+
+> Test: `test_crc32_known_value` in `test_diag_telemetry.c:621`
+
+### Push with NULL snapshot is safe
+
+**Requirement:** `REQ-E2E-041`
+
+- **Given** An initialized ring with GENERAL profile
+- **When** diag_ring_push is called with NULL snapshot pointer
+- **Then** No crash, count stays 0
+
+> Test: `test_push_null_snap` in `test_diag_telemetry.c:639`
+
+### Read from empty ring returns 0
+
+**Requirement:** `REQ-E2E-041`
+
+- **Given** An initialized ring with 0 entries
+- **When** diag_ring_read is called
+- **Then** Returns 0
+
+> Test: `test_read_empty` in `test_diag_telemetry.c:658`
+
+### Wrap-around preserves all snapshot fields
+
+**Requirement:** `REQ-E2E-042`
+
+- **Given** A ring with capacity 2 and GENERAL profile
+- **When** 3 snapshots are pushed with distinct state and current fields
+- **Then** The surviving 2 snapshots have all fields intact
+
+> Test: `test_wrap_preserves_fields` in `test_diag_telemetry.c:677`
+
+### File header struct is 34 bytes
+
+**Requirement:** `REQ-E2E-047`
+
+- **Given** The diag_file_header_t struct definition
+- **When** sizeof is checked
+- **Then** The size is exactly 34 bytes
+
+> Test: `test_file_header_size` in `test_diag_telemetry.c:723`
+
+### DiagProfile set to general via MQTT
+
+**Requirement:** `REQ-E2E-048`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/DiagProfile with payload "general"
+- **Then** The parser returns true with diag_profile = 1
+
+> Test: `test_diag_profile_general` in `test_mqtt_parser.c:948`
+
+### DiagProfile set to solar via MQTT
+
+**Requirement:** `REQ-E2E-048`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/DiagProfile with payload "solar"
+- **Then** The parser returns true with diag_profile = 2
+
+> Test: `test_diag_profile_solar` in `test_mqtt_parser.c:962`
+
+### DiagProfile set to off via MQTT
+
+**Requirement:** `REQ-E2E-048`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/DiagProfile with payload "off"
+- **Then** The parser returns true with diag_profile = 0
+
+> Test: `test_diag_profile_off` in `test_mqtt_parser.c:976`
+
+### DiagProfile set via numeric value
+
+**Requirement:** `REQ-E2E-048`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/DiagProfile with payload "5"
+- **Then** The parser returns true with diag_profile = 5 (FAST)
+
+> Test: `test_diag_profile_numeric` in `test_mqtt_parser.c:990`
+
+### DiagProfile rejects invalid payload
+
+**Requirement:** `REQ-E2E-048`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/DiagProfile with payload "invalid"
+- **Then** The parser returns false
+
+> Test: `test_diag_profile_invalid` in `test_mqtt_parser.c:1004`
 
 ---
 
@@ -3282,6 +3958,80 @@
 
 ---
 
+## Metering Diagnostics
+
+### All diagnostic counters are zero after initialization
+
+**Requirement:** `REQ-MTR-030`
+
+- **Given** A freshly initialized EVSE context
+- **When** evse_init completes
+- **Then** meter_timeout_count, meter_recovery_count, and api_stale_count are all 0
+
+> Test: `test_counters_zero_after_init` in `test_metering_diagnostics.c:1`
+
+### meter_timeout_count increments when CT_NOCOMM is set
+
+**Requirement:** `REQ-MTR-031`
+
+- **Given** EVSE in Smart mode with MainsMeterType=1 and MainsMeterTimeout=0
+- **When** A 1-second tick triggers CT_NOCOMM
+- **Then** meter_timeout_count increments by 1
+
+> Test: `test_timeout_count_increments_on_ct_nocomm` in `test_metering_diagnostics.c:37`
+
+### meter_timeout_count increments for node (LoadBl > 1)
+
+**Requirement:** `REQ-MTR-032`
+
+- **Given** EVSE as node with LoadBl=2 and MainsMeterTimeout=0
+- **When** A 1-second tick triggers CT_NOCOMM
+- **Then** meter_timeout_count increments by 1
+
+> Test: `test_timeout_count_increments_on_node_ct_nocomm` in `test_metering_diagnostics.c:59`
+
+### meter_recovery_count increments when CT_NOCOMM clears
+
+**Requirement:** `REQ-MTR-033`
+
+- **Given** EVSE with CT_NOCOMM set and MainsMeterTimeout restored to >0
+- **When** A 1-second tick clears CT_NOCOMM
+- **Then** meter_recovery_count increments by 1
+
+> Test: `test_recovery_count_increments` in `test_metering_diagnostics.c:80`
+
+### api_stale_count increments when API data goes stale
+
+**Requirement:** `REQ-MTR-034`
+
+- **Given** EVSE in API mode with staleness timer about to expire
+- **When** Timer reaches 0
+- **Then** api_stale_count increments by 1
+
+> Test: `test_api_stale_count_increments` in `test_metering_diagnostics.c:109`
+
+### Counters accumulate across multiple events
+
+**Requirement:** `REQ-MTR-035`
+
+- **Given** EVSE that has already had one timeout and recovery
+- **When** Another timeout and recovery cycle occurs
+- **Then** Counters show 2 timeouts and 2 recoveries
+
+> Test: `test_counters_are_cumulative` in `test_metering_diagnostics.c:135`
+
+### meter_timeout_count does NOT increment when CT_NOCOMM is suppressed for API mode
+
+**Requirement:** `REQ-MTR-036`
+
+- **Given** EVSE in API mode with staleness enabled and MainsMeterTimeout=0
+- **When** A 1-second tick occurs (CT_NOCOMM suppressed)
+- **Then** meter_timeout_count remains 0
+
+> Test: `test_timeout_count_not_incremented_when_suppressed` in `test_metering_diagnostics.c:172`
+
+---
+
 ## Modbus Frame Decoding
 
 ### Frame init zeros all fields and sets Type to MODBUS_INVALID
@@ -4356,14 +5106,14 @@
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:948`
+> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:1018`
 
 ### Wrong prefix returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_wrong_prefix` in `test_mqtt_parser.c:957`
+> Test: `test_wrong_prefix` in `test_mqtt_parser.c:1027`
 
 ---
 
@@ -7399,6 +8149,56 @@
 - **Then** energy_charged_wh is 0
 
 > Test: `test_session_zero_energy` in `test_session_log.c:323`
+
+### session_start with timestamp 0 is rejected
+
+**Requirement:** `REQ-ERE-020`
+
+- **Given** The session logger is initialized
+- **When** session_start is called with timestamp 0 (NTP not synced)
+- **Then** No session is started and session_is_active returns 0
+
+> Test: `test_session_start_rejects_zero_timestamp` in `test_session_log.c:343`
+
+### session_start with pre-2024 timestamp is rejected
+
+**Requirement:** `REQ-ERE-021`
+
+- **Given** The session logger is initialized
+- **When** session_start is called with timestamp 1000 (pre-2024)
+- **Then** No session is started and session_is_active returns 0
+
+> Test: `test_session_start_rejects_pre2024_timestamp` in `test_session_log.c:357`
+
+### session_start with valid 2024+ timestamp succeeds
+
+**Requirement:** `REQ-ERE-022`
+
+- **Given** The session logger is initialized
+- **When** session_start is called with timestamp 1710000000 (March 2024)
+- **Then** A session is started and session_is_active returns 1
+
+> Test: `test_session_start_accepts_valid_timestamp` in `test_session_log.c:371`
+
+### Session shorter than 60 seconds is discarded
+
+**Requirement:** `REQ-ERE-025`
+
+- **Given** The session logger is initialized
+- **When** A session is started and ended after only 30 seconds
+- **Then** The session is discarded, session_is_active returns 0, and session_get_last returns NULL
+
+> Test: `test_session_short_duration_discarded` in `test_session_log.c:387`
+
+### Session with duration exactly 60 seconds is kept
+
+**Requirement:** `REQ-ERE-026`
+
+- **Given** The session logger is initialized
+- **When** A session is started and ended after exactly 60 seconds
+- **Then** The session is stored and session_get_last returns a valid record with correct energy
+
+> Test: `test_session_exact_min_duration_kept` in `test_session_log.c:405`
 
 ---
 

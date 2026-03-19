@@ -16,6 +16,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define SESSION_MIN_VALID_TIME 1704067200  /* 2024-01-01T00:00:00Z */
+#define SESSION_MIN_DURATION_S 60  /* Ignore sessions shorter than 60 seconds */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
