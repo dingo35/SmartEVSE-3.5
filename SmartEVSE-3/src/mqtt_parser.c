@@ -36,16 +36,20 @@ bool mqtt_parse_mains_meter(const char *payload, int32_t *L1, int32_t *L2, int32
     if (n != 3)
         return false;
     // MainsMeter can measure -200A to +200A per phase (in dA)
-    if (*L1 <= -2000 || *L1 >= 2000) return false;
-    if (*L2 <= -2000 || *L2 >= 2000) return false;
-    if (*L3 <= -2000 || *L3 >= 2000) return false;
+    if (*L1 < -2000 || *L1 > 2000) return false;
+    if (*L2 < -2000 || *L2 > 2000) return false;
+    if (*L3 < -2000 || *L3 > 2000) return false;
     return true;
 }
 
 bool mqtt_parse_ev_meter(const char *payload, int32_t *L1, int32_t *L2, int32_t *L3,
                          int32_t *W, int32_t *Wh) {
     int n = sscanf(payload, "%d:%d:%d:%d:%d", (int *)L1, (int *)L2, (int *)L3, (int *)W, (int *)Wh);
-    return n == 5;
+    if (n != 5) return false;
+    /* Reject physically impossible power (>100kW) or energy (>1TWh) */
+    if (*W < -100000 || *W > 100000) return false;
+    if (*Wh < -1000000000 || *Wh > 1000000000) return false;
+    return true;
 }
 
 bool mqtt_parse_rgb(const char *payload, uint8_t *r, uint8_t *g, uint8_t *b) {

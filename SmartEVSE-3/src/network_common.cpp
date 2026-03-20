@@ -70,6 +70,7 @@ std::vector<mg_connection*> wsLcdConnections;
 #include "diag_sampler.h"
 #include "diag_modbus.h"
 std::vector<mg_connection*> wsDiagConnections;
+static portMUX_TYPE wsDiagMux = portMUX_INITIALIZER_UNLOCKED;
 // END PLAN-06
 
 static void stopLCDImageTimer(struct mg_mgr *manager) {
@@ -1111,27 +1112,38 @@ static void lcd_image_timer_fn(void *arg) {
 
 // BEGIN PLAN-06: Push diagnostic snapshot to WebSocket clients
 void diag_ws_push_snapshot(const diag_snapshot_t *snap) {
-    if (wsDiagConnections.empty() || !snap)
+    if (!snap)
         return;
 
+    // Copy connections under lock, then send outside critical section
+    std::vector<mg_connection*> active;
+    portENTER_CRITICAL(&wsDiagMux);
     // Remove stale connections
     for (size_t i = wsDiagConnections.size(); i > 0; --i) {
         mg_connection *c = wsDiagConnections[i - 1];
         if (c == nullptr || c->is_closing)
             wsDiagConnections.erase(wsDiagConnections.begin() + (i - 1));
     }
+    active = wsDiagConnections;
+    portEXIT_CRITICAL(&wsDiagMux);
+
+    if (active.empty())
+        return;
 
     // Send binary snapshot (64 bytes) to all connected clients
-    for (auto *c : wsDiagConnections) {
+    for (auto *c : active) {
         mg_ws_send(c, snap, sizeof(diag_snapshot_t), WEBSOCKET_OP_BINARY);
     }
 }
 
 static bool isTrackedDiagWsConnection(const mg_connection *connection) {
+    portENTER_CRITICAL(&wsDiagMux);
+    bool found = false;
     for (const auto *tracked : wsDiagConnections) {
-        if (tracked == connection) return true;
+        if (tracked == connection) { found = true; break; }
     }
-    return false;
+    portEXIT_CRITICAL(&wsDiagMux);
+    return found;
 }
 // END PLAN-06
 
@@ -1315,11 +1327,19 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     }
     if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
     // BEGIN PLAN-06: Remove diag WebSocket connection
-    for (auto it = wsDiagConnections.begin(); it != wsDiagConnections.end(); ++it) {
-        if (*it == c) {
-            wsDiagConnections.erase(it);
-            _LOG_V("Removed diag WS connection, remaining: %d\n", wsDiagConnections.size());
-            break;
+    {
+        bool removed = false;
+        portENTER_CRITICAL(&wsDiagMux);
+        for (auto it = wsDiagConnections.begin(); it != wsDiagConnections.end(); ++it) {
+            if (*it == c) {
+                wsDiagConnections.erase(it);
+                removed = true;
+                break;
+            }
+        }
+        portEXIT_CRITICAL(&wsDiagMux);
+        if (removed) {
+            _LOG_V("Removed diag WS connection\n");
         }
     }
     // END PLAN-06
@@ -1348,8 +1368,10 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     }
     // BEGIN PLAN-06: Diagnostic stream WebSocket
     if (mg_match(hm->uri, mg_str("/diag/stream"), NULL)) {
+        portENTER_CRITICAL(&wsDiagMux);
         wsDiagConnections.push_back(c);
-        _LOG_V("New diag WS connection, total: %d\n", wsDiagConnections.size());
+        portEXIT_CRITICAL(&wsDiagMux);
+        _LOG_V("New diag WS connection\n");
     }
     // END PLAN-06
     // BEGIN PLAN-07: Track data WS connections

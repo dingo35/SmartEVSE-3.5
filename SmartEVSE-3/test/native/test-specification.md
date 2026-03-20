@@ -1,6 +1,6 @@
 # SmartEVSE-3 Test Specification
 
-**63 features** | **945 scenarios** | **945 with requirement IDs**
+**63 features** | **973 scenarios** | **973 with requirement IDs**
 
 ---
 
@@ -3394,6 +3394,36 @@
 
 > Test: `test_config_fixed_cable_no_maxcapacity_cap` in `test_load_balancing.c:408`
 
+### Surplus handout with zero uncapped EVSEs does not crash
+
+**Requirement:** `REQ-LB-080`
+
+- **Given** Master with 2 EVSEs in shortage, all EVSEs already at BalancedMax (capped)
+- **When** evse_calc_balanced_current triggers priority scheduling with surplus
+- **Then** No division by zero occurs and function completes safely
+
+> Test: `test_handout_surplus_zero_uncapped_no_crash` in `test_load_balancing.c:437`
+
+### Balanced current with zero active EVSEs does not divide by zero
+
+**Requirement:** `REQ-LB-081`
+
+- **Given** All EVSEs in STATE_A (no active chargers)
+- **When** evse_calc_balanced_current is called
+- **Then** No division by zero occurs; Balanced[] values remain at zero
+
+> Test: `test_balanced_current_zero_active_no_crash` in `test_load_balancing.c:479`
+
+### NoCurrent counter saturates at 255 instead of wrapping to 0
+
+**Requirement:** `REQ-LB-082`
+
+- **Given** NoCurrent is at 254, standalone EVSE in shortage
+- **When** evse_calc_balanced_current detects shortage twice
+- **Then** NoCurrent reaches 255 and stays there (does not wrap to 0)
+
+> Test: `test_nocurrent_saturates_at_255` in `test_load_balancing.c:516`
+
 ---
 
 ## Meter Decoding
@@ -3697,6 +3727,66 @@
 - **Then** Returns -1500
 
 > Test: `test_orno3p_negative_power` in `test_meter_decode.c:557`
+
+### INT8_MIN divisor (-128) is rejected to avoid negation UB
+
+**Requirement:** `REQ-MTR-087`
+
+- **Given** A valid buffer and divisor=-128 (INT8_MIN)
+- **When** meter_decode_value is called
+- **Then** Result is invalid because -128 is outside pow10 table range
+
+> Test: `test_decode_divisor_int8_min` in `test_meter_decode.c:576`
+
+### FLOAT32 NaN value from corrupt meter data is rejected
+
+**Requirement:** `REQ-MTR-088`
+
+- **Given** Buffer containing IEEE 754 NaN bit pattern (0x7FC00000)
+- **When** meter_decode_value is called with FLOAT32 datatype
+- **Then** Result is invalid
+
+> Test: `test_decode_float32_nan_rejected` in `test_meter_decode.c:591`
+
+### FLOAT32 Infinity value from corrupt meter data is rejected
+
+**Requirement:** `REQ-MTR-089`
+
+- **Given** Buffer containing IEEE 754 +Infinity bit pattern (0x7F800000)
+- **When** meter_decode_value is called with FLOAT32 datatype
+- **Then** Result is invalid
+
+> Test: `test_decode_float32_inf_rejected` in `test_meter_decode.c:607`
+
+### INT32 multiplication overflow is detected and rejected
+
+**Requirement:** `REQ-MTR-090`
+
+- **Given** Buffer with INT32 value near INT32_MAX/1000 and divisor=-3
+- **When** meter_decode_value is called
+- **Then** Result is invalid because value * 1000 would overflow int32_t
+
+> Test: `test_decode_int32_multiply_overflow` in `test_meter_decode.c:623`
+
+### INT32 multiplication that fits is still accepted
+
+**Requirement:** `REQ-MTR-091`
+
+- **Given** Buffer with INT32 value 2147483 and divisor=-3
+- **When** meter_decode_value is called
+- **Then** Result is valid with value 2147483000
+
+> Test: `test_decode_int32_multiply_max_valid` in `test_meter_decode.c:640`
+
+### Negative INT32 multiplication overflow is detected
+
+**Requirement:** `REQ-MTR-092`
+
+- **Given** Buffer with large negative INT32 value and divisor=-3
+- **When** meter_decode_value is called
+- **Then** Result is invalid because value * 1000 would overflow
+
+> Test: `test_decode_int32_negative_multiply_overflow` in `test_meter_decode.c:657`
 
 ---
 
@@ -4903,14 +4993,14 @@
 
 > Test: `test_cp_pwm_below_neg1` in `test_mqtt_parser.c:232`
 
-### Mains meter out of range rejected (>=2000)
+### Mains meter out of range rejected (>2000)
 
 **Requirement:** `REQ-MQTT-007`
 
 
 > Test: `test_mains_meter_out_of_range` in `test_mqtt_parser.c:272`
 
-### Mains meter out of range rejected (<=-2000)
+### Mains meter out of range rejected (<-2000)
 
 **Requirement:** `REQ-MQTT-007`
 
@@ -5101,19 +5191,79 @@
 
 > Test: `test_mqtt_change_only_invalid` in `test_mqtt_parser.c:892`
 
+### Mains meter boundary value +2000 (200A exactly) is accepted
+
+**Requirement:** `REQ-MQTT-025`
+
+- **Given** A mains meter payload with L1=2000 dA (200A)
+- **When** mqtt_parse_mains_meter is called
+- **Then** Returns true with L1=2000
+
+> Test: `test_mains_meter_boundary_positive` in `test_mqtt_parser.c:1018`
+
+### Mains meter boundary value -2000 (-200A exactly) is accepted
+
+**Requirement:** `REQ-MQTT-025`
+
+- **Given** A mains meter payload with L1=-2000 dA (-200A)
+- **When** mqtt_parse_mains_meter is called
+- **Then** Returns true with L1=-2000
+
+> Test: `test_mains_meter_boundary_negative` in `test_mqtt_parser.c:1032`
+
+### EV meter power exceeding 100kW is rejected
+
+**Requirement:** `REQ-MQTT-026`
+
+- **Given** An EV meter payload with W=200000 (200kW, physically impossible)
+- **When** mqtt_parse_ev_meter is called
+- **Then** Returns false
+
+> Test: `test_ev_meter_power_too_high` in `test_mqtt_parser.c:1046`
+
+### EV meter negative power exceeding -100kW is rejected
+
+**Requirement:** `REQ-MQTT-026`
+
+- **Given** An EV meter payload with W=-200000 (-200kW)
+- **When** mqtt_parse_ev_meter is called
+- **Then** Returns false
+
+> Test: `test_ev_meter_power_too_low` in `test_mqtt_parser.c:1059`
+
+### EV meter energy exceeding 1TWh is rejected
+
+**Requirement:** `REQ-MQTT-027`
+
+- **Given** An EV meter payload with Wh=2000000000 (2TWh, absurd value)
+- **When** mqtt_parse_ev_meter is called
+- **Then** Returns false
+
+> Test: `test_ev_meter_energy_too_high` in `test_mqtt_parser.c:1072`
+
+### EV meter power at boundary 100000W (100kW) is accepted
+
+**Requirement:** `REQ-MQTT-026`
+
+- **Given** An EV meter payload with W=100000
+- **When** mqtt_parse_ev_meter is called
+- **Then** Returns true
+
+> Test: `test_ev_meter_power_boundary_accepted` in `test_mqtt_parser.c:1085`
+
 ### Unrecognized topic returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:1018`
+> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:1101`
 
 ### Wrong prefix returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_wrong_prefix` in `test_mqtt_parser.c:1027`
+> Test: `test_wrong_prefix` in `test_mqtt_parser.c:1110`
 
 ---
 
@@ -5896,6 +6046,16 @@
 
 > Test: `test_no_defer_access_normal_with_no_sun` in `test_ocpp_auth.c:260`
 
+### Invalid mode value does not defer access (safe default)
+
+**Requirement:** `REQ-OCPP-096`
+
+- **Given** Mode is 255 (out-of-range), ChargeDelay=0, ErrorFlags has NO_SUN
+- **When** ocpp_should_defer_access is called
+- **Then** Returns false because invalid modes should not defer (safe default)
+
+> Test: `test_defer_access_invalid_mode_returns_false` in `test_ocpp_auth.c:272`
+
 ---
 
 ## OCPP Connector State
@@ -6302,6 +6462,26 @@
 
 > Test: `test_rfid_zero_length` in `test_ocpp_rfid.c:111`
 
+### 3-byte output buffer fits exactly one hex byte plus null
+
+**Requirement:** `REQ-OCPP-095`
+
+- **Given** RFID bytes {0xAB} and output buffer of size 3
+- **When** ocpp_format_rfid_hex is called
+- **Then** Output is "AB" (2 hex chars + null fits exactly in 3 bytes)
+
+> Test: `test_rfid_format_small_buffer_boundary` in `test_ocpp_rfid.c:128`
+
+### 2-byte output buffer cannot fit any hex byte (needs 3: 2 chars + null)
+
+**Requirement:** `REQ-OCPP-095`
+
+- **Given** RFID bytes {0xAB} and output buffer of size 2
+- **When** ocpp_format_rfid_hex is called
+- **Then** Output is empty string because 2 hex chars + null requires 3 bytes
+
+> Test: `test_rfid_format_2byte_buffer_empty` in `test_ocpp_rfid.c:143`
+
 ---
 
 ## OCPP Settings Validation
@@ -6396,6 +6576,56 @@
 
 > Test: `test_url_no_scheme_rejected` in `test_ocpp_settings.c:118`
 
+### URL with CRLF injection rejected
+
+**Requirement:** `REQ-OCPP-097`
+
+- **Given** URL is "ws://example.com\r\nHost: evil"
+- **When** ocpp_validate_backend_url is called
+- **Then** Returns OCPP_VALIDATE_BAD_CHARS because CRLF is not allowed
+
+> Test: `test_url_crlf_rejected` in `test_ocpp_settings.c:131`
+
+### URL with space rejected
+
+**Requirement:** `REQ-OCPP-097`
+
+- **Given** URL is "ws://example.com/path with space"
+- **When** ocpp_validate_backend_url is called
+- **Then** Returns OCPP_VALIDATE_BAD_CHARS because spaces are not allowed
+
+> Test: `test_url_space_rejected` in `test_ocpp_settings.c:144`
+
+### URL with valid special characters accepted
+
+**Requirement:** `REQ-OCPP-097`
+
+- **Given** URL contains all allowed special chars: . : / - _ ? = & @ % + #
+- **When** ocpp_validate_backend_url is called
+- **Then** Returns OCPP_VALIDATE_OK
+
+> Test: `test_url_valid_special_chars_accepted` in `test_ocpp_settings.c:157`
+
+### URL with backslash rejected
+
+**Requirement:** `REQ-OCPP-097`
+
+- **Given** URL contains a backslash character
+- **When** ocpp_validate_backend_url is called
+- **Then** Returns OCPP_VALIDATE_BAD_CHARS
+
+> Test: `test_url_backslash_rejected` in `test_ocpp_settings.c:170`
+
+### URL with curly braces rejected
+
+**Requirement:** `REQ-OCPP-097`
+
+- **Given** URL contains curly brace characters
+- **When** ocpp_validate_backend_url is called
+- **Then** Returns OCPP_VALIDATE_BAD_CHARS
+
+> Test: `test_url_braces_rejected` in `test_ocpp_settings.c:183`
+
 ### Valid ChargeBoxId accepted
 
 **Requirement:** `REQ-OCPP-064`
@@ -6404,7 +6634,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_OK
 
-> Test: `test_cbid_valid` in `test_ocpp_settings.c:133`
+> Test: `test_cbid_valid` in `test_ocpp_settings.c:198`
 
 ### ChargeBoxId with special characters rejected
 
@@ -6414,7 +6644,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_BAD_CHARS
 
-> Test: `test_cbid_special_chars_rejected` in `test_ocpp_settings.c:146`
+> Test: `test_cbid_special_chars_rejected` in `test_ocpp_settings.c:211`
 
 ### ChargeBoxId length > 20 rejected (OCPP 1.6 CiString20)
 
@@ -6424,7 +6654,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_TOO_LONG
 
-> Test: `test_cbid_too_long_rejected` in `test_ocpp_settings.c:159`
+> Test: `test_cbid_too_long_rejected` in `test_ocpp_settings.c:224`
 
 ### ChargeBoxId exactly 20 characters is accepted
 
@@ -6434,7 +6664,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_OK
 
-> Test: `test_cbid_exactly_20_accepted` in `test_ocpp_settings.c:172`
+> Test: `test_cbid_exactly_20_accepted` in `test_ocpp_settings.c:237`
 
 ### Empty ChargeBoxId rejected
 
@@ -6444,7 +6674,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_EMPTY
 
-> Test: `test_cbid_empty_rejected` in `test_ocpp_settings.c:185`
+> Test: `test_cbid_empty_rejected` in `test_ocpp_settings.c:250`
 
 ### ChargeBoxId with ampersand rejected
 
@@ -6454,7 +6684,7 @@
 - **When** ocpp_validate_chargebox_id is called
 - **Then** Returns OCPP_VALIDATE_BAD_CHARS
 
-> Test: `test_cbid_ampersand_rejected` in `test_ocpp_settings.c:198`
+> Test: `test_cbid_ampersand_rejected` in `test_ocpp_settings.c:263`
 
 ### Auth key length > 40 rejected (OCPP 1.6 limit)
 
@@ -6464,7 +6694,7 @@
 - **When** ocpp_validate_auth_key is called
 - **Then** Returns OCPP_VALIDATE_TOO_LONG
 
-> Test: `test_auth_key_too_long` in `test_ocpp_settings.c:213`
+> Test: `test_auth_key_too_long` in `test_ocpp_settings.c:278`
 
 ### Auth key exactly 40 characters is accepted
 
@@ -6474,7 +6704,7 @@
 - **When** ocpp_validate_auth_key is called
 - **Then** Returns OCPP_VALIDATE_OK
 
-> Test: `test_auth_key_exactly_40_accepted` in `test_ocpp_settings.c:226`
+> Test: `test_auth_key_exactly_40_accepted` in `test_ocpp_settings.c:291`
 
 ### Empty auth key is valid (no auth configured)
 
@@ -6484,7 +6714,7 @@
 - **When** ocpp_validate_auth_key is called
 - **Then** Returns OCPP_VALIDATE_OK because empty means no auth
 
-> Test: `test_auth_key_empty_accepted` in `test_ocpp_settings.c:239`
+> Test: `test_auth_key_empty_accepted` in `test_ocpp_settings.c:304`
 
 ---
 
@@ -6947,6 +7177,56 @@
 - **Then** power_w contains [1955, 1426, 0] for diagnostics
 
 > Test: `test_parse_power_diagnostics` in `test_p1_parse.c:331`
+
+### NaN current value is rejected by JSON extractor
+
+**Requirement:** `REQ-PWR-030`
+
+- **Given** JSON string containing "active_current_l1_a":"NaN"
+- **When** p1_json_find_number is called
+- **Then** Returns 0 (parse failure) because NaN is not a valid number
+
+> Test: `test_json_find_nan_rejected` in `test_p1_parse.c:354`
+
+### Infinity current value is rejected by JSON extractor
+
+**Requirement:** `REQ-PWR-031`
+
+- **Given** JSON string containing "active_current_l1_a":Infinity
+- **When** p1_json_find_number is called
+- **Then** Returns 0 (parse failure) because Infinity is not a valid meter reading
+
+> Test: `test_json_find_infinity_rejected` in `test_p1_parse.c:370`
+
+### Negative infinity is rejected by JSON extractor
+
+**Requirement:** `REQ-PWR-032`
+
+- **Given** JSON string containing "active_current_l1_a":-Infinity
+- **When** p1_json_find_number is called
+- **Then** Returns 0 (parse failure)
+
+> Test: `test_json_find_neg_infinity_rejected` in `test_p1_parse.c:386`
+
+### Current value exceeding int16_t range marks result invalid
+
+**Requirement:** `REQ-PWR-033`
+
+- **Given** JSON with current 4000.0A (40000 dA exceeds INT16_MAX=32767)
+- **When** p1_parse_response is called
+- **Then** Result is invalid because deci-amp value overflows int16_t
+
+> Test: `test_parse_current_overflow_invalid` in `test_p1_parse.c:402`
+
+### NaN in full P1 response is rejected
+
+**Requirement:** `REQ-PWR-034`
+
+- **Given** JSON with NaN value for active_current_l1_a
+- **When** p1_parse_response is called
+- **Then** Result is invalid because NaN cannot be parsed as a number
+
+> Test: `test_parse_nan_in_response_rejected` in `test_p1_parse.c:418`
 
 ---
 

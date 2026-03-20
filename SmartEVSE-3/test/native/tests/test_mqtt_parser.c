@@ -272,21 +272,21 @@ void test_mains_meter_negative(void) {
 /*
  * @feature MQTT Input Validation
  * @req REQ-MQTT-007
- * @scenario Mains meter out of range rejected (>=2000)
+ * @scenario Mains meter out of range rejected (>2000)
  */
 void test_mains_meter_out_of_range(void) {
     int32_t L1, L2, L3;
-    TEST_ASSERT_FALSE(mqtt_parse_mains_meter("2000:0:0", &L1, &L2, &L3));
+    TEST_ASSERT_FALSE(mqtt_parse_mains_meter("2001:0:0", &L1, &L2, &L3));
 }
 
 /*
  * @feature MQTT Input Validation
  * @req REQ-MQTT-007
- * @scenario Mains meter out of range rejected (<=-2000)
+ * @scenario Mains meter out of range rejected (<-2000)
  */
 void test_mains_meter_out_of_range_neg(void) {
     int32_t L1, L2, L3;
-    TEST_ASSERT_FALSE(mqtt_parse_mains_meter("-2000:0:0", &L1, &L2, &L3));
+    TEST_ASSERT_FALSE(mqtt_parse_mains_meter("-2001:0:0", &L1, &L2, &L3));
 }
 
 /*
@@ -1013,6 +1013,89 @@ void test_diag_profile_invalid(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/DiagProfile", "invalid", &cmd));
 }
 
+// ---- Input validation hardening ----
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-025
+ * @scenario Mains meter boundary value +2000 (200A exactly) is accepted
+ * @given A mains meter payload with L1=2000 dA (200A)
+ * @when mqtt_parse_mains_meter is called
+ * @then Returns true with L1=2000
+ */
+void test_mains_meter_boundary_positive(void) {
+    int32_t L1, L2, L3;
+    TEST_ASSERT_TRUE(mqtt_parse_mains_meter("2000:0:0", &L1, &L2, &L3));
+    TEST_ASSERT_EQUAL_INT(2000, L1);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-025
+ * @scenario Mains meter boundary value -2000 (-200A exactly) is accepted
+ * @given A mains meter payload with L1=-2000 dA (-200A)
+ * @when mqtt_parse_mains_meter is called
+ * @then Returns true with L1=-2000
+ */
+void test_mains_meter_boundary_negative(void) {
+    int32_t L1, L2, L3;
+    TEST_ASSERT_TRUE(mqtt_parse_mains_meter("-2000:0:0", &L1, &L2, &L3));
+    TEST_ASSERT_EQUAL_INT(-2000, L1);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-026
+ * @scenario EV meter power exceeding 100kW is rejected
+ * @given An EV meter payload with W=200000 (200kW, physically impossible)
+ * @when mqtt_parse_ev_meter is called
+ * @then Returns false
+ */
+void test_ev_meter_power_too_high(void) {
+    int32_t L1, L2, L3, W, Wh;
+    TEST_ASSERT_FALSE(mqtt_parse_ev_meter("10:20:30:200000:1000", &L1, &L2, &L3, &W, &Wh));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-026
+ * @scenario EV meter negative power exceeding -100kW is rejected
+ * @given An EV meter payload with W=-200000 (-200kW)
+ * @when mqtt_parse_ev_meter is called
+ * @then Returns false
+ */
+void test_ev_meter_power_too_low(void) {
+    int32_t L1, L2, L3, W, Wh;
+    TEST_ASSERT_FALSE(mqtt_parse_ev_meter("10:20:30:-200000:1000", &L1, &L2, &L3, &W, &Wh));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-027
+ * @scenario EV meter energy exceeding 1TWh is rejected
+ * @given An EV meter payload with Wh=2000000000 (2TWh, absurd value)
+ * @when mqtt_parse_ev_meter is called
+ * @then Returns false
+ */
+void test_ev_meter_energy_too_high(void) {
+    int32_t L1, L2, L3, W, Wh;
+    TEST_ASSERT_FALSE(mqtt_parse_ev_meter("10:20:30:500:2000000000", &L1, &L2, &L3, &W, &Wh));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-MQTT-026
+ * @scenario EV meter power at boundary 100000W (100kW) is accepted
+ * @given An EV meter payload with W=100000
+ * @when mqtt_parse_ev_meter is called
+ * @then Returns true
+ */
+void test_ev_meter_power_boundary_accepted(void) {
+    int32_t L1, L2, L3, W, Wh;
+    TEST_ASSERT_TRUE(mqtt_parse_ev_meter("10:20:30:100000:1000", &L1, &L2, &L3, &W, &Wh));
+    TEST_ASSERT_EQUAL_INT(100000, W);
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -1158,6 +1241,14 @@ int main(void) {
     RUN_TEST(test_diag_profile_off);
     RUN_TEST(test_diag_profile_numeric);
     RUN_TEST(test_diag_profile_invalid);
+
+    // Input validation hardening
+    RUN_TEST(test_mains_meter_boundary_positive);
+    RUN_TEST(test_mains_meter_boundary_negative);
+    RUN_TEST(test_ev_meter_power_too_high);
+    RUN_TEST(test_ev_meter_power_too_low);
+    RUN_TEST(test_ev_meter_energy_too_high);
+    RUN_TEST(test_ev_meter_power_boundary_accepted);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

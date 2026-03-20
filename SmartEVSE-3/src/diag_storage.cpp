@@ -293,10 +293,31 @@ int diag_storage_list_json(char *buf, size_t bufsz)
     pos += n;
 
     for (uint8_t i = 0; i < nfiles; i++) {
-        n = snprintf(buf + pos, bufsz - pos, "%s\"%s\"",
-                     i > 0 ? "," : "", files[i]);
-        if (n < 0 || (size_t)n >= bufsz - pos) return -1;
-        pos += n;
+        /* Add comma separator between entries */
+        if (i > 0) {
+            if ((size_t)pos + 1 >= bufsz) return -1;
+            buf[pos++] = ',';
+        }
+        /* Open quote */
+        if ((size_t)pos + 1 >= bufsz) return -1;
+        buf[pos++] = '"';
+        /* Escape filename characters for safe JSON */
+        for (const char *p = files[i]; *p != '\0'; p++) {
+            if (*p == '"' || *p == '\\') {
+                if ((size_t)pos + 2 >= bufsz) return -1;
+                buf[pos++] = '\\';
+                buf[pos++] = *p;
+            } else if ((unsigned char)*p < 0x20) {
+                /* Skip control characters */
+                continue;
+            } else {
+                if ((size_t)pos + 1 >= bufsz) return -1;
+                buf[pos++] = *p;
+            }
+        }
+        /* Close quote */
+        if ((size_t)pos + 1 >= bufsz) return -1;
+        buf[pos++] = '"';
     }
 
     n = snprintf(buf + pos, bufsz - pos, "],\"count\":%u,\"auto_dump\":%s}",

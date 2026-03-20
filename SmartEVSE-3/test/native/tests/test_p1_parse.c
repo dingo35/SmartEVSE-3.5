@@ -349,6 +349,89 @@ void test_parse_power_diagnostics(void) {
     TEST_ASSERT_EQUAL_INT(1426, r.power_w[1]);
 }
 
+/* ---- Input validation hardening ---- */
+
+/*
+ * @feature P1 Meter Parsing
+ * @req REQ-PWR-030
+ * @scenario NaN current value is rejected by JSON extractor
+ * @given JSON string containing "active_current_l1_a":"NaN"
+ * @when p1_json_find_number is called
+ * @then Returns 0 (parse failure) because NaN is not a valid number
+ */
+void test_json_find_nan_rejected(void) {
+    const char *json = "{\"active_current_l1_a\":NaN}";
+    float val = 0;
+    uint8_t found = p1_json_find_number(json, (uint16_t)strlen(json),
+                                        "active_current_l1_a", &val);
+    TEST_ASSERT_EQUAL_INT(0, found);
+}
+
+/*
+ * @feature P1 Meter Parsing
+ * @req REQ-PWR-031
+ * @scenario Infinity current value is rejected by JSON extractor
+ * @given JSON string containing "active_current_l1_a":Infinity
+ * @when p1_json_find_number is called
+ * @then Returns 0 (parse failure) because Infinity is not a valid meter reading
+ */
+void test_json_find_infinity_rejected(void) {
+    const char *json = "{\"active_current_l1_a\":Infinity}";
+    float val = 0;
+    uint8_t found = p1_json_find_number(json, (uint16_t)strlen(json),
+                                        "active_current_l1_a", &val);
+    TEST_ASSERT_EQUAL_INT(0, found);
+}
+
+/*
+ * @feature P1 Meter Parsing
+ * @req REQ-PWR-032
+ * @scenario Negative infinity is rejected by JSON extractor
+ * @given JSON string containing "active_current_l1_a":-Infinity
+ * @when p1_json_find_number is called
+ * @then Returns 0 (parse failure)
+ */
+void test_json_find_neg_infinity_rejected(void) {
+    const char *json = "{\"active_current_l1_a\":-Infinity}";
+    float val = 0;
+    uint8_t found = p1_json_find_number(json, (uint16_t)strlen(json),
+                                        "active_current_l1_a", &val);
+    TEST_ASSERT_EQUAL_INT(0, found);
+}
+
+/*
+ * @feature P1 Meter Parsing
+ * @req REQ-PWR-033
+ * @scenario Current value exceeding int16_t range marks result invalid
+ * @given JSON with current 4000.0A (40000 dA exceeds INT16_MAX=32767)
+ * @when p1_parse_response is called
+ * @then Result is invalid because deci-amp value overflows int16_t
+ */
+void test_parse_current_overflow_invalid(void) {
+    const char *json =
+        "{\"active_current_l1_a\":4000.0,"
+        "\"active_power_l1_w\":920000}";
+    p1_result_t r = p1_parse_response(json, (uint16_t)strlen(json));
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
+/*
+ * @feature P1 Meter Parsing
+ * @req REQ-PWR-034
+ * @scenario NaN in full P1 response is rejected
+ * @given JSON with NaN value for active_current_l1_a
+ * @when p1_parse_response is called
+ * @then Result is invalid because NaN cannot be parsed as a number
+ */
+void test_parse_nan_in_response_rejected(void) {
+    const char *json =
+        "{\"active_current_l1_a\":NaN,"
+        "\"active_power_l1_w\":1000}";
+    p1_result_t r = p1_parse_response(json, (uint16_t)strlen(json));
+    /* NaN rejected by p1_json_find_number, so phases=0 → invalid */
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("P1 Meter Parsing");
@@ -370,6 +453,13 @@ int main(void) {
     RUN_TEST(test_parse_real_world_kaifa);
     RUN_TEST(test_parse_zero_values);
     RUN_TEST(test_parse_power_diagnostics);
+
+    // Input validation hardening
+    RUN_TEST(test_json_find_nan_rejected);
+    RUN_TEST(test_json_find_infinity_rejected);
+    RUN_TEST(test_json_find_neg_infinity_rejected);
+    RUN_TEST(test_parse_current_overflow_invalid);
+    RUN_TEST(test_parse_nan_in_response_rejected);
 
     TEST_SUITE_RESULTS();
 }

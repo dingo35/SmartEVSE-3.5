@@ -8,6 +8,8 @@
 #include "p1_parse.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
+#include <stdint.h>
 
 /*
  * Find a JSON key in a flat JSON object and extract its numeric value.
@@ -58,6 +60,9 @@ uint8_t p1_json_find_number(const char *json, uint16_t json_len,
         *out = strtof(p, &num_end);
         if (num_end == p) return 0; /* no valid number */
 
+        /* Reject NaN and Infinity — strtof parses "NaN", "Infinity" etc. */
+        if (isnan(*out) || isinf(*out)) return 0;
+
         return 1;
     }
 
@@ -106,7 +111,17 @@ p1_result_t p1_parse_response(const char *json, uint16_t json_len)
         float abs_current = currents[i];
         if (abs_current < 0) abs_current = -abs_current;
 
-        int16_t current_da = (int16_t)(abs_current * 10.0f);
+        float current_da_f = abs_current * 10.0f;
+
+        /* Clamp to int16_t range — values > 3276.7A are physically impossible */
+        if (current_da_f > (float)INT16_MAX || current_da_f < (float)INT16_MIN) {
+            /* Overflow: mark result invalid */
+            result.valid = 0;
+            result.phases = 0;
+            return result;
+        }
+
+        int16_t current_da = (int16_t)current_da_f;
 
         /* Apply sign from power: negative power = feeding in */
         if (powers[i] < 0) {
@@ -114,6 +129,13 @@ p1_result_t p1_parse_response(const char *json, uint16_t json_len)
         }
 
         result.current_da[i] = current_da;
+
+        /* Clamp power to int16_t range */
+        if (powers[i] > (float)INT16_MAX || powers[i] < (float)INT16_MIN) {
+            result.valid = 0;
+            result.phases = 0;
+            return result;
+        }
         result.power_w[i] = (int16_t)powers[i];
     }
 

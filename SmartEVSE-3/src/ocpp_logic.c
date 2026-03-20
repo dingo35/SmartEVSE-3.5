@@ -64,7 +64,13 @@ bool ocpp_should_defer_access(uint8_t mode, uint8_t charge_delay,
      * Deferral conditions:
      * 1. Solar mode + NO_SUN error → no solar surplus available
      * 2. Any mode + ChargeDelay active → still in delay period
+     *
+     * Invalid mode values (> MODE_SOLAR) are treated as "don't defer" — safe default.
      */
+    if (mode > MODE_SOLAR) {
+        return false;
+    }
+
     if (mode == MODE_SOLAR && (error_flags & NO_SUN)) {
         return true;
     }
@@ -103,7 +109,7 @@ void ocpp_format_rfid_hex(const uint8_t *rfid, size_t rfid_len,
     out[0] = '\0';
     for (size_t i = start; i < start + count && i < rfid_len; i++) {
         size_t pos = (i - start) * 2;
-        if (pos + 2 >= out_size) break;
+        if (pos + 3 > out_size) break;
         snprintf(out + pos, 3, "%02X", rfid[i]);
     }
 }
@@ -151,6 +157,23 @@ ocpp_validate_result_t ocpp_validate_backend_url(const char *url) {
     size_t scheme_len = has_wss ? 6 : 5;
     if (url[scheme_len] == '\0') {
         return OCPP_VALIDATE_BAD_SCHEME;
+    }
+
+    /* Validate characters after scheme: allow only URL-safe characters.
+     * Reject control chars, spaces, CRLF injection, and other problematic chars. */
+    for (size_t i = scheme_len; url[i] != '\0'; i++) {
+        char c = url[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9')) {
+            continue;
+        }
+        /* Allowed URL special characters */
+        if (c == '.' || c == ':' || c == '/' || c == '-' || c == '_' ||
+            c == '?' || c == '=' || c == '&' || c == '@' || c == '%' ||
+            c == '+' || c == '#') {
+            continue;
+        }
+        return OCPP_VALIDATE_BAD_CHARS;
     }
 
     return OCPP_VALIDATE_OK;

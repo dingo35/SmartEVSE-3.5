@@ -571,6 +571,105 @@ void test_orno3p_negative_power(void) {
     TEST_ASSERT_EQUAL_INT(-1500, r.value);
 }
 
+/* ---- Input validation hardening ---- */
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-087
+ * @scenario INT8_MIN divisor (-128) is rejected to avoid negation UB
+ * @given A valid buffer and divisor=-128 (INT8_MIN)
+ * @when meter_decode_value is called
+ * @then Result is invalid because -128 is outside pow10 table range
+ */
+void test_decode_divisor_int8_min(void) {
+    uint8_t buf[] = {0x00, 0x00, 0x00, 0x64};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_INT32, -128);
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-088
+ * @scenario FLOAT32 NaN value from corrupt meter data is rejected
+ * @given Buffer containing IEEE 754 NaN bit pattern (0x7FC00000)
+ * @when meter_decode_value is called with FLOAT32 datatype
+ * @then Result is invalid
+ */
+void test_decode_float32_nan_rejected(void) {
+    /* IEEE 754 quiet NaN: 0x7FC00000 in big-endian */
+    uint8_t buf[] = {0x7F, 0xC0, 0x00, 0x00};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_FLOAT32, 0);
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-089
+ * @scenario FLOAT32 Infinity value from corrupt meter data is rejected
+ * @given Buffer containing IEEE 754 +Infinity bit pattern (0x7F800000)
+ * @when meter_decode_value is called with FLOAT32 datatype
+ * @then Result is invalid
+ */
+void test_decode_float32_inf_rejected(void) {
+    /* IEEE 754 +Infinity: 0x7F800000 in big-endian */
+    uint8_t buf[] = {0x7F, 0x80, 0x00, 0x00};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_FLOAT32, 0);
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-090
+ * @scenario INT32 multiplication overflow is detected and rejected
+ * @given Buffer with INT32 value near INT32_MAX/1000 and divisor=-3
+ * @when meter_decode_value is called
+ * @then Result is invalid because value * 1000 would overflow int32_t
+ */
+void test_decode_int32_multiply_overflow(void) {
+    /* INT32_MAX / 1000 = 2147483 (rounded down). Use value 2147484 to trigger overflow.
+     * 2147484 = 0x0020C49C in big-endian */
+    uint8_t buf[] = {0x00, 0x20, 0xC4, 0x9C};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_INT32, -3);
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-091
+ * @scenario INT32 multiplication that fits is still accepted
+ * @given Buffer with INT32 value 2147483 and divisor=-3
+ * @when meter_decode_value is called
+ * @then Result is valid with value 2147483000
+ */
+void test_decode_int32_multiply_max_valid(void) {
+    /* 2147483 = 0x0020C49B in big-endian */
+    uint8_t buf[] = {0x00, 0x20, 0xC4, 0x9B};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_INT32, -3);
+    TEST_ASSERT_EQUAL_INT(1, r.valid);
+    TEST_ASSERT_EQUAL_INT(2147483000, r.value);
+}
+
+/*
+ * @feature Meter Decoding
+ * @req REQ-MTR-092
+ * @scenario Negative INT32 multiplication overflow is detected
+ * @given Buffer with large negative INT32 value and divisor=-3
+ * @when meter_decode_value is called
+ * @then Result is invalid because value * 1000 would overflow
+ */
+void test_decode_int32_negative_multiply_overflow(void) {
+    /* -2147484 = 0xFFDF3B64 in big-endian */
+    uint8_t buf[] = {0xFF, 0xDF, 0x3B, 0x64};
+    meter_reading_t r = meter_decode_value(buf, 0, ENDIANNESS_HBF_HWF,
+                                           METER_DATATYPE_INT32, -3);
+    TEST_ASSERT_EQUAL_INT(0, r.valid);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("Meter Decoding");
@@ -605,6 +704,14 @@ int main(void) {
     RUN_TEST(test_orno3p_power);
     RUN_TEST(test_orno3p_energy);
     RUN_TEST(test_orno3p_negative_power);
+
+    // Input validation hardening
+    RUN_TEST(test_decode_divisor_int8_min);
+    RUN_TEST(test_decode_float32_nan_rejected);
+    RUN_TEST(test_decode_float32_inf_rejected);
+    RUN_TEST(test_decode_int32_multiply_overflow);
+    RUN_TEST(test_decode_int32_multiply_max_valid);
+    RUN_TEST(test_decode_int32_negative_multiply_overflow);
 
     TEST_SUITE_RESULTS();
 }

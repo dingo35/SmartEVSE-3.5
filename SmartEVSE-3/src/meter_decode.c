@@ -7,6 +7,8 @@
 
 #include "meter_decode.h"
 #include <string.h>
+#include <math.h>
+#include <limits.h>
 
 /* Power-of-10 lookup table (matches firmware's pow_10[]) */
 static const unsigned long pow10_table[10] = {
@@ -78,9 +80,9 @@ meter_reading_t meter_decode_value(const uint8_t *buf, uint8_t index,
     if (!buf) return result;
     if (datatype >= METER_DATATYPE_MAX) return result;
 
-    /* Validate divisor range for pow10 lookup */
-    int8_t abs_div = (divisor >= 0) ? divisor : (int8_t)(-divisor);
-    if (abs_div >= 10) return result;
+    /* Validate divisor range for pow10 lookup (table has 10 entries: 0..9).
+     * Check raw range first to avoid UB when negating INT8_MIN (-128). */
+    if (divisor < -9 || divisor > 9) return result;
 
     uint8_t reg_size = meter_register_size(datatype);
     uint8_t pos = index * reg_size;
@@ -88,6 +90,8 @@ meter_reading_t meter_decode_value(const uint8_t *buf, uint8_t index,
     if (datatype == METER_DATATYPE_FLOAT32) {
         float f_combined = 0.0f;
         meter_combine_bytes(&f_combined, buf, pos, endianness, datatype);
+        /* Reject NaN/Inf from corrupt meter data */
+        if (isnan(f_combined) || isinf(f_combined)) return result;
         if (divisor >= 0) {
             result.value = (int32_t)(f_combined / (int32_t)pow10_table[divisor]);
         } else {
@@ -103,7 +107,13 @@ meter_reading_t meter_decode_value(const uint8_t *buf, uint8_t index,
         if (divisor >= 0) {
             result.value = i_combined / (int32_t)pow10_table[divisor];
         } else {
-            result.value = i_combined * (int32_t)pow10_table[-divisor];
+            /* Check for multiplication overflow before computing */
+            int32_t multiplier = (int32_t)pow10_table[-divisor];
+            int32_t abs_combined = (i_combined >= 0) ? i_combined : -i_combined;
+            if (i_combined != 0 && abs_combined > INT32_MAX / multiplier) {
+                return result; /* overflow would occur */
+            }
+            result.value = i_combined * multiplier;
         }
     }
 

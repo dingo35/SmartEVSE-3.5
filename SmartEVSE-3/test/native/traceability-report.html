@@ -125,8 +125,8 @@ footer {
 <h1>SmartEVSE-3 Traceability Report</h1>
 <div class="summary">
 <div class="stat"><div class="number">63</div><div class="label">Features</div></div>
-<div class="stat"><div class="number">945</div><div class="label">Test Scenarios</div></div>
-<div class="stat"><div class="number">945</div><div class="label">With Requirements</div></div>
+<div class="stat"><div class="number">973</div><div class="label">Test Scenarios</div></div>
+<div class="stat"><div class="number">973</div><div class="label">With Requirements</div></div>
 <div class="stat"><div class="number">100%</div><div class="label">Requirement Coverage</div></div>
 </div>
 <div class="feature-section">
@@ -2677,7 +2677,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">Load Balancing (15 scenarios)</div>
+<div class="feature-title">Load Balancing (18 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -2791,10 +2791,31 @@ footer {
 <td><code>test_config_fixed_cable_no_maxcapacity_cap</code></td>
 <td><span class="file-ref">test_load_balancing.c:408</span></td>
 </tr>
+<tr>
+<td><span class="req-tag">REQ-LB-080</span></td>
+<td>Surplus handout with zero uncapped EVSEs does not crash</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Master with 2 EVSEs in shortage, all EVSEs already at BalancedMax (capped)</li><li class="step-when"><span class="step-keyword">When</span> evse_calc_balanced_current triggers priority scheduling with surplus</li><li class="step-then"><span class="step-keyword">Then</span> No division by zero occurs and function completes safely</li></ul></td>
+<td><code>test_handout_surplus_zero_uncapped_no_crash</code></td>
+<td><span class="file-ref">test_load_balancing.c:437</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-LB-081</span></td>
+<td>Balanced current with zero active EVSEs does not divide by zero</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> All EVSEs in STATE_A (no active chargers)</li><li class="step-when"><span class="step-keyword">When</span> evse_calc_balanced_current is called</li><li class="step-then"><span class="step-keyword">Then</span> No division by zero occurs; Balanced[] values remain at zero</li></ul></td>
+<td><code>test_balanced_current_zero_active_no_crash</code></td>
+<td><span class="file-ref">test_load_balancing.c:479</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-LB-082</span></td>
+<td>NoCurrent counter saturates at 255 instead of wrapping to 0</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> NoCurrent is at 254, standalone EVSE in shortage</li><li class="step-when"><span class="step-keyword">When</span> evse_calc_balanced_current detects shortage twice</li><li class="step-then"><span class="step-keyword">Then</span> NoCurrent reaches 255 and stays there (does not wrap to 0)</li></ul></td>
+<td><code>test_nocurrent_saturates_at_255</code></td>
+<td><span class="file-ref">test_load_balancing.c:516</span></td>
+</tr>
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">Meter Decoding (30 scenarios)</div>
+<div class="feature-title">Meter Decoding (36 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -3012,6 +3033,48 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Orno response with -1500.0W as FLOAT32 HBF_HWF</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called with divisor=0</li><li class="step-then"><span class="step-keyword">Then</span> Returns -1500</li></ul></td>
 <td><code>test_orno3p_negative_power</code></td>
 <td><span class="file-ref">test_meter_decode.c:557</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-087</span></td>
+<td>INT8_MIN divisor (-128) is rejected to avoid negation UB</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A valid buffer and divisor=-128 (INT8_MIN)</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid because -128 is outside pow10 table range</li></ul></td>
+<td><code>test_decode_divisor_int8_min</code></td>
+<td><span class="file-ref">test_meter_decode.c:576</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-088</span></td>
+<td>FLOAT32 NaN value from corrupt meter data is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Buffer containing IEEE 754 NaN bit pattern (0x7FC00000)</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called with FLOAT32 datatype</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid</li></ul></td>
+<td><code>test_decode_float32_nan_rejected</code></td>
+<td><span class="file-ref">test_meter_decode.c:591</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-089</span></td>
+<td>FLOAT32 Infinity value from corrupt meter data is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Buffer containing IEEE 754 +Infinity bit pattern (0x7F800000)</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called with FLOAT32 datatype</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid</li></ul></td>
+<td><code>test_decode_float32_inf_rejected</code></td>
+<td><span class="file-ref">test_meter_decode.c:607</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-090</span></td>
+<td>INT32 multiplication overflow is detected and rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Buffer with INT32 value near INT32_MAX/1000 and divisor=-3</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid because value * 1000 would overflow int32_t</li></ul></td>
+<td><code>test_decode_int32_multiply_overflow</code></td>
+<td><span class="file-ref">test_meter_decode.c:623</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-091</span></td>
+<td>INT32 multiplication that fits is still accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Buffer with INT32 value 2147483 and divisor=-3</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is valid with value 2147483000</li></ul></td>
+<td><code>test_decode_int32_multiply_max_valid</code></td>
+<td><span class="file-ref">test_meter_decode.c:640</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MTR-092</span></td>
+<td>Negative INT32 multiplication overflow is detected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Buffer with large negative INT32 value and divisor=-3</li><li class="step-when"><span class="step-keyword">When</span> meter_decode_value is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid because value * 1000 would overflow</li></ul></td>
+<td><code>test_decode_int32_negative_multiply_overflow</code></td>
+<td><span class="file-ref">test_meter_decode.c:657</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -3912,7 +3975,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">MQTT Input Validation (36 scenarios)</div>
+<div class="feature-title">MQTT Input Validation (42 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -3993,14 +4056,14 @@ footer {
 </tr>
 <tr>
 <td><span class="req-tag">REQ-MQTT-007</span></td>
-<td>Mains meter out of range rejected (&gt;=2000)</td>
+<td>Mains meter out of range rejected (&gt;2000)</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_mains_meter_out_of_range</code></td>
 <td><span class="file-ref">test_mqtt_parser.c:272</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-MQTT-007</span></td>
-<td>Mains meter out of range rejected (&lt;=-2000)</td>
+<td>Mains meter out of range rejected (&lt;-2000)</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_mains_meter_out_of_range_neg</code></td>
 <td><span class="file-ref">test_mqtt_parser.c:282</span></td>
@@ -4160,18 +4223,60 @@ footer {
 <td><span class="file-ref">test_mqtt_parser.c:892</span></td>
 </tr>
 <tr>
+<td><span class="req-tag">REQ-MQTT-025</span></td>
+<td>Mains meter boundary value +2000 (200A exactly) is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A mains meter payload with L1=2000 dA (200A)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_mains_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns true with L1=2000</li></ul></td>
+<td><code>test_mains_meter_boundary_positive</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1018</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-025</span></td>
+<td>Mains meter boundary value -2000 (-200A exactly) is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> A mains meter payload with L1=-2000 dA (-200A)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_mains_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns true with L1=-2000</li></ul></td>
+<td><code>test_mains_meter_boundary_negative</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1032</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-026</span></td>
+<td>EV meter power exceeding 100kW is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An EV meter payload with W=200000 (200kW, physically impossible)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_ev_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_ev_meter_power_too_high</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1046</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-026</span></td>
+<td>EV meter negative power exceeding -100kW is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An EV meter payload with W=-200000 (-200kW)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_ev_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_ev_meter_power_too_low</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1059</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-027</span></td>
+<td>EV meter energy exceeding 1TWh is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An EV meter payload with Wh=2000000000 (2TWh, absurd value)</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_ev_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false</li></ul></td>
+<td><code>test_ev_meter_energy_too_high</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1072</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-MQTT-026</span></td>
+<td>EV meter power at boundary 100000W (100kW) is accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> An EV meter payload with W=100000</li><li class="step-when"><span class="step-keyword">When</span> mqtt_parse_ev_meter is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns true</li></ul></td>
+<td><code>test_ev_meter_power_boundary_accepted</code></td>
+<td><span class="file-ref">test_mqtt_parser.c:1085</span></td>
+</tr>
+<tr>
 <td><span class="req-tag">REQ-MQTT-014</span></td>
 <td>Unrecognized topic returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_unrecognized_topic</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:1018</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:1101</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-MQTT-014</span></td>
 <td>Wrong prefix returns false</td>
 <td><ul class="scenario-steps"></ul></td>
 <td><code>test_wrong_prefix</code></td>
-<td><span class="file-ref">test_mqtt_parser.c:1027</span></td>
+<td><span class="file-ref">test_mqtt_parser.c:1110</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -4647,7 +4752,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">OCPP Authorization (21 scenarios)</div>
+<div class="feature-title">OCPP Authorization (22 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -4802,6 +4907,13 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Mode is Normal, ErrorFlags has NO_SUN, ChargeDelay=0</li><li class="step-when"><span class="step-keyword">When</span> ocpp_should_defer_access is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false because NO_SUN deferral only applies in Solar mode</li></ul></td>
 <td><code>test_no_defer_access_normal_with_no_sun</code></td>
 <td><span class="file-ref">test_ocpp_auth.c:260</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-096</span></td>
+<td>Invalid mode value does not defer access (safe default)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Mode is 255 (out-of-range), ChargeDelay=0, ErrorFlags has NO_SUN</li><li class="step-when"><span class="step-keyword">When</span> ocpp_should_defer_access is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns false because invalid modes should not defer (safe default)</li></ul></td>
+<td><code>test_defer_access_invalid_mode_returns_false</code></td>
+<td><span class="file-ref">test_ocpp_auth.c:272</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -5066,7 +5178,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">OCPP RFID Formatting (7 scenarios)</div>
+<div class="feature-title">OCPP RFID Formatting (9 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -5124,10 +5236,24 @@ footer {
 <td><code>test_rfid_zero_length</code></td>
 <td><span class="file-ref">test_ocpp_rfid.c:111</span></td>
 </tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-095</span></td>
+<td>3-byte output buffer fits exactly one hex byte plus null</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> RFID bytes {0xAB} and output buffer of size 3</li><li class="step-when"><span class="step-keyword">When</span> ocpp_format_rfid_hex is called</li><li class="step-then"><span class="step-keyword">Then</span> Output is &quot;AB&quot; (2 hex chars + null fits exactly in 3 bytes)</li></ul></td>
+<td><code>test_rfid_format_small_buffer_boundary</code></td>
+<td><span class="file-ref">test_ocpp_rfid.c:128</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-095</span></td>
+<td>2-byte output buffer cannot fit any hex byte (needs 3: 2 chars + null)</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> RFID bytes {0xAB} and output buffer of size 2</li><li class="step-when"><span class="step-keyword">When</span> ocpp_format_rfid_hex is called</li><li class="step-then"><span class="step-keyword">Then</span> Output is empty string because 2 hex chars + null requires 3 bytes</li></ul></td>
+<td><code>test_rfid_format_2byte_buffer_empty</code></td>
+<td><span class="file-ref">test_ocpp_rfid.c:143</span></td>
+</tr>
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">OCPP Settings Validation (18 scenarios)</div>
+<div class="feature-title">OCPP Settings Validation (23 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -5200,67 +5326,102 @@ footer {
 <td><span class="file-ref">test_ocpp_settings.c:118</span></td>
 </tr>
 <tr>
+<td><span class="req-tag">REQ-OCPP-097</span></td>
+<td>URL with CRLF injection rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> URL is &quot;ws://example.com\r\nHost: evil&quot;</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_backend_url is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS because CRLF is not allowed</li></ul></td>
+<td><code>test_url_crlf_rejected</code></td>
+<td><span class="file-ref">test_ocpp_settings.c:131</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-097</span></td>
+<td>URL with space rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> URL is &quot;ws://example.com/path with space&quot;</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_backend_url is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS because spaces are not allowed</li></ul></td>
+<td><code>test_url_space_rejected</code></td>
+<td><span class="file-ref">test_ocpp_settings.c:144</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-097</span></td>
+<td>URL with valid special characters accepted</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> URL contains all allowed special chars: . : / - _ ? = &amp; @ % + #</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_backend_url is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_OK</li></ul></td>
+<td><code>test_url_valid_special_chars_accepted</code></td>
+<td><span class="file-ref">test_ocpp_settings.c:157</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-097</span></td>
+<td>URL with backslash rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> URL contains a backslash character</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_backend_url is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS</li></ul></td>
+<td><code>test_url_backslash_rejected</code></td>
+<td><span class="file-ref">test_ocpp_settings.c:170</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-OCPP-097</span></td>
+<td>URL with curly braces rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> URL contains curly brace characters</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_backend_url is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS</li></ul></td>
+<td><code>test_url_braces_rejected</code></td>
+<td><span class="file-ref">test_ocpp_settings.c:183</span></td>
+</tr>
+<tr>
 <td><span class="req-tag">REQ-OCPP-064</span></td>
 <td>Valid ChargeBoxId accepted</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId is &quot;SmartEVSE-12345&quot;</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_OK</li></ul></td>
 <td><code>test_cbid_valid</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:133</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:198</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-064</span></td>
 <td>ChargeBoxId with special characters rejected</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId contains &#x27;&lt;&#x27; character</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS</li></ul></td>
 <td><code>test_cbid_special_chars_rejected</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:146</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:211</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-065</span></td>
 <td>ChargeBoxId length &gt; 20 rejected (OCPP 1.6 CiString20)</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId is 21 characters long</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_TOO_LONG</li></ul></td>
 <td><code>test_cbid_too_long_rejected</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:159</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:224</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-065</span></td>
 <td>ChargeBoxId exactly 20 characters is accepted</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId is exactly 20 characters long</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_OK</li></ul></td>
 <td><code>test_cbid_exactly_20_accepted</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:172</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:237</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-064</span></td>
 <td>Empty ChargeBoxId rejected</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId is empty string</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_EMPTY</li></ul></td>
 <td><code>test_cbid_empty_rejected</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:185</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:250</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-064</span></td>
 <td>ChargeBoxId with ampersand rejected</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> ChargeBoxId contains &#x27;&amp;&#x27; character</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_chargebox_id is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_BAD_CHARS</li></ul></td>
 <td><code>test_cbid_ampersand_rejected</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:198</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:263</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-066</span></td>
 <td>Auth key length &gt; 40 rejected (OCPP 1.6 limit)</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Auth key is 41 characters long</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_auth_key is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_TOO_LONG</li></ul></td>
 <td><code>test_auth_key_too_long</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:213</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:278</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-066</span></td>
 <td>Auth key exactly 40 characters is accepted</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Auth key is exactly 40 characters long</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_auth_key is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_OK</li></ul></td>
 <td><code>test_auth_key_exactly_40_accepted</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:226</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:291</span></td>
 </tr>
 <tr>
 <td><span class="req-tag">REQ-OCPP-066</span></td>
 <td>Empty auth key is valid (no auth configured)</td>
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> Auth key is empty string</li><li class="step-when"><span class="step-keyword">When</span> ocpp_validate_auth_key is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns OCPP_VALIDATE_OK because empty means no auth</li></ul></td>
 <td><code>test_auth_key_empty_accepted</code></td>
-<td><span class="file-ref">test_ocpp_settings.c:239</span></td>
+<td><span class="file-ref">test_ocpp_settings.c:304</span></td>
 </tr>
 </tbody></table>
 </div>
@@ -5485,7 +5646,7 @@ footer {
 </tbody></table>
 </div>
 <div class="feature-section">
-<div class="feature-title">P1 Meter Parsing (17 scenarios)</div>
+<div class="feature-title">P1 Meter Parsing (22 scenarios)</div>
 <div class="coverage-bar">
 <div class="coverage-fill" style="width:100.0%"></div>
 </div>
@@ -5612,6 +5773,41 @@ footer {
 <td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON with L1=8.5A/1955W, L2=6.2A/1426W</li><li class="step-when"><span class="step-keyword">When</span> p1_parse_response is called</li><li class="step-then"><span class="step-keyword">Then</span> power_w contains [1955, 1426, 0] for diagnostics</li></ul></td>
 <td><code>test_parse_power_diagnostics</code></td>
 <td><span class="file-ref">test_p1_parse.c:331</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-PWR-030</span></td>
+<td>NaN current value is rejected by JSON extractor</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON string containing &quot;active_current_l1_a&quot;:&quot;NaN&quot;</li><li class="step-when"><span class="step-keyword">When</span> p1_json_find_number is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0 (parse failure) because NaN is not a valid number</li></ul></td>
+<td><code>test_json_find_nan_rejected</code></td>
+<td><span class="file-ref">test_p1_parse.c:354</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-PWR-031</span></td>
+<td>Infinity current value is rejected by JSON extractor</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON string containing &quot;active_current_l1_a&quot;:Infinity</li><li class="step-when"><span class="step-keyword">When</span> p1_json_find_number is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0 (parse failure) because Infinity is not a valid meter reading</li></ul></td>
+<td><code>test_json_find_infinity_rejected</code></td>
+<td><span class="file-ref">test_p1_parse.c:370</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-PWR-032</span></td>
+<td>Negative infinity is rejected by JSON extractor</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON string containing &quot;active_current_l1_a&quot;:-Infinity</li><li class="step-when"><span class="step-keyword">When</span> p1_json_find_number is called</li><li class="step-then"><span class="step-keyword">Then</span> Returns 0 (parse failure)</li></ul></td>
+<td><code>test_json_find_neg_infinity_rejected</code></td>
+<td><span class="file-ref">test_p1_parse.c:386</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-PWR-033</span></td>
+<td>Current value exceeding int16_t range marks result invalid</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON with current 4000.0A (40000 dA exceeds INT16_MAX=32767)</li><li class="step-when"><span class="step-keyword">When</span> p1_parse_response is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid because deci-amp value overflows int16_t</li></ul></td>
+<td><code>test_parse_current_overflow_invalid</code></td>
+<td><span class="file-ref">test_p1_parse.c:402</span></td>
+</tr>
+<tr>
+<td><span class="req-tag">REQ-PWR-034</span></td>
+<td>NaN in full P1 response is rejected</td>
+<td><ul class="scenario-steps"><li class="step-given"><span class="step-keyword">Given</span> JSON with NaN value for active_current_l1_a</li><li class="step-when"><span class="step-keyword">When</span> p1_parse_response is called</li><li class="step-then"><span class="step-keyword">Then</span> Result is invalid because NaN cannot be parsed as a number</li></ul></td>
+<td><code>test_parse_nan_in_response_rejected</code></td>
+<td><span class="file-ref">test_p1_parse.c:418</span></td>
 </tr>
 </tbody></table>
 </div>

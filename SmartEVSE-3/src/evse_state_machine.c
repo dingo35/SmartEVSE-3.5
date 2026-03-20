@@ -464,11 +464,11 @@ int evse_is_current_available(evse_ctx_t *ctx) {
         if (ActiveEVSE == 0 && ctx->Isum >= ((int)ctx->StartCurrent * -10)) {
             return 0;
         }
-        if ((ActiveEVSE * ctx->MinCurrent * 10) > (unsigned)TotalCurrent) {
+        if (((int32_t)ActiveEVSE * ctx->MinCurrent * 10) > TotalCurrent) {
             return 0;
         }
         if (ActiveEVSE > 0 &&
-            ctx->Isum > ((int)ctx->ImportCurrent * 10) + TotalCurrent - (ActiveEVSE * ctx->MinCurrent * 10)) {
+            ctx->Isum > ((int)ctx->ImportCurrent * 10) + TotalCurrent - ((int32_t)ActiveEVSE * ctx->MinCurrent * 10)) {
             return 0;
         }
     }
@@ -482,13 +482,13 @@ int evse_is_current_available(evse_ctx_t *ctx) {
 
     // MaxMains check (line 1100)
     if (ctx->Mode != MODE_NORMAL &&
-        (ActiveEVSE * (ctx->MinCurrent * 10) + Baseload) > (int)(ctx->MaxMains * 10)) {
+        ((int32_t)ActiveEVSE * (ctx->MinCurrent * 10) + Baseload) > (int)(ctx->MaxMains * 10)) {
         return 0;
     }
 
     // MaxCircuit check (line 1104)
     if (((ctx->LoadBl == 0 && ctx->EVMeterType && ctx->Mode != MODE_NORMAL) || ctx->LoadBl == 1) &&
-        ((ActiveEVSE * (ctx->MinCurrent * 10) + Baseload_EV) > (int)(ctx->MaxCircuit * 10))) {
+        (((int32_t)ActiveEVSE * (ctx->MinCurrent * 10) + Baseload_EV) > (int)(ctx->MaxCircuit * 10))) {
         return 0;
     }
 
@@ -496,7 +496,7 @@ int evse_is_current_available(evse_ctx_t *ctx) {
     uint8_t Phases = 1;
     if (ctx->LoadBl == 0) Phases = evse_force_single_phase(ctx) ? 1 : 3;
     if (ctx->Mode != MODE_NORMAL && ctx->MaxSumMains &&
-        ((Phases * ActiveEVSE * ctx->MinCurrent * 10) + ctx->Isum > (int)(ctx->MaxSumMains * 10))) {
+        (((int32_t)Phases * ActiveEVSE * ctx->MinCurrent * 10) + ctx->Isum > (int)(ctx->MaxSumMains * 10))) {
         return 0;
     }
 
@@ -849,7 +849,7 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     // ---- Phase 5: Shortage detection and distribution (lines 1328-1495) ----
     if (ActiveEVSE && (ctx->phasesLastUpdateFlag || ctx->Mode == MODE_NORMAL)) {
 
-        if (ctx->IsetBalanced < (int32_t)(ActiveEVSE * ctx->MinCurrent * 10)) {
+        if (ctx->IsetBalanced < (int32_t)ActiveEVSE * ctx->MinCurrent * 10) {
             // ---- Shortage of power (lines 1332-1440) ----
             shortage = true;
 
@@ -857,14 +857,14 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             int32_t actualAvailable = ctx->IsetBalanced;
             if (actualAvailable < 0) actualAvailable = 0;
 
-            ctx->IsetBalanced = ActiveEVSE * ctx->MinCurrent * 10;  // line 1336
+            ctx->IsetBalanced = (int32_t)ActiveEVSE * ctx->MinCurrent * 10;  // line 1336
 
             // Solar shortage: 3P->1P switching (lines 1337-1370)
             // Issue #16: tiered timer + separate PhaseSwitchTimer
             if (ctx->Mode == MODE_SOLAR) {
                 // cppcheck-suppress knownConditionTrueFalse
                 if (ActiveEVSE && IsumImport > 0 &&
-                    (ctx->Isum > (int32_t)((ActiveEVSE * ctx->MinCurrent * ctx->Nr_Of_Phases_Charging
+                    (ctx->Isum > (int32_t)(((int32_t)ActiveEVSE * ctx->MinCurrent * ctx->Nr_Of_Phases_Charging
                                              - ctx->StartCurrent) * 10) ||
                      (ctx->Nr_Of_Phases_Charging > 1 && ctx->EnableC2 == AUTO))) {
 
@@ -925,14 +925,14 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 }
                 if (!any_active) {
                     // True hard shortage — nobody gets power
-                    ctx->NoCurrent++;
+                    if (ctx->NoCurrent < 255) ctx->NoCurrent++;
                 }
                 // else: deliberate pause, NoCurrent stays at 0
 
             } else {
                 // Standalone, node, or single EVSE: original behavior
                 if (hardShortage && ctx->Switching_Phases_C2 != GOING_TO_SWITCH_1P) {
-                    ctx->NoCurrent++;
+                    if (ctx->NoCurrent < 255) ctx->NoCurrent++;
                 } else {
                     if (LimitedByMaxSumMains && ctx->MaxSumMainsTime) {
                         if (ctx->MaxSumMainsTimer == 0)
@@ -1005,6 +1005,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // First pass: cap EVSEs at their max or solar startup min
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {
+            // cppcheck-suppress knownConditionTrueFalse
+            if (ActiveEVSE == 0) break;  // defense-in-depth: prevent division by zero
             int32_t Average = MaxBalanced / ActiveEVSE;
             if ((ctx->BalancedState[n] == STATE_C) && (!CurrentSet[n])) {
                 // Solar startup: force MinCurrent (lines 1457-1465)
@@ -1031,6 +1033,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // Second pass: distribute remaining equally (lines 1484-1494)
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {
+            // cppcheck-suppress knownConditionTrueFalse
+            if (ActiveEVSE == 0) break;  // defense-in-depth: prevent division by zero
             if ((ctx->BalancedState[n] == STATE_C) && (!CurrentSet[n])) {
                 ctx->Balanced[n] = MaxBalanced / ActiveEVSE;
                 CurrentSet[n] = 1;

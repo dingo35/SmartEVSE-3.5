@@ -123,6 +123,38 @@ void test_rfid_zero_length(void) {
     TEST_ASSERT_EQUAL_STRING("", out);
 }
 
+/* ---- Small buffer boundary ---- */
+
+/*
+ * @feature OCPP RFID Formatting
+ * @req REQ-OCPP-095
+ * @scenario 3-byte output buffer fits exactly one hex byte plus null
+ * @given RFID bytes {0xAB} and output buffer of size 3
+ * @when ocpp_format_rfid_hex is called
+ * @then Output is "AB" (2 hex chars + null fits exactly in 3 bytes)
+ */
+void test_rfid_format_small_buffer_boundary(void) {
+    uint8_t rfid[] = {0xAB, 0xCD};
+    char out[3];
+    ocpp_format_rfid_hex(rfid, 2, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("AB", out);
+}
+
+/*
+ * @feature OCPP RFID Formatting
+ * @req REQ-OCPP-095
+ * @scenario 2-byte output buffer cannot fit any hex byte (needs 3: 2 chars + null)
+ * @given RFID bytes {0xAB} and output buffer of size 2
+ * @when ocpp_format_rfid_hex is called
+ * @then Output is empty string because 2 hex chars + null requires 3 bytes
+ */
+void test_rfid_format_2byte_buffer_empty(void) {
+    uint8_t rfid[] = {0xAB};
+    char out[2];
+    ocpp_format_rfid_hex(rfid, 1, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("", out);
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP RFID Formatting");
@@ -134,6 +166,8 @@ int main(void) {
     RUN_TEST(test_rfid_4byte_new_reader);
     RUN_TEST(test_rfid_null_input);
     RUN_TEST(test_rfid_zero_length);
+    RUN_TEST(test_rfid_format_small_buffer_boundary);
+    RUN_TEST(test_rfid_format_2byte_buffer_empty);
 
     TEST_SUITE_RESULTS();
 }
