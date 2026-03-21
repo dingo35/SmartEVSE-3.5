@@ -95,6 +95,33 @@ extern ocpp_telemetry_t OcppTelemetry;
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
 
+/*
+ * Validate a filename for safe filesystem access.
+ * Returns true if filename contains only safe characters:
+ * alphanumeric, underscore, dash, dot.
+ * Rejects empty names, path separators, '..' sequences,
+ * and any non-printable or non-ASCII characters.
+ */
+static bool is_safe_filename(const char *name, size_t len)
+{
+    if (len == 0)
+        return false;
+    /* Reject '..' anywhere in the name */
+    for (size_t i = 0; i + 1 < len; i++) {
+        if (name[i] == '.' && name[i + 1] == '.')
+            return false;
+    }
+    for (size_t i = 0; i < len; i++) {
+        char ch = name[i];
+        /* Allow alphanumeric, underscore, dash, dot */
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.')
+            continue;
+        return false;
+    }
+    return true;
+}
+
 // handles URI, returns true if handled, false if not
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
@@ -1298,6 +1325,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         memcpy(fname, uri.buf + prefix_len, fname_len);
         fname[fname_len] = '\0';
 
+        /* Validate filename: reject path traversal and unsafe characters */
+        if (!is_safe_filename(fname, fname_len)) {
+            mg_http_reply(c, 400, "", "invalid filename\r\n");
+            return true;
+        }
+
         /* Read file from LittleFS */
         char filepath[64];
         snprintf(filepath, sizeof(filepath), "%s/%s", DIAG_DIR, fname);
@@ -1340,6 +1373,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if (fname_len >= sizeof(fname)) fname_len = sizeof(fname) - 1;
         memcpy(fname, uri.buf + prefix_len, fname_len);
         fname[fname_len] = '\0';
+
+        /* Validate filename: reject path traversal and unsafe characters */
+        if (!is_safe_filename(fname, fname_len)) {
+            mg_http_reply(c, 400, "", "invalid filename\r\n");
+            return true;
+        }
 
         bool ok = diag_storage_delete(fname);
         mg_http_reply(c, ok ? 200 : 404, "Content-Type: application/json\r\n",

@@ -432,6 +432,137 @@ void test_config_fixed_cable_no_maxcapacity_cap(void) {
     TEST_ASSERT_EQUAL_INT(250, ctx.ChargeCurrent);
 }
 
+// ---- Safety hardening tests ----
+
+/*
+ * @feature Load Balancing
+ * @req REQ-LB-080
+ * @scenario Surplus handout with zero uncapped EVSEs does not crash
+ * @given Master with 2 EVSEs in shortage, all EVSEs already at BalancedMax (capped)
+ * @when evse_calc_balanced_current triggers priority scheduling with surplus
+ * @then No division by zero occurs and function completes safely
+ */
+void test_handout_surplus_zero_uncapped_no_crash(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_SOLAR;
+    ctx.LoadBl = 1;  // Master
+    ctx.MaxCurrent = 16;
+    ctx.MaxCapacity = 16;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 32;
+    ctx.MaxMains = 25;
+    ctx.ChargeCurrent = 60;
+    ctx.phasesLastUpdateFlag = true;
+    ctx.StartCurrent = 4;
+    ctx.ImportCurrent = 0;
+
+    // Two EVSEs charging at very low max — they will be "capped" immediately
+    ctx.BalancedState[0] = STATE_C;
+    ctx.BalancedState[1] = STATE_C;
+    ctx.BalancedMax[0] = 10;  // Very low max so they cap quickly
+    ctx.BalancedMax[1] = 10;
+    ctx.Balanced[0] = 60;
+    ctx.Balanced[1] = 60;
+    ctx.Node[0].Online = 1;
+    ctx.Node[1].Online = 1;
+
+    // Trigger shortage path: IsetBalanced will be < ActiveEVSE * MinCurrent * 10
+    ctx.IsetBalanced = 20;  // Very low available power
+
+    // This should not crash even if surplus handout finds all EVSEs capped
+    evse_calc_balanced_current(&ctx, 0);
+    // If we reach here without crashing, the test passes
+    TEST_ASSERT_TRUE(1);
+}
+
+/*
+ * @feature Load Balancing
+ * @req REQ-LB-081
+ * @scenario Balanced current with zero active EVSEs does not divide by zero
+ * @given All EVSEs in STATE_A (no active chargers)
+ * @when evse_calc_balanced_current is called
+ * @then No division by zero occurs; Balanced[] values remain at zero
+ */
+void test_balanced_current_zero_active_no_crash(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_NORMAL;
+    ctx.LoadBl = 1;  // Master
+    ctx.MaxCurrent = 16;
+    ctx.MaxCapacity = 16;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 32;
+    ctx.MaxMains = 25;
+    ctx.ChargeCurrent = 160;
+    ctx.phasesLastUpdateFlag = true;
+
+    // All EVSEs in STATE_A — none active
+    ctx.BalancedState[0] = STATE_A;
+    ctx.BalancedState[1] = STATE_A;
+    ctx.BalancedMax[0] = 160;
+    ctx.BalancedMax[1] = 160;
+    ctx.Balanced[0] = 0;
+    ctx.Balanced[1] = 0;
+    ctx.Node[0].Online = 1;
+    ctx.Node[1].Online = 1;
+
+    // Should not crash — ActiveEVSE will be 0
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(0, ctx.Balanced[0]);
+    TEST_ASSERT_EQUAL_INT(0, ctx.Balanced[1]);
+}
+
+/*
+ * @feature Load Balancing
+ * @req REQ-LB-082
+ * @scenario NoCurrent counter saturates at 255 instead of wrapping to 0
+ * @given NoCurrent is at 254, standalone EVSE in shortage
+ * @when evse_calc_balanced_current detects shortage twice
+ * @then NoCurrent reaches 255 and stays there (does not wrap to 0)
+ */
+void test_nocurrent_saturates_at_255(void) {
+    evse_init(&ctx, NULL);
+    ctx.AccessStatus = ON;
+    ctx.Mode = MODE_SMART;
+    ctx.LoadBl = 0;  // Standalone
+    ctx.MaxCurrent = 16;
+    ctx.MaxCapacity = 16;
+    ctx.MinCurrent = 6;
+    ctx.MaxCircuit = 32;
+    ctx.MaxMains = 25;
+    ctx.ChargeCurrent = 160;
+    ctx.phasesLastUpdateFlag = true;
+    ctx.MainsMeterType = 1;  // Enable mains meter for hardShortage detection
+    ctx.NoCurrentThreshold = 0;  // Disable LESS_6A trigger so we can observe counter
+
+    ctx.BalancedState[0] = STATE_C;
+    ctx.BalancedMax[0] = 160;
+    ctx.Balanced[0] = 60;
+    ctx.State = STATE_C;
+
+    // Set up hard shortage: IsetBalanced > MaxMains*10 - Baseload
+    ctx.MaxMains = 1;  // Very low so hardShortage triggers
+    ctx.MainsMeterImeasured = 100;
+    ctx.IsetBalanced = 60;
+
+    // Start NoCurrent at 254
+    ctx.NoCurrent = 254;
+
+    // First call: shortage should increment NoCurrent to 255
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(255, ctx.NoCurrent);
+
+    // Reset state for second call
+    ctx.BalancedState[0] = STATE_C;
+    ctx.Balanced[0] = 60;
+    ctx.phasesLastUpdateFlag = true;
+
+    // Second call: NoCurrent should stay at 255, not wrap to 0
+    evse_calc_balanced_current(&ctx, 0);
+    TEST_ASSERT_EQUAL_INT(255, ctx.NoCurrent);
+}
+
 // ---- Main ----
 int main(void) {
     TEST_SUITE_BEGIN("Load Balancing");
@@ -452,6 +583,9 @@ int main(void) {
     RUN_TEST(test_node_requests_comm_c);
     RUN_TEST(test_config_socket_caps_by_maxcapacity);
     RUN_TEST(test_config_fixed_cable_no_maxcapacity_cap);
+    RUN_TEST(test_handout_surplus_zero_uncapped_no_crash);
+    RUN_TEST(test_balanced_current_zero_active_no_crash);
+    RUN_TEST(test_nocurrent_saturates_at_255);
 
     TEST_SUITE_RESULTS();
 }

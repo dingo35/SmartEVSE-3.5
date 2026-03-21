@@ -128,6 +128,71 @@ void test_url_no_scheme_rejected(void) {
         ocpp_validate_backend_url("ocpp.example.com"));
 }
 
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-097
+ * @scenario URL with CRLF injection rejected
+ * @given URL is "ws://example.com\r\nHost: evil"
+ * @when ocpp_validate_backend_url is called
+ * @then Returns OCPP_VALIDATE_BAD_CHARS because CRLF is not allowed
+ */
+void test_url_crlf_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_BAD_CHARS,
+        ocpp_validate_backend_url("ws://example.com\r\nHost: evil"));
+}
+
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-097
+ * @scenario URL with space rejected
+ * @given URL is "ws://example.com/path with space"
+ * @when ocpp_validate_backend_url is called
+ * @then Returns OCPP_VALIDATE_BAD_CHARS because spaces are not allowed
+ */
+void test_url_space_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_BAD_CHARS,
+        ocpp_validate_backend_url("ws://example.com/path with space"));
+}
+
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-097
+ * @scenario URL with valid special characters accepted
+ * @given URL contains all allowed special chars: . : / - _ ? = & @ % + #
+ * @when ocpp_validate_backend_url is called
+ * @then Returns OCPP_VALIDATE_OK
+ */
+void test_url_valid_special_chars_accepted(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("ws://user@host.com:8080/path-name_ok?a=1&b=2#frag+%20"));
+}
+
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-097
+ * @scenario URL with backslash rejected
+ * @given URL contains a backslash character
+ * @when ocpp_validate_backend_url is called
+ * @then Returns OCPP_VALIDATE_BAD_CHARS
+ */
+void test_url_backslash_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_BAD_CHARS,
+        ocpp_validate_backend_url("ws://example.com\\path"));
+}
+
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-097
+ * @scenario URL with curly braces rejected
+ * @given URL contains curly brace characters
+ * @when ocpp_validate_backend_url is called
+ * @then Returns OCPP_VALIDATE_BAD_CHARS
+ */
+void test_url_braces_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_BAD_CHARS,
+        ocpp_validate_backend_url("ws://example.com/{path}"));
+}
+
 /* ---- ChargeBoxId validation ---- */
 
 /*
@@ -262,6 +327,11 @@ int main(void) {
     RUN_TEST(test_url_bare_scheme_rejected);
     RUN_TEST(test_url_bare_wss_scheme_rejected);
     RUN_TEST(test_url_no_scheme_rejected);
+    RUN_TEST(test_url_crlf_rejected);
+    RUN_TEST(test_url_space_rejected);
+    RUN_TEST(test_url_valid_special_chars_accepted);
+    RUN_TEST(test_url_backslash_rejected);
+    RUN_TEST(test_url_braces_rejected);
     RUN_TEST(test_cbid_valid);
     RUN_TEST(test_cbid_special_chars_rejected);
     RUN_TEST(test_cbid_too_long_rejected);

@@ -1135,6 +1135,9 @@ static void mqtt_pub_str(mqtt_slot_t slot, const char *suffix, const char *value
     }
 }
 
+static bool session_publish_pending = false;
+void mqttPublishSessionComplete(void);  // forward declaration
+
 void mqttPublishData() {
     // Detect forced publish (lastMqttUpdate set to 10 by external triggers)
     bool forced = (lastMqttUpdate >= 10);
@@ -1142,6 +1145,11 @@ void mqttPublishData() {
     if (forced)
         mqtt_cache_force_all(&mqtt_cache);
     uint32_t now_s = (uint32_t)(esp_timer_get_time() / 1000000);
+
+        // Retry pending session publish after MQTT reconnect
+        if (session_publish_pending) {
+            mqttPublishSessionComplete();
+        }
 
         if (MainsMeter.Type) {
             mqtt_pub_int(MQTT_SLOT_MAINS_L1, "/MainsCurrentL1", MainsMeter.Irms[0], false, now_s);
@@ -1338,15 +1346,21 @@ void mqttSmartEVSEPublishData() {
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
 }
 
-// Publish completed charge session via MQTT (retained) for ERE/HA integration
+// Publish completed charge session via MQTT (retained) for ERE/HA integration.
+// If MQTT is not connected when session ends, sets a pending flag so the publish
+// is retried on the next mqttPublishData() cycle after reconnect.
 void mqttPublishSessionComplete(void) {
-    if (!MQTTclient.connected) return;
+    if (!MQTTclient.connected) {
+        session_publish_pending = true;
+        return;
+    }
     const session_record_t *last = session_get_last();
     if (!last) return;
 
     char json[384];
     if (session_to_json(last, json, sizeof(json)) > 0) {
         MQTTclient.publish(MQTTprefix + "/Session/Complete", json, true, 0);
+        session_publish_pending = false;
     }
 }
 

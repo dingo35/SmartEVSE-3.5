@@ -269,6 +269,18 @@ void test_no_defer_access_normal_with_no_sun(void) {
     TEST_ASSERT_FALSE(ocpp_should_defer_access(MODE_NORMAL, 0, NO_SUN));
 }
 
+/*
+ * @feature OCPP Authorization
+ * @req REQ-OCPP-096
+ * @scenario Invalid mode value does not defer access (safe default)
+ * @given Mode is 255 (out-of-range), ChargeDelay=0, ErrorFlags has NO_SUN
+ * @when ocpp_should_defer_access is called
+ * @then Returns false because invalid modes should not defer (safe default)
+ */
+void test_defer_access_invalid_mode_returns_false(void) {
+    TEST_ASSERT_FALSE(ocpp_should_defer_access(255, 0, NO_SUN));
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Authorization Logic");
@@ -294,6 +306,7 @@ int main(void) {
     RUN_TEST(test_defer_access_smart_with_delay);
     RUN_TEST(test_no_defer_access_smart_no_delay);
     RUN_TEST(test_no_defer_access_normal_with_no_sun);
+    RUN_TEST(test_defer_access_invalid_mode_returns_false);
 
     TEST_SUITE_RESULTS();
 }

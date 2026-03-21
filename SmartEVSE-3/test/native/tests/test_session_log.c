@@ -58,14 +58,14 @@ void test_session_basic_lifecycle(void) {
  */
 void test_session_id_increments(void) {
     session_init();
-    session_start(1000, 0, 0);
-    session_end(2000, 1000, 100, 1);
+    session_start(1710000000, 0, 0);
+    session_end(1710001000, 1000, 100, 1);
     const session_record_t *first = session_get_last();
     TEST_ASSERT_TRUE(first != NULL);
     uint32_t first_id = first->session_id;
 
-    session_start(3000, 1000, 0);
-    session_end(4000, 2000, 100, 1);
+    session_start(1710002000, 1000, 0);
+    session_end(1710003000, 2000, 100, 1);
     const session_record_t *second = session_get_last();
     TEST_ASSERT_TRUE(second != NULL);
     TEST_ASSERT_GREATER_THAN((int)first_id, (int)second->session_id);
@@ -81,9 +81,9 @@ void test_session_id_increments(void) {
  */
 void test_session_ocpp_id(void) {
     session_init();
-    session_start(1000, 50000, 2); /* MODE_SOLAR */
+    session_start(1710000000, 50000, 2); /* MODE_SOLAR */
     session_set_ocpp_id(42);
-    session_end(2000, 55000, 160, 3);
+    session_end(1710001000, 55000, 160, 3);
 
     const session_record_t *last = session_get_last();
     TEST_ASSERT_TRUE(last != NULL);
@@ -103,7 +103,7 @@ void test_session_ocpp_id(void) {
 void test_session_end_without_start(void) {
     session_init();
     TEST_ASSERT_FALSE(session_is_active());
-    session_end(2000, 55000, 160, 3);
+    session_end(1710001000, 55000, 160, 3);
     TEST_ASSERT_FALSE(session_is_active());
     TEST_ASSERT_TRUE(session_get_last() == NULL);
 }
@@ -118,14 +118,14 @@ void test_session_end_without_start(void) {
  */
 void test_session_start_while_active(void) {
     session_init();
-    session_start(1000, 50000, 0);
+    session_start(1710000000, 50000, 0);
     TEST_ASSERT_TRUE(session_is_active());
 
     /* Start a new session without ending the first */
-    session_start(2000, 60000, 1);
+    session_start(1710001000, 60000, 1);
     TEST_ASSERT_TRUE(session_is_active());
 
-    session_end(3000, 65000, 100, 1);
+    session_end(1710002000, 65000, 100, 1);
     const session_record_t *last = session_get_last();
     TEST_ASSERT_TRUE(last != NULL);
     TEST_ASSERT_EQUAL_INT(60000, last->start_energy_wh);
@@ -171,8 +171,8 @@ void test_session_set_ocpp_no_active(void) {
  */
 void test_session_solar_mode(void) {
     session_init();
-    session_start(1000, 10000, 2); /* MODE_SOLAR */
-    session_end(2000, 15000, 80, 1);
+    session_start(1710000000, 10000, 2); /* MODE_SOLAR */
+    session_end(1710001000, 15000, 80, 1);
 
     const session_record_t *last = session_get_last();
     TEST_ASSERT_TRUE(last != NULL);
@@ -260,8 +260,8 @@ void test_session_json_null_record(void) {
  */
 void test_session_json_null_buffer(void) {
     session_init();
-    session_start(1000, 0, 0);
-    session_end(2000, 1000, 100, 1);
+    session_start(1710000000, 0, 0);
+    session_end(1710001000, 1000, 100, 1);
     const session_record_t *last = session_get_last();
     int n = session_to_json(last, NULL, 512);
     TEST_ASSERT_EQUAL_INT(-1, n);
@@ -277,8 +277,8 @@ void test_session_json_null_buffer(void) {
  */
 void test_session_json_zero_buffer(void) {
     session_init();
-    session_start(1000, 0, 0);
-    session_end(2000, 1000, 100, 1);
+    session_start(1710000000, 0, 0);
+    session_end(1710001000, 1000, 100, 1);
     const session_record_t *last = session_get_last();
     int n = session_to_json(last, json_buf, 0);
     TEST_ASSERT_EQUAL_INT(-1, n);
@@ -294,8 +294,8 @@ void test_session_json_zero_buffer(void) {
  */
 void test_session_json_small_buffer(void) {
     session_init();
-    session_start(1000, 0, 0);
-    session_end(2000, 1000, 100, 1);
+    session_start(1710000000, 0, 0);
+    session_end(1710001000, 1000, 100, 1);
     const session_record_t *last = session_get_last();
     int n = session_to_json(last, json_buf, 10);
     TEST_ASSERT_EQUAL_INT(-1, n);
@@ -311,8 +311,8 @@ void test_session_json_small_buffer(void) {
  */
 void test_session_json_smart_mode(void) {
     session_init();
-    session_start(1000, 0, 1); /* MODE_SMART */
-    session_end(2000, 500, 60, 1);
+    session_start(1710000000, 0, 1); /* MODE_SMART */
+    session_end(1710001000, 500, 60, 1);
 
     const session_record_t *last = session_get_last();
     int n = session_to_json(last, json_buf, sizeof(json_buf));
@@ -330,12 +330,94 @@ void test_session_json_smart_mode(void) {
  */
 void test_session_zero_energy(void) {
     session_init();
-    session_start(1000, 50000, 0);
-    session_end(1001, 50000, 0, 1);
+    session_start(1710000000, 50000, 0);
+    session_end(1710000061, 50000, 0, 1);
 
     const session_record_t *last = session_get_last();
     TEST_ASSERT_TRUE(last != NULL);
     TEST_ASSERT_EQUAL_INT(0, last->energy_charged_wh);
+}
+
+/* ---- NTP time validity guard tests ---- */
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-ERE-020
+ * @scenario session_start with timestamp 0 is rejected
+ * @given The session logger is initialized
+ * @when session_start is called with timestamp 0 (NTP not synced)
+ * @then No session is started and session_is_active returns 0
+ */
+void test_session_start_rejects_zero_timestamp(void) {
+    session_init();
+    session_start(0, 50000, 0);
+    TEST_ASSERT_FALSE(session_is_active());
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-ERE-021
+ * @scenario session_start with pre-2024 timestamp is rejected
+ * @given The session logger is initialized
+ * @when session_start is called with timestamp 1000 (pre-2024)
+ * @then No session is started and session_is_active returns 0
+ */
+void test_session_start_rejects_pre2024_timestamp(void) {
+    session_init();
+    session_start(1000, 50000, 0);
+    TEST_ASSERT_FALSE(session_is_active());
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-ERE-022
+ * @scenario session_start with valid 2024+ timestamp succeeds
+ * @given The session logger is initialized
+ * @when session_start is called with timestamp 1710000000 (March 2024)
+ * @then A session is started and session_is_active returns 1
+ */
+void test_session_start_accepts_valid_timestamp(void) {
+    session_init();
+    session_start(1710000000, 50000, 0);
+    TEST_ASSERT_TRUE(session_is_active());
+}
+
+/* ---- Minimum duration filter tests ---- */
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-ERE-025
+ * @scenario Session shorter than 60 seconds is discarded
+ * @given The session logger is initialized
+ * @when A session is started and ended after only 30 seconds
+ * @then The session is discarded, session_is_active returns 0, and session_get_last returns NULL
+ */
+void test_session_short_duration_discarded(void) {
+    session_init();
+    session_start(1710000000, 50000, 0);
+    TEST_ASSERT_TRUE(session_is_active());
+
+    session_end(1710000030, 51000, 100, 1); /* 30 seconds — below threshold */
+    TEST_ASSERT_FALSE(session_is_active());
+    TEST_ASSERT_TRUE(session_get_last() == NULL);
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-ERE-026
+ * @scenario Session with duration exactly 60 seconds is kept
+ * @given The session logger is initialized
+ * @when A session is started and ended after exactly 60 seconds
+ * @then The session is stored and session_get_last returns a valid record with correct energy
+ */
+void test_session_exact_min_duration_kept(void) {
+    session_init();
+    session_start(1710000000, 50000, 0);
+    session_end(1710000060, 51000, 100, 1); /* Exactly 60 seconds — at threshold */
+
+    const session_record_t *last = session_get_last();
+    TEST_ASSERT_TRUE(last != NULL);
+    TEST_ASSERT_EQUAL_INT(1000, last->energy_charged_wh);
 }
 
 int main(void) {
@@ -360,6 +442,15 @@ int main(void) {
     RUN_TEST(test_session_json_small_buffer);
     RUN_TEST(test_session_json_smart_mode);
     RUN_TEST(test_session_zero_energy);
+
+    /* Minimum duration filter tests */
+    RUN_TEST(test_session_short_duration_discarded);
+    RUN_TEST(test_session_exact_min_duration_kept);
+
+    /* NTP time validity guard tests */
+    RUN_TEST(test_session_start_rejects_zero_timestamp);
+    RUN_TEST(test_session_start_rejects_pre2024_timestamp);
+    RUN_TEST(test_session_start_accepts_valid_timestamp);
 
     TEST_SUITE_RESULTS();
 }
