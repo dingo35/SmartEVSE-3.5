@@ -1005,8 +1005,6 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // First pass: cap EVSEs at their max or solar startup min
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {
-            // cppcheck-suppress knownConditionTrueFalse
-            if (ActiveEVSE == 0) break;  // defense-in-depth: prevent division by zero
             int32_t Average = MaxBalanced / ActiveEVSE;
             if ((ctx->BalancedState[n] == STATE_C) && (!CurrentSet[n])) {
                 // Solar startup: force MinCurrent (lines 1457-1465)
@@ -1033,8 +1031,6 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         // Second pass: distribute remaining equally (lines 1484-1494)
         n = 0;
         while (n < NR_EVSES && ActiveEVSE) {
-            // cppcheck-suppress knownConditionTrueFalse
-            if (ActiveEVSE == 0) break;  // defense-in-depth: prevent division by zero
             if ((ctx->BalancedState[n] == STATE_C) && (!CurrentSet[n])) {
                 ctx->Balanced[n] = MaxBalanced / ActiveEVSE;
                 CurrentSet[n] = 1;
