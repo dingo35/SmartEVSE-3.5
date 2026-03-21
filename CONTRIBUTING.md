@@ -1,6 +1,40 @@
 # Contributing to SmartEVSE
 
-Thank you for your interest in contributing to SmartEVSE! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to SmartEVSE! This document provides
+guidelines for contributing to the project.
+
+## Required Reading
+
+Before making any changes, you **must** read and understand these documents:
+
+| Document | Why |
+|----------|-----|
+| [Quality Engineering](docs/quality.md) | Architecture, testing methodology, CI/CD pipeline, quality gates |
+| [Coding Standards](CODING_STANDARDS.md) | Naming conventions, buffer safety, FreeRTOS patterns |
+| [Features](docs/features.md) | What the firmware does, fork improvements, feature context |
+| [Upstream Differences](docs/upstream-differences.md) | What changed from upstream and why |
+| This document | Workflow, SbE format, submission process |
+
+For AI agents, also read [CLAUDE.md](CLAUDE.md) (Claude Code) or
+[.github/copilot-instructions.md](.github/copilot-instructions.md) (GitHub Copilot).
+
+## Guardrails
+
+The following rules are **non-negotiable**. Deviating from any of them requires
+**explicit written approval** from the project maintainer:
+
+1. **Specification-first workflow** — SbE specification before code, always
+2. **No changes to `evse_state_machine.c` without tests** — zero exceptions
+3. **No `sprintf`** — use `snprintf` with explicit buffer sizes
+4. **No heap allocation in ISRs or critical sections**
+5. **No platform guards in core logic** — use the bridge layer
+6. **All tests must pass** — `make clean test` before every PR
+7. **Memory budget must be respected** — firmware builds must stay within limits
+8. **SbE annotations on all test functions** — `@feature`, `@req`, `@scenario`, `@given`/`@when`/`@then`
+9. **Never modify upstream repos** — all work in `basmeerman`-owned repos only
+
+If you believe a deviation is necessary, open an issue describing what rule you
+need to deviate from, why, and what safeguards you will put in place.
 
 ## Getting Started
 
@@ -33,7 +67,7 @@ cd SmartEVSE-3/test/native
 make clean test
 ```
 
-All 424 native tests (across 19 suites) must pass before submitting a PR.
+All native tests must pass before submitting a PR.
 
 ## Making Changes
 

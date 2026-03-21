@@ -3,6 +3,21 @@
 These instructions apply to GitHub Copilot, Copilot Chat, Copilot Workspace, and
 any Copilot-powered agent working on the SmartEVSE codebase.
 
+## Required Reading
+
+Before making any changes, read and understand these documents:
+
+- **`docs/quality.md`** — Architecture, testing methodology, CI/CD pipeline, hardening
+- **`CODING_STANDARDS.md`** — Naming conventions, buffer safety, FreeRTOS patterns
+- **`docs/features.md`** — Feature details and fork improvements
+- **`docs/upstream-differences.md`** — What changed from upstream and why
+- **`CONTRIBUTING.md`** — Workflow, SbE format, submission process, guardrails
+
+## Deviation from Guardrails
+
+All rules in this file are non-negotiable. Deviating from any rule requires
+explicit written approval from the project maintainer. Never silently deviate.
+
 ## Project Context
 
 SmartEVSE is safety-critical embedded firmware for an EV charging controller running

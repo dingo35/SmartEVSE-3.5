@@ -10,6 +10,40 @@ The firmware runs on ESP32 (v3/v4) and CH32 microcontrollers. This is safety-cri
 embedded software — incorrect behavior can damage vehicles, trip breakers, or cause
 electrical hazards.
 
+## Required Reading — MANDATORY
+
+Before writing ANY code, agents MUST read and understand these documents:
+
+| Document | Path | Purpose |
+|----------|------|---------|
+| This file | `CLAUDE.md` | Agent workflow, specialist roles, quality guardian |
+| Quality Engineering | `docs/quality.md` | Architecture, testing methodology, CI/CD pipeline, hardening, interoperability testing |
+| Coding Standards | `CODING_STANDARDS.md` | Naming conventions, buffer safety, FreeRTOS patterns |
+| Features | `docs/features.md` | Feature details and fork improvements — understand what exists before changing it |
+| Upstream Differences | `docs/upstream-differences.md` | What changed from upstream and why — avoid undoing or conflicting with existing work |
+| Contributing | `CONTRIBUTING.md` | Workflow, SbE format, submission process, guardrails |
+
+**Skipping required reading is not permitted.** When spawning sub-agents, include
+a reference to these documents in the prompt so the sub-agent reads them before
+working.
+
+## Deviation from Guardrails — HARD RULE
+
+All rules in this file and in `CONTRIBUTING.md` are **non-negotiable by default**.
+If an agent encounters a situation where a rule needs to be bent (e.g., modifying
+`evse_state_machine.c` for a refactor that temporarily breaks a test), the agent
+MUST:
+
+1. **Stop** — do not proceed with the deviation
+2. **Explain** — describe which rule needs to be deviated from and why
+3. **Propose** — suggest safeguards (e.g., "I will restore the test within this
+   same commit")
+4. **Wait for explicit approval** from the user before proceeding
+
+Agents must NEVER silently deviate from guardrails, even if they believe the
+deviation is safe. The cost of asking is low; the cost of a safety regression
+in embedded firmware is high.
+
 ## Critical Rules
 
 ### Ownership Boundary — HARD RULE
@@ -503,7 +537,7 @@ Each plan increment becomes a GitHub Issue:
 ### Agent Execution Cycle (per issue)
 
 ```
-1. READ    — Read issue, plan file, CLAUDE.md, and relevant source files
+1. READ    — Read issue, plan file, CLAUDE.md, docs/quality.md, CONTRIBUTING.md, and relevant source files
 2. SPEC    — Write Given/When/Then scenarios → move issue to "Spec & Test"
 3. TEST    — Write failing tests in test/native/tests/
 4. CODE    — Implement until tests pass
@@ -551,6 +585,8 @@ Projects are executed in this priority order (re-prioritize with human approval)
 | P4 | Plan 06 — Diagnostic Telemetry | Enables debugging 01/02/05 in production |
 | P4 | Plan 07 — Web UI Modernization | Largest scope, least safety-critical |
 | P4 | Plan 09 — Power Input Methods | Documentation + feature gaps, back of backlog |
+| P3 | Plan 11 — OCPP Compatibility Testing | CI/CD interoperability testing with mock CSMS |
+| P3 | Plan 12 — Modbus Compatibility Testing | CI/CD meter register validation across all 15+ types |
 
 ### Dependency Rules
 
@@ -558,7 +594,11 @@ Projects are executed in this priority order (re-prioritize with human approval)
   diagnostic needs from the stabilization work
 - Plan 07 (Web UI) depends on Plan 06 for the diagnostic viewer component
 - Plan 04 (EVCC) depends on Plan 03 (OCPP) for shared API validation patterns
-- All plans depend on the test infrastructure being stable (currently: 23 suites, 539 tests)
+- Plan 11 (OCPP Compat) complements Plan 03 (OCPP Robustness): Plan 03 tests
+  logic correctness, Plan 11 tests protocol compliance
+- Plan 12 (Modbus Compat) complements Plan 05 (Meter Compatibility): Plan 05
+  extracts code, Plan 12 tests it against real meter register layouts
+- All plans depend on the test infrastructure being stable (currently: 44 suites, 900+ tests)
 
 ## Files You Should Know
 
