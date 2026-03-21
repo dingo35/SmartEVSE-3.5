@@ -277,14 +277,14 @@ function updateNodeOverview(nodes, maxCurrent) {
         var pct = maxCurrent > 0 ? Math.min(100, n.current / maxCurrent * 100) : 0;
         var color = n.state === 'Charging' ? '#1cc88a' : n.state === 'Request' ? '#f6c23e' : '#858796';
         var label = i === 0 ? 'Master' : 'Node ' + i;
-        var badge = n.sched ? '<span style="font-size:.7rem;padding:1px 4px;border-radius:3px;background:' +
-            (n.sched === 'Active' ? '#1cc88a' : n.sched === 'Paused' ? '#f6c23e' : '#858796') +
-            ';color:#fff;margin-left:4px;">' + n.sched + '</span>' : '';
+        var stColor = n.state === 'Charging' ? '#1cc88a' : n.state === 'Request' ? '#f6c23e' : '#858796';
+        var stateBadge = '<span style="font-size:.65rem;padding:1px 4px;border-radius:3px;background:' +
+            stColor + ';color:#fff;margin-left:4px;white-space:nowrap;">' + n.state + '</span>';
         html += '<div class="phase-bar-row" style="margin-bottom:4px;">' +
-            '<span class="phase-bar-label" style="width:60px;">' + label + '</span>' +
+            '<span class="phase-bar-label" style="width:60px;flex-shrink:0;">' + label + '</span>' +
             '<div class="phase-bar-track"><div style="height:100%;border-radius:5px;width:' +
             pct.toFixed(1) + '%;background:' + color + ';transition:width .4s;min-width:2px;"></div></div>' +
-            '<span class="phase-bar-value">' + (n.current / 10).toFixed(1) + 'A' + badge + '</span></div>';
+            '<span class="phase-bar-value" style="width:auto;min-width:55px;white-space:nowrap;">' + (n.current / 10).toFixed(1) + 'A' + stateBadge + '</span></div>';
     }
     container.innerHTML = html;
     /* Total bar */
