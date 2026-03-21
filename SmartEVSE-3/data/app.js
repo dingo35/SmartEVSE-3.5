@@ -12,6 +12,29 @@ function hideById(id) { hideEl($id(id)); }
 function showAll(sel) { $qa(sel).forEach(showEl); }
 function hideAll(sel) { $qa(sel).forEach(hideEl); }
 
+/* ========== Section collapse ========== */
+function toggleSection(el) {
+    el.classList.toggle('collapsed');
+    var body = el.nextElementSibling;
+    if (body) body.classList.toggle('collapsed');
+}
+
+/* ========== Slave restriction helper ========== */
+var SLAVE_TOOLTIP = 'Only editable on master node';
+function setSlaveRestricted(id, restricted) {
+    var el = $id(id);
+    if (!el) return;
+    if (restricted) {
+        el.disabled = true;
+        el.style.opacity = '0.5';
+        el.title = SLAVE_TOOLTIP;
+    } else {
+        el.disabled = false;
+        el.style.opacity = '';
+        el.title = '';
+    }
+}
+
 /* ========== State ========== */
 const endpoint = document.location + 'settings';
 let initiated = false;
@@ -61,6 +84,14 @@ function applyWsData(d) {
     }
     if (d.charge_current !== undefined)
         $id('charge_current').textContent = (d.charge_current / 10).toFixed(1) + " A";
+    /* Hero power display (big number) */
+    if (d.evmeter_power !== undefined) {
+        var heroP = $id('evmeter_power');
+        if (heroP) {
+            var kw = (d.evmeter_power / 1000).toFixed(1);
+            heroP.innerHTML = kw + '<span class="power-unit">kW</span>';
+        }
+    }
     if (d.temp !== undefined) {
         var maxT = d.temp_max !== undefined ? d.temp_max : '';
         if (maxT !== '') $id('temp').textContent = d.temp + " \u00B0C / " + maxT + " \u00B0C";
@@ -101,8 +132,8 @@ function applyWsData(d) {
     }
 
     if (d.evmeter_power !== undefined) {
-        $id('evmeter_power').textContent = (d.evmeter_power / 1000).toFixed(1) + " kW";
         wsCache.evmeter_power = d.evmeter_power;
+        /* Hero power updated above via heroP block */
     }
     if (d.evmeter_charged_wh !== undefined)
         $id('evmeter_charged_kwh').textContent = (d.evmeter_charged_wh / 1000).toFixed(1) + " kWh";
@@ -407,34 +438,40 @@ function loadData() {
                 hideById('mqtt_config');
             }
 
-            if (data.evse.loadbl > 1) {
+            var isSlave = data.evse.loadbl > 1;
+            var isMaster = data.evse.loadbl == 1;
+            if (isSlave) {
                 showById('loadbl');
                 showById('loadbl_text');
                 $id('loadbl_node').textContent = "Slave Node " + (data.evse.loadbl - 1);
                 hideById('contactor2');
                 showById('mode_2');
                 showById('mode_3');
-                hideAll('.with_solar');
-                hideById('override_current_box');
-                hideById('override_current_box2');
-                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = true; });
-            } else if (data.evse.loadbl == 1) {
+                /* Show override current but grayed out on slave */
+                showById('override_current_box');
+                showById('override_current_box2');
+                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = true; el.style.opacity = '0.5'; el.title = SLAVE_TOOLTIP; });
+            } else if (isMaster) {
                 showById('loadbl');
                 showById('loadbl_text');
                 $id('loadbl_node').textContent = "Master";
                 hideById('contactor2');
                 showById('mode_2');
                 showById('mode_3');
-                hideAll('.with_solar');
-                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = false; });
+                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = false; el.style.opacity = ''; el.title = ''; });
             } else {
                 hideById('loadbl');
                 hideById('loadbl_text');
                 showById('contactor2');
                 showById('mode_2');
                 showById('mode_3');
-                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = false; });
+                $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = false; el.style.opacity = ''; el.title = ''; });
             }
+            /* Gray out slave-restricted settings */
+            setSlaveRestricted('mode_override_current', isSlave);
+            setSlaveRestricted('solar_start_current', false); /* solar settings editable on all */
+            setSlaveRestricted('solar_max_import_current', false);
+            setSlaveRestricted('solar_stop_time', false);
 
             if (data.evse.loadbl == 1) {
                 showAll('.with_scheduling');
@@ -548,7 +585,11 @@ function loadData() {
             } else {
                 $qa('[id=with_evmeter]').forEach(showEl);
                 $id('evmeter_description').textContent = data.ev_meter.description;
-                $id('evmeter_power').textContent = (data.ev_meter.import_active_power / 1000).toFixed(1) + " kW";
+                var heroP = $id('evmeter_power');
+                if (heroP) {
+                    var kw = (data.ev_meter.import_active_power / 1000).toFixed(1);
+                    heroP.innerHTML = kw + '<span class="power-unit">kW</span>';
+                }
                 $id('evmeter_total_kwh').textContent = (data.ev_meter.total_wh / 1000).toFixed(1) + " kWh";
                 $id('evmeter_charged_kwh').textContent = (data.ev_meter.charged_wh / 1000).toFixed(1) + " kWh";
             }
@@ -563,7 +604,8 @@ function loadData() {
                 hideAll('.with_modem');
             }
 
-            if (data.mqtt && !mqttEditMode) {
+            if (data.mqtt) {
+                fetchMqttCert();
                 $id('mqtt_host').value = data.mqtt.host;
                 $id('mqtt_port').value = data.mqtt.port;
                 $id('mqtt_username').value = data.mqtt.username;
@@ -667,19 +709,15 @@ function activate(mode) {
 }
 
 /* ========== MQTT config ========== */
-function toggleMqttEdit() {
-    mqttEditMode = !mqttEditMode;
-    $qa('.mqtt_settings').forEach(function(el) {
-        el.style.display = el.style.display === 'none' ? '' : 'none';
-    });
-    if (mqttEditMode) {
-        $id('edit_mqtt_button').textContent = "Close Settings";
-        fetch("/mqtt_ca_cert").then(function(r) { return r.text(); }).then(function(certData) {
-            $id('mqtt_ca_cert').value = certData;
-        });
-    } else {
-        $id('edit_mqtt_button').textContent = "Edit Settings";
-    }
+/* MQTT settings are always visible — no toggle needed. Fetch cert on first load. */
+function toggleMqttEdit() { /* kept for backward compat, no-op */ }
+var mqttCertFetched = false;
+function fetchMqttCert() {
+    if (mqttCertFetched) return;
+    mqttCertFetched = true;
+    fetch("/mqtt_ca_cert").then(function(r) { return r.text(); }).then(function(certData) {
+        $id('mqtt_ca_cert').value = certData;
+    }).catch(function() {});
 }
 
 function configureMqtt() {
@@ -793,6 +831,7 @@ function postRequiredEVCCID() {
 /* ========== Diagnostic Telemetry Viewer ========== */
 var diagWs = null;
 var diagMaxRows = 100;
+var diagActiveProfile = 'general';
 var diagStateNames = ['A','B','C','D','COMM_B','COMM_B_OK','COMM_C','COMM_C_OK','Activate','B1','C1','MODEM_REQ','MODEM_WAIT','MODEM_DONE','MODEM_DEN'];
 var diagModeNames = ['NRM','SMT','SOL'];
 var diagAccessNames = ['OFF','ON','PAUSE'];
@@ -804,8 +843,16 @@ function diagParseSnapshot(buf) {
         ts: dv.getUint32(0, true), state: dv.getUint8(4), err: dv.getUint8(5),
         delay: dv.getUint8(6), access: dv.getUint8(7), mode: dv.getUint8(8),
         mL1: dv.getInt16(9, true), mL2: dv.getInt16(11, true), mL3: dv.getInt16(13, true),
-        chgA: dv.getUint16(23, true), solTmr: dv.getUint16(29, true),
-        temp: dv.getInt8(49), rssi: dv.getInt8(55)
+        evL1: dv.getInt16(15, true), evL2: dv.getInt16(17, true), evL3: dv.getInt16(19, true),
+        isum: dv.getInt16(21, true),
+        chgA: dv.getUint16(23, true), isetBal: dv.getInt16(25, true), overrideA: dv.getUint16(27, true),
+        solTmr: dv.getUint16(29, true), importA: dv.getUint16(31, true), startA: dv.getUint16(33, true),
+        stateTmr: dv.getUint8(35), c1Tmr: dv.getUint8(36), accessTmr: dv.getUint8(37), noCurr: dv.getUint8(38),
+        phases: dv.getUint8(39), swC2: dv.getUint8(40), enC2: dv.getUint8(41),
+        loadBl: dv.getUint8(42), balSt0: dv.getUint8(43), bal0: dv.getUint16(44, true),
+        temp: dv.getInt8(46), rcmon: dv.getUint8(47), pilot: dv.getUint8(48),
+        mmTimeout: dv.getUint8(49), evmTimeout: dv.getUint8(50), mmType: dv.getUint8(51), evmType: dv.getUint8(52),
+        rssi: dv.getInt8(53), mqtt: dv.getUint8(54)
     };
 }
 
@@ -815,18 +862,47 @@ function diagFormatRow(s) {
     var stChanged = (diagPrevState !== -1 && s.state !== diagPrevState);
     diagPrevState = s.state;
     var m = Math.floor(s.ts / 60), sec = s.ts % 60;
-    return '<div class="diag-row' + sev + '"><span class="diag-ts">' + m + ':' + (sec < 10 ? '0' : '') + sec +
-        '</span><span class="diag-state">' + stName + (stChanged ? ' &larr;' : '') + '</span>' +
-        (diagAccessNames[s.access] || '?') + '/' + (diagModeNames[s.mode] || '?') +
-        ' | ' + (s.chgA / 10).toFixed(1) + 'A | M:' +
-        (s.mL1 / 10).toFixed(0) + '/' + (s.mL2 / 10).toFixed(0) + '/' + (s.mL3 / 10).toFixed(0) +
-        ' | ' + s.temp + '\u00B0C' +
-        (s.err > 0 ? ' | ERR:0x' + s.err.toString(16) : '') +
-        (s.solTmr > 0 ? ' | sol:' + s.solTmr + 's' : '') + '</div>';
+    var ts = m + ':' + (sec < 10 ? '0' : '') + sec;
+    var base = '<span class="diag-ts">' + ts + '</span>' +
+        '<span class="diag-state">' + stName + (stChanged ? ' &larr;' : '') + '</span> ' +
+        (diagAccessNames[s.access] || '?') + '/' + (diagModeNames[s.mode] || '?');
+    var detail = '';
+    switch (diagActiveProfile) {
+    case 'solar':
+        detail = ' | ' + (s.chgA / 10).toFixed(1) + 'A | Isum:' + (s.isum / 10).toFixed(1) +
+            ' | sol:' + s.solTmr + 's imp:' + (s.importA / 10).toFixed(0) + ' start:' + (s.startA / 10).toFixed(0) +
+            ' | ' + s.phases + 'P sw:' + s.swC2;
+        break;
+    case 'loadbal':
+        detail = ' | ' + (s.chgA / 10).toFixed(1) + 'A Iset:' + (s.isetBal / 10).toFixed(1) +
+            ' Bal[0]:' + (s.bal0 / 10).toFixed(1) + ' BS:' + s.balSt0 +
+            ' | M:' + (s.mL1 / 10).toFixed(0) + '/' + (s.mL2 / 10).toFixed(0) + '/' + (s.mL3 / 10).toFixed(0) +
+            ' | noCur:' + s.noCurr;
+        break;
+    case 'modbus':
+        detail = ' | MM:' + s.mmType + ' t/o:' + s.mmTimeout + ' EVM:' + s.evmType + ' t/o:' + s.evmTimeout +
+            ' | M:' + (s.mL1 / 10).toFixed(1) + '/' + (s.mL2 / 10).toFixed(1) + '/' + (s.mL3 / 10).toFixed(1) +
+            ' | EV:' + (s.evL1 / 10).toFixed(1) + '/' + (s.evL2 / 10).toFixed(1) + '/' + (s.evL3 / 10).toFixed(1);
+        break;
+    case 'fast':
+        detail = ' | ' + (s.chgA / 10).toFixed(1) + 'A | M:' + (s.mL1 / 10).toFixed(0) + '/' + (s.mL2 / 10).toFixed(0) + '/' + (s.mL3 / 10).toFixed(0) +
+            ' Isum:' + (s.isum / 10).toFixed(1) + ' | EV:' + (s.evL1 / 10).toFixed(0) + '/' + (s.evL2 / 10).toFixed(0) + '/' + (s.evL3 / 10).toFixed(0) +
+            ' | t:' + s.stateTmr + ' p:' + s.pilot;
+        break;
+    default: /* general */
+        detail = ' | ' + (s.chgA / 10).toFixed(1) + 'A | M:' +
+            (s.mL1 / 10).toFixed(0) + '/' + (s.mL2 / 10).toFixed(0) + '/' + (s.mL3 / 10).toFixed(0) +
+            ' | ' + s.temp + '\u00B0C' + ' rssi:' + s.rssi;
+    }
+    if (s.err > 0) detail += ' | ERR:0x' + s.err.toString(16);
+    return '<div class="diag-row' + sev + '">' + base + detail + '</div>';
 }
 
 function diagStart() {
     var profile = $id('diag_profile').value;
+    diagActiveProfile = profile;
+    diagPrevState = -1;
+    $id('diag_log').innerHTML = '';
     fetch('/diag/start?profile=' + profile, { method: 'POST' }).then(function() {
         diagConnectWs();
         $id('diag_status_badge').className = 'diag-badge diag-badge-on';
@@ -850,7 +926,7 @@ function diagConnectWs() {
     ws.binaryType = 'arraybuffer';
     var rowCount = 0;
     ws.onmessage = function(ev) {
-        if (!(ev.data instanceof ArrayBuffer) || ev.data.byteLength < 56) return;
+        if (!(ev.data instanceof ArrayBuffer) || ev.data.byteLength < 64) return;
         var snap = diagParseSnapshot(ev.data);
         var log = $id('diag_log');
         if (!log) return;

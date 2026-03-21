@@ -1,899 +1,465 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>Smart EVSE V3</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="style.css" rel="stylesheet">
+<title>Smart EVSE</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="style.css" rel="stylesheet">
 </head>
-
 <body>
 
-  <!-- Page Wrapper -->
-  <div id="wrapper">
-      <!-- Content Wrapper -->
-      <div id="content-wrapper" class="d-flex flex-column">
-          <!-- Main Content -->
-          <div id="content">
-              <!-- Begin Page Content -->
-              <div class="container-fluid">
-                  <div style="margin-bottom: 20px;">
-                    <div class="card bg-success text-white shadow">
-                        <div class="card-body">
-                          <h1 class="h3 mb-0 text-white-800">Smart EVSE V3</h1>
-                          <h1 class="h5 mb-0 text-white-800">
-                            <span id="version-label">Version:</span>
-                            <span id="version" data-version=""></span>
-                          </h1>
-                          <h1 id="serialnr" class="h5 mb-0 text-white-800">SmartEVSE-</h1>
-                          <span id="conn_status" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e74a3b;margin-left:8px;vertical-align:middle;" title="Polling (HTTP)"></span>
-                          <button type="button" class="theme-toggle" id="theme_toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9790;</button>
-                        </div>
-                    </div>
-                </div>
+<!-- Header -->
+<div class="header">
+  <div>
+    <h1>Smart EVSE</h1>
+    <span class="version-label">
+      <span id="version-label">Version:</span>
+      <span id="version" data-version=""></span>
+      &middot;
+      <span id="serialnr">SmartEVSE-</span>
+    </span>
+  </div>
+  <div class="header-right">
+    <span id="mqtt" class="chip chip-green" style="display:none"></span>
+    <span id="conn_status" title="Polling (HTTP)"></span>
+    <button type="button" class="theme-toggle" id="theme_toggle" onclick="toggleTheme()" title="Toggle dark/light mode">&#9790;</button>
+  </div>
+</div>
 
-                  <div class="dashboard-grid">
-
-                    <!-- EVSE Status Card -->
-                    <div>
-                        <div class="card border-left-primary shadow h-100 py-2">
-                            <div class="card-body">
-                                <div class="row no-gutters align-items-center">
-                                    <div class="col mr-2">
-                                        <div class="text font-weight-bold text-primary text-uppercase mb-1">EVSE</div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Mode:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="mode"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center" id="loadbl">
-                                            <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Power Sharing:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="loadbl_node"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center with_modem">
-                                            <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                                Duty cycle:
-                                            </div>
-                                            <div class="col">
-                                                <div class="h5 mb-0 mr-3 text-gray-800" id="dutycycle"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Connected:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="car_connected"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              State:
-                                            </div>
-                                            <div class="col">
-                                              <span id="state_dot" class="state-dot" style="background:#858796;"></span><span class="h5 mb-0 mr-3 text-gray-800" id="state"></span>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center" id="with_errors">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Error:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="error"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center" id="show_rfid">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              RFID:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="rfid"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Charge:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="charge_current"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Temp:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="temp"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              MQTT:
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="mqtt"></div>
-                                          </div>
-                                      </div>
-                                        <div class="row no-gutters align-items-center" id="contactor2">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Contactor 2:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="enable_C2"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              StartTime:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="starttime_date_time"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              StopTime:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="stoptime_date_time"></div>
-                                            </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
-                                              Repeat:
-                                            </div>
-                                            <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="repeat"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- LCD Card -->
-                      <div>
-                          <div class="card border-left-primary shadow h-100 py-2">
-                              <div class="card-body">
-                                  <div class="row no-gutters align-items-center">
-                                      <div class="lcd" id="lcd">
-                                          <img class="lcd-device" src="SmartEVSE.webp" alt="SmartEVSE"/>
-                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" alt="LCD"/>
-                                          <div class="lcd-display-buttons">
-                                              <button type="button" data-name="left">Left</button>
-                                              <button type="button" data-name="middle">Middle</button>
-                                              <button type="button" data-name="right">Right</button>
-                                          </div>
-                                          <div class="lcd-buttons">
-                                              <button type="button" data-name="left">Left</button>
-                                              <button type="button" data-name="middle">Middle</button>
-                                              <button type="button" data-name="right">Right</button>
-                                          </div>
-                                          <form class="lcd-password" id="lcd-password-form">
-                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 5em;">
-                                              <button type="submit" id="lcd-password-submit">Unlock</button>
-                                              <span id="lcd-lock-status" style="color: #e74a3b; font-weight: 700; white-space: nowrap;" title="Button lock status">Locked - Enter PIN</span>
-                                          </form>
-                                          <div id="lcd-lock-hint">
-                                              LCD buttons are locked. Enter your PIN to unlock them.
-                                          </div>
-                                          <div class="lcd-kbd-hint">Keyboard: &larr; Left &middot; Enter Middle &middot; &rarr; Right</div>
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-
-                    </div>
-                    </div><!-- end dashboard-grid -->
-
-                    <!-- Power Flow Diagram -->
-                    <div class="with_mainsmeter power-flow-card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
-                      <div class="card shadow py-2">
-                        <div class="card-body" style="padding:.75rem;">
-                          <svg id="power_flow" viewBox="0 0 520 160" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Grid node -->
-                            <g id="pf_grid" transform="translate(50,80)">
-                              <path class="pf-icon" d="M-8,-20 L8,-20 L12,-8 L4,-8 L8,20 L-4,-2 L2,-2 L-4,-20 Z" opacity=".7"/>
-                              <text class="pf-node-label" y="34">Grid</text>
-                              <text class="pf-node-value" id="pf_grid_val" y="46">-</text>
-                            </g>
-                            <!-- Home node -->
-                            <g id="pf_home" transform="translate(260,80)">
-                              <path class="pf-icon" d="M0,-22 L18,-8 L14,-8 L14,12 L-14,12 L-14,-8 L-18,-8 Z" opacity=".7"/>
-                              <text class="pf-node-label" y="30">Home</text>
-                            </g>
-                            <!-- EVSE/Car node -->
-                            <g id="pf_evse" transform="translate(470,80)">
-                              <path class="pf-icon" d="M-16,4 L-12,-10 L-4,-10 L-2,-18 L14,-18 L18,-10 L18,4 Z M-10,4 L-10,10 L-4,10 L-4,4 M10,4 L10,10 L16,10 L16,4" opacity=".7"/>
-                              <text class="pf-node-label" y="30">EVSE</text>
-                              <text class="pf-node-value" id="pf_evse_val" y="42">-</text>
-                            </g>
-                            <!-- Battery node (optional) -->
-                            <g id="pf_battery" transform="translate(260,148)" style="display:none;">
-                              <path class="pf-icon" d="M-10,-6 L10,-6 L10,6 L-10,6 Z M10,-3 L13,-3 L13,3 L10,3" opacity=".7" transform="scale(.8)"/>
-                              <text class="pf-node-label" x="20" y="4" style="text-anchor:start;">Bat</text>
-                              <text class="pf-node-value" id="pf_bat_val" x="44" y="4" style="text-anchor:start;">-</text>
-                            </g>
-                            <!-- Flow lines -->
-                            <line id="pf_line_gh" class="pf-line flow-none" x1="80" y1="80" x2="230" y2="80"/>
-                            <line id="pf_line_he" class="pf-line flow-none" x1="290" y1="80" x2="440" y2="80"/>
-                            <line id="pf_line_bh" class="pf-line flow-none" x1="260" y1="100" x2="260" y2="138" style="display:none;"/>
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Load Balancing Node Overview (master only) -->
-                    <div class="with_scheduling" id="node_overview_card" style="display:none; margin-top:1rem; margin-bottom:1rem;">
-                      <div class="card border-left-info shadow py-2">
-                        <div class="card-body">
-                          <div class="text font-weight-bold text-info text-uppercase mb-1">Load Balancing Nodes</div>
-                          <div id="node_list"></div>
-                          <div style="margin-top:8px;">
-                            <div class="phase-bar-row">
-                              <span class="phase-bar-label" style="width:50px;">Total</span>
-                              <div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="lb_total_bar" style="width:0%"></div></div>
-                              <span class="phase-bar-value" id="lb_total_val">-</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="dashboard-grid" style="margin-top:1rem;">
-
-                    <div class="with_modem">
-                        <div class="card border-left-danger shadow h-100 py-2">
-                            <div class="card-body">
-                                <div class="row no-gutters align-items-center">
-                                    <div class="col mr-2">
-                                        <div class="text-xl font-weight-bold text-info text-uppercase mb-1">EV State</div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                              EVCCID
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="evccid" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                            <span title="Estimated / computed">Current SoC</span>
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="computed_soc" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                              Initial SoC
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="initial_soc" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                              Full SoC
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="full_soc" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                            <span title="Estimated / computed">Est. full at</span>
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="full_at" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                        <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 150px;">
-                                              Capacity
-                                          </div>
-                                          <div class="col">
-                                              <div class="h5 mb-0 mr-3 text-gray-800" id="energy_capacity" style="text-align: right;"></div>
-                                          </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-auto">
-                                      <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                        <svg style="width:48px;height:48px" viewBox="0 0 28.1 49.61" xmlns="http://www.w3.org/2000/svg">
-                                         <path fill="currentColor" d="m28.09 45.183c0.0041 2.4411-1.9714 4.4234-4.4125 4.4275h-19.25c-2.4418-0.008231-4.4193-1.9857-4.4275-4.4275l5e-14 -34.794c-0.0013809-2.4535 1.9865-4.4436 4.44-4.445h19.25c2.447 0.0055 4.4238 1.998 4.41 4.445zm-23.65 2.9275h19.215c1.6244 0.0028 2.9454-1.3081 2.955-2.9325v-34.794c-0.0055-1.6297-1.3253-2.9495-2.955-2.955h-19.215c-1.6346 0.0014-2.9597 1.3254-2.9625 2.96v34.794c0.012382 1.6253 1.3371 2.9344 2.9625 2.9275zm20.682-2.9325c0.0042 0.81657-0.65592 1.4811-1.4725 1.4825h-19.217c-0.816 0-1.4775-0.6615-1.4775-1.4775v-20.361c0.00138-0.81462 0.66288-1.4739 1.4775-1.4725h19.217c0.81267 0.0014 1.4711 0.65983 1.4725 1.4725zm-16.255-40.712c0.074087-2.7158 2.4778-4.7733 5.1725-4.4275 2.6969-0.34712 5.1042 1.7095 5.1825 4.4275z" />
-                                        </svg>
-                                      </i>
-                                  </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="">
-                      <div class="card border-left-info shadow h-100 py-2">
-                          <div class="card-body">
-                              <div class="row no-gutters align-items-center">
-                                  <div class="col mr-2">
-                                      <div class="text-xl font-weight-bold text-info text-uppercase mb-1">Current Details</div>
-                                      <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                            Override:
-                                          </div>
-                                          <div class="col">
-                                            <div class="h5 mb-0 mr-3 text-gray-800" id="override_current" style="text-align: right;"></div>
-                                          </div>
-                                      </div>
-                                      <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                            Min:
-                                          </div>
-                                          <div class="col">
-                                            <div class="h5 mb-0 mr-3 text-gray-800" id="current_min" style="text-align: right;"></div>
-                                          </div>
-                                      </div>
-                                      <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                            Max:
-                                          </div>
-                                          <div class="col">
-                                            <div class="h5 mb-0 mr-3 text-gray-800" id="current_max" style="text-align: right;"></div>
-                                          </div>
-                                      </div>
-                                  </div>
-                                  <div class="col-auto">
-                                      <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                        <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                          <path fill="currentColor" d="M16.5,21C13.5,21 12.31,16.76 11.05,12.28C10.14,9.04 9,5 7.5,5C4.11,5 4,11.93 4,12H2C2,11.63 2.06,3 7.5,3C10.5,3 11.71,7.25 12.97,11.74C13.83,14.8 15,19 16.5,19C19.94,19 20.03,12.07 20.03,12H22.03C22.03,12.37 21.97,21 16.5,21Z" />
-                                      </svg>
-                                      </i>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div class="with_mainsmeter" style="display: none;">
-                    <div class="card border-left-success shadow h-100 py-2">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text-xl font-weight-bold text-info text-uppercase mb-1">Mains Phase Details</div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          Total:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="phase_total" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          L1:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="phase_1" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          L2:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="phase_2" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          L3:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="phase_3" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="phase-bars" id="mains_phase_bars">
-                                      <div class="phase-bar-row"><span class="phase-bar-label">L1</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="mains_bar_L1" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L1">-</span></div>
-                                      <div class="phase-bar-row"><span class="phase-bar-label">L2</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L2" id="mains_bar_L2" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L2">-</span></div>
-                                      <div class="phase-bar-row"><span class="phase-bar-label">L3</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L3" id="mains_bar_L3" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L3">-</span></div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center" id="with_p1_api_data_date">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          Date:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="p1_data_date" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center" id="with_p1_api_data_time">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                          Time:
-                                        </div>
-                                        <div class="col">
-                                          <div class="h5 mb-0 mr-3 text-gray-800" id="p1_data_time" style="text-align: right;"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-auto">
-                                    <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                      <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                        <path fill="currentColor" d="M16.5,21C13.5,21 12.31,16.76 11.05,12.28C10.14,9.04 9,5 7.5,5C4.11,5 4,11.93 4,12H2C2,11.63 2.06,3 7.5,3C10.5,3 11.71,7.25 12.97,11.74C13.83,14.8 15,19 16.5,19C19.94,19 20.03,12.07 20.03,12H22.03C22.03,12.37 21.97,21 16.5,21Z" />
-                                    </svg>
-                                    </i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="" id="with_homebattery">
-                  <div class="card border-left-success shadow h-100 py-2">
-                      <div class="card-body">
-                          <div class="row no-gutters align-items-center">
-                              <div class="col mr-2">
-                                  <div class="text-xl font-weight-bold text-info text-uppercase mb-1">Phase Details (Original)</div>
-                                  <div class="row no-gutters align-items-center">
-                                    <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                        Total:
-                                      </div>
-                                      <div class="col">
-                                        <div class="h5 mb-0 mr-3 text-gray-800" id="phase_original_total" style="text-align: right;"></div>
-                                      </div>
-                                  </div>
-                                  <div class="row no-gutters align-items-center">
-                                    <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                        L1:
-                                      </div>
-                                      <div class="col">
-                                        <div class="h5 mb-0 mr-3 text-gray-800" id="phase_original_1" style="text-align: right;"></div>
-                                      </div>
-                                  </div>
-                                  <div class="row no-gutters align-items-center">
-                                    <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                        L2:
-                                      </div>
-                                      <div class="col">
-                                        <div class="h5 mb-0 mr-3 text-gray-800" id="phase_original_2" style="text-align: right;"></div>
-                                      </div>
-                                  </div>
-                                  <div class="row no-gutters align-items-center">
-                                    <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                        L3:
-                                      </div>
-                                      <div class="col">
-                                        <div class="h5 mb-0 mr-3 text-gray-800" id="phase_original_3" style="text-align: right;"></div>
-                                      </div>
-                                  </div>
-                              </div>
-                              <div class="col-auto">
-                                  <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                    <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                      <path fill="currentColor" d="M16.5,21C13.5,21 12.31,16.76 11.05,12.28C10.14,9.04 9,5 7.5,5C4.11,5 4,11.93 4,12H2C2,11.63 2.06,3 7.5,3C10.5,3 11.71,7.25 12.97,11.74C13.83,14.8 15,19 16.5,19C19.94,19 20.03,12.07 20.03,12H22.03C22.03,12.37 21.97,21 16.5,21Z" />
-                                  </svg>
-                                  </i>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-
-              </div>
-
-
-              <div class="" id="with_evmeter" style="display: none;">
-                <div class="card border-left-warning shadow h-100 py-2">
-                    <div class="card-body">
-                        <div class="row no-gutters align-items-center">
-                            <div class="col mr-2">
-                                <div class="text-xl font-weight-bold text-info text-uppercase mb-1">EV Meter</div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      Description:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_description" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      Power:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_power" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      Total kWh:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_total_kwh" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                    Charged kWh:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_charged_kwh" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-auto">
-                                <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                  <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                    <path fill="currentColor" d="M17.3 5C19 6.5 20 8.6 20 11C20 15.4 16.4 19 12 19S4 15.4 4 11C4 8.6 5.1 6.5 6.7 5H17.3M18 3H6L5.4 3.5C3.2 5.4 2 8.1 2 11C2 16.5 6.5 21 12 21S22 16.5 22 11C22 8.1 20.8 5.4 18.6 3.5L18 3M13 7.5C13 8.3 13.7 9 14.5 9S16 8.3 16 7.5 15.3 6 14.5 6 13 6.7 13 7.5M8 7.5C8 8.3 8.7 9 9.5 9S11 8.3 11 7.5 10.3 6 9.5 6 8 6.7 8 7.5M7 13C8.1 13 9 12.1 9 11C9 9.9 8.1 9 7 9S5 9.9 5 11C5 12.1 5.9 13 7 13M11.5 15C11.5 13.9 10.6 13 9.5 13S7.5 13.9 7.5 15C7.5 16.1 8.4 17 9.5 17S11.5 16.1 11.5 15M12 13C13.1 13 14 12.1 14 11C14 9.9 13.1 9 12 9S10 9.9 10 11C10 12.1 10.9 13 12 13M16.5 15C16.5 13.9 15.6 13 14.5 13S12.5 13.9 12.5 15C12.5 16.1 13.4 17 14.5 17S16.5 16.1 16.5 15M19 11C19 9.9 18.1 9 17 9S15 9.9 15 11C15 12.1 15.9 13 17 13S19 12.1 19 11" />
-                                  </svg>
-                                </i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-              </div>
-
-
-              <div class="" id="with_evmeter" style="display: none;">
-                <div class="card border-left-warning shadow h-100 py-2">
-                    <div class="card-body">
-                        <div class="row no-gutters align-items-center">
-                            <div class="col mr-2">
-                                <div class="text-xl font-weight-bold text-info text-uppercase mb-1">EV Meter currents</div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      Total:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_currents_total" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      L1:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_currents_1" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      L2:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_currents_2" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                      L3:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_currents_3" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-auto">
-                                <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                  <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                    <path fill="currentColor" d="M17.3 5C19 6.5 20 8.6 20 11C20 15.4 16.4 19 12 19S4 15.4 4 11C4 8.6 5.1 6.5 6.7 5H17.3M18 3H6L5.4 3.5C3.2 5.4 2 8.1 2 11C2 16.5 6.5 21 12 21S22 16.5 22 11C22 8.1 20.8 5.4 18.6 3.5L18 3M13 7.5C13 8.3 13.7 9 14.5 9S16 8.3 16 7.5 15.3 6 14.5 6 13 6.7 13 7.5M8 7.5C8 8.3 8.7 9 9.5 9S11 8.3 11 7.5 10.3 6 9.5 6 8 6.7 8 7.5M7 13C8.1 13 9 12.1 9 11C9 9.9 8.1 9 7 9S5 9.9 5 11C5 12.1 5.9 13 7 13M11.5 15C11.5 13.9 10.6 13 9.5 13S7.5 13.9 7.5 15C7.5 16.1 8.4 17 9.5 17S11.5 16.1 11.5 15M12 13C13.1 13 14 12.1 14 11C14 9.9 13.1 9 12 9S10 9.9 10 11C10 12.1 10.9 13 12 13M16.5 15C16.5 13.9 15.6 13 14.5 13S12.5 13.9 12.5 15C12.5 16.1 13.4 17 14.5 17S16.5 16.1 16.5 15M19 11C19 9.9 18.1 9 17 9S15 9.9 15 11C15 12.1 15.9 13 17 13S19 12.1 19 11" />
-                                  </svg>
-                                </i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-              </div>
-
-              <div class="" id="with_homebattery" style="display: none;">
-                <div class="card border-left-warning shadow h-100 py-2">
-                    <div class="card-body">
-                        <div class="row no-gutters align-items-center">
-                            <div class="col mr-2">
-                                <div class="text-xl font-weight-bold text-info text-uppercase mb-1">Home Battery</div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                      Status:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="battery_status" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                      Current:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="battery_current" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                      Date:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="battery_last_update_date" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                                <div class="row no-gutters align-items-center">
-                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
-                                      Time:
-                                    </div>
-                                    <div class="col">
-                                      <div class="h5 mb-0 mr-3 text-gray-800" id="battery_last_update_time" style="text-align: right;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-auto">
-                                <i class="fas fa-clipboard-list fa-2x text-gray-300">
-                                  <svg style="width:48px;height:48px" viewBox="0 0 24 24">
-                                    <path fill="currentColor" d="M16 20H8V6H16M16.67 4H15V2H9V4H7.33C6.6 4 6 4.6 6 5.33V20.67C6 21.4 6.6 22 7.33 22H16.67C17.41 22 18 21.41 18 20.67V5.33C18 4.6 17.4 4 16.67 4M15 16H9V19H15V16M15 7H9V10H15V7M15 11.5H9V14.5H15V11.5Z" />
-                                </svg>
-                                </i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-              </div>
-            </div>
-            </div><!-- end dashboard-grid -->
-
-                <!-- Control Card -->
-                <div style="margin-top: 1rem; margin-bottom: 20px;">
-                    <div class="card border-left-primary shadow h-100 py-2">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text font-weight-bold text-primary text-uppercase mb-1">Control</div>
-                                    <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;">
-                                          <div class="tooltip font-weight-bold text-gray-800">
-                                            Mode:
-                                            <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">NORMAL: basic charging<br>SOLAR: Use Solar surplus power<br>SMART: Take home consumers into account</span>
-                                          </div>
-                                        </div>
-                                        <div class="col">
-                                          <form class="form-inline" id="form_mode">
-
-                                            <button id="mode_0" type="button" onclick="activate(0)">OFF</button>
-                                            <button id="mode_4" type="button" onclick="activate(4)">PAUSE</button>
-                                            <button id="mode_1" type="button" onclick="activate(1)">NORMAL</button>
-                                            <button id="mode_2" type="button" class="with_mainsmeter" onclick="activate(2)">SOLAR</button>
-                                            <button id="mode_3" type="button" class="with_mainsmeter" onclick="activate(3)">SMART</button>
-
-                                            <div class="form-group">
-                                              <label for="starttime" class="tooltip">...STARTING:
-                                                <span class="tooltiptext">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
-                                              </label>
-                                              <input type="datetime-local" id="starttime" name="starttime" class="form-control">
-                                            </div>
-                                            <div class="form-group" id="stoptime_group">
-                                              <label for="stoptime" class="tooltip">...ENDING:
-                                                <span class="tooltiptext">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
-                                              </label>
-                                              <input type="datetime-local" id="stoptime" name="stoptime" class="form-control">
-                                            </div>
-                                            <div class="form-group" id="daily_repeat_group">
-                                              <label for="daily_repeat"> Daily</label>
-                                              <div class="input-group">
-                                                <input type="checkbox" id="daily_repeat" name="daily_repeat" value="daily" style="max-width: 60px;">
-                                              </div>
-                                            </div>
-                                          </form>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center with_solar">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">Solar:</div>
-                                      <div class="col">
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_start_current">Start Current   </label><input type="number" onchange="SolStartCurr()" id="solar_start_current" name="solar_start_current" min="0" max="16" style="width:80px;"/>&nbsp;A</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_max_import_current">Max Import </label><input type="number" onchange="SolImportCurr()" id="solar_max_import_current" name="solar_max_import_current" min="0" max="16" style="width:80px;"/>&nbsp;A</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="solar_stop_time">Stop Time           </label><input type="number" onchange="SolStopTime()" id="solar_stop_time" name="solar_stop_time" min="0" style="width:80px;"/>&nbsp;minutes</div></div>
-                                      </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;" id="override_current_box">
-                                        <div class="tooltip font-weight-bold text-gray-800">
-                                          Override:
-                                          <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">Override (limit) output current.<br>Select one and press NORMAL / SMART to set.</span>
-                                        </div>
-                                      </div>
-                                        <div class="col" id="override_current_box2" style="max-width:425px;">
-                                          <select id="mode_override_current">
-                                          </select>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                          Actions:
-                                        </div>
-                                        <div class="col form-inline">
-                                          <a class="btn" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot your device">Reboot</a>
-                                          <a class="btn" href="/update" data-ajax="false" title="Update your firmware">Update</a>
-                                          <a class="btn" href="/settings" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
-                                          <a class="btn" href="#" onclick="gotoDoc(event)" title="Show the online documentation">Help</a>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                        Lock:
-                                      </div>
-                                      <div class="col form-inline">
-                                        <input type="checkbox" id="lcdlock" onclick="toggleLCDlock()">
-                                        <label class="form-check-label" style="width: 140px; display:inline-block;" for="lcdlock" id="lcdlock_label" title="Lock buttons on LCD screen">LCD Lock</label>
-                                        <input type="checkbox" id="cablelock" onclick="toggleCableLock()">
-                                        <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
-                                      </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center with_scheduling" style="display:none;">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                        <div class="tooltip font-weight-bold text-gray-800">
-                                          Scheduling:
-                                          <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">Priority-based power scheduling for load balancing.<br>When power is insufficient, EVSEs are paused in priority order.</span>
-                                        </div>
-                                      </div>
-                                      <div class="col">
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="prio_strategy">Strategy</label><select onchange="setPrioStrategy()" id="prio_strategy" style="width:140px;"><option value="0">Modbus Addr</option><option value="1">First Conn</option><option value="2">Last Conn</option></select></div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="rotation_interval">Rotation</label><input type="number" onchange="setRotationInterval()" id="rotation_interval" min="0" max="1440" style="width:80px;"/>&nbsp;min (0=off)</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;" for="idle_timeout">Idle Timeout</label><input type="number" onchange="setIdleTimeout()" id="idle_timeout" min="30" max="300" style="width:80px;"/>&nbsp;s</div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">State</label><span id="schedule_state" class="text-gray-800">-</span></div></div>
-                                        <div class="mb-0"><div class="d-inline-flex align-items-center"><label style="width:100px;">Rot. Timer</label><span id="rotation_timer" class="text-gray-800">-</span></div></div>
-                                      </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center with_modem">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                            Override PWM:
-                                        </div>
-                                        <div class="col">
-                                          <form class="form-inline" id="form_pwm">
-                                            <button type="button" onclick="postPWM(0)" style="width: 120px; display:inline-block;">0&#37;</button>
-                                            <button type="button" onclick="postPWM(50)" style="width: 120px; display:inline-block;">5&#37;</button>
-                                            <button type="button" onclick="postPWM(1024)" style="width: 120px; display:inline-block;">100&#37;</button>
-                                            <button type="button" onclick="postPWM(-1)" style="width: 120px; display:inline-block;">reset</button>
-                                          </form>
-                                        </div>
-                                    </div>
-                                    <div class="row no-gutters align-items-center with_modem">
-                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                          Autocharge:
-                                      </div>
-                                      <div class="col">
-                                        <form class="form-inline" id="form_required_evccid">
-                                          <input placeholder="EVCCID to require" id="required_evccid">
-                                          <button type="button" onclick="postRequiredEVCCID()" style="width: 120px; display:inline-block;">Update</button>
-                                        </form>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                  <!-- MQTT Config Card -->
-                  <div style="margin-bottom: 20px;" class="config">
-                      <div class="card border-left-primary shadow h-100 py-2">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text font-weight-bold text-primary text-uppercase mb-1">Config</div>
-                                    <div class="row no-gutters align-items-center" id="mqtt_config">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                            MQTT:
-                                        </div>
-                                        <div class="col">
-                                                <button type="button" onclick="toggleMqttEdit()" style="display:inline-block;" id="edit_mqtt_button">Edit Settings</button>
-                                            <div class="mqtt_settings" style="display:none">
-                                                <label>Host: <input id="mqtt_host" title="Leave empty to disable MQTT"></label>
-                                                <label>Port: <input id="mqtt_port" title="Usually 1883 for MQTT, and 8883 for secure MQTTS"></label>
-                                                <label>Username: <input id="mqtt_username" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Password: <input id="mqtt_password" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Topic Prefix: <input id="mqtt_topic_prefix"></label>
-                                                <label>Enable TLS: <input type="checkbox" id="mqtt_tls" value="1"></label>
-                                                <label>Change-Only Publishing: <input type="checkbox" id="mqtt_change_only" value="1" title="When enabled, only publish MQTT values that have changed"></label>
-                                                <label>Heartbeat Interval (s): <input id="mqtt_heartbeat" type="number" min="10" max="300" title="How often to re-publish unchanged values (10-300 seconds)"></label>
-                                                <div id="mqtt_ca_cert_wrapper" style="display:none;">
-                                                    <label>CA Certificate (PEM): <textarea id="mqtt_ca_cert" rows="10" style="width:100%; font-family:monospace;" title="Paste the PEM-formatted CA certificate here for TLS. if left empty, LetsEncrypt will be used as default"></textarea></label>
-                                                </div>
-                                                <button type="button" onclick="configureMqtt()" style="display:inline-block;">Save</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                  </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OCPP Config Card -->
-                    <div id="ocpp_config_outer" style="margin-bottom: 20px;" class="config">
-                      <div class="card border-left-primary shadow h-100 py-2">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text font-weight-bold text-primary text-uppercase mb-1">Config</div>
-                                    <div class="row no-gutters align-items-center" id="ocpp_config">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                            OCPP:
-                                        </div>
-                                        <div class="col">
-                                        <input type="checkbox" class="form-check-input" id="enable_ocpp" onclick="toggleEnableOcpp()">
-                                          <label class="form-check-label" for="enable_ocpp" id="enable_ocpp_label" title="Check to enable connection to a backoffice provider">Enable OCPP</label>
-                                          <div id="ocpp_settings" style="display: none;">
-                                              <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
-                                                <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 200px">
-                                                    WebSocket status:
-                                                </div>
-                                                <div class="col">
-                                                  <div class="h5 mb-0 mr-3 text-gray-800" id="ocpp_ws_status"></div>
-                                                </div>
-                                              </div>
-                                              <label>Backend URL: <input id="ocpp_backend_url" disabled title="Enter URL that your provider provided, up until the last /"></label>
-                                              <label>Charge Box Id: <input id="ocpp_cb_id" disabled title="Identifies your charger; enter URL part after the last / of the URL your provider gave you"></label>
-                                              <label>Password(optional): <input id="ocpp_auth_key" disabled title="Only necessary for SP2 connections"></label>
-                                              <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
-                                                <div class="col-auto mb-0 mr-3" style="width: 200px">
-                                                  <input type="checkbox" class="form-check-input" id="ocpp_auto_auth" disabled onclick="toggleEnableOcppAutoAuth()">
-                                                  <label class="form-check-label" for="ocpp_auto_auth" id="ocpp_auto_auth_label">Auto-authorize</label>
-                                                </div>
-                                                <div class="col">
-                                                  <div class="mb-0" id="ocpp_auto_auth_idtag_wrapper">
-                                                    <input id="ocpp_auto_auth_idtag" disabled placeholder="Default idTag">
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              <button type="button" id="ocpp_save_btn" onclick="toggleOcppEdit()" style="display:inline-block;">Edit Settings</button>
-                                          </div>
-                                        </div>
-                                    </div>
-                                  </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-                  <!-- Diagnostic Telemetry Viewer -->
-                  <div style="margin-bottom: 20px;">
-                    <div class="card border-left-info shadow py-2">
-                      <div class="card-body">
-                        <div class="text font-weight-bold text-info text-uppercase mb-1">Diagnostics</div>
-                        <div class="diag-controls">
-                          <select id="diag_profile">
-                            <option value="general">General (1Hz)</option>
-                            <option value="solar">Solar (1Hz)</option>
-                            <option value="loadbal">Load Bal (1Hz)</option>
-                            <option value="modbus">Modbus (10Hz)</option>
-                            <option value="fast">Fast (10Hz)</option>
-                          </select>
-                          <button type="button" id="diag_start_btn" onclick="diagStart()">Start</button>
-                          <button type="button" id="diag_stop_btn" onclick="diagStop()">Stop</button>
-                          <a class="btn" href="/diag/download" title="Download capture file">Download</a>
-                          <span id="diag_status_badge" class="diag-badge diag-badge-off">Off</span>
-                          <span id="diag_count" style="font-size:.8rem;color:#858796;"></span>
-                        </div>
-                        <div class="diag-log" id="diag_log"></div>
-                      </div>
-                    </div>
-                  </div>
-
-        </div>
-      </div>
+<!-- Hero: Charging Status -->
+<div class="card hero">
+  <div class="status-label" id="with_errors" style="display:none">
+    <span style="color:var(--red);font-weight:600" id="error"></span>
+  </div>
+  <div class="status-value">
+    <span id="state_dot" class="state-dot" style="background:#858796;"></span>
+    <span id="state"></span>
+    &middot;
+    <span id="mode"></span>
+  </div>
+  <div class="power-big">
+    <span id="evmeter_power">-</span>
+  </div>
+  <div class="energy-row">
+    <span class="energy-val" id="evmeter_charged_kwh">-</span> charged
+    &middot; <span id="charge_current">-</span>
+  </div>
+  <div class="info-row">
+    <span id="car_connected_row">Connected: <span id="car_connected">-</span></span>
+    &middot; Temp: <span id="temp">-</span>
+    <span class="with_modem" style="display:none"> &middot; Duty: <span id="dutycycle">-</span></span>
+    <span id="show_rfid" style="display:none"> &middot; RFID: <span id="rfid"></span></span>
+  </div>
+  <div class="info-row">
+    <span id="loadbl" style="display:none">Power Sharing: <span id="loadbl_node"></span></span>
+    <span id="loadbl_text" style="display:none"></span>
+    <span id="contactor2"> &middot; Contactor 2: <span id="enable_C2"></span></span>
+  </div>
+  <div class="info-row">
+    Start: <span id="starttime_date_time">-</span>
+    &middot; Stop: <span id="stoptime_date_time">-</span>
+    &middot; Repeat: <span id="repeat">-</span>
   </div>
 
-  <!-- Mobile bottom navigation -->
-  <nav class="mobile-nav" id="mobile_nav">
-    <button type="button" id="mnav_0" onclick="activate(0)">OFF</button>
-    <button type="button" id="mnav_4" onclick="activate(4)">PAUSE</button>
-    <button type="button" id="mnav_1" onclick="activate(1)">NORMAL</button>
-    <button type="button" id="mnav_2" onclick="activate(2)">SOLAR</button>
-    <button type="button" id="mnav_3" onclick="activate(3)">SMART</button>
-  </nav>
+  <!-- Mode bar -->
+  <div class="mode-bar" id="form_mode">
+    <button class="mode-btn" id="mode_0" type="button" onclick="activate(0)">OFF</button>
+    <button class="mode-btn" id="mode_4" type="button" onclick="activate(4)">PAUSE</button>
+    <button class="mode-btn" id="mode_1" type="button" onclick="activate(1)">NORMAL</button>
+    <button class="mode-btn with_mainsmeter" id="mode_2" type="button" onclick="activate(2)">SOLAR</button>
+    <button class="mode-btn with_mainsmeter" id="mode_3" type="button" onclick="activate(3)">SMART</button>
+  </div>
+</div>
 
-  <script src="app.js"></script>
+<!-- Power Flow SVG -->
+<div class="with_mainsmeter power-flow-card" style="display:none">
+  <div class="card" style="padding:12px">
+    <svg id="power_flow" viewBox="0 0 520 160" xmlns="http://www.w3.org/2000/svg">
+      <g id="pf_grid" transform="translate(50,80)">
+        <path class="pf-icon" d="M-8,-20 L8,-20 L12,-8 L4,-8 L8,20 L-4,-2 L2,-2 L-4,-20 Z" opacity=".7"/>
+        <text class="pf-node-label" y="34">Grid</text>
+        <text class="pf-node-value" id="pf_grid_val" y="46">-</text>
+      </g>
+      <g id="pf_home" transform="translate(260,80)">
+        <path class="pf-icon" d="M0,-22 L18,-8 L14,-8 L14,12 L-14,12 L-14,-8 L-18,-8 Z" opacity=".7"/>
+        <text class="pf-node-label" y="30">Home</text>
+      </g>
+      <g id="pf_evse" transform="translate(470,80)">
+        <path class="pf-icon" d="M-16,4 L-12,-10 L-4,-10 L-2,-18 L14,-18 L18,-10 L18,4 Z M-10,4 L-10,10 L-4,10 L-4,4 M10,4 L10,10 L16,10 L16,4" opacity=".7"/>
+        <text class="pf-node-label" y="30">EVSE</text>
+        <text class="pf-node-value" id="pf_evse_val" y="42">-</text>
+      </g>
+      <g id="pf_battery" transform="translate(260,148)" style="display:none;">
+        <path class="pf-icon" d="M-10,-6 L10,-6 L10,6 L-10,6 Z M10,-3 L13,-3 L13,3 L10,3" opacity=".7" transform="scale(.8)"/>
+        <text class="pf-node-label" x="20" y="4" style="text-anchor:start;">Bat</text>
+        <text class="pf-node-value" id="pf_bat_val" x="44" y="4" style="text-anchor:start;">-</text>
+      </g>
+      <line id="pf_line_gh" class="pf-line flow-none" x1="80" y1="80" x2="230" y2="80"/>
+      <line id="pf_line_he" class="pf-line flow-none" x1="290" y1="80" x2="440" y2="80"/>
+      <line id="pf_line_bh" class="pf-line flow-none" x1="260" y1="100" x2="260" y2="138" style="display:none;"/>
+    </svg>
+  </div>
+</div>
+
+<!-- Mains Phase Details -->
+<div class="with_mainsmeter" style="display:none">
+  <div class="card">
+    <div class="card-title">Mains Phases</div>
+    <div class="phase-bars" id="mains_phase_bars">
+      <div class="phase-bar-row"><span class="phase-bar-label">L1</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="mains_bar_L1" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L1">-</span></div>
+      <div class="phase-bar-row"><span class="phase-bar-label">L2</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L2" id="mains_bar_L2" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L2">-</span></div>
+      <div class="phase-bar-row"><span class="phase-bar-label">L3</span><div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L3" id="mains_bar_L3" style="width:0%"></div></div><span class="phase-bar-value" id="mains_bar_val_L3">-</span></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:.85rem;color:var(--fg2)">
+      <span>L1: <strong id="phase_1">-</strong> &middot; L2: <strong id="phase_2">-</strong> &middot; L3: <strong id="phase_3">-</strong></span>
+      <span>Total: <strong id="phase_total">-</strong></span>
+    </div>
+    <div id="with_p1_api_data_date" style="display:none;font-size:.8rem;color:var(--fg3);margin-top:4px">
+      P1 Date: <span id="p1_data_date"></span>
+    </div>
+    <div id="with_p1_api_data_time" style="display:none;font-size:.8rem;color:var(--fg3)">
+      P1 Time: <span id="p1_data_time"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Detail grid: EV Meter + Current Details -->
+<div class="detail-grid">
+  <div class="card" id="with_evmeter" style="display:none">
+    <div class="card-title">EV Meter &middot; <span id="evmeter_description">-</span></div>
+    <div class="detail-item">
+      <span class="detail-label">Total kWh</span>
+      <span class="detail-value" id="evmeter_total_kwh">-</span>
+    </div>
+    <div class="detail-item">
+      <span class="detail-label">L1 / L2 / L3</span>
+      <span class="detail-value"><span id="evmeter_currents_1">-</span> / <span id="evmeter_currents_2">-</span> / <span id="evmeter_currents_3">-</span></span>
+    </div>
+    <div class="detail-item">
+      <span class="detail-label">Total current</span>
+      <span class="detail-value" id="evmeter_currents_total">-</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Current Limits</div>
+    <div class="detail-item">
+      <span class="detail-label">Override</span>
+      <span class="detail-value" id="override_current">-</span>
+    </div>
+    <div class="detail-item">
+      <span class="detail-label">Minimum</span>
+      <span class="detail-value" id="current_min">-</span>
+    </div>
+    <div class="detail-item">
+      <span class="detail-label">Maximum</span>
+      <span class="detail-value" id="current_max">-</span>
+    </div>
+  </div>
+</div>
+
+<!-- Original Phase Details (with home battery) -->
+<div id="with_homebattery" style="display:none">
+  <div class="detail-grid">
+    <div class="card">
+      <div class="card-title">Phase Details (Original)</div>
+      <div class="detail-item"><span class="detail-label">Total</span><span class="detail-value" id="phase_original_total">-</span></div>
+      <div class="detail-item"><span class="detail-label">L1</span><span class="detail-value" id="phase_original_1">-</span></div>
+      <div class="detail-item"><span class="detail-label">L2</span><span class="detail-value" id="phase_original_2">-</span></div>
+      <div class="detail-item"><span class="detail-label">L3</span><span class="detail-value" id="phase_original_3">-</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Home Battery</div>
+      <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value" id="battery_status">-</span></div>
+      <div class="detail-item"><span class="detail-label">Current</span><span class="detail-value" id="battery_current">-</span></div>
+      <div class="detail-item"><span class="detail-label">Date</span><span class="detail-value" id="battery_last_update_date">-</span></div>
+      <div class="detail-item"><span class="detail-label">Time</span><span class="detail-value" id="battery_last_update_time">-</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- EV State (modem) -->
+<div class="with_modem" style="display:none">
+  <div class="card">
+    <div class="card-title">EV State</div>
+    <div class="detail-grid">
+      <div>
+        <div class="detail-item"><span class="detail-label">EVCCID</span><span class="detail-value" id="evccid">-</span></div>
+        <div class="detail-item"><span class="detail-label">Current SoC</span><span class="detail-value" id="computed_soc">-</span></div>
+        <div class="detail-item"><span class="detail-label">Initial SoC</span><span class="detail-value" id="initial_soc">-</span></div>
+      </div>
+      <div>
+        <div class="detail-item"><span class="detail-label">Full SoC</span><span class="detail-value" id="full_soc">-</span></div>
+        <div class="detail-item"><span class="detail-label">Est. full at</span><span class="detail-value" id="full_at">-</span></div>
+        <div class="detail-item"><span class="detail-label">Capacity</span><span class="detail-value" id="energy_capacity">-</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Control & Schedule -->
+<div class="card">
+  <div class="section-toggle" onclick="toggleSection(this)">
+    <span class="card-title" style="margin-bottom:0">Control &amp; Schedule</span>
+  </div>
+  <div class="section-body">
+    <!-- Solar controls -->
+    <div class="with_solar" style="display:none">
+      <div class="form-row">
+        <span class="form-label">Solar Settings</span>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:.8rem;color:var(--fg2)">Start <input type="number" onchange="SolStartCurr()" id="solar_start_current" min="0" max="16" style="width:60px;padding:4px 6px;border:1px solid var(--bg3);border-radius:6px;background:var(--bg);color:var(--fg);font-size:.8rem;text-align:center"> A</label>
+          <label style="font-size:.8rem;color:var(--fg2)">Import <input type="number" onchange="SolImportCurr()" id="solar_max_import_current" min="0" max="16" style="width:60px;padding:4px 6px;border:1px solid var(--bg3);border-radius:6px;background:var(--bg);color:var(--fg);font-size:.8rem;text-align:center"> A</label>
+          <label style="font-size:.8rem;color:var(--fg2)">Stop <input type="number" onchange="SolStopTime()" id="solar_stop_time" min="0" style="width:60px;padding:4px 6px;border:1px solid var(--bg3);border-radius:6px;background:var(--bg);color:var(--fg);font-size:.8rem;text-align:center"> min</label>
+        </div>
+      </div>
+    </div>
+    <!-- Override current -->
+    <div class="form-row" id="override_current_box">
+      <span class="form-label">
+        <span class="tooltip">Override Current
+          <span class="tooltiptext">Override (limit) output current. Select one and press NORMAL / SMART to set.</span>
+        </span>
+      </span>
+      <div id="override_current_box2">
+        <select id="mode_override_current" class="form-input" style="max-width:160px"></select>
+      </div>
+    </div>
+    <!-- Schedule -->
+    <div class="form-row">
+      <span class="form-label">
+        <span class="tooltip">Start Time
+          <span class="tooltiptext">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+        </span>
+      </span>
+      <input type="datetime-local" id="starttime" name="starttime" class="form-input">
+    </div>
+    <div class="form-row" id="stoptime_group">
+      <span class="form-label">
+        <span class="tooltip">Stop Time
+          <span class="tooltiptext">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+        </span>
+      </span>
+      <input type="datetime-local" id="stoptime" name="stoptime" class="form-input">
+    </div>
+    <div class="form-row" id="daily_repeat_group">
+      <span class="form-label">Daily Repeat</span>
+      <input type="checkbox" id="daily_repeat" name="daily_repeat" value="daily">
+    </div>
+    <!-- Lock -->
+    <div class="form-row">
+      <span class="form-label">Lock</span>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:.85rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="lcdlock" onclick="toggleLCDlock()">
+          <span id="lcdlock_label" title="Lock buttons on LCD screen">LCD Lock</span>
+        </label>
+        <label style="font-size:.85rem;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="cablelock" onclick="toggleCableLock()">
+          <span id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</span>
+        </label>
+      </div>
+    </div>
+    <!-- Actions -->
+    <div class="form-row">
+      <span class="form-label">Actions</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a class="btn btn-sm" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot">Reboot</a>
+        <a class="btn btn-sm" href="/update" data-ajax="false" title="Update firmware">Update</a>
+        <a class="btn btn-sm" href="/settings" data-ajax="false" title="Raw JSON settings">Raw Data</a>
+        <a class="btn btn-sm" href="#" onclick="gotoDoc(event)" title="Online docs">Help</a>
+      </div>
+    </div>
+    <!-- PWM override (modem) -->
+    <div class="with_modem form-row" style="display:none">
+      <span class="form-label">Override PWM</span>
+      <div id="form_pwm" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm" type="button" onclick="postPWM(0)">0%</button>
+        <button class="btn btn-sm" type="button" onclick="postPWM(50)">5%</button>
+        <button class="btn btn-sm" type="button" onclick="postPWM(1024)">100%</button>
+        <button class="btn btn-sm" type="button" onclick="postPWM(-1)">Reset</button>
+      </div>
+    </div>
+    <!-- Autocharge (modem) -->
+    <div class="with_modem form-row" style="display:none">
+      <span class="form-label">Autocharge</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="required_evccid" placeholder="EVCCID to require" class="form-input" style="max-width:180px">
+        <button class="btn btn-sm" type="button" onclick="postRequiredEVCCID()">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Load Balancing Nodes (master) -->
+<div class="with_scheduling" id="node_overview_card" style="display:none">
+  <div class="card">
+    <div class="section-toggle" onclick="toggleSection(this)">
+      <span class="card-title" style="margin-bottom:0">Load Balancing</span>
+    </div>
+    <div class="section-body">
+      <div id="node_list" class="mt-1"></div>
+      <div style="margin-top:8px">
+        <div class="phase-bar-row">
+          <span class="phase-bar-label" style="width:50px;">Total</span>
+          <div class="phase-bar-track"><div class="phase-bar-fill phase-bar-L1" id="lb_total_bar" style="width:0%"></div></div>
+          <span class="phase-bar-value" id="lb_total_val">-</span>
+        </div>
+      </div>
+      <div class="mt-1">
+        <div class="form-row">
+          <span class="form-label">Strategy</span>
+          <select onchange="setPrioStrategy()" id="prio_strategy" class="form-input" style="max-width:140px"><option value="0">Modbus Addr</option><option value="1">First Conn</option><option value="2">Last Conn</option></select>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Rotation</span>
+          <input type="number" onchange="setRotationInterval()" id="rotation_interval" min="0" max="1440" class="form-input" style="max-width:80px"> <span style="font-size:.8rem;color:var(--fg2)">min (0=off)</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Idle Timeout</span>
+          <input type="number" onchange="setIdleTimeout()" id="idle_timeout" min="30" max="300" class="form-input" style="max-width:80px"> <span style="font-size:.8rem;color:var(--fg2)">s</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">State</span>
+          <span id="schedule_state" style="font-size:.85rem">-</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Rot. Timer</span>
+          <span id="rotation_timer" style="font-size:.85rem">-</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LCD Remote -->
+<div class="card">
+  <div class="section-toggle collapsed" onclick="toggleSection(this)">
+    <span class="card-title" style="margin-bottom:0">LCD Remote</span>
+  </div>
+  <div class="section-body collapsed">
+    <div class="lcd-frame mt-1" id="lcd">
+      <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" alt="LCD"/>
+      <div class="lcd-buttons">
+        <button type="button" data-name="left">&larr;</button>
+        <button type="button" data-name="middle">OK</button>
+        <button type="button" data-name="right">&rarr;</button>
+      </div>
+      <form class="lcd-password" id="lcd-password-form">
+        <input type="password" id="lcd-password" placeholder="Enter PIN" style="width:5em;">
+        <button type="submit" id="lcd-password-submit">Unlock</button>
+        <span id="lcd-lock-status">Locked - Enter PIN</span>
+      </form>
+      <div id="lcd-lock-hint">LCD buttons are locked. Enter your PIN to unlock them.</div>
+      <div class="lcd-kbd-hint">Keyboard: &larr; Left &middot; Enter Middle &middot; &rarr; Right</div>
+    </div>
+  </div>
+</div>
+
+<!-- MQTT Config -->
+<div class="config" style="display:none" id="mqtt_config">
+  <div class="card">
+    <div class="section-toggle collapsed" onclick="toggleSection(this)">
+      <span class="card-title" style="margin-bottom:0">MQTT Configuration</span>
+    </div>
+    <div class="section-body collapsed">
+      <div class="mt-1">
+        <div class="mqtt_settings">
+          <div class="form-row"><span class="form-label">Host</span><input id="mqtt_host" class="form-input" title="Leave empty to disable MQTT"></div>
+          <div class="form-row"><span class="form-label">Port</span><input id="mqtt_port" class="form-input" title="Usually 1883 for MQTT, 8883 for MQTTS"></div>
+          <div class="form-row"><span class="form-label">Username</span><input id="mqtt_username" class="form-input" title="Leave empty for anonymous MQTT"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="mqtt_password" class="form-input" type="password" title="Leave empty for anonymous MQTT"></div>
+          <div class="form-row"><span class="form-label">Topic Prefix</span><input id="mqtt_topic_prefix" class="form-input"></div>
+          <div class="form-row"><span class="form-label">Enable TLS</span><input type="checkbox" id="mqtt_tls" value="1" onchange="toggleCertVisibility()"></div>
+          <div class="form-row"><span class="form-label">Change-Only</span><input type="checkbox" id="mqtt_change_only" value="1" title="Only publish changed values"></div>
+          <div class="form-row"><span class="form-label">Heartbeat (s)</span><input id="mqtt_heartbeat" type="number" min="10" max="300" class="form-input" style="max-width:80px" title="Re-publish unchanged values interval"></div>
+          <div id="mqtt_ca_cert_wrapper" style="display:none">
+            <div class="form-row" style="flex-direction:column;align-items:stretch">
+              <span class="form-label">CA Certificate (PEM)</span>
+              <textarea id="mqtt_ca_cert" rows="6" class="form-input" style="width:100%;font-family:monospace" title="PEM CA cert for TLS; empty = LetsEncrypt default"></textarea>
+            </div>
+          </div>
+          <div class="form-row" style="justify-content:flex-end;border:none">
+            <button type="button" class="btn btn-sm" style="background:var(--accent);color:#fff" onclick="configureMqtt()">Save MQTT</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OCPP Config -->
+<div id="ocpp_config_outer" class="config" style="display:none">
+  <div class="card">
+    <div class="section-toggle collapsed" onclick="toggleSection(this)">
+      <span class="card-title" style="margin-bottom:0">OCPP Configuration</span>
+    </div>
+    <div class="section-body collapsed" id="ocpp_config">
+      <div class="mt-1">
+        <div class="form-row">
+          <span class="form-label">Enable OCPP</span>
+          <input type="checkbox" id="enable_ocpp" onclick="toggleEnableOcpp()">
+          <label for="enable_ocpp" id="enable_ocpp_label" style="font-size:.85rem" title="Check to enable OCPP backend">Enable</label>
+        </div>
+        <div id="ocpp_settings" style="display:none">
+          <div class="form-row">
+            <span class="form-label">WS Status</span>
+            <span id="ocpp_ws_status" style="font-size:.85rem;font-weight:600">-</span>
+          </div>
+          <div class="form-row"><span class="form-label">Backend URL</span><input id="ocpp_backend_url" class="form-input" disabled title="URL provided by your OCPP provider"></div>
+          <div class="form-row"><span class="form-label">Charge Box Id</span><input id="ocpp_cb_id" class="form-input" disabled title="Identifies your charger"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="ocpp_auth_key" class="form-input" type="password" disabled title="Only for SP2 connections"></div>
+          <div class="form-row">
+            <span class="form-label">Auto-authorize</span>
+            <input type="checkbox" id="ocpp_auto_auth" disabled onclick="toggleEnableOcppAutoAuth()">
+            <label for="ocpp_auto_auth" id="ocpp_auto_auth_label" style="font-size:.85rem">Enable</label>
+          </div>
+          <div class="form-row" id="ocpp_auto_auth_idtag_wrapper">
+            <span class="form-label">Default idTag</span>
+            <input id="ocpp_auto_auth_idtag" class="form-input" disabled placeholder="Default idTag">
+          </div>
+          <div class="form-row" style="justify-content:flex-end;border:none">
+            <button type="button" class="btn btn-sm" id="ocpp_save_btn" onclick="toggleOcppEdit()">Edit Settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Diagnostics -->
+<div class="card">
+  <div class="section-toggle collapsed" onclick="toggleSection(this)">
+    <span class="card-title" style="margin-bottom:0">Diagnostics</span>
+  </div>
+  <div class="section-body collapsed">
+    <div class="diag-controls mt-1">
+      <select id="diag_profile" class="form-input" style="max-width:160px">
+        <option value="general">General (1Hz)</option>
+        <option value="solar">Solar (1Hz)</option>
+        <option value="loadbal">Load Bal (1Hz)</option>
+        <option value="modbus">Modbus (10Hz)</option>
+        <option value="fast">Fast (10Hz)</option>
+      </select>
+      <button type="button" class="btn btn-sm" id="diag_start_btn" onclick="diagStart()" style="background:var(--accent);color:#fff">Start</button>
+      <button type="button" class="btn btn-sm" id="diag_stop_btn" onclick="diagStop()">Stop</button>
+      <a class="btn btn-sm" href="/diag/download" title="Download capture file">Download</a>
+      <span id="diag_status_badge" class="diag-badge diag-badge-off">Off</span>
+      <span id="diag_count" style="font-size:.8rem;color:var(--fg3)"></span>
+    </div>
+    <div class="diag-log" id="diag_log"></div>
+  </div>
+</div>
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-nav" id="mobile_nav">
+  <button type="button" id="mnav_0" onclick="activate(0)">OFF</button>
+  <button type="button" id="mnav_4" onclick="activate(4)">PAUSE</button>
+  <button type="button" id="mnav_1" onclick="activate(1)">NORMAL</button>
+  <button type="button" id="mnav_2" onclick="activate(2)">SOLAR</button>
+  <button type="button" id="mnav_3" onclick="activate(3)">SMART</button>
+</nav>
+
+<script src="app.js"></script>
 </body>
 </html>
