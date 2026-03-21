@@ -2059,6 +2059,10 @@ void ModbusRequestLoop() {
         if (ModbusRequest) ModbusRequest++;
 #endif
 
+#ifdef SMARTEVSE_VERSION //ESP32
+    diag_sample_fast();
+#endif
+
 #ifndef SMARTEVSE_VERSION //CH32
 //not sure this is necessary
 #undef digitalRead

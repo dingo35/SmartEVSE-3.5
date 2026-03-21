@@ -24,6 +24,11 @@ void diag_sampler_init(void);
  * Call from timer1s (1 Hz context) for GENERAL/SOLAR/LOADBAL profiles. */
 void diag_sample(void);
 
+/* Take a fast sample (10 Hz context) for MODBUS/FAST profiles.
+ * Call from Timer100ms.  No-op if profile is not MODBUS/FAST.
+ * The uptime counter is NOT incremented here — only diag_sample() does that. */
+void diag_sample_fast(void);
+
 /* Get a pointer to the global ring buffer (for REST endpoints). */
 diag_ring_t *diag_get_ring(void);
 

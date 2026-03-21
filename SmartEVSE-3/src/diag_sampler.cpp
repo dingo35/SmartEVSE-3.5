@@ -87,86 +87,109 @@ void diag_stop(void)
     diag_mb_enable(&g_diag_mb_ring, false);
 }
 
+/* Internal: fill a snapshot from current globals */
+static void diag_fill_snapshot(diag_snapshot_t *snap)
+{
+    memset(snap, 0, sizeof(*snap));
+
+    snap->timestamp = diag_uptime_seconds;
+
+    /* State machine */
+    snap->state        = State;
+    snap->error_flags  = (uint8_t)(ErrorFlags & 0xFF);
+    snap->charge_delay = ChargeDelay;
+    snap->access_status = (uint8_t)AccessStatus;
+    snap->mode         = Mode;
+
+    /* Currents */
+    snap->mains_irms[0] = MainsMeter.Irms[0];
+    snap->mains_irms[1] = MainsMeter.Irms[1];
+    snap->mains_irms[2] = MainsMeter.Irms[2];
+    snap->ev_irms[0]    = EVMeter.Irms[0];
+    snap->ev_irms[1]    = EVMeter.Irms[1];
+    snap->ev_irms[2]    = EVMeter.Irms[2];
+    snap->isum          = Isum;
+
+    /* Power allocation */
+    snap->charge_current  = ChargeCurrent;
+    snap->iset_balanced   = (int16_t)IsetBalanced;
+    snap->override_current = OverrideCurrent;
+
+    /* Solar */
+    snap->solar_stop_timer = SolarStopTimer;
+    snap->import_current   = ImportCurrent;
+    snap->start_current    = StartCurrent;
+
+    /* Timers — StateTimer is internal to evse_ctx_t, read via bridge */
+    evse_bridge_lock();
+    snap->state_timer = g_evse_ctx.StateTimer;
+    evse_bridge_unlock();
+    snap->c1_timer      = C1Timer;
+    snap->access_timer  = AccessTimer;
+    snap->no_current    = NoCurrent;
+
+    /* Phase switching */
+    snap->nr_phases_charging = Nr_Of_Phases_Charging;
+    snap->switching_c2       = (uint8_t)Switching_Phases_C2;
+    snap->enable_c2          = (uint8_t)EnableC2;
+
+    /* Load balancing */
+    snap->load_bl         = LoadBl;
+    snap->balanced_state_0 = BalancedState[0];
+    snap->balanced_0       = Balanced[0];
+
+    /* Temperature & safety */
+    snap->temp_evse     = TempEVSE;
+    snap->rc_mon        = RCmon;
+    snap->pilot_reading = pilot;
+
+    /* Modbus health */
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+    snap->mains_meter_timeout = MainsMeter.Timeout;
+    snap->ev_meter_timeout    = EVMeter.Timeout;
+#endif
+    snap->mains_meter_type = MainsMeter.Type;
+    snap->ev_meter_type    = EVMeter.Type;
+
+    /* Network */
+    snap->wifi_rssi = WiFi.isConnected() ? (int8_t)WiFi.RSSI() : 0;
+#if MQTT
+    snap->mqtt_connected = (MQTTclient.connected ? 1 : 0)
+                         | (MQTTclientSmartEVSE.connected ? 2 : 0);
+#endif
+}
+
 void diag_sample(void)
 {
     diag_uptime_seconds++;
+
+    /* Skip if active profile is FAST/MODBUS — those are sampled from Timer100ms */
+    if (diag_ring.profile == DIAG_PROFILE_MODBUS ||
+        diag_ring.profile == DIAG_PROFILE_FAST)
+        return;
 
     if (!diag_ring_tick(&diag_ring))
         return;
 
     diag_snapshot_t snap;
-    memset(&snap, 0, sizeof(snap));
-
-    snap.timestamp = diag_uptime_seconds;
-
-    /* State machine — read from globals (called within timer1s context,
-     * after evse_sync_ctx_to_globals so globals are up-to-date) */
-    snap.state        = State;
-    snap.error_flags  = (uint8_t)(ErrorFlags & 0xFF);
-    snap.charge_delay = ChargeDelay;
-    snap.access_status = (uint8_t)AccessStatus;
-    snap.mode         = Mode;
-
-    /* Currents */
-    snap.mains_irms[0] = MainsMeter.Irms[0];
-    snap.mains_irms[1] = MainsMeter.Irms[1];
-    snap.mains_irms[2] = MainsMeter.Irms[2];
-    snap.ev_irms[0]    = EVMeter.Irms[0];
-    snap.ev_irms[1]    = EVMeter.Irms[1];
-    snap.ev_irms[2]    = EVMeter.Irms[2];
-    snap.isum          = Isum;
-
-    /* Power allocation */
-    snap.charge_current  = ChargeCurrent;
-    snap.iset_balanced   = (int16_t)IsetBalanced;
-    snap.override_current = OverrideCurrent;
-
-    /* Solar */
-    snap.solar_stop_timer = SolarStopTimer;
-    snap.import_current   = ImportCurrent;
-    snap.start_current    = StartCurrent;
-
-    /* Timers — StateTimer is internal to evse_ctx_t, read via bridge */
-    evse_bridge_lock();
-    snap.state_timer = g_evse_ctx.StateTimer;
-    evse_bridge_unlock();
-    snap.c1_timer      = C1Timer;
-    snap.access_timer  = AccessTimer;
-    snap.no_current    = NoCurrent;
-
-    /* Phase switching */
-    snap.nr_phases_charging = Nr_Of_Phases_Charging;
-    snap.switching_c2       = (uint8_t)Switching_Phases_C2;
-    snap.enable_c2          = (uint8_t)EnableC2;
-
-    /* Load balancing */
-    snap.load_bl         = LoadBl;
-    snap.balanced_state_0 = BalancedState[0];
-    snap.balanced_0       = Balanced[0];
-
-    /* Temperature & safety */
-    snap.temp_evse     = TempEVSE;
-    snap.rc_mon        = RCmon;
-    snap.pilot_reading = pilot;
-
-    /* Modbus health */
-#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-    snap.mains_meter_timeout = MainsMeter.Timeout;
-    snap.ev_meter_timeout    = EVMeter.Timeout;
-#endif
-    snap.mains_meter_type = MainsMeter.Type;
-    snap.ev_meter_type    = EVMeter.Type;
-
-    /* Network */
-    snap.wifi_rssi = WiFi.isConnected() ? (int8_t)WiFi.RSSI() : 0;
-#if MQTT
-    snap.mqtt_connected = (MQTTclient.connected ? 1 : 0)
-                        | (MQTTclientSmartEVSE.connected ? 2 : 0);
-#endif
-
+    diag_fill_snapshot(&snap);
     diag_ring_push(&diag_ring, &snap);
+    diag_ws_push_snapshot(&snap);
+}
 
-    /* Push to WebSocket clients if any are connected */
+void diag_sample_fast(void)
+{
+    /* Only sample in MODBUS/FAST profiles (10 Hz from Timer100ms) */
+    if (diag_ring.profile != DIAG_PROFILE_MODBUS &&
+        diag_ring.profile != DIAG_PROFILE_FAST)
+        return;
+
+    if (!diag_ring_tick(&diag_ring))
+        return;
+
+    diag_snapshot_t snap;
+    diag_fill_snapshot(&snap);
+    diag_ring_push(&diag_ring, &snap);
     diag_ws_push_snapshot(&snap);
 }
 
