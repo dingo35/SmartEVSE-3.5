@@ -1,0 +1,7 @@
+# OCPP Compatibility Test Dependencies
+# Used by: SmartEVSE-3/test/ocpp/
+ocpp==2.0.0              # mobilityhouse/ocpp — OCPP 1.6 + 2.0.1 message types and routing
+websockets>=12.0,<14.0   # WebSocket server for mock CSMS
+pytest>=7.0,<9.0         # Test runner
+pytest-asyncio>=0.23,<1.0  # Async test support (OCPP is WebSocket-based)
+pytest-timeout>=2.2,<3.0 # Prevent hanging tests

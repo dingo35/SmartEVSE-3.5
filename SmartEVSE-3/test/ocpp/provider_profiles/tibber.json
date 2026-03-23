@@ -1,0 +1,17 @@
+{
+    "name": "Tibber",
+    "description": "Tibber CSMS profile: FreeVend enabled, no RFID required, auto-start",
+    "boot_response": {
+        "status": "Accepted",
+        "interval": 300
+    },
+    "authorize_response": {
+        "status": "Accepted"
+    },
+    "features": {
+        "requires_rfid": false,
+        "sends_charging_profile": false,
+        "free_vend": true,
+        "heartbeat_interval": 300
+    }
+}
