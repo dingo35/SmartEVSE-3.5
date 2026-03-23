@@ -156,8 +156,11 @@ CI generates two reports on every build:
 
 | Metric | Value |
 |--------|-------|
-| Test suites | 44 |
-| Test scenarios | 900+ |
+| Native C test suites | 44 |
+| Native C test scenarios | 900+ |
+| OCPP protocol tests | 50 |
+| Modbus protocol tests | 146 |
+| **Total automated tests** | **1,100+** |
 | Features covered | 60+ |
 | Requirement traceability | 100% |
 
@@ -167,7 +170,7 @@ CI generates two reports on every build:
 
 ### 3.1 Pipeline Overview
 
-Every push and pull request triggers an 8-job CI pipeline:
+Every push and pull request triggers a 10-job CI pipeline:
 
 | Job | Gate | What it catches |
 |-----|------|----------------|
@@ -178,6 +181,8 @@ Every push and pull request triggers an 8-job CI pipeline:
 | **firmware-build** | ESP32 + CH32 compile, memory budget | Type errors, missing symbols, flash/RAM budget violations |
 | **traceability** | Report generation + auto-commit | SbE annotation completeness, requirement coverage |
 | **bdd-tests** | Python pytest feature tests | Higher-level behavioral validation |
+| **ocpp-compatibility** | 50 OCPP 1.6J protocol tests | Message format, sequencing, provider compatibility |
+| **modbus-compatibility** | 146 meter register tests | Register maps, endianness, data types, scaling |
 | **version-check** | Tag matches platformio.ini (releases only) | Version consistency |
 
 ### 3.2 Quality Gate Flow
@@ -212,6 +217,18 @@ Developer writes code
 ┌─────────────────┐    FAIL → Fix build/budget    │
 │ Firmware Build   │──────────────────────────────┤
 │ (ESP32 + CH32)   │                              │
+└────────┬────────┘                              │
+         │ PASS                                   │
+         ▼                                        │
+┌─────────────────┐    FAIL → Fix protocol issue  │
+│ OCPP Compat      │──────────────────────────────┤
+│ (50 tests)       │                              │
+└────────┬────────┘                              │
+         │ PASS                                   │
+         ▼                                        │
+┌─────────────────┐    FAIL → Fix meter decode    │
+│ Modbus Compat    │──────────────────────────────┤
+│ (146 tests)      │                              │
 └────────┬────────┘                              │
          │ PASS                                   │
          ▼                                        │
@@ -361,10 +378,11 @@ The state machine enforces safety interlocks that cannot be bypassed:
 
 ## 6. Interoperability Testing
 
-### 6.1 Current State
+### 6.1 Overview
 
-The existing test suite validates protocol logic at the unit level:
+The test suite validates protocols at two levels:
 
+**Unit level** (native C tests, static inputs):
 - **OCPP**: 85 tests for authorization, connector state, RFID formatting,
   settings validation, LoadBl exclusivity, telemetry (pure C in `ocpp_logic.c`)
 - **Modbus**: 30+ tests for frame decoding (FC03/04/06/10), meter byte
@@ -372,64 +390,97 @@ The existing test suite validates protocol logic at the unit level:
 - **MQTT**: command parsing and publish formatting tests
 - **HTTP API**: request validation tests
 
-These tests use static inputs (canned byte arrays, hardcoded JSON). They verify
-that SmartEVSE's *internal* logic is correct, but they do not verify that
-SmartEVSE correctly communicates with *external* systems.
+**Protocol level** (Python interoperability tests, realistic communication):
+- **OCPP**: 50 tests using a mock CSMS — verifies message format, sequencing,
+  error handling, and provider-specific flows (Tap Electric, Tibber, SteVe)
+- **Modbus**: 146 tests using ctypes bridge to C decode functions — verifies
+  register maps, endianness, data types, and scaling for all 16 meter types
 
-### 6.2 Planned: OCPP Compatibility Testing (Plan 11)
+### 6.2 OCPP Compatibility Testing (Plan 11) ✓
+
+**Status:** Complete — PR #96 merged 2026-03-23
 
 **Goal:** Verify that SmartEVSE's OCPP messages are accepted by a real Central
 System, and that SmartEVSE correctly handles the full range of CSMS responses.
 
-**Approach:**
-- **Tool:** [mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp) (Python,
-  MIT license) as a configurable mock CSMS
-- **Charge point:** MicroOcppSimulator compiled natively, using the same MicroOcpp
-  library version as SmartEVSE firmware
-- **Transport:** localhost WebSocket, no Docker required
-- **CI job:** `ocpp-compatibility` — runs in GitHub Actions, < 3 minutes
+**Architecture:**
+- **Mock CSMS** (`test/ocpp/mock_csms.py`) — configurable OCPP 1.6J Central
+  System using [mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp),
+  supporting response overrides, error injection, message delays, and
+  connection control
+- **Charge point simulator** (`test/ocpp/message_replay.py`) — sends
+  CP-initiated messages and handles CSMS-initiated Calls (RemoteStart/Stop,
+  SetChargingProfile, ChangeConfiguration)
+- **Transport:** localhost WebSocket with `ocpp1.6` subprotocol
+- **CI job:** `ocpp-compatibility` — runs in GitHub Actions, ~30 seconds
 
-**Coverage:** 44 test scenarios across boot/connection, authorization, transaction
-lifecycle, MeterValues, StatusNotification, Smart Charging, remote control, error
-handling (CALLERROR, malformed JSON, reconnection), and provider-specific profiles
-(Tap Electric, Tibber, SteVe).
+**Coverage:** 50 test scenarios across 9 test files:
+
+| Area | Tests | Key scenarios |
+|------|-------|---------------|
+| Boot/Connection | 6 | Subprotocol negotiation, retry on rejection/pending, ISO 8601 timestamps |
+| Authorization | 6 | Accepted/Blocked/Expired/ConcurrentTx flows, timeout handling |
+| Transactions | 6 | Start/Stop required fields, energy monotonicity, rejection, full lifecycle |
+| MeterValues | 5 | Valid measurands, energy inclusion, per-phase current, clock-aligned intervals |
+| StatusNotification | 5 | Valid statuses, Available/Charging/Faulted, full lifecycle |
+| Smart Charging | 5 | Set/Clear profiles, GetCompositeSchedule, TxDefaultProfile, max current |
+| Remote Control | 4 | Remote start/stop, rejection when unavailable, charging profile with start |
+| Error Handling | 6 | CALLERROR, malformed JSON, unknown action, duplicate ID, empty/oversized payload |
+| Reconnection | 3 | Reconnect after disconnect, transaction state preservation, CSMS-initiated close |
+| Provider Profiles | 4 | Tap Electric session, Tibber FreeVend, SteVe local auth, heartbeat enforcement |
 
 See [Plan 11](../EVSE-team-planning/plan-11-ocpp-compatibility-testing.md) for
-full details.
+full design details.
 
-### 6.3 Planned: Modbus Compatibility Testing (Plan 12)
+### 6.3 Modbus Compatibility Testing (Plan 12) ✓
+
+**Status:** Complete — PR #97 merged 2026-03-23
 
 **Goal:** Verify that SmartEVSE correctly reads current, power, and energy from
-all 15+ supported energy meter types by testing against realistic Modbus register
+all 16 supported energy meter types by testing against realistic Modbus register
 data.
 
-**Approach:**
-- **Tool:** [PyModbus](https://github.com/pymodbus-dev/pymodbus) (Python, BSD
-  license) as a simulated energy meter slave
-- **Bridge:** C decode functions (`modbus_decode.c`, `meter_decode.c`) compiled
-  as a shared library, called from Python via ctypes
-- **Register data:** Per-meter profiles with test vectors validated against
-  official datasheets
-- **CI job:** `modbus-compatibility` — runs in GitHub Actions, < 1 minute
+**Architecture:**
+- **ctypes bridge** (`test/modbus/decode_bridge.py`) — compiles C decode
+  functions (`modbus_decode.c`, `meter_decode.c`) as a shared library, callable
+  from Python via ctypes
+- **Frame builder** (`test/modbus/frame_builder.py`) — generates Modbus RTU
+  frames with CRC for all meter types
+- **Meter profiles** — 16 profile files with register maps and test vectors
+  validated against official datasheets
+- **CI job:** `modbus-compatibility` — runs in GitHub Actions, ~10 seconds
 
-**Coverage:** 41 test scenarios across register map validation (all 15 meter
-types), endianness handling (HBF_HWF, HBF_LWF, LBF_LWF), data types (FLOAT32,
-INT32, INT16), phase mapping, value scaling (A→mA, kWh→Wh), error responses
-(Modbus exceptions, CRC errors, truncated frames), and edge values.
+**Meter types tested:** Eastron SDM630, Eastron SDM120, Finder 7E, Finder 7M,
+ABB B23, Phoenix Contact, Carlo Gavazzi, Schneider, SolarEdge, Wago, Sinotimer,
+Chint, Orno 1P, Orno 3P, Sensorbox v2, Custom.
+
+**Coverage:** 146 test scenarios across 9 test files:
+
+| Area | Tests | Key scenarios |
+|------|-------|---------------|
+| Register maps | ~30 | All 16 meter types: correct register addresses, function codes |
+| Data types | ~15 | FLOAT32, INT32, INT16 interpretation |
+| Endianness | ~15 | HBF_HWF, HBF_LWF, LBF_LWF byte ordering |
+| Phase mapping | ~15 | Per-phase current/voltage/power extraction |
+| Scaling | ~15 | A→mA, kWh→Wh, W→kW conversions |
+| Edge values | ~15 | Zero, max, negative, NaN, infinity handling |
+| Error responses | ~15 | Modbus exceptions, CRC errors, truncated frames |
+| Decode pipeline | ~15 | End-to-end frame→decoded value validation |
+| Custom meter | ~11 | User-defined register maps |
 
 See [Plan 12](../EVSE-team-planning/plan-12-modbus-compatibility-testing.md) for
-full details.
+full design details.
 
 ### 6.4 Interoperability Testing Philosophy
 
 The interoperability tests complement, not replace, the unit tests:
 
-| Layer | What it validates | Tools |
-|-------|------------------|-------|
-| **Unit tests** (existing) | Internal logic correctness | Native C test suite |
-| **Protocol tests** (Plan 11/12) | Message format, sequencing, error handling | mobilityhouse/ocpp, PyModbus |
-| **Integration tests** (future) | Full stack end-to-end | EVerest car_simulator (if needed) |
-| **Certification** (manual) | Formal standards compliance | OCA OCTT (commercial, cloud) |
+| Layer | What it validates | Tools | Status |
+|-------|------------------|-------|--------|
+| **Unit tests** | Internal logic correctness | Native C test suite (900+ tests) | Active |
+| **Protocol tests** | Message format, sequencing, error handling | mobilityhouse/ocpp (50 tests), ctypes bridge (146 tests) | Active |
+| **Integration tests** (future) | Full stack end-to-end | EVerest car_simulator (if needed) | Planned |
+| **Certification** (manual) | Formal standards compliance | OCA OCTT (commercial, cloud) | Manual |
 
 The guiding principle: **automate what can run in CI/CD, and reserve manual
 testing for what truly requires hardware or commercial certification tools.**

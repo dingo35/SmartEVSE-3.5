@@ -15,7 +15,8 @@ The upstream SmartEVSE firmware is a monolithic embedded C++/Arduino codebase wh
 state machine, load balancing, MQTT, HTTP, and hardware control all live in a single
 ~3,000-line `main.cpp`. This fork restructures the architecture to enable **native host
 testing** of the core logic — pure C modules, context structs, a bridge layer, and HAL
-callbacks — resulting in 900+ native tests across 44 suites.
+callbacks — resulting in 1,100+ automated tests (900+ native C tests across 44 suites,
+50 OCPP protocol tests, and 146 Modbus compatibility tests).
 
 See [Quality Engineering](docs/quality.md) for the full architecture, testing
 methodology, CI/CD pipeline, and hardening approach. See
@@ -37,9 +38,9 @@ charge up to eight EVs from one mains connection without overloading it.
 | **Charging** | 1-3 phase, auto cable detection (13/16/32A), dual contactor outputs, thermal protection |
 | **Solar & Smart Mode** | Solar surplus charging, auto 1P/3P switching, EMA smoothing, dead band regulation |
 | **Load Balancing** | Up to 8 nodes, priority scheduling, oscillation dampening, convergence testing |
-| **OCPP & Authorization** | OCPP 1.6j, RFID (100 cards), pure C logic extraction (85 tests), FreeVend solar safety |
+| **OCPP & Authorization** | OCPP 1.6j, RFID (100 cards), pure C logic extraction (85 tests), 50 protocol tests, FreeVend solar safety |
 | **MQTT & Home Assistant** | Change-only publishing (70-97% reduction), fixed HA discovery, per-phase power/energy |
-| **Metering** | 18 Modbus meter types, HomeWizard P1, Sensorbox, API/MQTT feed, staleness detection |
+| **Metering** | 18 Modbus meter types, 146 compatibility tests, HomeWizard P1, Sensorbox, API/MQTT feed, staleness detection |
 | **EVCC Integration** | IEC 61851 state mapping, HTTP phase switching, ready-to-use template |
 | **Diagnostics** | Ring buffer events, LittleFS persistence, WebSocket live stream, test replay |
 | **ERE Session Logging** | Dutch ERE certificate output, MQTT publish, REST endpoint, zero flash wear |
@@ -115,14 +116,14 @@ Completed improvement plans, tracked via
 | Done | Plan 08: HA MQTT Integration | [#64](https://github.com/basmeerman/SmartEVSE-3.5/pull/64), [#68](https://github.com/basmeerman/SmartEVSE-3.5/pull/68), [#82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82) | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
 | Done | Plan 09: Power Input Methods | [#86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86) | — |
 | Done | Plan 10: ERE Session Logging | [#89](https://github.com/basmeerman/SmartEVSE-3.5/pull/89) | — |
-| Planned | Plan 11: OCPP Compatibility Testing | — | — |
-| Planned | Plan 12: Modbus Compatibility Testing | — | — |
+| Done | Plan 11: OCPP Compatibility Testing | [#96](https://github.com/basmeerman/SmartEVSE-3.5/pull/96) | — |
+| Done | Plan 12: Modbus Compatibility Testing | [#97](https://github.com/basmeerman/SmartEVSE-3.5/pull/97) | — |
 
-Plan 11 and 12 add CI/CD-integrated interoperability testing using
-[mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp) (mock CSMS) and
-[PyModbus](https://github.com/pymodbus-dev/pymodbus) (simulated energy meters).
-See [Quality Engineering: Interoperability Testing](docs/quality.md#6-interoperability-testing)
-for details.
+All 12 improvement plans are complete. The CI/CD pipeline runs a 10-job quality
+gate on every PR, including OCPP interoperability tests (mock CSMS via
+[mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp)) and Modbus
+compatibility tests (C decode functions called from Python via ctypes). See
+[Quality Engineering](docs/quality.md) for details.
 
 # SmartEVSE App
 
