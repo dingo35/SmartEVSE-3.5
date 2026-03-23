@@ -38,22 +38,22 @@ class MockChargePointHandler(CpHandler):
     - Simulate slow/dropped responses (via message_delay / drop_messages)
     """
 
-    def __init__(self, charge_point_id: str, connection, response_map: dict):
+    def __init__(self, charge_point_id: str, connection, parent_csms):
         super().__init__(charge_point_id, connection)
-        self._response_map = response_map
+        self._parent = parent_csms
         self.received_messages: list[tuple[str, dict]] = []
 
     def _get_override(self, action: str) -> dict | None:
-        return self._response_map.get("response_overrides", {}).get(action)
+        return self._parent.response_overrides.get(action)
 
     def _get_error(self, action: str) -> Exception | None:
-        return self._response_map.get("inject_errors", {}).get(action)
+        return self._parent.inject_errors.get(action)
 
     def _get_delay(self) -> float:
-        return self._response_map.get("message_delay", 0)
+        return self._parent.message_delay
 
     def _should_drop(self, action: str) -> bool:
-        return action in self._response_map.get("drop_messages", [])
+        return action in self._parent.drop_messages
 
     async def _maybe_delay(self):
         delay = self._get_delay()
@@ -246,15 +246,6 @@ class MockCSMS:
             return []
         return self.handler.received_messages
 
-    @property
-    def _response_map(self) -> dict:
-        return {
-            "response_overrides": self.response_overrides,
-            "inject_errors": self.inject_errors,
-            "message_delay": self.message_delay,
-            "drop_messages": self.drop_messages,
-        }
-
     async def _on_connect(self, websocket):
         """Handle new charge point WebSocket connection."""
         # Extract charge point ID from path (e.g., /ocpp/CP001 -> CP001)
@@ -268,7 +259,7 @@ class MockCSMS:
         cp_id = path.strip("/").split("/")[-1] if path else "unknown"
         logger.info("Charge point connected: %s", cp_id)
 
-        self.handler = MockChargePointHandler(cp_id, websocket, self._response_map)
+        self.handler = MockChargePointHandler(cp_id, websocket, self)
         self._connection_event.set()
 
         try:
