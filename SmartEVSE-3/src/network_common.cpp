@@ -71,6 +71,9 @@ std::vector<mg_connection*> wsLcdConnections;
 #include "diag_modbus.h"
 std::vector<mg_connection*> wsDiagConnections;
 static portMUX_TYPE wsDiagMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool diagSnapPending = false;
+static diag_snapshot_t diagSnapBuf;          // shared buffer: timer-ISR → Mongoose thread
+static mg_timer *diagWsTimer = nullptr;
 // END PLAN-06
 
 static void stopLCDImageTimer(struct mg_mgr *manager) {
@@ -1111,28 +1114,45 @@ static void lcd_image_timer_fn(void *arg) {
 }
 
 // BEGIN PLAN-06: Push diagnostic snapshot to WebSocket clients
+// Called from Timer1S / Timer100ms (FreeRTOS context) — NOT the Mongoose thread.
+// We buffer the snapshot and let a Mongoose timer deliver it.
 void diag_ws_push_snapshot(const diag_snapshot_t *snap) {
     if (!snap)
         return;
-
-    // Copy connections under lock, then send outside critical section
-    std::vector<mg_connection*> active;
     portENTER_CRITICAL(&wsDiagMux);
-    // Remove stale connections
+    memcpy(&diagSnapBuf, snap, sizeof(diag_snapshot_t));
+    diagSnapPending = true;
+    portEXIT_CRITICAL(&wsDiagMux);
+}
+
+// Mongoose-thread timer: delivers buffered snapshot to WS clients
+static void diag_ws_timer_fn(void *arg) {
+    (void)arg;
+
+    // Grab pending snapshot under lock
+    diag_snapshot_t local;
+    portENTER_CRITICAL(&wsDiagMux);
+    if (!diagSnapPending) {
+        portEXIT_CRITICAL(&wsDiagMux);
+        return;
+    }
+    memcpy(&local, &diagSnapBuf, sizeof(diag_snapshot_t));
+    diagSnapPending = false;
+
+    // Remove stale connections while under lock
     for (size_t i = wsDiagConnections.size(); i > 0; --i) {
         mg_connection *c = wsDiagConnections[i - 1];
         if (c == nullptr || c->is_closing)
             wsDiagConnections.erase(wsDiagConnections.begin() + (i - 1));
     }
-    active = wsDiagConnections;
+    std::vector<mg_connection*> active = wsDiagConnections;
     portEXIT_CRITICAL(&wsDiagMux);
 
     if (active.empty())
         return;
 
-    // Send binary snapshot (64 bytes) to all connected clients
     for (auto *c : active) {
-        mg_ws_send(c, snap, sizeof(diag_snapshot_t), WEBSOCKET_OP_BINARY);
+        mg_ws_send(c, &local, sizeof(diag_snapshot_t), WEBSOCKET_OP_BINARY);
     }
 }
 
@@ -1340,6 +1360,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         portEXIT_CRITICAL(&wsDiagMux);
         if (removed) {
             _LOG_V("Removed diag WS connection\n");
+            // Stop timer when last client disconnects
+            portENTER_CRITICAL(&wsDiagMux);
+            bool empty = wsDiagConnections.empty();
+            portEXIT_CRITICAL(&wsDiagMux);
+            if (empty && diagWsTimer != nullptr) {
+                mg_timer_free(&mgr.timers, diagWsTimer);
+                diagWsTimer = nullptr;
+            }
         }
     }
     // END PLAN-06
@@ -1371,6 +1399,10 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         portENTER_CRITICAL(&wsDiagMux);
         wsDiagConnections.push_back(c);
         portEXIT_CRITICAL(&wsDiagMux);
+        // Start Mongoose-thread timer to deliver snapshots (100ms poll)
+        if (diagWsTimer == nullptr) {
+            diagWsTimer = mg_timer_add(&mgr, 100, MG_TIMER_REPEAT, diag_ws_timer_fn, NULL);
+        }
         _LOG_V("New diag WS connection\n");
     }
     // END PLAN-06
