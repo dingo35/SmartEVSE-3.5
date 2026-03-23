@@ -58,9 +58,9 @@ async def test_meter_values_valid_measurands(booted_charge_point):
 
     for mv in meter_msg["meter_value"]:
         assert "timestamp" in mv
-        assert "sampledValue" in mv
+        assert "sampled_value" in mv
 
-        for sv in mv["sampledValue"]:
+        for sv in mv["sampled_value"]:
             # Every sampled value must have measurand, value, unit
             assert "measurand" in sv, f"Missing measurand in sampledValue: {sv}"
             assert "value" in sv, f"Missing value in sampledValue: {sv}"
@@ -116,7 +116,7 @@ async def test_meter_values_includes_energy(booted_charge_point):
     # Find energy measurand
     found_energy = False
     for mv in meter_msg["meter_value"]:
-        for sv in mv["sampledValue"]:
+        for sv in mv["sampled_value"]:
             if sv.get("measurand") == "Energy.Active.Import.Register":
                 found_energy = True
                 # Value must be numeric
@@ -157,7 +157,7 @@ async def test_meter_values_per_phase_current(booted_charge_point):
     # Collect phases that have Current.Import
     current_phases = set()
     for mv in meter_msg["meter_value"]:
-        for sv in mv["sampledValue"]:
+        for sv in mv["sampled_value"]:
             if sv.get("measurand") == "Current.Import" and "phase" in sv:
                 current_phases.add(sv["phase"])
                 # Value must be numeric and non-negative
@@ -199,7 +199,7 @@ async def test_meter_values_single_phase(booted_charge_point):
 
     current_phases = set()
     for mv in meter_msg["meter_value"]:
-        for sv in mv["sampledValue"]:
+        for sv in mv["sampled_value"]:
             if sv.get("measurand") == "Current.Import" and "phase" in sv:
                 current_phases.add(sv["phase"])
 

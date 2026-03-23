@@ -116,7 +116,9 @@ class OcppMessage:
         data = json.loads(raw)
         msg_type = data[0]
         if msg_type == CALL:
-            return OcppMessage(action=data[2], payload=data[3], msg_type=CALL)
+            msg = OcppMessage(action=data[2], payload=data[3], msg_type=CALL)
+            msg.unique_id = data[1]
+            return msg
         elif msg_type == CALL_RESULT:
             msg = OcppMessage(action="", payload=data[2], msg_type=CALL_RESULT)
             msg.unique_id = data[1]
@@ -179,24 +181,35 @@ class ChargePointSimulator:
         """Background task to listen for CSMS-initiated messages."""
         try:
             async for raw in self._ws:
-                msg = OcppMessage.from_json(raw)
+                try:
+                    msg = OcppMessage.from_json(raw)
+                except (json.JSONDecodeError, ValueError, IndexError) as e:
+                    logger.warning("Failed to parse incoming message: %s (raw: %s)", e, raw[:200])
+                    continue
                 if msg.msg_type == CALL_RESULT:
                     # Response to our Call
                     if msg.unique_id in self._response_handlers:
-                        self._response_handlers[msg.unique_id].set_result(msg)
+                        future = self._response_handlers[msg.unique_id]
+                        if not future.done():
+                            future.set_result(msg)
                     self.received_responses.append((msg.unique_id, msg.payload))
                 elif msg.msg_type == CALL_ERROR:
                     if msg.unique_id in self._response_handlers:
-                        self._response_handlers[msg.unique_id].set_result(msg)
+                        future = self._response_handlers[msg.unique_id]
+                        if not future.done():
+                            future.set_result(msg)
                     self.received_responses.append((msg.unique_id, msg.payload))
                 elif msg.msg_type == CALL:
                     # CSMS-initiated Call (RemoteStart, SetChargingProfile, etc.)
+                    logger.debug("Received CSMS Call: %s", msg.action)
                     self.received_calls.append((msg.action, msg.payload))
                     await self._handle_csms_call(msg)
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket connection closed")
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.error("Unexpected error in _listen: %s", e)
 
     async def _handle_csms_call(self, msg: OcppMessage):
         """Handle CSMS-initiated Call messages with default responses."""

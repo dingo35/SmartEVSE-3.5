@@ -117,24 +117,31 @@ async def test_authorize_timeout_handling(mock_csms):
     @when the simulator sends Authorize with a 5 second timeout
     @then the simulator handles the timeout gracefully
     """
-    mock_csms.message_delay = 12  # Delay all responses by 12 seconds
-
     cp = ChargePointSimulator(mock_csms.url, charge_point_id="TIMEOUT-CP")
     await cp.connect()
     await mock_csms.wait_for_connection(timeout=5.0)
 
     try:
-        # Boot (will also be delayed, but we wait for it)
-        mock_csms.message_delay = 0  # Don't delay boot
-        await cp.send_boot_notification()
-        mock_csms.message_delay = 12  # Delay auth
+        # Boot without delay
+        boot_resp = await cp.send_boot_notification()
+        assert boot_resp.msg_type == CALL_RESULT
+
+        # Now set delay for auth
+        mock_csms.message_delay = 12  # Delay auth response by 12 seconds
 
         # Authorize with short timeout - should raise TimeoutError
-        with pytest.raises(asyncio.TimeoutError):
-            await cp.send_authorize("TIMEOUT01")
+        timed_out = False
+        try:
+            await cp.send_call("Authorize", {"idTag": "TIMEOUT01"}, timeout=3.0)
+        except asyncio.TimeoutError:
+            timed_out = True
+
+        assert timed_out, "Expected TimeoutError for delayed Authorize response"
 
     finally:
         mock_csms.message_delay = 0
+        # Allow any delayed responses to drain before disconnecting
+        await asyncio.sleep(0.5)
         await cp.disconnect()
 
 

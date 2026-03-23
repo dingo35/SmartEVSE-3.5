@@ -56,9 +56,11 @@ async def test_reconnect_after_disconnect(mock_csms):
         assert boot_resp2.msg_type == CALL_RESULT
         assert boot_resp2.payload["status"] == "Accepted"
 
-        # Verify a new BootNotification was received
+        # Verify a new BootNotification was received after reconnect
+        # Note: mock_csms.handler is reset between connections, so received_messages
+        # only contains messages from the new connection
         boot_count_after = len([a for a, _ in mock_csms.received_messages if a == "BootNotification"])
-        assert boot_count_after > boot_count_before
+        assert boot_count_after >= 1
 
     finally:
         await cp2.disconnect()

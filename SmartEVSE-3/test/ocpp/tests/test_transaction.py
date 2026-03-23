@@ -134,7 +134,7 @@ async def test_transaction_energy_monotonically_increasing(booted_charge_point):
     prev_energy = -1
     for msg in meter_msgs:
         for mv in msg["meter_value"]:
-            for sv in mv["sampledValue"]:
+            for sv in mv["sampled_value"]:
                 if sv.get("measurand") == "Energy.Active.Import.Register":
                     energy = int(sv["value"])
                     assert energy >= prev_energy, (
