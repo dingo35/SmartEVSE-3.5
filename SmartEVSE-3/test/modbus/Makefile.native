@@ -1,0 +1,30 @@
+# Builds SmartEVSE decode functions as a shared library for Python ctypes
+# Usage: make -f Makefile.native
+CC       ?= gcc
+SRC_DIR  := ../../src
+INC_DIR  := ../native/include
+
+SOURCES  := $(SRC_DIR)/modbus_decode.c $(SRC_DIR)/meter_decode.c
+
+INCLUDES := -I$(SRC_DIR) -I$(INC_DIR)
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  LIB_EXT  := .dylib
+  CFLAGS   := -shared -fPIC -std=c11 -Wall -Wextra -O2 -dynamiclib
+else
+  LIB_EXT  := .so
+  CFLAGS   := -shared -fPIC -std=c11 -Wall -Wextra -O2
+endif
+
+TARGET := libmodbus_decode$(LIB_EXT)
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(SOURCES)
+	$(CC) $(CFLAGS) $(INCLUDES) -lm -o $@ $(SOURCES)
+
+clean:
+	rm -f libmodbus_decode.so libmodbus_decode.dylib
