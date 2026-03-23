@@ -1,0 +1,29 @@
+{
+    "name": "Tap Electric",
+    "description": "Tap Electric CSMS profile: requires RFID auth, sends SetChargingProfile",
+    "boot_response": {
+        "status": "Accepted",
+        "interval": 300
+    },
+    "authorize_response": {
+        "status": "Accepted"
+    },
+    "features": {
+        "requires_rfid": true,
+        "sends_charging_profile": true,
+        "free_vend": false,
+        "heartbeat_interval": 300
+    },
+    "charging_profile": {
+        "chargingProfileId": 1,
+        "stackLevel": 0,
+        "chargingProfilePurpose": "TxProfile",
+        "chargingProfileKind": "Relative",
+        "chargingSchedule": {
+            "chargingRateUnit": "A",
+            "chargingSchedulePeriod": [
+                {"startPeriod": 0, "limit": 16.0}
+            ]
+        }
+    }
+}

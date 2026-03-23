@@ -1,0 +1,17 @@
+{
+    "name": "SteVe",
+    "description": "SteVe local CSMS profile: accepts any idTag, no Smart Charging",
+    "boot_response": {
+        "status": "Accepted",
+        "interval": 300
+    },
+    "authorize_response": {
+        "status": "Accepted"
+    },
+    "features": {
+        "requires_rfid": true,
+        "sends_charging_profile": false,
+        "free_vend": false,
+        "heartbeat_interval": 300
+    }
+}
