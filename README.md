@@ -3,7 +3,9 @@ SmartEVSE v3
 
 Smart Electric Vehicle Charge Controller
 
-![Image of SmartEVSE](/pictures/SmartEVSEv3.png)
+<img src="/pictures/SmartEVSEv3.png" alt="SmartEVSE v3 hardware" width="500">
+
+<img src="/pictures/SmartEVSEv3-WebUI.jpg" alt="SmartEVSE v3 Web UI" width="500">
 
 # About this fork
 
