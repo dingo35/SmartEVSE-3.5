@@ -195,6 +195,57 @@ If [CONFIG](#config) is set to **Fixed**, configure MAX to be lower than or equa
 
 Set the max current of the EVSE circuit: 10-160A per phase. When power sharing, this is the total current that will be split between connected and charging EVs.
 
+## CircuitMeter
+
+CircuitMeter is a third energy meter that monitors a subpanel circuit feeding the
+EVSE. It provides subpanel breaker protection and circuit-level energy data for ERE
+compliance. See [Features — CircuitMeter](features.md#circuitmeter--subpanel-metering)
+for background.
+
+CircuitMeter is configured via the web UI, REST API, or MQTT — it does not appear
+in the LCD menu.
+
+### CircuitMeter type
+
+Set the meter type for the circuit meter. Uses the same meter type list as
+MAINS MET and EV METER (Eastron, ABB, Finder, Orno, Custom, API, etc.).
+
+- **0** (default): Disabled — no circuit meter, zero runtime cost.
+- **1-19**: A supported Modbus energy meter type (same IDs as MAINS MET).
+- **9 (API)**: Circuit meter data is fed externally via MQTT (`Set/CircuitMeter`)
+  or REST API (`/currents` with `circuit_L1`, `circuit_L2`, `circuit_L3` params).
+
+**REST API:** `circuit_meter_type` field in GET/POST `/settings`
+**MQTT:** Not directly settable via MQTT (use REST API or web UI)
+**NVS key:** `CircuitMeter` (uint8_t)
+
+### CircuitMeter address
+
+Modbus address for the circuit meter: 10-247. Only relevant when CircuitMeter type
+is a Modbus meter (not Disabled or API).
+
+- **Default:** 14
+
+**REST API:** `circuit_meter_address` field in GET/POST `/settings`
+**NVS key:** `CirMeterAddr` (uint8_t)
+
+### MaxCircuitMains
+
+Maximum current allowed on the subpanel circuit (sum of all phases is per-phase,
+same convention as MAINS): 0-600A.
+
+- **0** (default): Disabled — no circuit current limiting.
+- **10-600**: Maximum current in Amperes per phase. SmartEVSE will reduce charging
+  current so that `CircuitMeter` measured current stays below this value.
+
+When both `MaxCircuitMains` and `MaxMains` are configured, the most restrictive
+limit applies.
+
+**REST API:** `max_circuit_mains` field in GET/POST `/settings`
+**MQTT:** `Set/MaxCircuitMains` (integer, 0-600)
+**NVS key:** `MaxCirMains` (uint16_t)
+**HA entity:** `Max Circuit Mains` (number, settable)
+
 ## START
 > Visible when: MODE = Solar, AND PWR SHARE = Disabled or Master
 

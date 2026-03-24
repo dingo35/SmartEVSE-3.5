@@ -2432,6 +2432,9 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
         EVMeter.ResetKwh = 1;                                               // reset EV kWh meter on next B->C change
         // End charge session on vehicle disconnect (A + 12V)
         if (session_is_active()) {
+            if (CircuitMeter.Type) {
+                session_set_circuit_energy(0, CircuitMeter.Import_active_energy);
+            }
             session_end((uint32_t)time(NULL), EVMeter.Import_active_energy,
                         (uint16_t)(Balanced[0]), Nr_Of_Phases_Charging);
 #if MQTT
@@ -2447,6 +2450,9 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
         EVMeter.ResetKwh = 0;
         // Start charge session on B->C transition
         session_start((uint32_t)time(NULL), EVMeter.Import_active_energy, Mode);
+        if (CircuitMeter.Type) {
+            session_set_circuit_energy(CircuitMeter.Import_active_energy, 0);
+        }
     }
 }
 

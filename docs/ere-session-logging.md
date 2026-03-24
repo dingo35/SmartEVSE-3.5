@@ -136,6 +136,52 @@ mqtt:
 
 Replace `SmartEVSE-XXXX` with your device's MQTT prefix.
 
+## Circuit energy for ERE Path B
+
+When a [CircuitMeter](features.md#circuitmeter--subpanel-metering) is configured
+and active during a charge session, the session JSON includes a `circuit_kwh` field
+representing the total energy measured on the subpanel circuit during the session.
+
+### Payload with circuit energy
+
+```json
+{
+  "session_id": 1,
+  "start": "2026-03-19T14:30:00Z",
+  "end": "2026-03-19T18:45:00Z",
+  "kwh": 12.345,
+  "start_energy_wh": 142300,
+  "end_energy_wh": 154645,
+  "circuit_kwh": 12.380,
+  "max_current_a": 16.0,
+  "phases": 3,
+  "mode": "solar",
+  "ocpp_tx_id": null
+}
+```
+
+The `circuit_kwh` field is only present when CircuitMeter is enabled and has
+non-zero energy data. When CircuitMeter is disabled, the field is omitted.
+
+### ERE Path B compliance
+
+ERE Path B requires an "exclusief bemeterd allocatiepunt" — a separately metered
+circuit that exclusively feeds the charger. The CircuitMeter enables verification:
+
+- If `circuit_kwh` approximately equals `kwh` (within meter tolerance, typically
+  1-2% for MID Class B meters), the circuit exclusively feeds the charger. No
+  other loads consumed energy during the session.
+- If `circuit_kwh` is significantly higher than `kwh`, other loads are present on
+  the circuit. The circuit is not exclusive, and Path B may not apply.
+
+This comparison can be automated in Home Assistant or your ERE reporting workflow.
+The tolerance should account for meter accuracy class and any standby consumption
+of the EVSE itself.
+
+**Note:** Increment 5 (session log integration) implements the `circuit_kwh` field.
+If you are on a firmware version before that increment, the field will not be
+present in session JSON output.
+
 ## OCPP alignment
 
 When OCPP is active, charge sessions are aligned with OCPP transactions:
