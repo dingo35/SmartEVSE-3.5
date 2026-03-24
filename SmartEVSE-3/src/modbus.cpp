@@ -745,6 +745,8 @@ void HandleModbusResponse(void) {
                 MainsMeter.ResponseToMeasurement(MB);
             } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
                 EVMeter.ResponseToMeasurement(MB);
+            } else if (CircuitMeter.Type && MB.Address == CircuitMeter.Address) {
+                CircuitMeter.ResponseToMeasurement(MB);
             } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
                 // Packet from a Node EVSE, only for Master!
                 if (MB.Register == 0x0000) {

@@ -102,6 +102,9 @@
 #define MAINS_METER_ADDRESS 10
 #define EV_METER 0
 #define EV_METER_ADDRESS 12
+#define CIRCUIT_METER 0                                                         // Circuit meter disabled by default
+#define CIRCUIT_METER_ADDRESS 14                                                // Default Modbus address for circuit meter
+#define MAX_CIRCUIT_MAINS 0                                                     // Max circuit current (A), 0 = no limit
 #define MIN_METER_ADDRESS 10
 #define MIN_EV_METER_ADDRESS 11
 #define MAX_METER_ADDRESS 247

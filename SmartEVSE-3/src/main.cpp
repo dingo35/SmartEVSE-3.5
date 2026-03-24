@@ -187,6 +187,8 @@ uint16_t CapacityLimit = 0;                                                 // U
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
+Meter CircuitMeter(CIRCUIT_METER, CIRCUIT_METER_ADDRESS, COMM_TIMEOUT);
+uint16_t MaxCircuitMains = MAX_CIRCUIT_MAINS;                                  // Max current of the subpanel circuit (A), 0 = disabled
 uint8_t Nr_Of_Phases_Charging = 3;                                          // Nr of phases we are charging with. Set to 1 or 3, depending on the CONTACT 2 setting, and the MODE we are in.
 Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // Switching between 1P and 3P with the second contactor output, depends on the CONTACT 2 setting, and the MODE.
 
@@ -2059,6 +2061,24 @@ void ModbusRequestLoop() {
                 if (MainsMeter.Type && energytimer == 0) {
                     if (requestPhaseEnergyMeasurement(MainsMeter.Type, MainsMeter.Address))
                         break;
+                }
+                ModbusRequest++;
+                // fall through
+            case 23:                                                        // CircuitMeter current measurement
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {
+                    _LOG_D("ModbusRequest %u: Request CircuitMeter Current Measurement\n", ModbusRequest);
+                    requestCurrentMeasurement(CircuitMeter.Type, CircuitMeter.Address);
+                    break;
+                }
+                ModbusRequest++;
+                // fall through
+            case 24:                                                        // CircuitMeter energy measurement (import)
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_SENSORBOX) {
+                    if (energytimer == 0) {
+                        _LOG_D("ModbusRequest %u: Request CircuitMeter Import Energy Measurement\n", ModbusRequest);
+                        requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 0);
+                        break;
+                    }
                 }
                 ModbusRequest++;
                 // fall through

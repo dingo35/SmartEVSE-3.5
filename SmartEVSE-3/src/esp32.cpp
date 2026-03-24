@@ -156,7 +156,8 @@ struct SettingsCache {
     uint8_t Switch, RCmon;
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress;
+    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
+    uint16_t MaxCircuitMains;
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
@@ -1549,6 +1550,9 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        CircuitMeter.Type = preferences.getUChar("CircuitMeter", CIRCUIT_METER);
+        CircuitMeter.Address = preferences.getUChar("CirMeterAddr", CIRCUIT_METER_ADDRESS);
+        MaxCircuitMains = preferences.getUShort("MaxCirMains", MAX_CIRCUIT_MAINS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1622,6 +1626,9 @@ void read_settings() {
         settingsCache.MainsMeterAddress = MainsMeter.Address;
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
+        settingsCache.CircuitMeterType = CircuitMeter.Type;
+        settingsCache.CircuitMeterAddress = CircuitMeter.Address;
+        settingsCache.MaxCircuitMains = MaxCircuitMains;
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1701,6 +1708,9 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
+    PREFS_PUT_UCHAR_IF_CHANGED("CirMeterAddr", CircuitMeter.Address, CircuitMeterAddress);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxCirMains", MaxCircuitMains, MaxCircuitMains);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
     PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister, EMIRegister);
     PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor, EMIDivisor);

@@ -92,6 +92,8 @@ extern Node_t Node[];
 extern Meter MainsMeter;
 extern Meter EVMeter;
 extern int16_t CapacityHeadroom_da;
+extern Meter CircuitMeter;
+extern uint16_t MaxCircuitMains;
 
 // These are inside the #if CH32/v3 guard in main.cpp
 extern uint8_t C1Timer;
@@ -327,6 +329,17 @@ void evse_sync_globals_to_ctx(void) {
     ctx->EVMeterType = EVMeter.Type;
     ctx->MainsMeterTimeout = MainsMeter.Timeout;
     ctx->EVMeterTimeout = EVMeter.Timeout;
+
+    // CircuitMeter: sync max of 3 phases and configured limit
+    if (CircuitMeter.Type) {
+        int16_t cmax = CircuitMeter.Irms[0];
+        if (CircuitMeter.Irms[1] > cmax) cmax = CircuitMeter.Irms[1];
+        if (CircuitMeter.Irms[2] > cmax) cmax = CircuitMeter.Irms[2];
+        ctx->CircuitMeterImeasured = cmax;
+    } else {
+        ctx->CircuitMeterImeasured = 0;
+    }
+    ctx->MaxCircuitMains = MaxCircuitMains;
 
     ctx->ErrorFlags = ErrorFlags;
     ctx->ChargeDelay = ChargeDelay;
