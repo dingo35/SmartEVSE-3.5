@@ -236,6 +236,7 @@ bool BuzzerPresent = false;
 
 // The following data will be updated by eeprom/storage data at powerup:
 extern uint16_t MaxMains;
+extern uint16_t MaxCircuitMains;
 extern uint16_t MaxSumMains;
                                                                             // see https://github.com/serkri/SmartEVSE-3/issues/215
                                                                             // 0 means disabled, allowed value 10 - 600 A
@@ -821,6 +822,14 @@ void mqtt_receive_callback(const String topic, const String payload) {
             break;
         // END PLAN-06
 
+        // BEGIN PLAN-13: Capacity tariff limit
+        case MQTT_CMD_CAPACITY_LIMIT:
+            CapacityLimit = cmd.capacity_limit;
+            capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+            request_write_settings();
+            break;
+        // END PLAN-13
+
         // BEGIN PLAN-09: API staleness timeout
         case MQTT_CMD_MAINS_METER_TIMEOUT:
             // Applied via bridge layer to evse_ctx.api_mains_timeout
@@ -1129,6 +1138,17 @@ void SetupMQTTClient() {
     optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
     MQTTclient.announce("MQTT Msg Count", "sensor", optional_payload);
 
+    // Capacity tariff: settable number entity for limit, sensor entities for state
+    optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W")
+        + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CapacityLimit"))
+        + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "25000") + MQTTclient.jsna("mode","box");
+    MQTTclient.announce("Capacity Limit", "number", optional_payload);
+
+    optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W") + MQTTclient.jsna("state_class","measurement");
+    MQTTclient.announce("Capacity Window Avg", "sensor", optional_payload);
+    MQTTclient.announce("Capacity Monthly Peak", "sensor", optional_payload);
+    MQTTclient.announce("Capacity Headroom", "sensor", optional_payload);
+
     // MQTT publish settings: change-only toggle and heartbeat interval
     optional_payload = MQTTclient.jsna("entity_category","config")
         + MQTTclient.jsna("state_topic", String(MQTTprefix + "/MQTTChangeOnly"))
@@ -1330,6 +1350,12 @@ void mqttPublishData() {
         mqtt_pub_int(MQTT_SLOT_METER_RECOVERY_COUNT, "/MeterRecoveryCount", (int32_t)g_evse_ctx.meter_recovery_count, false, now_s);
         mqtt_pub_int(MQTT_SLOT_API_STALE_COUNT, "/ApiStaleCount", (int32_t)g_evse_ctx.api_stale_count, false, now_s);
         // END PLAN-09
+
+        // Capacity tariff sensors
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_LIMIT, "/CapacityLimit", CapacityLimit, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_WINDOW_AVG, "/CapacityWindowAvg", capacity_get_window_avg_w(&CapacityState), false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_MONTHLY_PEAK, "/CapacityMonthlyPeak", capacity_get_monthly_peak_w(&CapacityState), false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_HEADROOM, "/CapacityHeadroom", capacity_get_headroom_w(&CapacityState), false, now_s);
 
         // MQTT config settings — publish for HA switch/number entity state
         MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);

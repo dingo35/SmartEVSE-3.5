@@ -389,5 +389,17 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    /* Capacity tariff limit: 0=disabled, max 25000W */
+    if (match_topic(prefix, topic, "/Set/CapacityLimit")) {
+        if (payload[0] == '\0') return false;
+        char *endptr;
+        long val = strtol(payload, &endptr, 10);
+        if (*endptr != '\0') return false;
+        if (val < 0 || val > 25000) return false;
+        out->cmd = MQTT_CMD_CAPACITY_LIMIT;
+        out->capacity_limit = (uint16_t)val;
+        return true;
+    }
+
     return false;
 }

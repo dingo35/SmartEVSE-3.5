@@ -17,6 +17,7 @@
 #include "OneWire.h"
 #include "diag_sampler.h"
 #include "diag_storage.h"
+#include "capacity_peak.h"
 #include <LittleFS.h>
 
 //OCPP includes
@@ -57,6 +58,8 @@ extern uint8_t ColorCustom[3];
 extern uint8_t OcppMode;
 extern uint16_t MaxMains;
 extern uint16_t MaxSumMains;
+extern uint16_t CapacityLimit;
+extern capacity_state_t CapacityState;
 extern uint16_t MaxCurrent;
 extern uint16_t MinCurrent;
 extern uint16_t MaxCircuit;
@@ -235,6 +238,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["prio_strategy"] = PrioStrategy;
         doc["settings"]["rotation_interval"] = RotationInterval;
         doc["settings"]["idle_timeout"] = IdleTimeout;
+        doc["settings"]["capacity_limit"] = CapacityLimit;
+        doc["settings"]["capacity_window_avg"] = capacity_get_window_avg_w(&CapacityState);
+        doc["settings"]["capacity_monthly_peak"] = capacity_get_monthly_peak_w(&CapacityState);
+        doc["settings"]["capacity_headroom"] = capacity_get_headroom_w(&CapacityState);
 
         if (LoadBl == 1) {
             static const char *StrSchedState[] = {"Inactive", "Active", "Paused"};
@@ -431,6 +438,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["max_sum_mains_time"] = MaxSumMainsTime;
             } else {
                 doc["max_sum_mains_time"] = "Value not allowed!";
+            }
+        }
+
+        if(request->hasParam("capacity_limit")) {
+            int val = request->getParam("capacity_limit")->value().toInt();
+            if (val >= 0 && val <= 25000) {
+                CapacityLimit = (uint16_t)val;
+                capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+                doc["capacity_limit"] = CapacityLimit;
+            } else {
+                doc["capacity_limit"] = "Value not allowed! (0-25000)";
             }
         }
 
