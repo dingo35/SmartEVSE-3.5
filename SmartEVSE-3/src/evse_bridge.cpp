@@ -19,6 +19,7 @@
 #include "ch32.h"
 #endif
 #include "evse_bridge.h"
+#include "capacity_peak.h"
 
 // Only build bridge for platforms that run the state machine locally
 #if !defined(SMARTEVSE_VERSION) || (SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40)
@@ -90,6 +91,7 @@ extern uint16_t RotationTimer;
 extern Node_t Node[];
 extern Meter MainsMeter;
 extern Meter EVMeter;
+extern int16_t CapacityHeadroom_da;
 
 // These are inside the #if CH32/v3 guard in main.cpp
 extern uint8_t C1Timer;
@@ -361,6 +363,7 @@ void evse_sync_globals_to_ctx(void) {
 
     ctx->TempEVSE = TempEVSE;
     ctx->maxTemp = maxTemp;
+    ctx->CapacityHeadroom_da = CapacityHeadroom_da;
 #ifdef SMARTEVSE_VERSION
     ctx->RCmon = RCmon;
 #endif

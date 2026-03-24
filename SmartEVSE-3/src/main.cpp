@@ -21,6 +21,7 @@
 #include "serial_parser.h"
 #include "led_color.h"
 #include "session_log.h"
+#include "capacity_peak.h"
 
 #ifdef SMARTEVSE_VERSION //ESP32
 #define EXT extern
@@ -178,6 +179,11 @@ uint16_t IdleTimeout = 60;                                                  // I
 uint32_t ConnectedTime[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};              // Uptime when each EVSE entered STATE_C
 uint8_t ScheduleState[NR_EVSES] = {0, 0, 0, 0, 0, 0, 0, 0};               // Scheduling state per EVSE (0:Inactive / 1:Active / 2:Paused)
 uint16_t RotationTimer = 0;                                                 // Countdown timer for rotation (seconds)
+
+// Capacity tariff peak tracking (Belgian capaciteitstarief / German §14a)
+capacity_state_t CapacityState;
+int16_t CapacityHeadroom_da = INT16_MAX;                                    // Headroom in deciamps; INT16_MAX = unconstrained
+uint16_t CapacityLimit = 0;                                                 // User setting: capacity limit in watts (0 = disabled)
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
@@ -1162,6 +1168,26 @@ void Timer1S_singlerun(void) {
     evse_tick_1s(&g_evse_ctx);
     evse_sync_ctx_to_globals();
     evse_bridge_unlock();
+
+    // Capacity tariff peak tracking — feed mains power to 15-min averaging
+    if (CapacityLimit > 0) {
+        // Use metered power if available, else estimate from Irms × 230V
+        int32_t total_power_w = MainsMeter.PowerMeasured;
+        if (total_power_w == 0 && (MainsMeter.Irms[0] || MainsMeter.Irms[1] || MainsMeter.Irms[2])) {
+            total_power_w = ((int32_t)MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2]) * 23;
+        }
+        struct tm cap_timeinfo;
+        time_t cap_now = time(NULL);
+        localtime_r(&cap_now, &cap_timeinfo);
+        capacity_tick_1s(&CapacityState, total_power_w,
+                         (uint8_t)(cap_timeinfo.tm_mon + 1),
+                         (uint8_t)(cap_timeinfo.tm_year + 1900 - 2024));
+        uint8_t phases = Nr_Of_Phases_Charging > 0 ? Nr_Of_Phases_Charging : 1;
+        CapacityHeadroom_da = capacity_headroom_to_da(
+            capacity_get_headroom_w(&CapacityState), phases);
+    } else {
+        CapacityHeadroom_da = INT16_MAX;
+    }
 
     timer1s_check_error_transitions(oldErrorFlags, oldSolarStopTimer);
 #ifdef SMARTEVSE_VERSION

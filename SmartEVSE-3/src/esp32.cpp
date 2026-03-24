@@ -57,6 +57,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
+#include "capacity_peak.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -177,6 +178,7 @@ struct SettingsCache {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
+    uint16_t CapacityLimit;
     bool valid;  // True once cache is populated from read_settings()
 };
 static SettingsCache settingsCache = {};
@@ -247,6 +249,8 @@ extern uint16_t GridRelayMaxSumMains;
                                                                             // When the relay opens its contacts, power will be reduced to 4.2kW
                                                                             // The relay is only allowed on the Master
 extern bool CustomButton;
+extern uint16_t CapacityLimit;
+extern capacity_state_t CapacityState;
 extern uint16_t MaxCurrent;
 extern uint16_t MinCurrent;
 extern uint8_t Mode;
@@ -1557,6 +1561,11 @@ void read_settings() {
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
 #endif //ENABLE_OCPP
 
+        CapacityLimit = preferences.getUShort("CapacityLim", 0);
+        // Restore monthly peak from NVS
+        CapacityState.monthly.monthly_peak_w = preferences.getInt("CapPeak", 0);
+        CapacityState.monthly.peak_month = preferences.getUChar("CapMonth", 0);
+
         preferences.end();                                  
 
         // Populate settings cache with values just read from NVS
@@ -1619,6 +1628,7 @@ void read_settings() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
+        settingsCache.CapacityLimit = CapacityLimit;
         settingsCache.valid = true;
         _LOG_D("Settings cache populated from NVS\n");
 
@@ -1701,6 +1711,11 @@ void write_settings(void) {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
 #endif //ENABLE_OCPP
+
+    PREFS_PUT_USHORT_IF_CHANGED("CapacityLim", CapacityLimit, CapacityLimit);
+    // Persist monthly peak across reboots
+    preferences.putInt("CapPeak", CapacityState.monthly.monthly_peak_w);
+    preferences.putUChar("CapMonth", CapacityState.monthly.peak_month);
 
     // Mark cache as valid after first write
     settingsCache.valid = true;
@@ -2660,6 +2675,13 @@ extern void Timer20ms(void * parameter);
     // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
     evse_bridge_init();
     session_init();
+    {
+        // Preserve monthly peak loaded from NVS across capacity_init()
+        capacity_monthly_t saved_monthly = CapacityState.monthly;
+        capacity_init(&CapacityState);
+        CapacityState.monthly = saved_monthly;
+        capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+    }
     diag_sampler_init();
     diag_storage_init();
 
