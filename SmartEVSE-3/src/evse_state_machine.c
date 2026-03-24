@@ -91,6 +91,8 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->MaxCurrent = MAX_CURRENT;
     ctx->MinCurrent = MIN_CURRENT;
     ctx->MaxCircuit = MAX_CIRCUIT;
+    ctx->MaxCircuitMains = 0;          // Disabled by default
+    ctx->CircuitMeterImeasured = 0;
     ctx->MaxCapacity = MAX_CURRENT;  // Default to MaxCurrent
     ctx->MaxSumMains = MAX_SUMMAINS;
     ctx->MaxSumMainsTime = MAX_SUMMAINSTIME;
@@ -751,6 +753,13 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 Idifference = cap_diff;
         }
 
+        /* CircuitMeter subpanel current limit (Plan 14) */
+        if (ctx->MaxCircuitMains) {
+            int32_t circuit_headroom = ((int32_t)(ctx->MaxCircuitMains * 10)) - ctx->CircuitMeterImeasured;
+            if (circuit_headroom < Idifference)
+                Idifference = circuit_headroom;
+        }
+
         // Ongoing regulation (lines 1252-1265)
         // Issue #15: smart dead band + symmetric ramp rates
         // Issue #18: suppress regulation during settling window
@@ -837,6 +846,12 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                     ctx->IsetBalanced = min_int(ctx->IsetBalanced,
                                                 (int32_t)ctx->CapacityHeadroom_da / phases);
                 }
+                /* CircuitMeter subpanel limit (Plan 14) */
+                if (ctx->MaxCircuitMains) {
+                    int32_t circuit_phases = evse_force_single_phase(ctx) ? 1 : 3;
+                    ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                                (((int32_t)(ctx->MaxCircuitMains * 10)) - ctx->CircuitMeterImeasured) / circuit_phases);
+                }
             }
         }
     }
@@ -856,6 +871,12 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         int phases = evse_force_single_phase(ctx) ? 1 : 3;
         ctx->IsetBalanced = min_int(ctx->IsetBalanced,
                                     (int32_t)ctx->CapacityHeadroom_da / phases);
+    }
+    /* CircuitMeter guard rail (Plan 14) */
+    if (ctx->MaxCircuitMains && ctx->Mode != MODE_NORMAL) {
+        int32_t circuit_phases = evse_force_single_phase(ctx) ? 1 : 3;
+        ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                    (((int32_t)(ctx->MaxCircuitMains * 10)) - ctx->CircuitMeterImeasured) / circuit_phases);
     }
 
     // ---- Phase 4b: EMA smoothing (Issue #15) ----
@@ -928,6 +949,10 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 (ctx->IsetBalanced > (int32_t)((ctx->MaxCircuit * 10) - Baseload_EV)))
                 hardShortage = true;
             if (!ctx->MaxSumMainsTime && LimitedByMaxSumMains)
+                hardShortage = true;
+            /* CircuitMeter hard shortage (Plan 14) */
+            if (ctx->MaxCircuitMains &&
+                ctx->CircuitMeterImeasured > ((int32_t)(ctx->MaxCircuitMains * 10)))
                 hardShortage = true;
 
             // Priority scheduling: master with multiple EVSEs in shortage
