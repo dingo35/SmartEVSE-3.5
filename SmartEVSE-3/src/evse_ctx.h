@@ -19,6 +19,7 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <limits.h>
 
 #ifndef NR_EVSES
 #define NR_EVSES 8
@@ -389,6 +390,9 @@ typedef struct {
     uint8_t Switching_Phases_C2;
     bool    phasesLastUpdateFlag;
     bool    LimitedByMaxSumMains;
+
+    // --- Capacity tariff headroom (Plan 13) ---
+    int16_t CapacityHeadroom_da;  /* Remaining headroom in deciamps; INT16_MAX = unconstrained */
 
     // --- Phase switching timers (Issue #16) ---
     uint16_t PhaseSwitchTimer;          /* Countdown for 3P↔1P switching (separate from SolarStopTimer) */
