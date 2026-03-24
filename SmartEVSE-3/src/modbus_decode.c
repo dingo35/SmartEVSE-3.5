@@ -95,10 +95,13 @@ void modbus_decode(modbus_frame_t *frame, const uint8_t *buf, uint8_t len)
             break;
     }
 
-    /* Set Data pointer if we have data */
+    /* Copy data into owned buffer if we have data */
     if (frame->Type != MODBUS_INVALID && frame->DataLength > 0) {
-        /* Data is at the end of the buffer, length DataLength bytes */
-        frame->Data = (uint8_t *)(buf + (len - frame->DataLength));
+        uint8_t copy_len = frame->DataLength;
+        if (copy_len > MODBUS_MAX_DATA) copy_len = MODBUS_MAX_DATA;
+        memcpy(frame->DataBuf, buf + (len - frame->DataLength), copy_len);
+        frame->Data = frame->DataBuf;
+        frame->DataLength = copy_len;
     }
 
     /* Request-Response matching logic */

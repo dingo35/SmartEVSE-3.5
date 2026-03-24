@@ -53,6 +53,7 @@ class ModbusFrame(ctypes.Structure):
         ('Register', ctypes.c_uint16),
         ('RegisterCount', ctypes.c_uint16),
         ('Value', ctypes.c_uint16),
+        ('DataBuf', ctypes.c_uint8 * 128),
         ('Data', ctypes.POINTER(ctypes.c_uint8)),
         ('DataLength', ctypes.c_uint8),
         ('Type', ctypes.c_uint8),

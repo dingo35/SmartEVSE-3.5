@@ -24,10 +24,13 @@ extern "C" {
 /* Default broadcast address */
 #define MODBUS_BROADCAST_ADR 0x09
 
+/* Maximum data bytes stored in frame (covers Sensorbox 64-byte payloads) */
+#define MODBUS_MAX_DATA 128
+
 /*
  * Parsed Modbus frame.
- * Mirrors the existing firmware `struct ModBus` layout so the glue layer
- * can memcpy between them during the transition period.
+ * Data is copied into an internal buffer (DataBuf) so the frame owns its
+ * data and does not hold pointers into the caller's buffer.
  */
 typedef struct {
     uint8_t  Address;
@@ -35,7 +38,8 @@ typedef struct {
     uint16_t Register;
     uint16_t RegisterCount;
     uint16_t Value;
-    uint8_t  *Data;
+    uint8_t  DataBuf[MODBUS_MAX_DATA]; /* Owned copy of payload data */
+    uint8_t  *Data;                    /* Points into DataBuf (or NULL) */
     uint8_t  DataLength;
     uint8_t  Type;          /* MODBUS_INVALID / MODBUS_REQUEST / etc. */
     uint8_t  RequestAddress;
