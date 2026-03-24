@@ -1188,6 +1188,132 @@ void test_capacity_limit_non_numeric(void) {
     TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "abc", &cmd));
 }
 
+// ---- MaxCircuitMains ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-CIR-010
+ * @scenario Set MaxCircuitMains to valid value via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MaxCircuitMains with payload "25"
+ * @then Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 25
+ */
+void test_max_circuit_mains_valid(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MaxCircuitMains", "25", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_CIRCUIT_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(25, cmd.max_circuit_mains);
+}
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-CIR-010
+ * @scenario Set MaxCircuitMains to zero (disable) via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MaxCircuitMains with payload "0"
+ * @then Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 0
+ */
+void test_max_circuit_mains_zero(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MaxCircuitMains", "0", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_CIRCUIT_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(0, cmd.max_circuit_mains);
+}
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-CIR-010
+ * @scenario Set MaxCircuitMains to boundary max (600) via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MaxCircuitMains with payload "600"
+ * @then Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 600
+ */
+void test_max_circuit_mains_max(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/MaxCircuitMains", "600", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_MAX_CIRCUIT_MAINS, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(600, cmd.max_circuit_mains);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-CIR-010
+ * @scenario Reject MaxCircuitMains below minimum (1-9 range)
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MaxCircuitMains with payload "5"
+ * @then Parsing returns false (gap between 0 and 10)
+ */
+void test_max_circuit_mains_below_min(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MaxCircuitMains", "5", &cmd));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-CIR-010
+ * @scenario Reject MaxCircuitMains above maximum
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/MaxCircuitMains with payload "601"
+ * @then Parsing returns false
+ */
+void test_max_circuit_mains_above_max(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/MaxCircuitMains", "601", &cmd));
+}
+
+// ---- CircuitMeter ----
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-CIR-011
+ * @scenario Set CircuitMeter API feed via MQTT with L1:L2:L3 format
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CircuitMeter with payload "100:200:150"
+ * @then Command type is MQTT_CMD_CIRCUIT_METER with parsed phase currents
+ */
+void test_circuit_meter_valid(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CircuitMeter", "100:200:150", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CIRCUIT_METER, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(100, cmd.circuit_meter.L1);
+    TEST_ASSERT_EQUAL_INT(200, cmd.circuit_meter.L2);
+    TEST_ASSERT_EQUAL_INT(150, cmd.circuit_meter.L3);
+}
+
+/*
+ * @feature MQTT Command Parsing
+ * @req REQ-CIR-011
+ * @scenario CircuitMeter API feed with negative values (export)
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CircuitMeter with payload "-50:100:-25"
+ * @then Command type is MQTT_CMD_CIRCUIT_METER with correct phase currents
+ */
+void test_circuit_meter_negative(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CircuitMeter", "-50:100:-25", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CIRCUIT_METER, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(-50, cmd.circuit_meter.L1);
+    TEST_ASSERT_EQUAL_INT(100, cmd.circuit_meter.L2);
+    TEST_ASSERT_EQUAL_INT(-25, cmd.circuit_meter.L3);
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-CIR-011
+ * @scenario Reject CircuitMeter with out of range values
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CircuitMeter with payload "2001:0:0"
+ * @then Parsing returns false (exceeds +/-2000 dA range)
+ */
+void test_circuit_meter_out_of_range(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CircuitMeter", "2001:0:0", &cmd));
+}
+
+/*
+ * @feature MQTT Input Validation
+ * @req REQ-CIR-011
+ * @scenario Reject CircuitMeter with missing fields
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CircuitMeter with payload "100:200"
+ * @then Parsing returns false (needs 3 fields)
+ */
+void test_circuit_meter_missing_fields(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CircuitMeter", "100:200", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -1350,6 +1476,19 @@ int main(void) {
     RUN_TEST(test_capacity_limit_negative);
     RUN_TEST(test_capacity_limit_empty);
     RUN_TEST(test_capacity_limit_non_numeric);
+
+    // MaxCircuitMains (Plan 14)
+    RUN_TEST(test_max_circuit_mains_valid);
+    RUN_TEST(test_max_circuit_mains_zero);
+    RUN_TEST(test_max_circuit_mains_max);
+    RUN_TEST(test_max_circuit_mains_below_min);
+    RUN_TEST(test_max_circuit_mains_above_max);
+
+    // CircuitMeter (Plan 14)
+    RUN_TEST(test_circuit_meter_valid);
+    RUN_TEST(test_circuit_meter_negative);
+    RUN_TEST(test_circuit_meter_out_of_range);
+    RUN_TEST(test_circuit_meter_missing_fields);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

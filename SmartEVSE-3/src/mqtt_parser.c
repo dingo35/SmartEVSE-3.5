@@ -360,6 +360,24 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return true;
     }
 
+    /* CircuitMeter: max circuit mains current (0 = disabled, 10-600 A) */
+    if (match_topic(prefix, topic, "/Set/MaxCircuitMains")) {
+        out->cmd = MQTT_CMD_MAX_CIRCUIT_MAINS;
+        int val = atoi(payload);
+        if (val == 0 || (val >= 10 && val <= 600)) {
+            out->max_circuit_mains = (uint16_t)val;
+            return true;
+        }
+        return false;
+    }
+
+    /* CircuitMeter API feed: L1:L2:L3 format (same as MainsMeter) */
+    if (match_topic(prefix, topic, "/Set/CircuitMeter")) {
+        out->cmd = MQTT_CMD_CIRCUIT_METER;
+        return mqtt_parse_mains_meter(payload, &out->circuit_meter.L1,
+                                      &out->circuit_meter.L2, &out->circuit_meter.L3);
+    }
+
     if (match_topic(prefix, topic, "/Set/DiagProfile")) {
         out->cmd = MQTT_CMD_DIAG_PROFILE;
         if (strcmp(payload, "off") == 0 || strcmp(payload, "0") == 0) {

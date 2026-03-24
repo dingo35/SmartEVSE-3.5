@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define MQTT_CACHE_MAX_SLOTS 88  /* 85 current topics + headroom */
+#define MQTT_CACHE_MAX_SLOTS 96  /* 92 current topics + headroom */
 
 /* One slot per published MQTT topic, in mqttPublishData() call order */
 typedef enum {
@@ -98,6 +98,13 @@ typedef enum {
     MQTT_SLOT_CAPACITY_WINDOW_AVG,
     MQTT_SLOT_CAPACITY_MONTHLY_PEAK,
     MQTT_SLOT_CAPACITY_HEADROOM,
+    MQTT_SLOT_CIRCUIT_L1,
+    MQTT_SLOT_CIRCUIT_L2,
+    MQTT_SLOT_CIRCUIT_L3,
+    MQTT_SLOT_CIRCUIT_POWER,
+    MQTT_SLOT_CIRCUIT_IMPORT_ENERGY,
+    MQTT_SLOT_CIRCUIT_EXPORT_ENERGY,
+    MQTT_SLOT_MAX_CIRCUIT_MAINS,
     MQTT_SLOT_COUNT  /* must be <= MQTT_CACHE_MAX_SLOTS */
 } mqtt_slot_t;
 
