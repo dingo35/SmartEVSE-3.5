@@ -132,6 +132,10 @@ All topics use prefix `SmartEVSE/<serial>/`.
 | `/FreeHeap` | int | B | measurement | ESP32 free heap memory |
 | `/MQTTMsgCount` | int | — | total_increasing | Total MQTT messages published |
 | `/MQTTHeartbeat` | int | s | — | Current heartbeat setting |
+| `/CapacityLimit` | int | W | — | Capacity tariff limit (0=disabled, settable number entity) |
+| `/CapacityWindowAvg` | int | W | measurement | Current 15-min window running average power |
+| `/CapacityMonthlyPeak` | int | W | measurement | Highest 15-min average this month |
+| `/CapacityHeadroom` | int | W | measurement | Remaining watts before hitting CapacityLimit |
 
 ### Command topics (Set)
 
@@ -148,6 +152,7 @@ All topics use prefix `SmartEVSE/<serial>/`.
 | `/Set/EnergyCapacity` | int | -1 to 200000 | Set battery capacity (Wh). -1 to clear. |
 | `/Set/EnergyRequest` | int | -1 to 200000 | Set energy request (Wh). -1 to clear. |
 | `/Set/EVCCID` | string | max 31 chars | Set EV CC ID for session identification. |
+| `/Set/CapacityLimit` | int | 0-25000 | Capacity tariff limit in watts (0=disabled) |
 
 ## SoC Injection via MQTT
 
@@ -234,6 +239,33 @@ automation:
           topic: "SmartEVSE/1234/Set/EnergyCapacity"
           payload: "{{ states('sensor.my_car_battery_capacity') | int }}"
 ```
+
+## Capacity tariff HA automation example
+
+Monitor your monthly peak and get notified when it increases:
+
+```yaml
+automation:
+  - alias: "Capacity tariff peak alert"
+    trigger:
+      - platform: state
+        entity_id: sensor.smartevse_capacity_monthly_peak
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.to_state.state | int > trigger.from_state.state | int }}
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "New monthly peak"
+          message: >
+            SmartEVSE recorded a new monthly peak of
+            {{ states('sensor.smartevse_capacity_monthly_peak') }} W.
+            Previous peak was {{ trigger.from_state.state }} W.
+```
+
+Track your monthly peak over time by adding the sensor to the HA Energy dashboard
+or creating a statistics graph card with `sensor.smartevse_capacity_monthly_peak`.
 
 ## Troubleshooting
 
