@@ -35,6 +35,7 @@ SOLAR_DEBUG_JSON_SRC := $(SRC_DIR)/solar_debug_json.c
 SESSION_LOG_SRC      := $(SRC_DIR)/session_log.c
 DIAG_TELEMETRY_SRC  := $(SRC_DIR)/diag_telemetry.c
 DIAG_MODBUS_SRC     := $(SRC_DIR)/diag_modbus.c
+CAPACITY_PEAK_SRC   := $(SRC_DIR)/capacity_peak.c
 
 # Discover all test files
 TEST_SRCS := $(wildcard $(TEST_DIR)/test_*.c)
@@ -48,6 +49,9 @@ all: $(TEST_BINS)
 # Module-specific build rules (must come before the generic rule)
 $(BUILD)/test_mqtt_parser: $(TEST_DIR)/test_mqtt_parser.c $(MQTT_PARSER_SRC) $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_mqtt_parser.c $(MQTT_PARSER_SRC)
+
+$(BUILD)/test_mqtt_soc: $(TEST_DIR)/test_mqtt_soc.c $(MQTT_PARSER_SRC) $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_mqtt_soc.c $(MQTT_PARSER_SRC)
 
 $(BUILD)/test_mqtt_publish: $(TEST_DIR)/test_mqtt_publish.c $(MQTT_PUBLISH_SRC) $(SRC_DIR)/mqtt_publish.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_mqtt_publish.c $(MQTT_PUBLISH_SRC)
@@ -111,6 +115,9 @@ $(BUILD)/test_diag_modbus: $(TEST_DIR)/test_diag_modbus.c $(DIAG_MODBUS_SRC) $(S
 
 $(BUILD)/test_diag_replay: $(TEST_DIR)/test_diag_replay.c diag_loader.c include/diag_loader.h $(DIAG_TELEMETRY_SRC) $(SRC_DIR)/diag_telemetry.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_diag_replay.c diag_loader.c $(DIAG_TELEMETRY_SRC)
+
+$(BUILD)/test_capacity_peak: $(TEST_DIR)/test_capacity_peak.c $(CAPACITY_PEAK_SRC) $(SRC_DIR)/capacity_peak.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_capacity_peak.c $(CAPACITY_PEAK_SRC)
 
 $(BUILD)/test_api_staleness: $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC) $(SRC_DIR)/evse_ctx.h $(SRC_DIR)/mqtt_parser.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_api_staleness.c $(EVSE_SRC) $(MQTT_PARSER_SRC)
