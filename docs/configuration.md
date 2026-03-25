@@ -592,7 +592,7 @@ current to stay below a configured peak limit.
 
 | Setting | Channel | Range | Default | Persisted |
 |---------|---------|-------|---------|-----------|
-| CapacityLimit | MQTT, REST | 0-25000 W | 0 (disabled) | Yes (NVS) |
+| CapacityLimit | LCD, Web, MQTT, REST | 0-25000 W (0-25.0 kW) | 0 (disabled) | Yes (NVS) |
 
 - **0** (default): Feature disabled. No peak tracking or current limiting.
 - **1-25000** (watts): Maximum allowed 15-minute average power for the household.
@@ -607,6 +607,18 @@ current to stay below a configured peak limit.
    reduces `IsetBalanced` to prevent exceeding the target.
 4. The highest 15-minute average each month is recorded as the monthly peak and
    persisted in NVS. On month rollover, the peak resets.
+
+**Setting via LCD:**
+
+Navigate to **CAP PEAK** in the LCD menu (visible when a mains meter is
+configured and Load Balancing is Disabled or Master). The display shows the
+limit in kW with 0.1 kW steps (0 = Disabled, 0.1-25.0 kW).
+
+**Setting via Web UI:**
+
+Open the **Capacity Tariff** card in the web interface. Enter the peak limit
+in kW and click **Set**. The card also shows the current 15-minute window
+average, monthly peak, and available headroom.
 
 **Setting via MQTT:**
 ```bash

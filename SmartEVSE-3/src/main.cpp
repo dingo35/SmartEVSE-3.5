@@ -2696,6 +2696,10 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_PRIO, PrioStrategy)
         SETITEM(MENU_ROTATION, RotationInterval)
         SETITEM(MENU_IDLE_TIMEOUT, IdleTimeout)
+        case MENU_CAPLIMIT:
+            CapacityLimit = val * 100;
+            capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+            break;
         SETITEM(STATUS_SOLAR_TIMER, SolarStopTimer)
         SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
         case MENU_C2:
@@ -2860,6 +2864,8 @@ uint16_t getItemValue(uint8_t nav) {
             return RotationInterval;
         case MENU_IDLE_TIMEOUT:
             return IdleTimeout;
+        case MENU_CAPLIMIT:
+            return CapacityLimit / 100;
 
         // Status writeable
         case STATUS_STATE:

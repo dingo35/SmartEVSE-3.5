@@ -270,8 +270,9 @@ avoid setting new monthly highs:
   EVSE never pushes the household above the target. Works alongside the
   existing `MaxSumMains` enforcement path.
 - **Configurable limit** -- set the capacity limit (in watts, 0 = disabled) via
-  the LCD menu, MQTT (`Set/CapacityLimit`), REST API, or Home Assistant.
-  A limit of 0 disables the feature entirely.
+  the LCD menu (**CAP PEAK**, 0-25.0 kW in 0.1 kW steps), the web UI
+  (**Capacity Tariff** card), MQTT (`Set/CapacityLimit`), REST API, or Home
+  Assistant. A limit of 0 disables the feature entirely.
 - **Home Assistant integration** -- four auto-discovered entities:
   `CapacityLimit` (settable number), `CapacityWindowAvg` (sensor),
   `CapacityMonthlyPeak` (sensor), and `CapacityHeadroom` (sensor), all with

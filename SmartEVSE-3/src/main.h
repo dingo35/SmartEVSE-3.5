@@ -296,6 +296,9 @@ void setPilot(bool On);
 #define MENU_ROTATION       47                                                  // Rotation interval (minutes, 0=disabled)
 #define MENU_IDLE_TIMEOUT   48                                                  // Idle timeout (seconds)
 
+// Capacity tariff (visible when MainsMeter configured and Load Balancing Disabled/Master)
+#define MENU_CAPLIMIT       49                                                  // Capacity tariff limit (kW, 0=disabled)
+
 #define MENU_STATE 50
 
 class Button {

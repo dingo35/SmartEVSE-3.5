@@ -834,9 +834,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 /* Capacity tariff headroom (Plan 13) */
                 if (ctx->CapacityHeadroom_da < INT16_MAX) {
                     int phases = evse_force_single_phase(ctx) ? 1 : 3;
-                    if (phases > 0)
-                        ctx->IsetBalanced = min_int(ctx->IsetBalanced,
-                                                    (int32_t)ctx->CapacityHeadroom_da / phases);
+                    ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                                (int32_t)ctx->CapacityHeadroom_da / phases);
                 }
             }
         }
@@ -855,9 +854,8 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
     /* Capacity tariff guard rail (Plan 13) */
     if (ctx->Mode != MODE_NORMAL && ctx->CapacityHeadroom_da < INT16_MAX) {
         int phases = evse_force_single_phase(ctx) ? 1 : 3;
-        if (phases > 0)
-            ctx->IsetBalanced = min_int(ctx->IsetBalanced,
-                                        (int32_t)ctx->CapacityHeadroom_da / phases);
+        ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                    (int32_t)ctx->CapacityHeadroom_da / phases);
     }
 
     // ---- Phase 4b: EMA smoothing (Issue #15) ----
