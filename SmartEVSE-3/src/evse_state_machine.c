@@ -159,6 +159,9 @@ void evse_init(evse_ctx_t *ctx, evse_hal_t *hal) {
     ctx->phasesLastUpdateFlag = true;    // Start as true for first calculation
     ctx->LimitedByMaxSumMains = false;
 
+    // Capacity tariff headroom (Plan 13)
+    ctx->CapacityHeadroom_da = INT16_MAX;  // Unconstrained by default
+
     // Phase switching timers
     ctx->PhaseSwitchTimer = 0;
     ctx->PhaseSwitchHoldDown = 0;
@@ -741,6 +744,13 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             }
         }
 
+        /* Capacity tariff headroom (Plan 13) */
+        if (ctx->CapacityHeadroom_da < INT16_MAX) {
+            int32_t cap_diff = (int32_t)ctx->CapacityHeadroom_da;
+            if (cap_diff < Idifference)
+                Idifference = cap_diff;
+        }
+
         // Ongoing regulation (lines 1252-1265)
         // Issue #15: smart dead band + symmetric ramp rates
         // Issue #18: suppress regulation during settling window
@@ -821,6 +831,12 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
                 if (ctx->MaxSumMains)
                     ctx->IsetBalanced = min_int(ctx->IsetBalanced,
                                                 ((int32_t)(ctx->MaxSumMains * 10) - ctx->Isum) / 3);
+                /* Capacity tariff headroom (Plan 13) */
+                if (ctx->CapacityHeadroom_da < INT16_MAX) {
+                    int phases = evse_force_single_phase(ctx) ? 1 : 3;
+                    ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                                (int32_t)ctx->CapacityHeadroom_da / phases);
+                }
             }
         }
     }
@@ -834,6 +850,12 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
         int phases = evse_force_single_phase(ctx) ? 1 : 3;  // line 1320
         ctx->IsetBalanced = min_int(ctx->IsetBalanced,
                                     (ctx->GridRelayMaxSumMains * 10) / phases);
+    }
+    /* Capacity tariff guard rail (Plan 13) */
+    if (ctx->Mode != MODE_NORMAL && ctx->CapacityHeadroom_da < INT16_MAX) {
+        int phases = evse_force_single_phase(ctx) ? 1 : 3;
+        ctx->IsetBalanced = min_int(ctx->IsetBalanced,
+                                    (int32_t)ctx->CapacityHeadroom_da / phases);
     }
 
     // ---- Phase 4b: EMA smoothing (Issue #15) ----

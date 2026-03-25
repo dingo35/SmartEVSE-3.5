@@ -584,6 +584,57 @@ For further details, please refer to [serkri#215](https://github.com/serkri/Smar
 * Beyond existing limits (Mains, MaxCircuit), the charging current will be controlled to ensure that the total of all Mains phase currents does not exceed the Capacity setting.
 * If you are unfamiliar with this setting or do not fall under the applicable regulations, it is advisable to keep the setting at its default setting. (disabled)
 
+## Capacity Tariff Peak Tracking (CapacityLimit)
+
+For users under the Belgian capaciteitstarief or similar EU peak-based billing,
+SmartEVSE can track 15-minute average power and automatically reduce charging
+current to stay below a configured peak limit.
+
+| Setting | Channel | Range | Default | Persisted |
+|---------|---------|-------|---------|-----------|
+| CapacityLimit | LCD, Web, MQTT, REST | 0-25000 W (0-25.0 kW) | 0 (disabled) | Yes (NVS) |
+
+- **0** (default): Feature disabled. No peak tracking or current limiting.
+- **1-25000** (watts): Maximum allowed 15-minute average power for the household.
+  When the running average approaches this limit, the EVSE reduces charge current
+  to maintain headroom.
+
+**How it works:**
+
+1. Every second, SmartEVSE accumulates total mains power (sum of all phases).
+2. Every 15 minutes, it calculates the average power for that window.
+3. If the running average within a window approaches `CapacityLimit`, the EVSE
+   reduces `IsetBalanced` to prevent exceeding the target.
+4. The highest 15-minute average each month is recorded as the monthly peak and
+   persisted in NVS. On month rollover, the peak resets.
+
+**Setting via LCD:**
+
+Navigate to **CAP PEAK** in the LCD menu (visible when a mains meter is
+configured and Load Balancing is Disabled or Master). The display shows the
+limit in kW with 0.1 kW steps (0 = Disabled, 0.1-25.0 kW).
+
+**Setting via Web UI:**
+
+Open the **Capacity Tariff** card in the web interface. Enter the peak limit
+in kW and click **Set**. The card also shows the current 15-minute window
+average, monthly peak, and available headroom.
+
+**Setting via MQTT:**
+```bash
+mosquitto_pub -t "SmartEVSE-xxxxx/Set/CapacityLimit" -m 5000
+```
+
+**Setting via REST API:**
+```bash
+curl -X POST http://smartevse-xxxx.local/settings -d "capacity_limit=5000"
+```
+
+**Note:** This feature complements the existing CAPACITY setting (which limits
+total mains current in amps). CapacityLimit works in watts with 15-minute
+averaging for peak billing optimization. Both constraints are enforced
+simultaneously.
+
 ---
 
 For a complete reference of every setting — which channels (LCD, Web, REST API,

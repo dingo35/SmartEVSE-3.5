@@ -42,6 +42,7 @@ safety, configure these on the device LCD during initial installation.
 | CIRCUIT (breaker) | 10–160 A | 16 A | RW | RW | RW | — | Yes | **⚠** | EVSE sub-panel breaker limit |
 | MaxSumMains (capacity) | 0, 10–600 A | 0 | RW | RW | RW | `Set/CurrentMaxSumMains` | Yes | **⚠** | EU capacity rate; 0=disabled |
 | Sum Mains timeout | 0–60 min | 0 | RW | RW | RW | — | Yes | | Wait time when exceeded |
+| CapacityLimit (peak) | 0–25000 W | 0 | RW | RW | RW | `Set/CapacityLimit` | Yes | | 15-min peak tracking; 0=disabled |
 | PWR SHARE (load bal) | Disabled / Master / Node 1–7 | Disabled | RW | RW | RW | — | Yes | **⚠** | Multi-EVSE power sharing role |
 
 ## Solar and smart mode

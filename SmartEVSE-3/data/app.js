@@ -353,6 +353,23 @@ function updatePowerFlow(mainsTotal, evPower, batCurrent) {
     }
 }
 
+/* ========== Capacity Tariff ========== */
+function updateCapacityTariff(limit, windowAvg, monthlyPeak, headroom) {
+    var el = $id('capacity_limit_input');
+    if (el && !el.matches(':focus')) el.value = limit > 0 ? (limit / 1000).toFixed(1) : '0';
+    var fmtW = function(w) { return w !== undefined && w !== null ? (w / 1000).toFixed(1) + ' kW' : '-'; };
+    $id('capacity_window_avg').textContent = fmtW(windowAvg);
+    $id('capacity_monthly_peak').textContent = fmtW(monthlyPeak);
+    $id('capacity_headroom').textContent = limit > 0 ? fmtW(headroom) : 'N/A';
+    if (limit > 0) showById('capacity_tariff_card'); else showById('capacity_tariff_card');
+}
+function setCapacityLimit() {
+    var val = parseFloat($id('capacity_limit_input').value);
+    if (isNaN(val) || val < 0 || val > 25) { alert('Value must be 0-25 kW'); return; }
+    var watts = Math.round(val * 1000);
+    fetch('/settings?capacity_limit=' + watts, { method: 'POST' });
+}
+
 /* ========== Cert visibility ========== */
 function toggleCertVisibility() {
     $id('mqtt_ca_cert_wrapper').style.display =
@@ -517,6 +534,14 @@ function loadData() {
             $id('current_max').textContent = data.settings.current_max.toFixed(1) + " A";
             $id('override_current').textContent = (data.settings.override_current / 10).toFixed(1) + " A";
             $id('enable_C2').textContent = data.settings.enable_C2;
+
+            /* Capacity tariff */
+            if (data.settings.capacity_limit !== undefined) {
+                updateCapacityTariff(data.settings.capacity_limit,
+                    data.settings.capacity_window_avg,
+                    data.settings.capacity_monthly_peak,
+                    data.settings.capacity_headroom);
+            }
 
             if (data.settings.starttime) {
                 $id('starttime_date_time').textContent = new Date(data.settings.starttime * 1000).toLocaleDateString() + " " + new Date(data.settings.starttime * 1000).toLocaleTimeString();

@@ -57,6 +57,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "mqtt_parser.h"
 #include "mqtt_publish.h"
 #include "http_api.h"
+#include "capacity_peak.h"
 
 //OCPP includes
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
@@ -177,6 +178,7 @@ struct SettingsCache {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
+    uint16_t CapacityLimit;
     bool valid;  // True once cache is populated from read_settings()
 };
 static SettingsCache settingsCache = {};
@@ -234,6 +236,7 @@ bool BuzzerPresent = false;
 
 // The following data will be updated by eeprom/storage data at powerup:
 extern uint16_t MaxMains;
+extern uint16_t MaxCircuitMains;
 extern uint16_t MaxSumMains;
                                                                             // see https://github.com/serkri/SmartEVSE-3/issues/215
                                                                             // 0 means disabled, allowed value 10 - 600 A
@@ -247,6 +250,8 @@ extern uint16_t GridRelayMaxSumMains;
                                                                             // When the relay opens its contacts, power will be reduced to 4.2kW
                                                                             // The relay is only allowed on the Master
 extern bool CustomButton;
+extern uint16_t CapacityLimit;
+extern capacity_state_t CapacityState;
 extern uint16_t MaxCurrent;
 extern uint16_t MinCurrent;
 extern uint8_t Mode;
@@ -817,6 +822,14 @@ void mqtt_receive_callback(const String topic, const String payload) {
             break;
         // END PLAN-06
 
+        // BEGIN PLAN-13: Capacity tariff limit
+        case MQTT_CMD_CAPACITY_LIMIT:
+            CapacityLimit = cmd.capacity_limit;
+            capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+            request_write_settings();
+            break;
+        // END PLAN-13
+
         // BEGIN PLAN-09: API staleness timeout
         case MQTT_CMD_MAINS_METER_TIMEOUT:
             // Applied via bridge layer to evse_ctx.api_mains_timeout
@@ -1125,6 +1138,17 @@ void SetupMQTTClient() {
     optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("state_class","total_increasing") + MQTTclient.jsna("entity_registry_enabled_default","False");
     MQTTclient.announce("MQTT Msg Count", "sensor", optional_payload);
 
+    // Capacity tariff: settable number entity for limit, sensor entities for state
+    optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W")
+        + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CapacityLimit"))
+        + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "25000") + MQTTclient.jsna("mode","box");
+    MQTTclient.announce("Capacity Limit", "number", optional_payload);
+
+    optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W") + MQTTclient.jsna("state_class","measurement");
+    MQTTclient.announce("Capacity Window Avg", "sensor", optional_payload);
+    MQTTclient.announce("Capacity Monthly Peak", "sensor", optional_payload);
+    MQTTclient.announce("Capacity Headroom", "sensor", optional_payload);
+
     // MQTT publish settings: change-only toggle and heartbeat interval
     optional_payload = MQTTclient.jsna("entity_category","config")
         + MQTTclient.jsna("state_topic", String(MQTTprefix + "/MQTTChangeOnly"))
@@ -1326,6 +1350,12 @@ void mqttPublishData() {
         mqtt_pub_int(MQTT_SLOT_METER_RECOVERY_COUNT, "/MeterRecoveryCount", (int32_t)g_evse_ctx.meter_recovery_count, false, now_s);
         mqtt_pub_int(MQTT_SLOT_API_STALE_COUNT, "/ApiStaleCount", (int32_t)g_evse_ctx.api_stale_count, false, now_s);
         // END PLAN-09
+
+        // Capacity tariff sensors
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_LIMIT, "/CapacityLimit", CapacityLimit, true, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_WINDOW_AVG, "/CapacityWindowAvg", capacity_get_window_avg_w(&CapacityState), false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_MONTHLY_PEAK, "/CapacityMonthlyPeak", capacity_get_monthly_peak_w(&CapacityState), false, now_s);
+        mqtt_pub_int(MQTT_SLOT_CAPACITY_HEADROOM, "/CapacityHeadroom", capacity_get_headroom_w(&CapacityState), false, now_s);
 
         // MQTT config settings — publish for HA switch/number entity state
         MQTTclient.publish(MQTTprefix + "/MQTTChangeOnly", MQTTChangeOnly ? "1" : "0", true, 0);
@@ -1557,6 +1587,11 @@ void read_settings() {
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
 #endif //ENABLE_OCPP
 
+        CapacityLimit = preferences.getUShort("CapacityLim", 0);
+        // Restore monthly peak from NVS
+        CapacityState.monthly.monthly_peak_w = preferences.getInt("CapPeak", 0);
+        CapacityState.monthly.peak_month = preferences.getUChar("CapMonth", 0);
+
         preferences.end();                                  
 
         // Populate settings cache with values just read from NVS
@@ -1619,6 +1654,7 @@ void read_settings() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
+        settingsCache.CapacityLimit = CapacityLimit;
         settingsCache.valid = true;
         _LOG_D("Settings cache populated from NVS\n");
 
@@ -1701,6 +1737,11 @@ void write_settings(void) {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
 #endif //ENABLE_OCPP
+
+    PREFS_PUT_USHORT_IF_CHANGED("CapacityLim", CapacityLimit, CapacityLimit);
+    // Persist monthly peak across reboots
+    preferences.putInt("CapPeak", CapacityState.monthly.monthly_peak_w);
+    preferences.putUChar("CapMonth", CapacityState.monthly.peak_month);
 
     // Mark cache as valid after first write
     settingsCache.valid = true;
@@ -2660,6 +2701,13 @@ extern void Timer20ms(void * parameter);
     // Must be called after read_settings() so globals are ready for evse_sync_globals_to_ctx()
     evse_bridge_init();
     session_init();
+    {
+        // Preserve monthly peak loaded from NVS across capacity_init()
+        capacity_monthly_t saved_monthly = CapacityState.monthly;
+        capacity_init(&CapacityState);
+        CapacityState.monthly = saved_monthly;
+        capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
+    }
     diag_sampler_init();
     diag_storage_init();
 

@@ -1096,6 +1096,98 @@ void test_ev_meter_power_boundary_accepted(void) {
     TEST_ASSERT_EQUAL_INT(100000, W);
 }
 
+// ---- CapacityLimit ----
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Set capacity limit to a valid value via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "5000"
+ * @then Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 5000
+ */
+void test_capacity_limit_valid(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "5000", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CAPACITY_LIMIT, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(5000, cmd.capacity_limit);
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Set capacity limit to zero (disabled) via MQTT
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "0"
+ * @then Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 0
+ */
+void test_capacity_limit_zero_disables(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "0", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CAPACITY_LIMIT, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(0, cmd.capacity_limit);
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Set capacity limit to maximum allowed value
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "25000"
+ * @then Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 25000
+ */
+void test_capacity_limit_max(void) {
+    TEST_ASSERT_TRUE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "25000", &cmd));
+    TEST_ASSERT_EQUAL_INT(MQTT_CMD_CAPACITY_LIMIT, cmd.cmd);
+    TEST_ASSERT_EQUAL_INT(25000, cmd.capacity_limit);
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Reject capacity limit above maximum
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "25001"
+ * @then Parsing returns false
+ */
+void test_capacity_limit_over_max(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "25001", &cmd));
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Reject negative capacity limit
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "-1"
+ * @then Parsing returns false
+ */
+void test_capacity_limit_negative(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "-1", &cmd));
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Reject empty payload for capacity limit
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with empty payload
+ * @then Parsing returns false
+ */
+void test_capacity_limit_empty(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "", &cmd));
+}
+
+/*
+ * @feature Capacity Tariff MQTT
+ * @req REQ-CAP-010
+ * @scenario Reject non-numeric payload for capacity limit
+ * @given A valid MQTT prefix
+ * @when Topic is prefix/Set/CapacityLimit with payload "abc"
+ * @then Parsing returns false
+ */
+void test_capacity_limit_non_numeric(void) {
+    TEST_ASSERT_FALSE(mqtt_parse_command(PREFIX, PREFIX "/Set/CapacityLimit", "abc", &cmd));
+}
+
 // ---- Unrecognized topic ----
 
 /*
@@ -1249,6 +1341,15 @@ int main(void) {
     RUN_TEST(test_ev_meter_power_too_low);
     RUN_TEST(test_ev_meter_energy_too_high);
     RUN_TEST(test_ev_meter_power_boundary_accepted);
+
+    // CapacityLimit
+    RUN_TEST(test_capacity_limit_valid);
+    RUN_TEST(test_capacity_limit_zero_disables);
+    RUN_TEST(test_capacity_limit_max);
+    RUN_TEST(test_capacity_limit_over_max);
+    RUN_TEST(test_capacity_limit_negative);
+    RUN_TEST(test_capacity_limit_empty);
+    RUN_TEST(test_capacity_limit_non_numeric);
 
     // Unrecognized
     RUN_TEST(test_unrecognized_topic);

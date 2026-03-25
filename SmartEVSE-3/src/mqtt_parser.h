@@ -37,6 +37,7 @@ typedef enum {
     MQTT_CMD_ENERGY_CAPACITY,
     MQTT_CMD_ENERGY_REQUEST,
     MQTT_CMD_EVCCID_SET,
+    MQTT_CMD_CAPACITY_LIMIT,
 } mqtt_cmd_type_t;
 
 // Mode values matching firmware MODE_NORMAL/MODE_SOLAR/MODE_SMART
@@ -81,6 +82,7 @@ typedef struct {
         int8_t full_soc;                        // MQTT_CMD_FULL_SOC (-1 or 0-100)
         int32_t energy_capacity;                // MQTT_CMD_ENERGY_CAPACITY (-1 or 0-200000 Wh)
         int32_t energy_request;                 // MQTT_CMD_ENERGY_REQUEST (-1 or 0-200000 Wh)
+        uint16_t capacity_limit;                // MQTT_CMD_CAPACITY_LIMIT (0=disabled, max 25000W)
     };
 } mqtt_command_t;
 

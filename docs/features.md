@@ -247,6 +247,42 @@ Configuration: [EVCC Integration](evcc-integration.md)
 
 ---
 
+## Capacity Tariff Peak Tracking
+
+*New in this fork.*
+
+European capacity tariff structures -- such as the Belgian Fluvius
+capaciteitstarief (live since January 2023) and the German par14a EnWG --
+charge consumers based on their peak power demand rather than total
+consumption. The Belgian model bills based on the highest 15-minute average
+power in each month, at approximately EUR 57/kW/year.
+
+SmartEVSE now tracks these peaks and automatically limits charging current to
+avoid setting new monthly highs:
+
+- **15-minute quarter-peak averaging** -- accumulates watt-seconds every second
+  and computes the rolling average power at the end of each 15-minute window,
+  matching the Belgian DSO metering interval.
+- **Monthly peak tracking** -- records the highest 15-minute average each month.
+  Peaks are persisted in NVS and reset automatically on month rollover.
+- **Automatic charging current reduction** -- calculates headroom (how many
+  watts remain before the configured limit) and clamps `IsetBalanced` so the
+  EVSE never pushes the household above the target. Works alongside the
+  existing `MaxSumMains` enforcement path.
+- **Configurable limit** -- set the capacity limit (in watts, 0 = disabled) via
+  the LCD menu (**CAP PEAK**, 0-25.0 kW in 0.1 kW steps), the web UI
+  (**Capacity Tariff** card), MQTT (`Set/CapacityLimit`), REST API, or Home
+  Assistant. A limit of 0 disables the feature entirely.
+- **Home Assistant integration** -- four auto-discovered entities:
+  `CapacityLimit` (settable number), `CapacityWindowAvg` (sensor),
+  `CapacityMonthlyPeak` (sensor), and `CapacityHeadroom` (sensor), all with
+  `device_class: power` and unit W.
+
+Configuration: [MQTT & Home Assistant](mqtt-home-assistant.md) (capacity topics)
+| [Configuration](configuration.md) (CapacityLimit setting)
+
+---
+
 ## ERE Session Logging
 
 *New in this fork.*
