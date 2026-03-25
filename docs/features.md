@@ -283,6 +283,47 @@ Configuration: [MQTT & Home Assistant](mqtt-home-assistant.md) (capacity topics)
 
 ---
 
+## CircuitMeter — Subpanel Metering
+
+*New in this fork.*
+
+A third energy meter instance for monitoring subpanel circuits. CircuitMeter
+addresses two needs:
+
+- **Subpanel breaker protection** — limits EV charging current so the total
+  subpanel load stays below the breaker rating (`MaxCircuitMains`). Without this,
+  other loads on the same subpanel (heat pump, dryer) can cause the breaker to trip
+  during charging.
+- **ERE 2027 compliance support** — provides circuit-level energy measurement for
+  Dutch ERE Path B verification. If `circuit_kwh` matches `session_kwh` in the
+  session log, the circuit exclusively feeds the charger.
+
+**Key design points:**
+
+- Reuses the existing `Meter` class — supports all 19 meter types (Eastron, ABB,
+  Finder, Orno, Custom, etc.) with zero new meter code
+- Zero runtime cost when disabled (`CircuitMeter` type = 0, the default)
+- Integrates with load balancing: `MaxCircuitMains` acts as an additional current
+  constraint alongside `MaxMains` and `MaxCircuit`
+- Full MQTT + Home Assistant auto-discovery for circuit current, power, and energy
+- API/MQTT external feed supported (`Set/CircuitMeter` with `L1:L2:L3` format)
+
+**Typical wiring:**
+
+```
+Grid meter ─── Main panel ─── [CircuitMeter] ─── Subpanel
+                   │                                 ├── EVSE (EVMeter)
+                   │                                 └── Other loads (heat pump, etc.)
+                   ├── Kitchen
+                   └── Lighting
+```
+
+Configuration: [Configuration](configuration.md#circuitmeter),
+[MQTT topics](mqtt-home-assistant.md#circuitmeter-topics),
+[Power Input Methods](power-input-methods.md)
+
+---
+
 ## ERE Session Logging
 
 *New in this fork.*

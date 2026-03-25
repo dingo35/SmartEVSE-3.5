@@ -73,6 +73,19 @@ void session_set_ocpp_id(uint32_t ocpp_transaction_id) {
     s_active.ocpp_active = 1;
 }
 
+void session_set_circuit_energy(int32_t start_wh, int32_t end_wh) {
+    if (!s_session_active) {
+        return;
+    }
+    if (start_wh != 0) {
+        s_active.circuit_start_energy_wh = start_wh;
+    }
+    if (end_wh != 0) {
+        s_active.circuit_end_energy_wh = end_wh;
+        s_active.circuit_energy_wh = end_wh - s_active.circuit_start_energy_wh;
+    }
+}
+
 uint8_t session_is_active(void) {
     return s_session_active;
 }
@@ -167,7 +180,7 @@ int session_to_json(const session_record_t *rec, char *buf, size_t bufsz) {
         "\"max_current_a\":%u.%u,"
         "\"phases\":%u,"
         "\"mode\":\"%s\","
-        "\"ocpp_tx_id\":%s}",
+        "\"ocpp_tx_id\":%s",
         (unsigned)rec->session_id,
         start_iso,
         end_iso,
@@ -180,8 +193,30 @@ int session_to_json(const session_record_t *rec, char *buf, size_t bufsz) {
         ocpp_field);
 
     if (n < 0 || (size_t)n >= bufsz) {
-        /* Buffer too small — output was truncated */
         return -1;
+    }
+
+    /* Append circuit_kwh when CircuitMeter was active */
+    if (rec->circuit_energy_wh != 0) {
+        int32_t ckwh_int = rec->circuit_energy_wh / 1000;
+        int32_t ckwh_frac = rec->circuit_energy_wh % 1000;
+        if (ckwh_frac < 0) ckwh_frac = -ckwh_frac;
+
+        int extra = snprintf(buf + n, bufsz - (size_t)n,
+            ",\"circuit_kwh\":%d.%03d}",
+            (int)ckwh_int, (int)ckwh_frac);
+        if (extra < 0 || (size_t)(n + extra) >= bufsz) {
+            return -1;
+        }
+        n += extra;
+    } else {
+        /* Close the JSON object */
+        if ((size_t)n + 1 >= bufsz) {
+            return -1;
+        }
+        buf[n] = '}';
+        n++;
+        buf[n] = '\0';
     }
 
     return n;

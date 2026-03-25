@@ -115,5 +115,6 @@ class Meter {
 
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)
+extern Meter CircuitMeter;                                                    // Type of Circuit electric meter (0: Disabled / Constants EM_*)
 
 #endif

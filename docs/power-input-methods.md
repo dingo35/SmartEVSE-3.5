@@ -360,24 +360,59 @@ or incorrect values from a malfunctioning automation.
 | Charging limited unexpectedly | Stale high current values | Check your automation is reading the external meter correctly |
 | Values rejected | Out of range | Each phase must be between -2000 and +2000 (deci-Amperes) |
 
+### 3.6 CircuitMeter — Subpanel Circuit Metering
+
+**What it is:** A third energy meter (in addition to MainsMeter and EVMeter) that
+monitors the total current on a subpanel feed. This is NOT a mains meter
+replacement — it supplements the mains meter by providing subpanel-level current
+limiting and circuit energy measurement for ERE compliance.
+
+See [Features — CircuitMeter](features.md#circuitmeter--subpanel-metering) for
+full background.
+
+**Hardware requirements:**
+- A supported Modbus energy meter installed on the subpanel feed
+- RS485 cable from SmartEVSE to the circuit meter
+- MainsMeter must also be configured (CircuitMeter is supplementary)
+
+**Configuration:**
+1. Install the energy meter on the subpanel feed (measures total subpanel current)
+2. Wire RS485 from SmartEVSE to the circuit meter
+3. Set `CircuitMeter` type via web UI or REST API (same meter type IDs as MainsMeter)
+4. Set `CircuitMeterAddress` to the meter's Modbus address (default: 14)
+5. Set `MaxCircuitMains` to the subpanel breaker rating (e.g., 25A for a 25A breaker)
+
+**API mode:** If you don't have a Modbus meter on the subpanel, you can set
+CircuitMeter type to API (type 9) and feed per-phase current via MQTT
+(`Set/CircuitMeter` with `L1:L2:L3` payload in deci-Amperes) or REST API
+(`/currents` with `circuit_L1`, `circuit_L2`, `circuit_L3` params).
+
+**Data provided:** Per-phase current, power, import energy, export energy (same as
+a Modbus mains meter — depends on meter type).
+
+**Failure modes:**
+- Same as Modbus RTU (wired RS485, 11s timeout)
+- If CircuitMeter communication fails, the circuit current constraint is not
+  applied (fails open — charging continues limited by MaxMains/MaxCircuit only)
+
 ---
 
 ## 4. Comparison Table
 
-| Feature | Modbus RTU | Sensorbox | HomeWizard P1 | Battery (MQTT) | API/MQTT Feed |
-|---------|-----------|-----------|---------------|----------------|---------------|
-| **Reliability tier** | Tier 1 (wired) | Tier 1 (wired) | Tier 2 (WiFi) | Tier 3 (MQTT) | Tier 3 (MQTT) |
-| **Connection** | RS485 wired | RS485 wired | WiFi HTTP | WiFi MQTT | WiFi MQTT/HTTP |
-| **Polling** | ~2s (SmartEVSE polls) | ~2s (SmartEVSE polls) | 1.95s (SmartEVSE polls) | External push | External push |
-| **Timeout** | 11s | 11s | 11s | 60s | 11s |
-| **Per-phase current** | Yes | Yes | Yes | N/A (single value) | Yes |
-| **Energy data** | Yes (most meters) | No | Yes (import/export) | No | No |
-| **Power data** | Yes (most meters) | No | Direction only | No | No |
-| **Auto-discovery** | No (manual address) | Yes (fixed 0x0A) | Yes (mDNS) | No | No |
-| **Multi-node compatible** | Yes | Yes | Yes (master only) | Master only | Master only |
-| **Error reporting** | `CT_NOCOMM` flag | `CT_NOCOMM` flag | `CT_NOCOMM` flag | Silent zero-out | `CT_NOCOMM` flag |
-| **Replaces mains meter** | Yes | Yes | Yes | No (supplement) | Yes |
-| **Setup complexity** | Medium (wiring) | Medium (wiring + CTs) | Low (WiFi only) | Medium (automation) | Medium (automation) |
+| Feature | Modbus RTU | Sensorbox | HomeWizard P1 | Battery (MQTT) | API/MQTT Feed | CircuitMeter |
+|---------|-----------|-----------|---------------|----------------|---------------|--------------|
+| **Reliability tier** | Tier 1 (wired) | Tier 1 (wired) | Tier 2 (WiFi) | Tier 3 (MQTT) | Tier 3 (MQTT) | Tier 1 (wired) |
+| **Connection** | RS485 wired | RS485 wired | WiFi HTTP | WiFi MQTT | WiFi MQTT/HTTP | RS485 wired |
+| **Polling** | ~2s (SmartEVSE polls) | ~2s (SmartEVSE polls) | 1.95s (SmartEVSE polls) | External push | External push | ~2s (SmartEVSE polls) |
+| **Timeout** | 11s | 11s | 11s | 60s | 11s | 11s |
+| **Per-phase current** | Yes | Yes | Yes | N/A (single value) | Yes | Yes |
+| **Energy data** | Yes (most meters) | No | Yes (import/export) | No | No | Yes (most meters) |
+| **Power data** | Yes (most meters) | No | Direction only | No | No | Yes (most meters) |
+| **Auto-discovery** | No (manual address) | Yes (fixed 0x0A) | Yes (mDNS) | No | No | No (manual address) |
+| **Multi-node compatible** | Yes | Yes | Yes (master only) | Master only | Master only | Master only |
+| **Error reporting** | `CT_NOCOMM` flag | `CT_NOCOMM` flag | `CT_NOCOMM` flag | Silent zero-out | `CT_NOCOMM` flag | Silent (fails open) |
+| **Replaces mains meter** | Yes | Yes | Yes | No (supplement) | Yes | No (supplement) |
+| **Setup complexity** | Medium (wiring) | Medium (wiring + CTs) | Low (WiFi only) | Medium (automation) | Medium (automation) | Medium (wiring) |
 
 ---
 

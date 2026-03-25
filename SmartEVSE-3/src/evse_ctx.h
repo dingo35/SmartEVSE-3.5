@@ -320,6 +320,8 @@ typedef struct {
     uint16_t MaxCurrent;
     uint16_t MinCurrent;
     uint16_t MaxCircuit;
+    uint16_t MaxCircuitMains;        /* Max current (A) on subpanel circuit, 0 = disabled */
+    int32_t  CircuitMeterImeasured;  /* Max per-phase current from circuit meter (dA), 0 when disabled */
     uint16_t MaxCapacity;
     uint16_t MaxSumMains;
     uint8_t  MaxSumMainsTime;

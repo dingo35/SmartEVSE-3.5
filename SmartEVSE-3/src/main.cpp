@@ -187,6 +187,8 @@ uint16_t CapacityLimit = 0;                                                 // U
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
+Meter CircuitMeter(CIRCUIT_METER, CIRCUIT_METER_ADDRESS, COMM_TIMEOUT);
+uint16_t MaxCircuitMains = MAX_CIRCUIT_MAINS;                                  // Max current of the subpanel circuit (A), 0 = disabled
 uint8_t Nr_Of_Phases_Charging = 3;                                          // Nr of phases we are charging with. Set to 1 or 3, depending on the CONTACT 2 setting, and the MODE we are in.
 Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // Switching between 1P and 3P with the second contactor output, depends on the CONTACT 2 setting, and the MODE.
 
@@ -2062,6 +2064,24 @@ void ModbusRequestLoop() {
                 }
                 ModbusRequest++;
                 // fall through
+            case 23:                                                        // CircuitMeter current measurement
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {
+                    _LOG_D("ModbusRequest %u: Request CircuitMeter Current Measurement\n", ModbusRequest);
+                    requestCurrentMeasurement(CircuitMeter.Type, CircuitMeter.Address);
+                    break;
+                }
+                ModbusRequest++;
+                // fall through
+            case 24:                                                        // CircuitMeter energy measurement (import)
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_SENSORBOX) {
+                    if (energytimer == 0) {
+                        _LOG_D("ModbusRequest %u: Request CircuitMeter Import Energy Measurement\n", ModbusRequest);
+                        requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 0);
+                        break;
+                    }
+                }
+                ModbusRequest++;
+                // fall through
             default:
                 // slave never gets here
                 // what about normal mode with no meters attached?
@@ -2412,6 +2432,9 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
         EVMeter.ResetKwh = 1;                                               // reset EV kWh meter on next B->C change
         // End charge session on vehicle disconnect (A + 12V)
         if (session_is_active()) {
+            if (CircuitMeter.Type) {
+                session_set_circuit_energy(0, CircuitMeter.Import_active_energy);
+            }
             session_end((uint32_t)time(NULL), EVMeter.Import_active_energy,
                         (uint16_t)(Balanced[0]), Nr_Of_Phases_Charging);
 #if MQTT
@@ -2427,6 +2450,9 @@ static void timer10ms_ev_metering(uint8_t oldState, uint8_t pilot_val) {
         EVMeter.ResetKwh = 0;
         // Start charge session on B->C transition
         session_start((uint32_t)time(NULL), EVMeter.Import_active_energy, Mode);
+        if (CircuitMeter.Type) {
+            session_set_circuit_energy(CircuitMeter.Import_active_energy, 0);
+        }
     }
 }
 

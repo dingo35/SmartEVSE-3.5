@@ -338,6 +338,93 @@ void test_session_zero_energy(void) {
     TEST_ASSERT_EQUAL_INT(0, last->energy_charged_wh);
 }
 
+/* ---- Circuit energy tests ---- */
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-CIR-020
+ * @scenario Session with circuit energy includes circuit_kwh in JSON
+ * @given A completed session with CircuitMeter energy set
+ * @when session_to_json is called
+ * @then JSON includes circuit_kwh field with correct value
+ */
+void test_session_circuit_energy_json(void) {
+    session_init();
+    session_start(1773930600, 142300, 0);
+    session_set_circuit_energy(200000, 0); /* start energy */
+    session_set_circuit_energy(0, 212345); /* end energy */
+    session_end(1773945900, 154645, 160, 3);
+
+    const session_record_t *last = session_get_last();
+    TEST_ASSERT_TRUE(last != NULL);
+    TEST_ASSERT_EQUAL_INT(200000, last->circuit_start_energy_wh);
+    TEST_ASSERT_EQUAL_INT(212345, last->circuit_end_energy_wh);
+    TEST_ASSERT_EQUAL_INT(12345, last->circuit_energy_wh);
+
+    int n = session_to_json(last, json_buf, sizeof(json_buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(strstr(json_buf, "\"circuit_kwh\":12.345") != NULL);
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-CIR-021
+ * @scenario Session without circuit energy omits circuit_kwh from JSON
+ * @given A completed session without CircuitMeter energy
+ * @when session_to_json is called
+ * @then JSON does not include circuit_kwh field
+ */
+void test_session_no_circuit_energy_json(void) {
+    session_init();
+    session_start(1773930600, 142300, 0);
+    session_end(1773945900, 154645, 160, 3);
+
+    const session_record_t *last = session_get_last();
+    TEST_ASSERT_TRUE(last != NULL);
+    TEST_ASSERT_EQUAL_INT(0, last->circuit_energy_wh);
+
+    int n = session_to_json(last, json_buf, sizeof(json_buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(strstr(json_buf, "circuit_kwh") == NULL);
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-CIR-022
+ * @scenario Circuit energy calculation: end minus start
+ * @given A session with circuit start=100000 and circuit end=107500
+ * @when The session ends
+ * @then circuit_energy_wh equals 7500
+ */
+void test_session_circuit_energy_calculation(void) {
+    session_init();
+    session_start(1710000000, 50000, 2);
+    session_set_circuit_energy(100000, 0);
+    session_set_circuit_energy(0, 107500);
+    session_end(1710001000, 55000, 80, 1);
+
+    const session_record_t *last = session_get_last();
+    TEST_ASSERT_TRUE(last != NULL);
+    TEST_ASSERT_EQUAL_INT(100000, last->circuit_start_energy_wh);
+    TEST_ASSERT_EQUAL_INT(107500, last->circuit_end_energy_wh);
+    TEST_ASSERT_EQUAL_INT(7500, last->circuit_energy_wh);
+}
+
+/*
+ * @feature Charge Session Logging
+ * @req REQ-CIR-023
+ * @scenario session_set_circuit_energy with no active session is ignored
+ * @given No active session
+ * @when session_set_circuit_energy is called
+ * @then No crash and no state change
+ */
+void test_session_set_circuit_energy_no_active(void) {
+    session_init();
+    session_set_circuit_energy(100000, 0);
+    TEST_ASSERT_FALSE(session_is_active());
+    TEST_ASSERT_TRUE(session_get_last() == NULL);
+}
+
 /* ---- NTP time validity guard tests ---- */
 
 /*
@@ -442,6 +529,12 @@ int main(void) {
     RUN_TEST(test_session_json_small_buffer);
     RUN_TEST(test_session_json_smart_mode);
     RUN_TEST(test_session_zero_energy);
+
+    /* Circuit energy tests */
+    RUN_TEST(test_session_circuit_energy_json);
+    RUN_TEST(test_session_no_circuit_energy_json);
+    RUN_TEST(test_session_circuit_energy_calculation);
+    RUN_TEST(test_session_set_circuit_energy_no_active);
 
     /* Minimum duration filter tests */
     RUN_TEST(test_session_short_duration_discarded);

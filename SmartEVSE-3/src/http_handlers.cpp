@@ -63,6 +63,7 @@ extern capacity_state_t CapacityState;
 extern uint16_t MaxCurrent;
 extern uint16_t MinCurrent;
 extern uint16_t MaxCircuit;
+extern uint16_t MaxCircuitMains;
 extern uint16_t StartCurrent;
 extern uint16_t StopTime;
 extern uint16_t ImportCurrent;
@@ -166,7 +167,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(3700); // https://arduinojson.org/v6/assistant/ (3200 + nodes array)
+        DynamicJsonDocument doc(4096); // https://arduinojson.org/v6/assistant/ (3200 + nodes + circuit_meter)
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -223,6 +224,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["current_main"] = MaxMains;
         doc["settings"]["current_max_circuit"] = MaxCircuit;
         doc["settings"]["current_max_sum_mains"] = MaxSumMains;
+        doc["settings"]["circuit_meter_type"] = CircuitMeter.Type;
+        doc["settings"]["circuit_meter_address"] = CircuitMeter.Address;
+        doc["settings"]["max_circuit_mains"] = MaxCircuitMains;
         doc["settings"]["max_sum_mains_time"] = MaxSumMainsTime;
         doc["settings"]["solar_max_import"] = ImportCurrent;
         doc["settings"]["solar_start_current"] = StartCurrent;
@@ -344,6 +348,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
         }
 
+        // BEGIN PLAN-14: CircuitMeter data in /settings GET
+        if (CircuitMeter.Type) {
+            doc["circuit_meter"]["description"] = EMConfig[CircuitMeter.Type].Desc;
+            doc["circuit_meter"]["address"] = CircuitMeter.Address;
+            doc["circuit_meter"]["import_active_energy"] = CircuitMeter.Import_active_energy;
+            doc["circuit_meter"]["export_active_energy"] = CircuitMeter.Export_active_energy;
+            doc["circuit_meter"]["power"] = CircuitMeter.PowerMeasured;
+            doc["circuit_meter"]["currents"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
+            doc["circuit_meter"]["currents"]["L1"] = CircuitMeter.Irms[0];
+            doc["circuit_meter"]["currents"]["L2"] = CircuitMeter.Irms[1];
+            doc["circuit_meter"]["currents"]["L3"] = CircuitMeter.Irms[2];
+        }
+        // END PLAN-14
+
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
         doc["phase_currents"]["L1"] = MainsMeter.Irms[0];
         doc["phase_currents"]["L2"] = MainsMeter.Irms[1];
@@ -430,6 +448,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["current_max_sum_mains"] = err;
             }
         }
+
+        // BEGIN PLAN-14: MaxCircuitMains via REST
+        if(request->hasParam("max_circuit_mains")) {
+            int current = request->getParam("max_circuit_mains")->value().toInt();
+            if (LoadBl < 2 && (current == 0 || (current >= 10 && current <= 600))) {
+                MaxCircuitMains = current;
+                doc["max_circuit_mains"] = MaxCircuitMains;
+            } else {
+                doc["max_circuit_mains"] = "Value not allowed!";
+            }
+        }
+        // END PLAN-14
 
         if(request->hasParam("max_sum_mains_timer")) {
             int time = request->getParam("max_sum_mains_timer")->value().toInt();
@@ -895,6 +925,28 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     doc["TOTAL"] = "not allowed on slave";
             }
         }
+
+        // BEGIN PLAN-14: CircuitMeter API feed via /currents POST
+        if(CircuitMeter.Type == EM_API) {
+            if(request->hasParam("circuit_L1") && request->hasParam("circuit_L2") && request->hasParam("circuit_L3")) {
+                if (LoadBl < 2) {
+#if SMARTEVSE_VERSION < 40 //v3
+                    CircuitMeter.Irms[0] = request->getParam("circuit_L1")->value().toInt();
+                    CircuitMeter.Irms[1] = request->getParam("circuit_L2")->value().toInt();
+                    CircuitMeter.Irms[2] = request->getParam("circuit_L3")->value().toInt();
+                    CircuitMeter.CalcImeasured();
+                    CircuitMeter.setTimeout(COMM_TIMEOUT);
+#else //v4
+                    Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, (int16_t) request->getParam("circuit_L1")->value().toInt(), (int16_t) request->getParam("circuit_L2")->value().toInt(), (int16_t) request->getParam("circuit_L3")->value().toInt());
+#endif
+                    for (int x = 0; x < 3; x++)
+                        doc["circuit"]["L" + x] = CircuitMeter.Irms[x];
+                    doc["circuit"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
+                } else
+                    doc["circuit"]["TOTAL"] = "not allowed on slave";
+            }
+        }
+        // END PLAN-14
 
         String json;
         serializeJson(doc, json);

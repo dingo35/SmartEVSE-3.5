@@ -156,7 +156,8 @@ struct SettingsCache {
     uint8_t Switch, RCmon;
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress;
+    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
+    uint16_t MaxCircuitMains;
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
@@ -836,6 +837,28 @@ void mqtt_receive_callback(const String topic, const String payload) {
             break;
         // END PLAN-09
 
+        // BEGIN PLAN-14: CircuitMeter MQTT commands
+        case MQTT_CMD_MAX_CIRCUIT_MAINS:
+            if (LoadBl < 2)
+                MaxCircuitMains = cmd.max_circuit_mains;
+            break;
+
+        case MQTT_CMD_CIRCUIT_METER:
+            if (CircuitMeter.Type != EM_API || LoadBl >= 2)
+                return;
+#if SMARTEVSE_VERSION < 40
+            CircuitMeter.setTimeout(COMM_TIMEOUT);
+            CircuitMeter.Irms[0] = cmd.circuit_meter.L1;
+            CircuitMeter.Irms[1] = cmd.circuit_meter.L2;
+            CircuitMeter.Irms[2] = cmd.circuit_meter.L3;
+            CircuitMeter.CalcImeasured();
+#else
+            Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address,
+                           (int)cmd.circuit_meter.L1, (int)cmd.circuit_meter.L2, (int)cmd.circuit_meter.L3);
+#endif
+            break;
+        // END PLAN-14
+
         // BEGIN PLAN-09: HomeWizard manual IP fallback
         case MQTT_CMD_HOMEWIZARD_IP:
             homeWizardManualIP = cmd.homewizard_ip;
@@ -1027,6 +1050,29 @@ void SetupMQTTClient() {
         optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
         MQTTclient.announce("EV Total Energy Charged", "sensor", optional_payload);
     }
+
+    // BEGIN PLAN-14: CircuitMeter HA discovery
+    if (CircuitMeter.Type) {
+        // Circuit current sensors
+        optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("value_template", R"({{ value | int / 10 }})");
+        MQTTclient.announce("Circuit Current L1", "sensor", optional_payload);
+        MQTTclient.announce("Circuit Current L2", "sensor", optional_payload);
+        MQTTclient.announce("Circuit Current L3", "sensor", optional_payload);
+
+        // Circuit power sensor
+        optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","W");
+        MQTTclient.announce("Circuit Power", "sensor", optional_payload);
+
+        // Circuit energy sensors
+        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
+        MQTTclient.announce("Circuit Import Energy", "sensor", optional_payload);
+        MQTTclient.announce("Circuit Export Energy", "sensor", optional_payload);
+    }
+
+    // MaxCircuitMains number entity (always announced, even when CircuitMeter disabled)
+    optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/MaxCircuitMains")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", "600") + MQTTclient.jsna("mode","box");
+    MQTTclient.announce("Max Circuit Mains", "number", optional_payload);
+    // END PLAN-14
 
     //set the parameters for and MQTTclient.announce sensor entities without device_class or unit_of_measurement:
     optional_payload = "";
@@ -1240,6 +1286,19 @@ void mqttPublishData() {
             if (EVMeter.EnergyPhase[2] > 0)
                 mqtt_pub_int(MQTT_SLOT_EV_ENERGY_L3, "/EVEnergyL3", EVMeter.EnergyPhase[2], false, now_s);
         }
+        // BEGIN PLAN-14: CircuitMeter publishing
+        if (CircuitMeter.Type) {
+            mqtt_pub_int(MQTT_SLOT_CIRCUIT_L1, "/CircuitCurrentL1", CircuitMeter.Irms[0], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_CIRCUIT_L2, "/CircuitCurrentL2", CircuitMeter.Irms[1], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_CIRCUIT_L3, "/CircuitCurrentL3", CircuitMeter.Irms[2], false, now_s);
+            mqtt_pub_int(MQTT_SLOT_CIRCUIT_POWER, "/CircuitPower", CircuitMeter.PowerMeasured, false, now_s);
+            if (CircuitMeter.Import_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_CIRCUIT_IMPORT_ENERGY, "/CircuitImportEnergy", CircuitMeter.Import_active_energy, false, now_s);
+            if (CircuitMeter.Export_active_energy > 0)
+                mqtt_pub_int(MQTT_SLOT_CIRCUIT_EXPORT_ENERGY, "/CircuitExportEnergy", CircuitMeter.Export_active_energy, false, now_s);
+        }
+        mqtt_pub_int(MQTT_SLOT_MAX_CIRCUIT_MAINS, "/MaxCircuitMains", MaxCircuitMains, true, now_s);
+        // END PLAN-14
         mqtt_pub_int(MQTT_SLOT_ESP_TEMP, "/ESPTemp", TempEVSE, false, now_s);
         mqtt_pub_str(MQTT_SLOT_MODE, "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, now_s);
         mqtt_pub_int(MQTT_SLOT_MAX_CURRENT, "/MaxCurrent", MaxCurrent * 10, true, now_s);
@@ -1549,6 +1608,9 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        CircuitMeter.Type = preferences.getUChar("CircuitMeter", CIRCUIT_METER);
+        CircuitMeter.Address = preferences.getUChar("CirMeterAddr", CIRCUIT_METER_ADDRESS);
+        MaxCircuitMains = preferences.getUShort("MaxCirMains", MAX_CIRCUIT_MAINS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1622,6 +1684,9 @@ void read_settings() {
         settingsCache.MainsMeterAddress = MainsMeter.Address;
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
+        settingsCache.CircuitMeterType = CircuitMeter.Type;
+        settingsCache.CircuitMeterAddress = CircuitMeter.Address;
+        settingsCache.MaxCircuitMains = MaxCircuitMains;
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1701,6 +1766,9 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
+    PREFS_PUT_UCHAR_IF_CHANGED("CirMeterAddr", CircuitMeter.Address, CircuitMeterAddress);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxCirMains", MaxCircuitMains, MaxCircuitMains);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
     PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister, EMIRegister);
     PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor, EMIDivisor);

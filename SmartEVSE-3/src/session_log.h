@@ -36,6 +36,9 @@ typedef struct {
     uint8_t  mode;                 /* MODE_NORMAL / MODE_SMART / MODE_SOLAR */
     uint8_t  ocpp_active;          /* Was OCPP controlling this session? */
     uint8_t  _reserved[3];         /* Alignment padding */
+    int32_t  circuit_start_energy_wh;  /* CircuitMeter energy at session start */
+    int32_t  circuit_end_energy_wh;    /* CircuitMeter energy at session end */
+    int32_t  circuit_energy_wh;        /* circuit end - start */
 } session_record_t;
 
 /* Initialize session logger state. Call once at startup. */
@@ -50,6 +53,11 @@ void session_end(uint32_t timestamp, int32_t end_energy_wh,
 
 /* Set OCPP transaction ID on the active session. No-op if no session active. */
 void session_set_ocpp_id(uint32_t ocpp_transaction_id);
+
+/* Set circuit energy on the active session. Call with start_wh at session start
+ * and end_wh at session end. Calculates circuit_energy_wh = end - start when
+ * end_wh > 0. No-op if no session active. */
+void session_set_circuit_energy(int32_t start_wh, int32_t end_wh);
 
 /* Returns 1 if a session is currently active, 0 otherwise. */
 uint8_t session_is_active(void);

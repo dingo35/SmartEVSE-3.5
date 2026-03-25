@@ -267,6 +267,53 @@ automation:
 Track your monthly peak over time by adding the sensor to the HA Energy dashboard
 or creating a statistics graph card with `sensor.smartevse_capacity_monthly_peak`.
 
+## CircuitMeter topics
+
+When a CircuitMeter is configured (type != 0), additional topics are published.
+These follow the same change-only publishing and heartbeat behavior as other topics.
+
+### Published state topics
+
+| Topic | Type | Unit | state_class | Description |
+|-------|------|------|-------------|-------------|
+| `/CircuitCurrentL1` | int | A (dA) | measurement | Circuit meter phase L1 current |
+| `/CircuitCurrentL2` | int | A (dA) | measurement | Circuit meter phase L2 current |
+| `/CircuitCurrentL3` | int | A (dA) | measurement | Circuit meter phase L3 current |
+| `/CircuitPower` | int | W | measurement | Circuit total instantaneous power |
+| `/CircuitImportEnergy` | int | Wh | total_increasing | Circuit import energy (zero-guarded) |
+| `/CircuitExportEnergy` | int | Wh | total_increasing | Circuit export energy (zero-guarded) |
+| `/MaxCircuitMains` | int | A | — | Max circuit current setting (number entity, always published) |
+
+Current values use deci-Amperes (divide by 10 for Amps). The HA discovery
+`value_template` handles this conversion automatically.
+
+Energy topics are zero-guarded: they are only published when the value is > 0,
+preventing phantom consumption in the HA energy dashboard (same pattern as
+MainsImportActiveEnergy).
+
+### Command topics
+
+| Topic | Type | Range | Description |
+|-------|------|-------|-------------|
+| `/Set/MaxCircuitMains` | int | 0-600 | Set max circuit current (A). 0 = disabled. |
+| `/Set/CircuitMeter` | string | `L1:L2:L3` | API mode feed — per-phase current in dA (same format as `Set/MainsMeter`). Only works when CircuitMeter type = API. |
+
+### Home Assistant auto-discovery
+
+When CircuitMeter is enabled, HA auto-discovery creates these entities:
+
+| Entity | HA type | Category | Description |
+|--------|---------|----------|-------------|
+| `Circuit Current L1/L2/L3` | sensor | — | Per-phase circuit current (A) |
+| `Circuit Power` | sensor | — | Circuit total power (W) |
+| `Circuit Import Energy` | sensor | — | Circuit import energy (Wh, `total_increasing`) |
+| `Circuit Export Energy` | sensor | — | Circuit export energy (Wh, `total_increasing`) |
+| `Max Circuit Mains` | number | config | Settable max circuit current (A, 0-600) |
+
+The `Max Circuit Mains` number entity is always announced regardless of whether
+CircuitMeter is enabled, so you can configure the limit via HA even before setting
+up the meter.
+
 ## Troubleshooting
 
 | Problem | Solution |
