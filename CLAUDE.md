@@ -589,6 +589,11 @@ Projects are executed in this priority order (re-prioritize with human approval)
 | P4 | Plan 09 — Power Input Methods | Documentation + feature gaps, back of backlog |
 | P3 | Plan 11 — OCPP Compatibility Testing | CI/CD interoperability testing with mock CSMS |
 | P3 | Plan 12 — Modbus Compatibility Testing | CI/CD meter register validation across all 15+ types |
+| P2 | Plan 13 — Capacity Tariff Peak Tracking | Belgian/German capacity-based billing protection |
+| P2 | Plan 14 — CircuitMeter Subpanel Metering | Subpanel breaker protection + ERE 2027 compliance |
+| P2 | Plan 15 — SoC Injection via MQTT | OBD-II dongle + HA car cloud integration |
+
+All 15 plans are complete.
 
 ### Dependency Rules
 
@@ -600,7 +605,7 @@ Projects are executed in this priority order (re-prioritize with human approval)
   logic correctness, Plan 11 tests protocol compliance
 - Plan 12 (Modbus Compat) complements Plan 05 (Meter Compatibility): Plan 05
   extracts code, Plan 12 tests it against real meter register layouts
-- All plans depend on the test infrastructure being stable (currently: 44 suites, 900+ tests)
+- All plans depend on the test infrastructure being stable (currently: 47 suites, 1,046 tests)
 
 ## Files You Should Know
 

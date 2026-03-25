@@ -18,8 +18,8 @@ These are structural changes that affect the entire codebase — not specific fe
 | State representation | ~70 scattered globals | `evse_ctx_t` context struct |
 | Hardware abstraction | Direct GPIO calls in logic | Function pointers via HAL callbacks |
 | Global synchronization | No protection | `evse_bridge.cpp` with spinlock/mutex |
-| Native testability | Not possible (Arduino dependencies) | 900+ tests compile with plain `gcc` |
-| CI pipeline | PlatformIO build only | 8-job pipeline (tests, sanitizers, valgrind, cppcheck, builds, BDD, traceability) |
+| Native testability | Not possible (Arduino dependencies) | 1,046 tests compile with plain `gcc` |
+| CI pipeline | PlatformIO build only | 10-job pipeline (tests, sanitizers, valgrind, cppcheck, builds, BDD, traceability, OCPP, Modbus) |
 | Test methodology | None | Specification-by-Example (SbE) with traceability |
 
 ---
@@ -127,6 +127,33 @@ Addresses upstream issues
 | MQTT session publish | Retained JSON on session complete | [Features: ERE](features.md#ere-session-logging) |
 | REST endpoint | GET /session/last for integrations | [Features: ERE](features.md#ere-session-logging) |
 | Zero flash wear | MQTT-only persistence, no flash writes | [Features: ERE](features.md#ere-session-logging) |
+
+### Capacity Tariff Peak Tracking (New in Fork)
+
+| Feature | Purpose | Details |
+|---------|---------|---------|
+| 15-minute quarter-peak averaging | Matches Belgian DSO metering interval | [Features: Capacity Tariff](features.md#capacity-tariff-peak-tracking) |
+| Monthly peak tracking | Records highest 15-min average per month | [Features: Capacity Tariff](features.md#capacity-tariff-peak-tracking) |
+| Automatic current reduction | Clamps IsetBalanced to stay under limit | [Features: Capacity Tariff](features.md#capacity-tariff-peak-tracking) |
+| LCD/Web/MQTT/REST configuration | Full configuration from all interfaces | [Features: Capacity Tariff](features.md#capacity-tariff-peak-tracking) |
+| Home Assistant integration | 4 auto-discovered entities | [Features: Capacity Tariff](features.md#capacity-tariff-peak-tracking) |
+
+### CircuitMeter — Subpanel Metering (New in Fork)
+
+| Feature | Purpose | Details |
+|---------|---------|---------|
+| Subpanel breaker protection | Limits EV charging to stay within breaker rating | [Features: CircuitMeter](features.md#circuitmeter--subpanel-metering) |
+| ERE 2027 compliance support | Circuit-level energy measurement for Dutch ERE Path B | [Features: CircuitMeter](features.md#circuitmeter--subpanel-metering) |
+| Reuses existing Meter class | Supports all 19 meter types with zero new meter code | [Features: CircuitMeter](features.md#circuitmeter--subpanel-metering) |
+| MQTT + HA auto-discovery | Circuit current, power, energy, and MaxCircuitMains | [Features: CircuitMeter](features.md#circuitmeter--subpanel-metering) |
+
+### SoC Injection via MQTT (New in Fork)
+
+| Feature | Purpose | Details |
+|---------|---------|---------|
+| MQTT SoC topics | InitialSoC, FullSoC, EnergyCapacity, EnergyRequest, EVCCID | [Features: MQTT & HA](features.md#mqtt--home-assistant) |
+| WiCAN OBD-II integration | Direct SoC reading from car CAN bus | [MQTT docs: WiCAN](mqtt-home-assistant.md#wican-obd-ii-integration) |
+| Session-scoped values | Auto-clear on EV disconnect | [MQTT docs: SoC Injection](mqtt-home-assistant.md#soc-injection-via-mqtt) |
 
 ### Web & Connectivity
 
