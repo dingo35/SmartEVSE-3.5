@@ -156,11 +156,11 @@ CI generates two reports on every build:
 
 | Metric | Value |
 |--------|-------|
-| Native C test suites | 44 |
-| Native C test scenarios | 900+ |
+| Native C test suites | 47 |
+| Native C test scenarios | 1,046 |
 | OCPP protocol tests | 50 |
 | Modbus protocol tests | 146 |
-| **Total automated tests** | **1,100+** |
+| **Total automated tests** | **1,200+** |
 | Features covered | 60+ |
 | Requirement traceability | 100% |
 
@@ -174,7 +174,7 @@ Every push and pull request triggers a 10-job CI pipeline:
 
 | Job | Gate | What it catches |
 |-----|------|----------------|
-| **native-tests** | 900+ tests must pass | Logic errors, regressions, state machine bugs |
+| **native-tests** | 1,046 tests must pass | Logic errors, regressions, state machine bugs |
 | **static-analysis** | cppcheck + GCC stack analysis | Uninitialized variables, style issues, stack overflow risk |
 | **memory-sanitizers** | ASan + UBSan zero violations | Buffer overflows, use-after-free, undefined behavior |
 | **valgrind** | Zero leaks | Memory leaks, invalid reads/writes |
@@ -193,7 +193,7 @@ Developer writes code
         ▼
 ┌─────────────────┐    FAIL → Fix code, new commit
 │  Native Tests    │──────────────────────────────┐
-│  (900+ scenarios)│                              │
+│ (1,046 scenarios)│                              │
 └────────┬────────┘                              │
          │ PASS                                   │
          ▼                                        │
@@ -477,7 +477,7 @@ The interoperability tests complement, not replace, the unit tests:
 
 | Layer | What it validates | Tools | Status |
 |-------|------------------|-------|--------|
-| **Unit tests** | Internal logic correctness | Native C test suite (900+ tests) | Active |
+| **Unit tests** | Internal logic correctness | Native C test suite (1,046 tests) | Active |
 | **Protocol tests** | Message format, sequencing, error handling | mobilityhouse/ocpp (50 tests), ctypes bridge (146 tests) | Active |
 | **Integration tests** (future) | Full stack end-to-end | EVerest car_simulator (if needed) | Planned |
 | **Certification** (manual) | Formal standards compliance | OCA OCTT (commercial, cloud) | Manual |

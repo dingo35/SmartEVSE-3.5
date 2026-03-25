@@ -17,7 +17,7 @@ The upstream SmartEVSE firmware is a monolithic embedded C++/Arduino codebase wh
 state machine, load balancing, MQTT, HTTP, and hardware control all live in a single
 ~3,000-line `main.cpp`. This fork restructures the architecture to enable **native host
 testing** of the core logic — pure C modules, context structs, a bridge layer, and HAL
-callbacks — resulting in 1,100+ automated tests (900+ native C tests across 44 suites,
+callbacks — resulting in 1,200+ automated tests (1,046 native C tests across 47 suites,
 50 OCPP protocol tests, and 146 Modbus compatibility tests).
 
 See [Quality Engineering](docs/quality.md) for the full architecture, testing
@@ -46,6 +46,9 @@ charge up to eight EVs from one mains connection without overloading it.
 | **EVCC Integration** | IEC 61851 state mapping, HTTP phase switching, ready-to-use template |
 | **Diagnostics** | Ring buffer events, LittleFS persistence, WebSocket live stream, test replay |
 | **ERE Session Logging** | Dutch ERE certificate output, MQTT publish, REST endpoint, zero flash wear |
+| **Capacity Tariff** | 15-min peak tracking, monthly peak persistence, automatic current limiting, LCD/Web/MQTT/REST config |
+| **CircuitMeter** | Subpanel metering, breaker protection, ERE circuit verification, all 19 meter types supported |
+| **SoC Injection** | MQTT topics for InitialSoC/FullSoC/EnergyCapacity/EnergyRequest/EVCCID, WiCAN OBD-II integration |
 | **Web UI** | Offline-first, WebSocket updates, dark mode, load balancing dashboard, diagnostic viewer |
 | **Privacy** | No cloud, no tracking, open source |
 
@@ -120,8 +123,11 @@ Completed improvement plans, tracked via
 | Done | Plan 10: ERE Session Logging | [#89](https://github.com/basmeerman/SmartEVSE-3.5/pull/89) | — |
 | Done | Plan 11: OCPP Compatibility Testing | [#96](https://github.com/basmeerman/SmartEVSE-3.5/pull/96) | — |
 | Done | Plan 12: Modbus Compatibility Testing | [#97](https://github.com/basmeerman/SmartEVSE-3.5/pull/97) | — |
+| Done | Plan 13: Capacity Tariff Peak Tracking | [#116](https://github.com/basmeerman/SmartEVSE-3.5/pull/116) | — |
+| Done | Plan 14: CircuitMeter — Subpanel Metering | [#117](https://github.com/basmeerman/SmartEVSE-3.5/pull/117) | — |
+| Done | Plan 15: SoC Injection via MQTT | [#115](https://github.com/basmeerman/SmartEVSE-3.5/pull/115), [#116](https://github.com/basmeerman/SmartEVSE-3.5/pull/116) | — |
 
-All 12 improvement plans are complete. The CI/CD pipeline runs a 10-job quality
+All 15 improvement plans are complete. The CI/CD pipeline runs a 10-job quality
 gate on every PR, including OCPP interoperability tests (mock CSMS via
 [mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp)) and Modbus
 compatibility tests (C decode functions called from Python via ctypes). See
