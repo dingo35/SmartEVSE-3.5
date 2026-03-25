@@ -57,6 +57,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
+#include <MicroOcpp/Model/FirmwareManagement/FirmwareService.h>
 #endif //ENABLE_OCPP
 
 #if SMARTEVSE_VERSION >= 40
@@ -2725,6 +2726,65 @@ void ocppInit() {
     meterValuesSampledData->setString("Energy.Active.Import.Register,Power.Active.Import,Current.Import,Temperature");
 
     OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
+
+    // OCPP Firmware Update: register download and install callbacks
+    auto fwService = getFirmwareService();
+    if (fwService) {
+        static volatile int OcppFwStatus; // 0=idle, 1=downloading, 2=downloaded ok, -1=download failed
+        OcppFwStatus = 0;
+
+        fwService->setOnDownload([] (const char *location) -> bool {
+            if (downloadProgress > 0) {
+                _LOG_A("OCPP FW: rejected, another update is in progress\n");
+                return false;
+            }
+            OcppFwStatus = 1;
+            _LOG_A("OCPP FW: download requested from %s\n", location);
+
+            char *url = strdup(location);
+            if (!url) {
+                OcppFwStatus = -1;
+                return false;
+            }
+
+            xTaskCreate([] (void *param) {
+                char *fwUrl = (char *)param;
+                if (forceUpdate(fwUrl, true)) {
+                    _LOG_A("OCPP FW: download and flash successful\n");
+                    OcppFwStatus = 2;
+                } else {
+                    _LOG_A("OCPP FW: download or flash failed\n");
+                    OcppFwStatus = -1;
+                }
+                free(fwUrl);
+                vTaskDelete(NULL);
+            }, "OcppFwUpdate", 4096, url, 3, NULL);
+
+            return true;
+        });
+
+        fwService->setDownloadStatusInput([] () -> MicroOcpp::DownloadStatus {
+            switch (OcppFwStatus) {
+                case 2:  return MicroOcpp::DownloadStatus::Downloaded;
+                case -1: return MicroOcpp::DownloadStatus::DownloadFailed;
+                default: return MicroOcpp::DownloadStatus::NotDownloaded;
+            }
+        });
+
+        fwService->setOnInstall([] (const char *location) -> bool {
+            _LOG_A("OCPP FW: install phase, scheduling reboot\n");
+            shouldReboot = true;
+            return true;
+        });
+
+        fwService->setInstallationStatusInput([] () -> MicroOcpp::InstallationStatus {
+            if (shouldReboot) {
+                return MicroOcpp::InstallationStatus::Installed;
+            }
+            return MicroOcpp::InstallationStatus::NotInstalled;
+        });
+    }
+
 
     endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
 }

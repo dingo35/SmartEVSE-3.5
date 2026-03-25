@@ -149,6 +149,8 @@ extern uint8_t WIFImode;
 extern char *downloadUrl;
 extern uint32_t serialnr;
 extern void RunFirmwareUpdate(void);
+extern bool forceUpdate(const char* firmwareURL, bool validate);
+extern int downloadProgress;
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
