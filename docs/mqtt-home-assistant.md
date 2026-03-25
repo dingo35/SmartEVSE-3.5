@@ -143,6 +143,97 @@ All topics use prefix `SmartEVSE/<serial>/`.
 | `/Set/Mode` | int | 0-2 | 0=Normal, 1=Smart, 2=Solar |
 | `/Set/MQTTChangeOnly` | int | 0-1 | Enable/disable change-only publishing |
 | `/Set/MQTTHeartbeat` | int | 10-300 | Heartbeat interval (seconds) |
+| `/Set/InitialSoC` | int | -1 to 100 | Set initial State of Charge (%). -1 to clear. |
+| `/Set/FullSoC` | int | -1 to 100 | Set target full SoC (%). -1 to clear. |
+| `/Set/EnergyCapacity` | int | -1 to 200000 | Set battery capacity (Wh). -1 to clear. |
+| `/Set/EnergyRequest` | int | -1 to 200000 | Set energy request (Wh). -1 to clear. |
+| `/Set/EVCCID` | string | max 31 chars | Set EV CC ID for session identification. |
+
+## SoC Injection via MQTT
+
+SmartEVSE has a complete SoC (State of Charge) data model with `InitialSoC`,
+`FullSoC`, `ComputedSoC`, `RemainingSoC`, `EnergyCapacity`, `EnergyRequest`,
+and `EVCCID`. Previously, these values could only be set via `POST /ev_state`.
+Now they can also be injected via MQTT `Set/` topics, enabling direct integration
+with OBD-II dongles and Home Assistant automations.
+
+### Behavior
+
+- **Session-scoped:** All SoC values reset to -1 (cleared) when the EV disconnects.
+  They do not persist across plug/unplug cycles.
+- **Automatic computation:** When `InitialSoC`, `FullSoC`, and `EnergyCapacity`
+  are all set (>= 0), SmartEVSE automatically calculates `ComputedSoC`,
+  `RemainingSoC`, and `TimeUntilFull` based on energy charged during the session.
+- **Clear with -1:** Send `-1` as the payload to clear any previously set value.
+
+### WiCAN OBD-II Integration
+
+A [WiCAN](https://github.com/meatpiHQ/wican-fw) OBD-II dongle reads the car's
+battery SoC over CAN bus and publishes it via MQTT. Configure WiCAN to publish
+directly to SmartEVSE's MQTT topic:
+
+```
+WiCAN reads SoC from car OBD-II port
+  -> publishes via MQTT
+  -> SmartEVSE subscribes to Set/InitialSoC
+
+WiCAN MQTT publish topic:
+  SmartEVSE/<serial>/Set/InitialSoC
+
+WiCAN MQTT payload:
+  The SoC percentage (0-100) as a plain integer string
+```
+
+Optionally also publish battery capacity:
+
+```
+SmartEVSE/<serial>/Set/EnergyCapacity
+```
+
+with the battery capacity in Wh (e.g., `64000` for a 64 kWh battery).
+
+### Home Assistant Automation Example
+
+Forward SoC from a car cloud integration (Hyundai, VW, Tesla, etc.) to SmartEVSE:
+
+```yaml
+automation:
+  - alias: "Forward car SoC to SmartEVSE"
+    trigger:
+      - platform: state
+        entity_id: sensor.my_car_soc
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "SmartEVSE/1234/Set/InitialSoC"
+          payload: "{{ states('sensor.my_car_soc') | int }}"
+```
+
+Replace `sensor.my_car_soc` with your car's SoC sensor entity and `1234` with
+your SmartEVSE serial number.
+
+To also forward battery capacity and target SoC:
+
+```yaml
+automation:
+  - alias: "Forward car battery info to SmartEVSE"
+    trigger:
+      - platform: state
+        entity_id: sensor.my_car_soc
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "SmartEVSE/1234/Set/InitialSoC"
+          payload: "{{ states('sensor.my_car_soc') | int }}"
+      - service: mqtt.publish
+        data:
+          topic: "SmartEVSE/1234/Set/FullSoC"
+          payload: "{{ states('sensor.my_car_target_soc') | int }}"
+      - service: mqtt.publish
+        data:
+          topic: "SmartEVSE/1234/Set/EnergyCapacity"
+          payload: "{{ states('sensor.my_car_battery_capacity') | int }}"
+```
 
 ## Troubleshooting
 

@@ -832,6 +832,31 @@ void mqtt_receive_callback(const String topic, const String payload) {
             break;
         // END PLAN-09
 
+        // BEGIN PLAN-15: SoC MQTT commands
+#if MODEM
+        case MQTT_CMD_INITIAL_SOC:
+            InitialSoC = cmd.initial_soc;
+            RecomputeSoC();
+            break;
+        case MQTT_CMD_FULL_SOC:
+            FullSoC = cmd.full_soc;
+            RecomputeSoC();
+            break;
+        case MQTT_CMD_ENERGY_CAPACITY:
+            EnergyCapacity = cmd.energy_capacity;
+            RecomputeSoC();
+            break;
+        case MQTT_CMD_ENERGY_REQUEST:
+            EnergyRequest = cmd.energy_request;
+            RecomputeSoC();
+            break;
+        case MQTT_CMD_EVCCID_SET:
+            strncpy(EVCCID, cmd.evccid, sizeof(EVCCID) - 1);
+            EVCCID[sizeof(EVCCID) - 1] = '\0';
+            break;
+#endif
+        // END PLAN-15
+
         default:
             return;
     }

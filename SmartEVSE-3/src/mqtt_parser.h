@@ -32,6 +32,11 @@ typedef enum {
     MQTT_CMD_DIAG_PROFILE,
     MQTT_CMD_MAINS_METER_TIMEOUT,
     MQTT_CMD_HOMEWIZARD_IP,
+    MQTT_CMD_INITIAL_SOC,
+    MQTT_CMD_FULL_SOC,
+    MQTT_CMD_ENERGY_CAPACITY,
+    MQTT_CMD_ENERGY_REQUEST,
+    MQTT_CMD_EVCCID_SET,
 } mqtt_cmd_type_t;
 
 // Mode values matching firmware MODE_NORMAL/MODE_SOLAR/MODE_SMART
@@ -59,7 +64,7 @@ typedef struct {
         struct { int32_t L1, L2, L3; } mains_meter;
         struct { int32_t L1, L2, L3; int32_t W; int32_t Wh; } ev_meter;
         int16_t home_battery_current;           // MQTT_CMD_HOME_BATTERY_CURRENT
-        char evccid[32];                        // MQTT_CMD_REQUIRED_EVCCID
+        char evccid[32];                        // MQTT_CMD_REQUIRED_EVCCID and MQTT_CMD_EVCCID_SET
         struct { uint8_t index; uint8_t r, g, b; } color; // MQTT_CMD_COLOR
         uint8_t cable_lock;                     // MQTT_CMD_CABLE_LOCK
         uint8_t enable_c2;                      // MQTT_CMD_ENABLE_C2
@@ -72,6 +77,10 @@ typedef struct {
         uint8_t diag_profile;                   // MQTT_CMD_DIAG_PROFILE (0-5)
         uint16_t mains_meter_timeout;           // MQTT_CMD_MAINS_METER_TIMEOUT (0, 10-3600)
         char homewizard_ip[16];                 // MQTT_CMD_HOMEWIZARD_IP (IPv4 or empty)
+        int8_t initial_soc;                     // MQTT_CMD_INITIAL_SOC (-1 or 0-100)
+        int8_t full_soc;                        // MQTT_CMD_FULL_SOC (-1 or 0-100)
+        int32_t energy_capacity;                // MQTT_CMD_ENERGY_CAPACITY (-1 or 0-200000 Wh)
+        int32_t energy_request;                 // MQTT_CMD_ENERGY_REQUEST (-1 or 0-200000 Wh)
     };
 } mqtt_command_t;
 

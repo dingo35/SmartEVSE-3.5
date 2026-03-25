@@ -304,6 +304,62 @@ bool mqtt_parse_command(const char *prefix, const char *topic,
         return false;
     }
 
+    /* EV State of Charge and energy parameters */
+    if (match_topic(prefix, topic, "/Set/InitialSoC")) {
+        if (payload[0] == '\0') return false;
+        char *endptr;
+        long val = strtol(payload, &endptr, 10);
+        if (*endptr != '\0') return false;
+        if (val < -1 || val > 100) return false;
+        out->cmd = MQTT_CMD_INITIAL_SOC;
+        out->initial_soc = (int8_t)val;
+        return true;
+    }
+
+    if (match_topic(prefix, topic, "/Set/FullSoC")) {
+        if (payload[0] == '\0') return false;
+        char *endptr;
+        long val = strtol(payload, &endptr, 10);
+        if (*endptr != '\0') return false;
+        if (val < -1 || val > 100) return false;
+        out->cmd = MQTT_CMD_FULL_SOC;
+        out->full_soc = (int8_t)val;
+        return true;
+    }
+
+    if (match_topic(prefix, topic, "/Set/EnergyCapacity")) {
+        if (payload[0] == '\0') return false;
+        char *endptr;
+        long val = strtol(payload, &endptr, 10);
+        if (*endptr != '\0') return false;
+        if (val < -1 || val > 200000) return false;
+        out->cmd = MQTT_CMD_ENERGY_CAPACITY;
+        out->energy_capacity = (int32_t)val;
+        return true;
+    }
+
+    if (match_topic(prefix, topic, "/Set/EnergyRequest")) {
+        if (payload[0] == '\0') return false;
+        char *endptr;
+        long val = strtol(payload, &endptr, 10);
+        if (*endptr != '\0') return false;
+        if (val < -1 || val > 200000) return false;
+        out->cmd = MQTT_CMD_ENERGY_REQUEST;
+        out->energy_request = (int32_t)val;
+        return true;
+    }
+
+    /* EV CC ID for session identification */
+    if (match_topic(prefix, topic, "/Set/EVCCID")) {
+        out->cmd = MQTT_CMD_EVCCID_SET;
+        size_t len = strlen(payload);
+        if (len >= sizeof(out->evccid))
+            return false;
+        strncpy(out->evccid, payload, sizeof(out->evccid) - 1);
+        out->evccid[sizeof(out->evccid) - 1] = '\0';
+        return true;
+    }
+
     if (match_topic(prefix, topic, "/Set/DiagProfile")) {
         out->cmd = MQTT_CMD_DIAG_PROFILE;
         if (strcmp(payload, "off") == 0 || strcmp(payload, "0") == 0) {
