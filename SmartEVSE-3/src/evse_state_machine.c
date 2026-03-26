@@ -906,8 +906,13 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
             // Issue #16: tiered timer + separate PhaseSwitchTimer
             if (ctx->Mode == MODE_SOLAR) {
                 // cppcheck-suppress knownConditionTrueFalse
+                // Fix: threshold uses single-EVSE minimum, not ActiveEVSE total.
+                // Priority scheduling handles which cars charge; SolarStopTimer
+                // only fires when there isn't enough solar for even one car.
+                // Old formula scaled with ActiveEVSE, making the threshold
+                // unreachable in multi-node setups (e.g. 2 EVSEs → 32A threshold).
                 if (ActiveEVSE && IsumImport > 0 &&
-                    (ctx->Isum > (int32_t)(((int32_t)ActiveEVSE * ctx->MinCurrent * ctx->Nr_Of_Phases_Charging
+                    (ctx->Isum > (int32_t)(((int32_t)ctx->MinCurrent * ctx->Nr_Of_Phases_Charging
                                              - ctx->StartCurrent) * 10) ||
                      (ctx->Nr_Of_Phases_Charging > 1 && ctx->EnableC2 == AUTO))) {
 
