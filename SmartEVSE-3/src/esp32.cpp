@@ -2943,16 +2943,18 @@ void ocppLoop() {
         } // There may be further edge cases
     }
 
-    OcppForcesLock = false;
+    bool ocppLock = false;
 
     if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
             (OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_9V)) { // Connector plugged
-        OcppForcesLock = true;
+        ocppLock = true;
     }
 
     if (OcppLockingTx && OcppLockingTx->getStartSync().isRequested()) { // LockingTx goes beyond tx completion
-        OcppForcesLock = true;
+        ocppLock = true;
     }
+
+    OcppForcesLock = ocppLock;
 
 }
 #endif //ENABLE_OCPP
