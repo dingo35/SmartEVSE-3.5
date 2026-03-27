@@ -1523,11 +1523,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         } else if (mg_http_match_uri(hm, "/autoupdate")) {
             char owner[40];
             char buf[8];
+            char tag[40] = "";
             int debug;
             mg_http_get_var(&hm->query, "owner", owner, sizeof(owner));
             mg_http_get_var(&hm->query, "debug", buf, sizeof(buf));
+            mg_http_get_var(&hm->query, "tag", tag, sizeof(tag));
             debug = strtol(buf, NULL, 0);
             if (!memcmp(owner, OWNER_FACT, sizeof(OWNER_FACT)) || (!memcmp(owner, OWNER_COMM, sizeof(OWNER_COMM)))) {
+                // Factory/Community: use S3 direct download (existing behavior)
                 if (downloadUrl) { free(downloadUrl); downloadUrl = NULL; }
 #ifdef SENSORBOX_VERSION
                 asprintf(&downloadUrl, "%s/%s_sensorboxv2_firmware.%ssigned.bin", FW_DOWNLOAD_PATH, owner, debug ? "debug.": ""); //will be freed in FirmwareUpdate() ; format: http://s3.com/dingo35_sensorboxv2_firmware.debug.signed.bin
@@ -1535,6 +1538,25 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 asprintf(&downloadUrl, "%s/%s_firmware.%ssigned.bin", FW_DOWNLOAD_PATH, owner, debug ? "debug.": ""); //will be freed in FirmwareUpdate() ; format: http://s3.com/dingo35_firmware.debug.signed.bin
 #endif
                 RunFirmwareUpdate();
+            } else if (!memcmp(owner, OWNER_BASM, sizeof(OWNER_BASM))) {
+                // basmeerman fork: download from GitHub release assets
+                // tag parameter selects which release (e.g. "nightly" for pre-release, or latest tag)
+                if (downloadUrl) { free(downloadUrl); downloadUrl = NULL; }
+                if (tag[0]) {
+                    // Specific tag requested (e.g. nightly pre-release)
+                    asprintf(&downloadUrl, "%s/%s/%s/releases/download/%s/firmware.%ssigned.bin",
+                             GH_RELEASE_URL, OWNER_BASM, REPO_BASM, tag, debug ? "debug." : "");
+                } else {
+                    // Use getLatestVersion to find the latest release tag, then build URL
+                    char version[32] = "";
+                    String owner_repo = String(OWNER_BASM) + "/" + REPO_BASM;
+                    String asset_name = String("firmware.") + (debug ? "debug." : "") + "signed.bin";
+                    if (getLatestVersion(owner_repo, asset_name, version) && version[0]) {
+                        asprintf(&downloadUrl, "%s/%s/%s/releases/download/%s/firmware.%ssigned.bin",
+                                 GH_RELEASE_URL, OWNER_BASM, REPO_BASM, version, debug ? "debug." : "");
+                    }
+                }
+                if (downloadUrl) RunFirmwareUpdate();
             }                                                                       // after the first call we just report progress
             DynamicJsonDocument doc(64); // https://arduinojson.org/v6/assistant/
             doc["progress"] = downloadProgress;
