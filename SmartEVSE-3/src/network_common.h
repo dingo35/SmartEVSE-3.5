@@ -172,5 +172,8 @@ extern String homeWizardManualIP;
 #define REPO_FACT "SmartEVSE-3"
 #define OWNER_COMM "dingo35"
 #define REPO_COMM "SmartEVSE-3.5"
+#define OWNER_BASM "basmeerman"
+#define REPO_BASM "SmartEVSE-3.5"
+#define GH_RELEASE_URL "https://github.com"
 
 #endif

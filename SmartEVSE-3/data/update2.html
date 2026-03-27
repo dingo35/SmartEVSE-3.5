@@ -15,6 +15,8 @@
         let REPO_FACT="SmartEVSE-3";
         let OWNER_COMM="dingo35";
         let REPO_COMM="SmartEVSE-3.5";
+        let OWNER_BASM="basmeerman";
+        let REPO_BASM="SmartEVSE-3.5";
         let update_url="";
 // Helper function to display upload status
 var setStatus = function(text) {
@@ -41,8 +43,10 @@ var setStatus = function(text) {
               console.error('Error: ', err)
             })
         }
-        function update_fw(owner, debug) {
-          fetch("/autoupdate?owner=" + owner + "&debug=" + debug)
+        function update_fw(owner, debug, tag) {
+          var url = "/autoupdate?owner=" + owner + "&debug=" + debug;
+          if (tag) url += "&tag=" + tag;
+          fetch(url)
             .then(res => res.json())
             .then(data => {
               setStatus('Firmware update progress: ' + data.progress + '/' + data.size);
@@ -90,6 +94,16 @@ var setStatus = function(text) {
               <td><button onclick="update_fw(OWNER_COMM, 0)" style="width: 100px; display:inline-block;">Standard</button>
               <td><button onclick="update_fw(OWNER_COMM, 1)" style="width: 100px; display:inline-block;">Debug</button>
             </tr>
+            <tr>
+              <td>Community</td>
+              <td>bleediest edge</td>
+              <td><a href="https://github.com/"
+                     onclick="location.href=this.href + OWNER_BASM + '/' + REPO_BASM + '/releases';return false;"><script>document.write(OWNER_BASM)</script></a></td>
+              <td><div id="latest_basm"></div></td>
+              <td><button onclick="update_fw(OWNER_BASM, 0)" style="width: 100px; display:inline-block;">Standard</button>
+              <td><button onclick="update_fw(OWNER_BASM, 1)" style="width: 100px; display:inline-block;">Debug</button>
+              <td><button onclick="update_fw(OWNER_BASM, 1, 'nightly')" style="width: 140px; display:inline-block;">Latest Debug Build</button>
+            </tr>
           </table>
           <br>
           =======================================================
@@ -121,6 +135,7 @@ function loadData() {
     document.getElementById("version").innerHTML = sessionStorage.getItem("version");
     getLatestVersion(OWNER_FACT, REPO_FACT, 'latest_fact');
     getLatestVersion(OWNER_COMM, REPO_COMM, 'latest_comm');
+    getLatestVersion(OWNER_BASM, REPO_BASM, 'latest_basm');
 }
 
 async function getLatestVersion(owner, repo, element) {

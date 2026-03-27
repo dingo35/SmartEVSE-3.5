@@ -1,0 +1,109 @@
+# Nightly debug build — creates/updates a rolling "nightly" pre-release
+# with the latest debug firmware from master.
+#
+# The update page's "Latest Debug Build" button downloads from this release.
+# Pre-releases are skipped by /releases/latest, so Standard/Debug buttons
+# are unaffected.
+
+name: Nightly Debug Build
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write  # Needed to create/update releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Get current datetime
+        id: datetime
+        run: echo "datetime=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Cache PlatformIO
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: '${{ runner.os }}-pio-${{ hashFiles(''SmartEVSE-3/platformio.ini'') }}'
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.10'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Build standard firmware
+        run: |
+          PLATFORMIO_BUILD_FLAGS='-DVERSION=\"nightly-${{ steps.sha.outputs.short }}\" -DDBG=0' pio run -d SmartEVSE-3/
+          mkdir -p ./dist
+
+      - name: Sign standard firmware
+        env:
+          super_secret: ${{ secrets.SECRET_RSA_KEY }}
+        run: |
+          if [ -z "$super_secret" ]; then
+            echo "Signing key not available, shipping unsigned"
+            cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.bin
+            exit 0
+          fi
+          secret_file=$(mktemp)
+          echo "$super_secret" > "$secret_file"
+          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
+          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./dist/firmware.signed.bin
+          rm -f "$secret_file"
+
+      - name: Build debug firmware
+        run: |
+          PLATFORMIO_BUILD_FLAGS='-DVERSION=\"nightly-${{ steps.sha.outputs.short }}\" -DDBG=1' pio run -d SmartEVSE-3/
+
+      - name: Sign debug firmware
+        env:
+          super_secret: ${{ secrets.SECRET_RSA_KEY }}
+        run: |
+          if [ -z "$super_secret" ]; then
+            echo "Signing key not available, shipping unsigned"
+            cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.debug.bin
+            exit 0
+          fi
+          secret_file=$(mktemp)
+          echo "$super_secret" > "$secret_file"
+          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
+          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./dist/firmware.debug.signed.bin
+          rm -f "$secret_file"
+
+      - name: Delete existing nightly release
+        run: gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create nightly pre-release
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
+        with:
+          tag_name: nightly
+          name: "Nightly Debug Build (${{ steps.sha.outputs.short }})"
+          body: |
+            Automated nightly build from master at ${{ steps.datetime.outputs.datetime }}.
+            Commit: ${{ github.sha }}
+
+            Use the "Latest Debug Build" button on the /update page to flash this build.
+          draft: false
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            dist/*
