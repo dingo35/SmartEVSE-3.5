@@ -2689,7 +2689,15 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             break;
         SETITEM(MENU_MAX_TEMP, maxTemp)
         SETITEM(MENU_CONFIG, Config)
-        SETITEM(MENU_MODE, Mode)
+        // MENU_MODE must call setMode() for full side effects (phase switching,
+        // error clearing, ChargeDelay reset) — not just raw assignment.
+        // Mirrors the STATUS_MODE handler below. Guards with Mode != val to
+        // prevent redundant calls when both BroadcastSettings and per-node
+        // writes deliver the same mode. Fixes #120.
+        case MENU_MODE:
+            if (Mode != val)
+                setMode(val);
+            break;
         SETITEM(MENU_START, StartCurrent)
         SETITEM(MENU_STOP, StopTime)
         SETITEM(MENU_IMPORT, ImportCurrent)
