@@ -1,6 +1,6 @@
 # SmartEVSE-3 Test Specification
 
-**63 features** | **973 scenarios** | **973 with requirement IDs**
+**70 features** | **1082 scenarios** | **1082 with requirement IDs**
 
 ---
 
@@ -10,65 +10,72 @@
 2. [HomeWizard P1 Manual IP Fallback](#homewizard-p1-manual-ip-fallback)
 3. [Authorization & Access Control](#authorization-&-access-control)
 4. [Bridge Transaction Integrity](#bridge-transaction-integrity)
-5. [Diagnostic Telemetry](#diagnostic-telemetry)
-6. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
-7. [End-to-End Charging](#end-to-end-charging)
-8. [Error Handling & Safety](#error-handling-&-safety)
-9. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
-10. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
-11. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
-12. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
-13. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
-14. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
-15. [Fidelity: Config field](#fidelity:-config-field)
-16. [HTTP API Color Parsing](#http-api-color-parsing)
-17. [HTTP API Input Validation](#http-api-input-validation)
-18. [HTTP API Validation](#http-api-validation)
-19. [HTTP API Settings Validation](#http-api-settings-validation)
-20. [EVCC IEC 61851 State Mapping](#evcc-iec-61851-state-mapping)
-21. [EVCC Charging Enabled](#evcc-charging-enabled)
-22. [EVCC Phase Switch Validation](#evcc-phase-switch-validation)
-23. [LB Convergence](#lb-convergence)
-24. [LED Status Indication](#led-status-indication)
-25. [LED Color Configuration](#led-color-configuration)
-26. [Load Balancing](#load-balancing)
-27. [Meter Decoding](#meter-decoding)
-28. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
-29. [Meter Telemetry](#meter-telemetry)
-30. [Metering Diagnostics](#metering-diagnostics)
-31. [Modbus Frame Decoding](#modbus-frame-decoding)
-32. [Modbus Frame Logging](#modbus-frame-logging)
-33. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
-34. [MQTT Command Parsing](#mqtt-command-parsing)
-35. [MQTT Input Validation](#mqtt-input-validation)
-36. [MQTT Meter Parsing](#mqtt-meter-parsing)
-37. [MQTT Color Parsing](#mqtt-color-parsing)
-38. [Solar Debug Telemetry](#solar-debug-telemetry)
-39. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
-40. [Multi-Node Load Balancing](#multi-node-load-balancing)
-41. [OCPP Current Limiting](#ocpp-current-limiting)
-42. [OCPP Authorization](#ocpp-authorization)
-43. [OCPP Connector State](#ocpp-connector-state)
-44. [OCPP IEC 61851 Status Mapping](#ocpp-iec-61851-status-mapping)
-45. [OCPP Load Balancing Exclusivity](#ocpp-load-balancing-exclusivity)
-46. [OCPP RFID Formatting](#ocpp-rfid-formatting)
-47. [OCPP Settings Validation](#ocpp-settings-validation)
-48. [OCPP Telemetry](#ocpp-telemetry)
-49. [Operating Modes](#operating-modes)
-50. [P1 Meter Parsing](#p1-meter-parsing)
-51. [Phase Switching](#phase-switching)
-52. [Power Availability](#power-availability)
-53. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
-54. [Serial Message Parsing](#serial-message-parsing)
-55. [Serial Input Validation](#serial-input-validation)
-56. [Battery Current Calculation](#battery-current-calculation)
-57. [Current Sum Calculation](#current-sum-calculation)
-58. [Charge Session Logging](#charge-session-logging)
-59. [Charge Session JSON Export](#charge-session-json-export)
-60. [Solar Balancing](#solar-balancing)
-61. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
-62. [10ms Tick Processing](#10ms-tick-processing)
-63. [1-Second Tick Processing](#1-second-tick-processing)
+5. [Capacity Tariff Peak Tracking](#capacity-tariff-peak-tracking)
+6. [CircuitMeter Subpanel Protection](#circuitmeter-subpanel-protection)
+7. [Diagnostic Telemetry](#diagnostic-telemetry)
+8. [Dual-EVSE Load Balancing](#dual-evse-load-balancing)
+9. [End-to-End Charging](#end-to-end-charging)
+10. [Error Handling & Safety](#error-handling-&-safety)
+11. [Fidelity: DisconnectTimeCounter](#fidelity:-disconnecttimecounter)
+12. [Fidelity: PilotDisconnectTime](#fidelity:-pilotdisconnecttime)
+13. [Fidelity: Fall-through behavior](#fidelity:-fall-through-behavior)
+14. [Fidelity: ACTSTART no pilot check](#fidelity:-actstart-no-pilot-check)
+15. [Fidelity: Modem states not in tick_10ms](#fidelity:-modem-states-not-in-tick_10ms)
+16. [Fidelity: Handler ordering](#fidelity:-handler-ordering)
+17. [Fidelity: Config field](#fidelity:-config-field)
+18. [HTTP API Color Parsing](#http-api-color-parsing)
+19. [HTTP API Input Validation](#http-api-input-validation)
+20. [HTTP API Validation](#http-api-validation)
+21. [HTTP API Settings Validation](#http-api-settings-validation)
+22. [EVCC IEC 61851 State Mapping](#evcc-iec-61851-state-mapping)
+23. [EVCC Charging Enabled](#evcc-charging-enabled)
+24. [EVCC Phase Switch Validation](#evcc-phase-switch-validation)
+25. [LB Convergence](#lb-convergence)
+26. [LED Status Indication](#led-status-indication)
+27. [LED Color Configuration](#led-color-configuration)
+28. [Load Balancing](#load-balancing)
+29. [Meter Decoding](#meter-decoding)
+30. [Meter Timeout & Recovery](#meter-timeout-&-recovery)
+31. [Meter Telemetry](#meter-telemetry)
+32. [Metering Diagnostics](#metering-diagnostics)
+33. [Modbus Frame Decoding](#modbus-frame-decoding)
+34. [Modbus Frame Logging](#modbus-frame-logging)
+35. [Mode Synchronization](#mode-synchronization)
+36. [Modem / ISO15118 Negotiation](#modem--iso15118-negotiation)
+37. [MQTT Command Parsing](#mqtt-command-parsing)
+38. [MQTT Input Validation](#mqtt-input-validation)
+39. [MQTT Meter Parsing](#mqtt-meter-parsing)
+40. [MQTT Color Parsing](#mqtt-color-parsing)
+41. [Solar Debug Telemetry](#solar-debug-telemetry)
+42. [Capacity Tariff MQTT](#capacity-tariff-mqtt)
+43. [MQTT Change-Only Publishing](#mqtt-change-only-publishing)
+44. [MQTT SoC Parsing](#mqtt-soc-parsing)
+45. [MQTT SoC Input Validation](#mqtt-soc-input-validation)
+46. [Multi-Node Load Balancing](#multi-node-load-balancing)
+47. [Multi-Node Solar Charging](#multi-node-solar-charging)
+48. [OCPP Current Limiting](#ocpp-current-limiting)
+49. [OCPP Authorization](#ocpp-authorization)
+50. [OCPP Connector State](#ocpp-connector-state)
+51. [OCPP IEC 61851 Status Mapping](#ocpp-iec-61851-status-mapping)
+52. [OCPP Load Balancing Exclusivity](#ocpp-load-balancing-exclusivity)
+53. [OCPP RFID Formatting](#ocpp-rfid-formatting)
+54. [OCPP Settings Validation](#ocpp-settings-validation)
+55. [OCPP Telemetry](#ocpp-telemetry)
+56. [Operating Modes](#operating-modes)
+57. [P1 Meter Parsing](#p1-meter-parsing)
+58. [Phase Switching](#phase-switching)
+59. [Power Availability](#power-availability)
+60. [Priority-Based Power Scheduling](#priority-based-power-scheduling)
+61. [Serial Message Parsing](#serial-message-parsing)
+62. [Serial Input Validation](#serial-input-validation)
+63. [Battery Current Calculation](#battery-current-calculation)
+64. [Current Sum Calculation](#current-sum-calculation)
+65. [Charge Session Logging](#charge-session-logging)
+66. [Charge Session JSON Export](#charge-session-json-export)
+67. [Solar Balancing](#solar-balancing)
+68. [IEC 61851-1 State Transitions](#iec-61851-1-state-transitions)
+69. [10ms Tick Processing](#10ms-tick-processing)
+70. [1-Second Tick Processing](#1-second-tick-processing)
 
 ## API Mains Staleness Detection
 
@@ -536,6 +543,324 @@
 - **Then** AccessTimer reaches 0 and AccessStatus transitions to OFF
 
 > Test: `test_access_timer_real_world_timing` in `test_bridge_transaction.c:277`
+
+---
+
+## Capacity Tariff Peak Tracking
+
+### Basic 15-minute window averaging at constant power
+
+**Requirement:** `REQ-CAP-001`
+
+- **Given** A capacity state initialized with limit 5000W
+- **When** 900 ticks of capacity_tick_1s with constant 3000W
+- **Then** window_avg_w equals 3000 and headroom reflects remaining capacity
+
+> Test: `test_capacity_basic_window_avg` in `test_capacity_peak.c:1`
+
+### Variable power within a single window
+
+**Requirement:** `REQ-CAP-002`
+
+- **Given** A capacity state with limit 5000W
+- **When** 450 ticks at 2000W followed by 450 ticks at 4000W
+- **Then** window_avg_w equals 3000
+
+> Test: `test_capacity_variable_power_window` in `test_capacity_peak.c:53`
+
+### Monthly peak tracks highest window
+
+**Requirement:** `REQ-CAP-003`
+
+- **Given** A fresh capacity state in month 3
+- **When** Three windows complete with averages 3000W, 5000W, 4000W
+- **Then** monthly_peak_w equals 5000
+
+> Test: `test_capacity_monthly_peak_tracking` in `test_capacity_peak.c:78`
+
+### Month rollover resets monthly peak
+
+**Requirement:** `REQ-CAP-004`
+
+- **Given** A state with monthly_peak_w of 5000 in month 3
+- **When** capacity_tick_1s is called with month 4
+- **Then** monthly_peak_w resets to 0 and new tracking begins
+
+> Test: `test_capacity_month_rollover` in `test_capacity_peak.c:109`
+
+### Headroom calculation mid-window
+
+**Requirement:** `REQ-CAP-005`
+
+- **Given** A capacity state with limit 5000W, mid-window at 450s with running avg 3500W
+- **When** capacity_get_headroom_w is called
+- **Then** Headroom reflects how much more can be consumed in remaining window time
+
+> Test: `test_capacity_headroom_mid_window` in `test_capacity_peak.c:141`
+
+### Headroom to deciamps conversion for 3-phase
+
+**Requirement:** `REQ-CAP-006`
+
+- **Given** A headroom of 2300W
+- **When** capacity_headroom_to_da is called with 3 phases
+- **Then** Returns 33 deciamps (2300 * 10 / (230 * 3) = 33.3 -> 33)
+
+> Test: `test_capacity_headroom_to_da_3phase` in `test_capacity_peak.c:158`
+
+### Headroom to deciamps conversion for 1-phase
+
+**Requirement:** `REQ-CAP-007`
+
+- **Given** A headroom of 2300W
+- **When** capacity_headroom_to_da is called with 1 phase
+- **Then** Returns 100 deciamps (2300 * 10 / 230 = 100)
+
+> Test: `test_capacity_headroom_to_da_1phase` in `test_capacity_peak.c:185`
+
+### Disabled when limit equals zero
+
+**Requirement:** `REQ-CAP-008`
+
+- **Given** A capacity state with limit_w set to 0
+- **When** capacity_get_headroom_w is called
+- **Then** Returns INT32_MAX indicating no constraint
+
+> Test: `test_capacity_disabled_returns_max_headroom` in `test_capacity_peak.c:199`
+
+### JSON output contains all key fields
+
+**Requirement:** `REQ-CAP-009`
+
+- **Given** A state with valid window and peak data
+- **When** capacity_to_json is called
+- **Then** JSON contains limit_w, window_avg_w, monthly_peak_w, headroom_w
+
+> Test: `test_capacity_json_output` in `test_capacity_peak.c:219`
+
+### Negative power from solar export is averaged correctly
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A capacity state with limit 5000W
+- **When** 900 ticks with -1000W (net solar export)
+- **Then** window_avg_w equals -1000 and headroom is limit + 1000 = 6000
+
+> Test: `test_capacity_negative_power_solar` in `test_capacity_peak.c:248`
+
+### Zero-length buffer returns -1
+
+**Requirement:** `REQ-CAP-011`
+
+- **Given** A valid capacity state
+- **When** capacity_to_json is called with bufsz 0
+- **Then** Returns -1
+
+> Test: `test_capacity_json_zero_buffer` in `test_capacity_peak.c:274`
+
+### NULL state returns -1 for JSON and 0 for getters
+
+**Requirement:** `REQ-CAP-012`
+
+- **Given** A NULL state pointer
+- **When** capacity_to_json and getter functions are called
+- **Then** JSON returns -1, getters return 0
+
+> Test: `test_capacity_null_state` in `test_capacity_peak.c:288`
+
+### Headroom to deciamps with zero phases returns zero
+
+**Requirement:** `REQ-CAP-013`
+
+- **Given** A headroom value
+- **When** capacity_headroom_to_da is called with 0 phases
+- **Then** Returns 0
+
+> Test: `test_capacity_headroom_to_da_zero_phases` in `test_capacity_peak.c:307`
+
+### JSON with NULL buffer returns -1
+
+**Requirement:** `REQ-CAP-014`
+
+- **Given** A valid capacity state
+- **When** capacity_to_json is called with NULL buffer
+- **Then** Returns -1
+
+> Test: `test_capacity_json_null_buffer` in `test_capacity_peak.c:320`
+
+### JSON with too-small buffer returns -1
+
+**Requirement:** `REQ-CAP-015`
+
+- **Given** A valid capacity state
+- **When** capacity_to_json is called with a very small buffer
+- **Then** Returns -1 (truncation detected)
+
+> Test: `test_capacity_json_small_buffer` in `test_capacity_peak.c:334`
+
+### Year rollover also resets monthly peak
+
+**Requirement:** `REQ-CAP-016`
+
+- **Given** A state with peak in month 12 year_offset 2
+- **When** tick is called with month 1 year_offset 3
+- **Then** Monthly peak resets to 0
+
+> Test: `test_capacity_year_rollover` in `test_capacity_peak.c:349`
+
+### Window not valid until first window completes
+
+**Requirement:** `REQ-CAP-017`
+
+- **Given** A freshly initialized capacity state
+- **When** Only 100 ticks have elapsed (no complete window)
+- **Then** window_valid is 0 and window_avg_w is 0
+
+> Test: `test_capacity_window_not_valid_initially` in `test_capacity_peak.c:372`
+
+### Headroom decreases as window fills with high power
+
+**Requirement:** `REQ-CAP-018`
+
+- **Given** A capacity state with limit 5000W
+- **When** Power consumption exceeds limit for first half of window
+- **Then** Headroom in second half is reduced to compensate
+
+> Test: `test_capacity_headroom_decreases_with_high_power` in `test_capacity_peak.c:392`
+
+### IsetBalanced clamped by capacity headroom guard rail
+
+**Requirement:** `REQ-CAP-020`
+
+- **Given** ctx already charging at 160 deciamps, CapacityHeadroom_da=30 (3.0A total)
+- **When** evse_calc_balanced_current runs
+- **Then** IsetBalanced is clamped to at most 30/3=10 deciamps per phase by guard rail
+
+> Test: `test_capacity_headroom_clamps_iset_balanced` in `test_capacity_sm.c:1`
+
+### Unconstrained when headroom is INT16_MAX (default)
+
+**Requirement:** `REQ-CAP-021`
+
+- **Given** ctx already charging at 160 deciamps with CapacityHeadroom_da = INT16_MAX
+- **When** evse_calc_balanced_current runs
+- **Then** IsetBalanced is not reduced by capacity headroom
+
+> Test: `test_capacity_unconstrained_at_int16_max` in `test_capacity_sm.c:77`
+
+### Negative headroom clamps IsetBalanced and triggers shortage
+
+**Requirement:** `REQ-CAP-022`
+
+- **Given** ctx already charging with CapacityHeadroom_da = -50 (over capacity limit)
+- **When** evse_calc_balanced_current runs
+- **Then** IsetBalanced is clamped to MinCurrent floor (shortage path)
+
+> Test: `test_capacity_negative_headroom_clamps_down` in `test_capacity_sm.c:119`
+
+### Capacity headroom is tighter constraint than MaxSumMains
+
+**Requirement:** `REQ-CAP-023`
+
+- **Given** MaxSumMains=75A, CapacityHeadroom_da=30 (3.0A), charging at 160 deciamps
+- **When** evse_calc_balanced_current runs
+- **Then** CapacityHeadroom wins as the tighter constraint, IsetBalanced reduced
+
+> Test: `test_capacity_headroom_tighter_than_max_sum_mains` in `test_capacity_sm.c:133`
+
+### evse_init sets CapacityHeadroom_da to INT16_MAX by default
+
+**Requirement:** `REQ-CAP-024`
+
+- **Given** A freshly initialized evse_ctx_t
+- **When** evse_init is called
+- **Then** CapacityHeadroom_da equals INT16_MAX (unconstrained)
+
+> Test: `test_capacity_init_default` in `test_capacity_sm.c:159`
+
+### Capacity headroom clamps IsetBalanced when new EVSE joins in smart mode
+
+**Requirement:** `REQ-CAP-025`
+
+- **Given** Master (LoadBl=1) in smart mode with CapacityHeadroom_da=60 and a new EVSE joining
+- **When** evse_calc_balanced_current runs with mod=1
+- **Then** IsetBalanced is clamped by capacity headroom
+
+> Test: `test_capacity_headroom_master_new_evse` in `test_capacity_sm.c:196`
+
+### Single-phase charging gets full headroom on one phase
+
+**Requirement:** `REQ-CAP-026`
+
+- **Given** ctx charging at 160 deciamps, CapacityHeadroom_da=120, forced single-phase
+- **When** evse_calc_balanced_current runs
+- **Then** IsetBalanced clamped to 120/1=120 deciamps (not 120/3=40)
+
+> Test: `test_capacity_headroom_single_phase` in `test_capacity_sm.c:283`
+
+### Moderate capacity headroom allows charging above minimum
+
+**Requirement:** `REQ-CAP-027`
+
+- **Given** ctx charging with CapacityHeadroom_da=240 (24.0A total, 8A/phase)
+- **When** evse_calc_balanced_current runs
+- **Then** IsetBalanced is between MinCurrent and the headroom-per-phase limit
+
+> Test: `test_capacity_moderate_headroom` in `test_capacity_sm.c:307`
+
+---
+
+## CircuitMeter Subpanel Protection
+
+### Circuit current limiting clamps IsetBalanced on new EVSE join
+
+**Requirement:** `REQ-CIR-001`
+
+- **Given** MaxCircuitMains=25A, CircuitMeterImeasured=200dA (20A), new EVSE joining (mod=1)
+- **When** evse_calc_balanced_current() runs with mod=1 in smart mode
+- **Then** IsetBalanced is clamped by circuit headroom below the unconstrained value
+
+> Test: `test_circuit_limiting_active` in `test_circuit_meter.c:1`
+
+### Circuit meter disabled has no effect on IsetBalanced
+
+**Requirement:** `REQ-CIR-002`
+
+- **Given** MaxCircuitMains=0 (disabled), new EVSE joining (mod=1)
+- **When** evse_calc_balanced_current() runs in smart mode
+- **Then** IsetBalanced is determined only by MaxMains and MaxCircuit limits
+
+> Test: `test_circuit_meter_disabled` in `test_circuit_meter.c:82`
+
+### Circuit overload triggers hard shortage and increments NoCurrent
+
+**Requirement:** `REQ-CIR-003`
+
+- **Given** MaxCircuitMains=25A and CircuitMeterImeasured=260dA (26A, over limit)
+- **When** evse_calc_balanced_current() runs with mod=1
+- **Then** NoCurrent is incremented due to hard shortage from circuit overload
+
+> Test: `test_circuit_overload` in `test_circuit_meter.c:104`
+
+### Circuit headroom tighter than MaxMains — circuit wins
+
+**Requirement:** `REQ-CIR-004`
+
+- **Given** MaxMains=40A (plenty of headroom) but MaxCircuitMains=12A with 60dA measured
+- **When** evse_calc_balanced_current() runs with mod=1
+- **Then** IsetBalanced is limited by circuit headroom, not MaxMains
+
+> Test: `test_circuit_tighter_than_maxmains` in `test_circuit_meter.c:126`
+
+### Default initialization sets circuit meter fields to zero
+
+**Requirement:** `REQ-CIR-005`
+
+- **Given** A freshly initialized evse_ctx_t
+- **When** evse_init() is called
+- **Then** MaxCircuitMains and CircuitMeterImeasured are both 0
+
+> Test: `test_circuit_meter_init_defaults` in `test_circuit_meter.c:163`
 
 ---
 
@@ -4380,6 +4705,90 @@
 
 ---
 
+## Mode Synchronization
+
+### SOLAR_OFF: switching to Solar requires single-phase (evse_force_single_phase)
+
+**Requirement:** `REQ-MODE-SYNC-001`
+
+- **Given** EVSE in Smart mode charging on 3 phases, EnableC2=SOLAR_OFF
+- **When** Mode is set to Solar and evse_check_switching_phases is called
+- **Then** evse_force_single_phase returns true (C2 must be off in Solar mode)
+
+> Test: `test_solar_off_forces_single_phase_in_solar` in `test_mode_sync.c:1`
+
+### SOLAR_OFF: Smart mode allows three-phase
+
+**Requirement:** `REQ-MODE-SYNC-002`
+
+- **Given** EVSE with EnableC2=SOLAR_OFF in Smart mode
+- **When** evse_force_single_phase is checked
+- **Then** Returns false (C2 allowed in non-Solar modes with SOLAR_OFF)
+
+> Test: `test_solar_off_allows_3p_in_smart` in `test_mode_sync.c:72`
+
+### State C entry with SOLAR_OFF in Solar mode opens C2 contactor
+
+**Requirement:** `REQ-MODE-SYNC-003`
+
+- **Given** EVSE with EnableC2=SOLAR_OFF, Mode=Solar, entering STATE_C
+- **When** evse_set_state(ctx, STATE_C) is called
+- **Then** contactor2 is off (single-phase charging)
+
+> Test: `test_state_c_entry_solar_off_opens_c2` in `test_mode_sync.c:89`
+
+### Clearing LESS_6A on switch to Smart (via evse_clear_error_flags)
+
+**Requirement:** `REQ-MODE-SYNC-004`
+
+- **Given** EVSE with LESS_6A error set from solar shortage
+- **When** evse_clear_error_flags clears LESS_6A (as setMode does for Smart)
+- **Then** ErrorFlags no longer has LESS_6A set
+
+> Test: `test_clear_less6a_on_mode_switch` in `test_mode_sync.c:118`
+
+### SolarStopTimer persists if mode switch misses setMode
+
+**Requirement:** `REQ-MODE-SYNC-005`
+
+- **Given** EVSE with SolarStopTimer=300, mode changes to Smart
+- **When** Only Mode variable is assigned (simulating SETITEM bug)
+- **Then** SolarStopTimer remains at 300 (stale — not cleared)
+
+> Test: `test_raw_mode_assign_leaves_timer_stale` in `test_mode_sync.c:136`
+
+### SolarStopTimer cleared when setMode side effects applied
+
+**Requirement:** `REQ-MODE-SYNC-006`
+
+- **Given** EVSE with SolarStopTimer=300, mode changes to Smart
+- **When** setMode side effects are applied (timer reset to 0)
+- **Then** SolarStopTimer is 0
+
+> Test: `test_setmode_clears_timer` in `test_mode_sync.c:157`
+
+### Smart→Solar mid-charge: regulation switches to solar algorithm
+
+**Requirement:** `REQ-MODE-SYNC-007`
+
+- **Given** EVSE charging in Smart mode with mains headroom available
+- **When** Mode is changed to Solar and evse_calc_balanced_current is called
+- **Then** Solar fine regulation is applied (IsetBalanced changes differently)
+
+> Test: `test_mid_charge_smart_to_solar` in `test_mode_sync.c:187`
+
+### Solar→Normal mid-charge: all EVSEs get full current
+
+**Requirement:** `REQ-MODE-SYNC-008`
+
+- **Given** Master with 2 EVSEs in Solar mode with shortage
+- **When** Mode is changed to Normal
+- **Then** Both EVSEs get full current (Normal ignores solar/mains constraints)
+
+> Test: `test_mid_charge_solar_to_normal` in `test_mode_sync.c:225`
+
+---
+
 ## Modem / ISO15118 Negotiation
 
 ### Entering MODEM_REQUEST disconnects the pilot signal
@@ -4913,6 +5322,56 @@
 
 > Test: `test_mqtt_change_only_disable` in `test_mqtt_parser.c:878`
 
+### Set MaxCircuitMains to valid value via MQTT
+
+**Requirement:** `REQ-CIR-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MaxCircuitMains with payload "25"
+- **Then** Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 25
+
+> Test: `test_max_circuit_mains_valid` in `test_mqtt_parser.c:1193`
+
+### Set MaxCircuitMains to zero (disable) via MQTT
+
+**Requirement:** `REQ-CIR-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MaxCircuitMains with payload "0"
+- **Then** Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 0
+
+> Test: `test_max_circuit_mains_zero` in `test_mqtt_parser.c:1207`
+
+### Set MaxCircuitMains to boundary max (600) via MQTT
+
+**Requirement:** `REQ-CIR-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MaxCircuitMains with payload "600"
+- **Then** Command type is MQTT_CMD_MAX_CIRCUIT_MAINS with value 600
+
+> Test: `test_max_circuit_mains_max` in `test_mqtt_parser.c:1221`
+
+### Set CircuitMeter API feed via MQTT with L1:L2:L3 format
+
+**Requirement:** `REQ-CIR-011`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CircuitMeter with payload "100:200:150"
+- **Then** Command type is MQTT_CMD_CIRCUIT_METER with parsed phase currents
+
+> Test: `test_circuit_meter_valid` in `test_mqtt_parser.c:1261`
+
+### CircuitMeter API feed with negative values (export)
+
+**Requirement:** `REQ-CIR-011`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CircuitMeter with payload "-50:100:-25"
+- **Then** Command type is MQTT_CMD_CIRCUIT_METER with correct phase currents
+
+> Test: `test_circuit_meter_negative` in `test_mqtt_parser.c:1277`
+
 ---
 
 ## MQTT Input Validation
@@ -5251,19 +5710,59 @@
 
 > Test: `test_ev_meter_power_boundary_accepted` in `test_mqtt_parser.c:1085`
 
+### Reject MaxCircuitMains below minimum (1-9 range)
+
+**Requirement:** `REQ-CIR-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MaxCircuitMains with payload "5"
+- **Then** Parsing returns false (gap between 0 and 10)
+
+> Test: `test_max_circuit_mains_below_min` in `test_mqtt_parser.c:1235`
+
+### Reject MaxCircuitMains above maximum
+
+**Requirement:** `REQ-CIR-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/MaxCircuitMains with payload "601"
+- **Then** Parsing returns false
+
+> Test: `test_max_circuit_mains_above_max` in `test_mqtt_parser.c:1247`
+
+### Reject CircuitMeter with out of range values
+
+**Requirement:** `REQ-CIR-011`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CircuitMeter with payload "2001:0:0"
+- **Then** Parsing returns false (exceeds +/-2000 dA range)
+
+> Test: `test_circuit_meter_out_of_range` in `test_mqtt_parser.c:1293`
+
+### Reject CircuitMeter with missing fields
+
+**Requirement:** `REQ-CIR-011`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CircuitMeter with payload "100:200"
+- **Then** Parsing returns false (needs 3 fields)
+
+> Test: `test_circuit_meter_missing_fields` in `test_mqtt_parser.c:1305`
+
 ### Unrecognized topic returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:1101`
+> Test: `test_unrecognized_topic` in `test_mqtt_parser.c:1319`
 
 ### Wrong prefix returns false
 
 **Requirement:** `REQ-MQTT-014`
 
 
-> Test: `test_wrong_prefix` in `test_mqtt_parser.c:1110`
+> Test: `test_wrong_prefix` in `test_mqtt_parser.c:1328`
 
 ---
 
@@ -5462,6 +5961,80 @@
 
 ---
 
+## Capacity Tariff MQTT
+
+### Set capacity limit to a valid value via MQTT
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "5000"
+- **Then** Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 5000
+
+> Test: `test_capacity_limit_valid` in `test_mqtt_parser.c:1101`
+
+### Set capacity limit to zero (disabled) via MQTT
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "0"
+- **Then** Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 0
+
+> Test: `test_capacity_limit_zero_disables` in `test_mqtt_parser.c:1115`
+
+### Set capacity limit to maximum allowed value
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "25000"
+- **Then** Command type is MQTT_CMD_CAPACITY_LIMIT with capacity_limit 25000
+
+> Test: `test_capacity_limit_max` in `test_mqtt_parser.c:1129`
+
+### Reject capacity limit above maximum
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "25001"
+- **Then** Parsing returns false
+
+> Test: `test_capacity_limit_over_max` in `test_mqtt_parser.c:1143`
+
+### Reject negative capacity limit
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "-1"
+- **Then** Parsing returns false
+
+> Test: `test_capacity_limit_negative` in `test_mqtt_parser.c:1155`
+
+### Reject empty payload for capacity limit
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with empty payload
+- **Then** Parsing returns false
+
+> Test: `test_capacity_limit_empty` in `test_mqtt_parser.c:1167`
+
+### Reject non-numeric payload for capacity limit
+
+**Requirement:** `REQ-CAP-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/CapacityLimit with payload "abc"
+- **Then** Parsing returns false
+
+> Test: `test_capacity_limit_non_numeric` in `test_mqtt_parser.c:1179`
+
+---
+
 ## MQTT Change-Only Publishing
 
 ### First integer publish always goes through
@@ -5563,6 +6136,274 @@
 - **Then** MQTT_SLOT_COUNT is less than or equal to MQTT_CACHE_MAX_SLOTS
 
 > Test: `test_slot_count_within_bounds` in `test_mqtt_publish.c:159`
+
+---
+
+## MQTT SoC Parsing
+
+### Parse Set/InitialSoC with valid percentage
+
+**Requirement:** `REQ-SOC-001`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "80"
+- **Then** Command type is MQTT_CMD_INITIAL_SOC with initial_soc = 80
+
+> Test: `test_initial_soc_valid` in `test_mqtt_soc.c:1`
+
+### Parse Set/InitialSoC with -1 to reset/clear value
+
+**Requirement:** `REQ-SOC-002`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "-1"
+- **Then** Command type is MQTT_CMD_INITIAL_SOC with initial_soc = -1
+
+> Test: `test_initial_soc_reset` in `test_mqtt_soc.c:32`
+
+### Parse Set/InitialSoC boundary value 0
+
+**Requirement:** `REQ-SOC-005`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "0"
+- **Then** Command type is MQTT_CMD_INITIAL_SOC with initial_soc = 0
+
+> Test: `test_initial_soc_zero` in `test_mqtt_soc.c:70`
+
+### Parse Set/InitialSoC boundary value 100
+
+**Requirement:** `REQ-SOC-006`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "100"
+- **Then** Command type is MQTT_CMD_INITIAL_SOC with initial_soc = 100
+
+> Test: `test_initial_soc_max` in `test_mqtt_soc.c:84`
+
+### Parse Set/FullSoC with valid percentage
+
+**Requirement:** `REQ-SOC-007`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/FullSoC with payload "95"
+- **Then** Command type is MQTT_CMD_FULL_SOC with full_soc = 95
+
+> Test: `test_full_soc_valid` in `test_mqtt_soc.c:100`
+
+### Parse Set/FullSoC with -1 to reset/clear value
+
+**Requirement:** `REQ-SOC-008`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/FullSoC with payload "-1"
+- **Then** Command type is MQTT_CMD_FULL_SOC with full_soc = -1
+
+> Test: `test_full_soc_reset` in `test_mqtt_soc.c:114`
+
+### Parse Set/EnergyCapacity with valid Wh value
+
+**Requirement:** `REQ-SOC-010`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "64000"
+- **Then** Command type is MQTT_CMD_ENERGY_CAPACITY with energy_capacity = 64000
+
+> Test: `test_energy_capacity_valid` in `test_mqtt_soc.c:142`
+
+### Parse Set/EnergyCapacity boundary value 200000
+
+**Requirement:** `REQ-SOC-012`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "200000"
+- **Then** Command type is MQTT_CMD_ENERGY_CAPACITY with energy_capacity = 200000
+
+> Test: `test_energy_capacity_boundary_max` in `test_mqtt_soc.c:168`
+
+### Parse Set/EnergyCapacity with -1 to reset/clear value
+
+**Requirement:** `REQ-SOC-013`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "-1"
+- **Then** Command type is MQTT_CMD_ENERGY_CAPACITY with energy_capacity = -1
+
+> Test: `test_energy_capacity_reset` in `test_mqtt_soc.c:182`
+
+### Parse Set/EnergyRequest with valid Wh value
+
+**Requirement:** `REQ-SOC-015`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyRequest with payload "32000"
+- **Then** Command type is MQTT_CMD_ENERGY_REQUEST with energy_request = 32000
+
+> Test: `test_energy_request_valid` in `test_mqtt_soc.c:210`
+
+### Parse Set/EVCCID with valid identifier
+
+**Requirement:** `REQ-SOC-017`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EVCCID with payload "WBADE12345678901"
+- **Then** Command type is MQTT_CMD_EVCCID_SET with evccid matching the payload
+
+> Test: `test_evccid_set_valid` in `test_mqtt_soc.c:238`
+
+### Set/EVCCID accepts exactly 31 characters
+
+**Requirement:** `REQ-SOC-019`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EVCCID with a 31-character payload
+- **Then** The parser returns true with the full string stored
+
+> Test: `test_evccid_set_max_length` in `test_mqtt_soc.c:266`
+
+### Set/EVCCID accepts empty string to clear
+
+**Requirement:** `REQ-SOC-020`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EVCCID with empty payload ""
+- **Then** The parser returns true with an empty evccid
+
+> Test: `test_evccid_set_empty` in `test_mqtt_soc.c:282`
+
+---
+
+## MQTT SoC Input Validation
+
+### Reject Set/InitialSoC with value above 100
+
+**Requirement:** `REQ-SOC-003`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "101"
+- **Then** The parser returns false
+
+> Test: `test_initial_soc_above_max` in `test_mqtt_soc.c:46`
+
+### Reject Set/InitialSoC with value below -1
+
+**Requirement:** `REQ-SOC-004`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "-2"
+- **Then** The parser returns false
+
+> Test: `test_initial_soc_below_min` in `test_mqtt_soc.c:58`
+
+### Reject Set/FullSoC with value above 100
+
+**Requirement:** `REQ-SOC-009`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/FullSoC with payload "101"
+- **Then** The parser returns false
+
+> Test: `test_full_soc_above_max` in `test_mqtt_soc.c:128`
+
+### Reject Set/EnergyCapacity above 200000 Wh
+
+**Requirement:** `REQ-SOC-011`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "200001"
+- **Then** The parser returns false
+
+> Test: `test_energy_capacity_above_max` in `test_mqtt_soc.c:156`
+
+### Reject Set/EnergyCapacity below -1
+
+**Requirement:** `REQ-SOC-014`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "-2"
+- **Then** The parser returns false
+
+> Test: `test_energy_capacity_below_min` in `test_mqtt_soc.c:196`
+
+### Reject Set/EnergyRequest above 200000 Wh
+
+**Requirement:** `REQ-SOC-016`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyRequest with payload "200001"
+- **Then** The parser returns false
+
+> Test: `test_energy_request_above_max` in `test_mqtt_soc.c:224`
+
+### Set/EVCCID truncated at 31 chars (32-byte buffer with NUL)
+
+**Requirement:** `REQ-SOC-018`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EVCCID with a 32-character payload
+- **Then** The parser returns false because payload >= sizeof(evccid)
+
+> Test: `test_evccid_set_too_long` in `test_mqtt_soc.c:252`
+
+### Empty payload is rejected for InitialSoC
+
+**Requirement:** `REQ-SOC-021`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with empty payload ""
+- **Then** The parser returns false
+
+> Test: `test_initial_soc_empty_payload` in `test_mqtt_soc.c:298`
+
+### Empty payload is rejected for FullSoC
+
+**Requirement:** `REQ-SOC-022`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/FullSoC with empty payload ""
+- **Then** The parser returns false
+
+> Test: `test_full_soc_empty_payload` in `test_mqtt_soc.c:310`
+
+### Empty payload is rejected for EnergyCapacity
+
+**Requirement:** `REQ-SOC-023`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with empty payload ""
+- **Then** The parser returns false
+
+> Test: `test_energy_capacity_empty_payload` in `test_mqtt_soc.c:322`
+
+### Empty payload is rejected for EnergyRequest
+
+**Requirement:** `REQ-SOC-024`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyRequest with empty payload ""
+- **Then** The parser returns false
+
+> Test: `test_energy_request_empty_payload` in `test_mqtt_soc.c:334`
+
+### Non-numeric payload is rejected for InitialSoC
+
+**Requirement:** `REQ-SOC-025`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/InitialSoC with payload "abc"
+- **Then** The parser returns false
+
+> Test: `test_initial_soc_non_numeric` in `test_mqtt_soc.c:348`
+
+### Non-numeric payload is rejected for EnergyCapacity
+
+**Requirement:** `REQ-SOC-026`
+
+- **Given** A valid MQTT prefix
+- **When** Topic is prefix/Set/EnergyCapacity with payload "abc"
+- **Then** The parser returns false
+
+> Test: `test_energy_capacity_non_numeric` in `test_mqtt_soc.c:360`
 
 ---
 
@@ -5707,6 +6548,250 @@
 - **Then** EVSE[1] gets 60, EVSE[0] gets remainder (250-60=190)
 
 > Test: `test_unequal_max_tight_circuit` in `test_multi_node.c:402`
+
+---
+
+## Multi-Node Solar Charging
+
+### Two nodes solar shortage: SolarStopTimer starts when Isum exceeds threshold
+
+**Requirement:** `REQ-MULTI-SOL-001`
+
+- **Given** Master with 2 EVSEs in STATE_C, solar mode, grid importing above threshold
+- **When** evse_calc_balanced_current is called with Isum above (ActiveEVSE*MinCurrent*Phases - StartCurrent)*10
+- **Then** SolarStopTimer starts counting down from StopTime * 60
+
+> Test: `test_solar_multi_node_shortage_starts_timer` in `test_multi_node_solar.c:1`
+
+### Two nodes solar shortage with moderate import starts SolarStopTimer
+
+**Requirement:** `REQ-MULTI-SOL-001B`
+
+- **Given** Master with 2 EVSEs in STATE_C, solar mode, grid importing 20A (no surplus)
+- **When** evse_calc_balanced_current is called
+- **Then** SolarStopTimer starts because Isum (200) > single-EVSE threshold (140)
+
+> Test: `test_solar_multi_node_shortage_timer_moderate_import` in `test_multi_node_solar.c:81`
+
+### Two nodes solar shortage: priority scheduling pauses lower-priority node
+
+**Requirement:** `REQ-MULTI-SOL-002`
+
+- **Given** Master with 2 EVSEs in STATE_C, solar mode, grid importing heavily (Isum=300)
+- **When** evse_calc_balanced_current is called with very low actual available power
+- **Then** At least one EVSE gets Balanced=0 (paused via priority scheduling)
+
+> Test: `test_solar_multi_node_pauses_with_no_sun` in `test_multi_node_solar.c:107`
+
+### Four nodes solar: Isum above threshold starts timer and pauses nodes
+
+**Requirement:** `REQ-MULTI-SOL-003`
+
+- **Given** Master with 4 EVSEs in STATE_C, solar mode, Isum above 4-node threshold
+- **When** evse_calc_balanced_current is called
+- **Then** SolarStopTimer is started and at least some EVSEs are paused
+
+> Test: `test_solar_four_nodes_above_threshold` in `test_multi_node_solar.c:140`
+
+### Four nodes solar with 40A import starts SolarStopTimer
+
+**Requirement:** `REQ-MULTI-SOL-003B`
+
+- **Given** Master with 4 EVSEs in STATE_C, solar mode, grid importing 40A
+- **When** evse_calc_balanced_current is called
+- **Then** SolarStopTimer starts because Isum (400) > single-EVSE threshold (140)
+
+> Test: `test_solar_four_nodes_no_surplus_starts_timer` in `test_multi_node_solar.c:169`
+
+### Two nodes with sufficient solar surplus: both charge
+
+**Requirement:** `REQ-MULTI-SOL-004`
+
+- **Given** Master with 2 EVSEs in STATE_C, solar mode, grid exporting 15A (surplus)
+- **When** evse_calc_balanced_current is called
+- **Then** Both EVSEs receive current >= MinCurrent and SolarStopTimer stays 0
+
+> Test: `test_solar_multi_node_surplus_both_charge` in `test_multi_node_solar.c:197`
+
+### Two nodes with marginal surplus: enough for one, not both
+
+**Requirement:** `REQ-MULTI-SOL-005`
+
+- **Given** Master with 2 EVSEs in STATE_C, solar mode, surplus of ~8A (enough for 1 at 6A, not 2)
+- **When** evse_calc_balanced_current is called
+- **Then** Priority EVSE gets current, other is paused with NO_SUN
+
+> Test: `test_solar_multi_node_marginal_surplus` in `test_multi_node_solar.c:221`
+
+### SolarStopTimer does not restart when already running
+
+**Requirement:** `REQ-MULTI-SOL-006`
+
+- **Given** Master with 2 EVSEs in solar mode, SolarStopTimer already at 300
+- **When** evse_calc_balanced_current is called again with shortage
+- **Then** SolarStopTimer retains its existing value (not reset to StopTime*60)
+
+> Test: `test_solar_multi_node_timer_no_restart` in `test_multi_node_solar.c:250`
+
+### Solar surplus returns: SolarStopTimer clears
+
+**Requirement:** `REQ-MULTI-SOL-007`
+
+- **Given** Master with 2 EVSEs in solar mode, SolarStopTimer running at 300
+- **When** surplus returns (no shortage) and evse_calc_balanced_current is called
+- **Then** SolarStopTimer is reset to 0
+
+> Test: `test_solar_multi_node_surplus_clears_timer` in `test_multi_node_solar.c:272`
+
+### SolarStopTimer suppressed during startup settling
+
+**Requirement:** `REQ-MULTI-SOL-008`
+
+- **Given** Master with 2 EVSEs, Node[0].IntTimer < SOLARSTARTTIME (in startup)
+- **When** evse_calc_balanced_current is called with shortage
+- **Then** SolarStopTimer remains 0 (suppressed during startup)
+
+> Test: `test_solar_multi_node_timer_suppressed_startup` in `test_multi_node_solar.c:295`
+
+### SolarStopTimer threshold is per-EVSE: just below threshold, timer does not start
+
+**Requirement:** `REQ-MULTI-SOL-008B`
+
+- **Given** Master with 2 EVSEs in solar mode, Isum just below single-EVSE threshold
+- **When** evse_calc_balanced_current is called
+- **Then** SolarStopTimer stays 0 (stopping last car would cause immediate restart)
+
+> Test: `test_solar_multi_node_timer_below_threshold_no_start` in `test_multi_node_solar.c:317`
+
+### SolarStopTimer threshold is per-EVSE: just above threshold, timer starts
+
+**Requirement:** `REQ-MULTI-SOL-008C`
+
+- **Given** Master with 2 EVSEs in solar mode, Isum just above single-EVSE threshold
+- **When** evse_calc_balanced_current is called
+- **Then** SolarStopTimer starts (not enough solar for even one car)
+
+> Test: `test_solar_multi_node_timer_above_threshold_starts` in `test_multi_node_solar.c:342`
+
+### Solar mode produces different distribution than Normal mode
+
+**Requirement:** `REQ-MULTI-SOL-009`
+
+- **Given** Master with 2 EVSEs in STATE_C, same grid conditions
+- **When** evse_calc_balanced_current is called in Normal mode vs Solar mode
+- **Then** Solar mode distributes based on surplus; Normal mode distributes based on MaxCircuit
+
+> Test: `test_solar_vs_normal_distribution_differs` in `test_multi_node_solar.c:371`
+
+### Smart mode produces different distribution than Solar mode under same conditions
+
+**Requirement:** `REQ-MULTI-SOL-010`
+
+- **Given** Master with 2 EVSEs in STATE_C, grid importing 10A
+- **When** evse_calc_balanced_current is called in Smart mode vs Solar mode
+- **Then** Smart mode uses MaxMains regulation; Solar mode uses surplus regulation
+
+> Test: `test_solar_vs_smart_distribution_differs` in `test_multi_node_solar.c:410`
+
+### Node goes offline during solar shortage
+
+**Requirement:** `REQ-MULTI-SOL-011`
+
+- **Given** Master with 3 EVSEs in solar mode with shortage, SolarStopTimer running
+- **When** Node 2 goes offline (STATE_A) and current is recalculated
+- **Then** Fewer active EVSEs means less MinCurrent demand; may resolve shortage
+
+> Test: `test_solar_multi_node_offline_during_shortage` in `test_multi_node_solar.c:452`
+
+### Solar mode with ImportCurrent allows some grid import
+
+**Requirement:** `REQ-MULTI-SOL-012`
+
+- **Given** Master with 2 EVSEs in solar mode, ImportCurrent=6A, grid importing 5A
+- **When** evse_calc_balanced_current is called
+- **Then** ImportCurrent tolerance means 5A import is acceptable; no shortage
+
+> Test: `test_solar_multi_node_import_current_tolerance` in `test_multi_node_solar.c:489`
+
+### NoCurrent threshold eventually triggers LESS_6A in multi-node solar
+
+**Requirement:** `REQ-MULTI-SOL-013`
+
+- **Given** Master with 2 EVSEs in solar mode, repeated hard shortage cycles
+- **When** evse_calc_balanced_current is called multiple times with NoCurrent accumulating
+- **Then** After NoCurrent reaches threshold, LESS_6A error flag is set
+
+> Test: `test_solar_multi_node_nocurrent_threshold` in `test_multi_node_solar.c:514`
+
+### Sufficient solar but tight capacity headroom forces shortage
+
+**Requirement:** `REQ-MULTI-SOL-014`
+
+- **Given** Master with 2 EVSEs in solar mode, grid exporting (solar surplus),
+- **When** evse_calc_balanced_current is called
+- **Then** IsetBalanced is capped by headroom, shortage detected, priority scheduling runs
+
+> Test: `test_solar_capacity_surplus_but_headroom_tight` in `test_multi_node_solar.c:551`
+
+### No solar AND tight capacity: both constraints active
+
+**Requirement:** `REQ-MULTI-SOL-015`
+
+- **Given** Master with 2 EVSEs in solar mode, grid importing 20A,
+- **When** evse_calc_balanced_current is called
+- **Then** Shortage detected via both solar regulation AND capacity headroom
+
+> Test: `test_solar_capacity_no_surplus_tight_headroom` in `test_multi_node_solar.c:587`
+
+### Capacity headroom disabled (0) has no effect on solar logic
+
+**Requirement:** `REQ-MULTI-SOL-016`
+
+- **Given** Master with 2 EVSEs in solar mode, CapacityHeadroom_da = INT16_MAX (disabled)
+- **When** evse_calc_balanced_current is called with solar surplus
+- **Then** Capacity does not constrain charging; both EVSEs charge normally
+
+> Test: `test_solar_capacity_disabled_no_effect` in `test_multi_node_solar.c:614`
+
+### Capacity headroom negative: power budget exceeded, forces immediate shortage
+
+**Requirement:** `REQ-MULTI-SOL-017`
+
+- **Given** Master with 2 EVSEs in solar mode, CapacityHeadroom_da = -50 (over budget)
+- **When** evse_calc_balanced_current is called even with solar surplus
+- **Then** Shortage detected due to capacity (IsetBalanced capped very low)
+
+> Test: `test_solar_capacity_negative_headroom` in `test_multi_node_solar.c:640`
+
+### SolarStopTimer expiry transitions STATE_C to STATE_C1 (power pause)
+
+**Requirement:** `REQ-MULTI-SOL-018`
+
+- **Given** EVSE in STATE_C, SolarStopTimer about to expire
+- **When** evse_tick_1s decrements SolarStopTimer to 0
+- **Then** State transitions to STATE_C1 (power paused), LESS_6A set
+
+> Test: `test_solar_stop_pauses_power_not_session` in `test_multi_node_solar.c:681`
+
+### LESS_6A clears when solar returns (auto-recovery)
+
+**Requirement:** `REQ-MULTI-SOL-019`
+
+- **Given** EVSE with LESS_6A set, solar surplus returns (Isum negative)
+- **When** evse_tick_1s checks evse_is_current_available
+- **Then** LESS_6A is cleared, allowing state machine to resume charging
+
+> Test: `test_solar_return_clears_less6a` in `test_multi_node_solar.c:708`
+
+### Full solar pause/resume cycle preserves AccessStatus
+
+**Requirement:** `REQ-MULTI-SOL-020`
+
+- **Given** EVSE in STATE_C charging, SolarStopTimer expires
+- **When** State goes C→C1 and C1Timer counts down to B1
+- **Then** AccessStatus stays ON throughout (OCPP tx survives the pause)
+
+> Test: `test_solar_full_pause_cycle_preserves_access` in `test_multi_node_solar.c:735`
 
 ---
 
@@ -8430,6 +9515,46 @@
 
 > Test: `test_session_zero_energy` in `test_session_log.c:323`
 
+### Session with circuit energy includes circuit_kwh in JSON
+
+**Requirement:** `REQ-CIR-020`
+
+- **Given** A completed session with CircuitMeter energy set
+- **When** session_to_json is called
+- **Then** JSON includes circuit_kwh field with correct value
+
+> Test: `test_session_circuit_energy_json` in `test_session_log.c:343`
+
+### Session without circuit energy omits circuit_kwh from JSON
+
+**Requirement:** `REQ-CIR-021`
+
+- **Given** A completed session without CircuitMeter energy
+- **When** session_to_json is called
+- **Then** JSON does not include circuit_kwh field
+
+> Test: `test_session_no_circuit_energy_json` in `test_session_log.c:369`
+
+### Circuit energy calculation: end minus start
+
+**Requirement:** `REQ-CIR-022`
+
+- **Given** A session with circuit start=100000 and circuit end=107500
+- **When** The session ends
+- **Then** circuit_energy_wh equals 7500
+
+> Test: `test_session_circuit_energy_calculation` in `test_session_log.c:391`
+
+### session_set_circuit_energy with no active session is ignored
+
+**Requirement:** `REQ-CIR-023`
+
+- **Given** No active session
+- **When** session_set_circuit_energy is called
+- **Then** No crash and no state change
+
+> Test: `test_session_set_circuit_energy_no_active` in `test_session_log.c:413`
+
 ### session_start with timestamp 0 is rejected
 
 **Requirement:** `REQ-ERE-020`
@@ -8438,7 +9563,7 @@
 - **When** session_start is called with timestamp 0 (NTP not synced)
 - **Then** No session is started and session_is_active returns 0
 
-> Test: `test_session_start_rejects_zero_timestamp` in `test_session_log.c:343`
+> Test: `test_session_start_rejects_zero_timestamp` in `test_session_log.c:430`
 
 ### session_start with pre-2024 timestamp is rejected
 
@@ -8448,7 +9573,7 @@
 - **When** session_start is called with timestamp 1000 (pre-2024)
 - **Then** No session is started and session_is_active returns 0
 
-> Test: `test_session_start_rejects_pre2024_timestamp` in `test_session_log.c:357`
+> Test: `test_session_start_rejects_pre2024_timestamp` in `test_session_log.c:444`
 
 ### session_start with valid 2024+ timestamp succeeds
 
@@ -8458,7 +9583,7 @@
 - **When** session_start is called with timestamp 1710000000 (March 2024)
 - **Then** A session is started and session_is_active returns 1
 
-> Test: `test_session_start_accepts_valid_timestamp` in `test_session_log.c:371`
+> Test: `test_session_start_accepts_valid_timestamp` in `test_session_log.c:458`
 
 ### Session shorter than 60 seconds is discarded
 
@@ -8468,7 +9593,7 @@
 - **When** A session is started and ended after only 30 seconds
 - **Then** The session is discarded, session_is_active returns 0, and session_get_last returns NULL
 
-> Test: `test_session_short_duration_discarded` in `test_session_log.c:387`
+> Test: `test_session_short_duration_discarded` in `test_session_log.c:474`
 
 ### Session with duration exactly 60 seconds is kept
 
@@ -8478,7 +9603,7 @@
 - **When** A session is started and ended after exactly 60 seconds
 - **Then** The session is stored and session_get_last returns a valid record with correct energy
 
-> Test: `test_session_exact_min_duration_kept` in `test_session_log.c:405`
+> Test: `test_session_exact_min_duration_kept` in `test_session_log.c:492`
 
 ---
 

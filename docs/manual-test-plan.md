@@ -2,7 +2,7 @@
 
 **Scope:** All features from Plan 01 through Plan 15 plus cross-plan hardening (PR #91).
 Only tests that require real hardware, real MQTT broker, real vehicle, or real browser.
-Automated native tests (47 suites, 1,046 scenarios) are excluded.
+Automated native tests (50 suites, 1,096 scenarios) are excluded.
 
 **Version:** Generated 2026-03-20
 

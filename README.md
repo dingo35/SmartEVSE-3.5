@@ -17,7 +17,7 @@ The upstream SmartEVSE firmware is a monolithic embedded C++/Arduino codebase wh
 state machine, load balancing, MQTT, HTTP, and hardware control all live in a single
 ~3,000-line `main.cpp`. This fork restructures the architecture to enable **native host
 testing** of the core logic — pure C modules, context structs, a bridge layer, and HAL
-callbacks — resulting in 1,200+ automated tests (1,046 native C tests across 47 suites,
+callbacks — resulting in 1,200+ automated tests (1,096 native C tests across 50 suites,
 50 OCPP protocol tests, and 146 Modbus compatibility tests).
 
 See [Quality Engineering](docs/quality.md) for the full architecture, testing
