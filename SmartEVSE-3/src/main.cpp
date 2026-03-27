@@ -1339,7 +1339,8 @@ void CalcBalancedCurrent(char mod) {
                                               // Importing too much?
                 if (ActiveEVSE && IsumImport > 0 &&
                         // Would a stop free so much current that StartCurrent would immediately restart charging?
-                        (Isum > (ActiveEVSE * MinCurrent * Nr_Of_Phases_Charging - StartCurrent) * 10 ||
+                        // Isum and StartCurrent are both sum-of-phases, so no phase multiplication needed
+                        (Isum > (ActiveEVSE * MinCurrent - StartCurrent) * 10 ||
                          // don't apply that rule if we are 3P charging and we could switch to 1P
                          (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO))) {
                     if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && State == STATE_C) {        // Only for Master when charging, Nodes are not supported yet
@@ -1531,7 +1532,7 @@ void Timer1S_singlerun(void) {
 printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n", State, pilot, AccessTimer, PilotDisconnected);
 #endif
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
-    static uint8_t Broadcast = 1;
+    static uint8_t Broadcast = 4;
 #endif
 #ifdef SMARTEVSE_VERSION //ESP32
     if (BacklightTimer) BacklightTimer--;                               // Decrease backlight counter every second.
