@@ -605,7 +605,7 @@ All 15 plans are complete.
   logic correctness, Plan 11 tests protocol compliance
 - Plan 12 (Modbus Compat) complements Plan 05 (Meter Compatibility): Plan 05
   extracts code, Plan 12 tests it against real meter register layouts
-- All plans depend on the test infrastructure being stable (currently: 47 suites, 1,046 tests)
+- All plans depend on the test infrastructure being stable (currently: 50 suites, 1,096 tests)
 
 ## Files You Should Know
 

@@ -134,7 +134,7 @@ void test_normal_charge_cycle(void) { ... }
 The CI traceability job validates that all annotated tests have requirement IDs and
 uploads the reports as build artifacts. See the
 [test specification](SmartEVSE-3/test/native/test-specification.md) for the full
-list of 410 scenarios across 31 features.
+list of 1,082 scenarios across 70 features.
 
 ## Reporting Findings & Proposing Improvements
 

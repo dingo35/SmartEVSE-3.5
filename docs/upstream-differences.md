@@ -18,7 +18,7 @@ These are structural changes that affect the entire codebase — not specific fe
 | State representation | ~70 scattered globals | `evse_ctx_t` context struct |
 | Hardware abstraction | Direct GPIO calls in logic | Function pointers via HAL callbacks |
 | Global synchronization | No protection | `evse_bridge.cpp` with spinlock/mutex |
-| Native testability | Not possible (Arduino dependencies) | 1,046 tests compile with plain `gcc` |
+| Native testability | Not possible (Arduino dependencies) | 1,096 tests compile with plain `gcc` |
 | CI pipeline | PlatformIO build only | 10-job pipeline (tests, sanitizers, valgrind, cppcheck, builds, BDD, traceability, OCPP, Modbus) |
 | Test methodology | None | Specification-by-Example (SbE) with traceability |
 
@@ -40,6 +40,8 @@ Addresses upstream issues
 | Symmetric ramp rates | Overshoot/undershoot from asymmetric regulation | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 | Tiered phase switching timers | Rapid 1P/3P cycling | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 | Stop/start cycling prevention | Solar mode stops and restarts unnecessarily | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
+| Multi-node SolarStopTimer fix | Upstream threshold scales with ActiveEVSE, unreachable for 2+ nodes (commit `94ca08e`) | [PR #119](https://github.com/basmeerman/SmartEVSE-3.5/pull/119) |
+| Slave mode sync via setMode() | Upstream `SETITEM(MENU_MODE)` skips phase switching and error clearing on slaves | [PR #121](https://github.com/basmeerman/SmartEVSE-3.5/pull/121) |
 | Slow EV compatibility | Renault Zoe stalls on rapid current changes | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 
 ### Load Balancing
