@@ -73,11 +73,13 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           draft: false
-          prerelease: true
+          prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             ${{ steps.tag.outputs.tag }}-dist.zip
+            dist/firmware.bin
             dist/firmware.signed.bin
+            dist/firmware.debug.bin
             dist/firmware.debug.signed.bin
             SmartEVSE-3/test/native/traceability-report.html
 
