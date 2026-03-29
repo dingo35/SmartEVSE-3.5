@@ -288,6 +288,8 @@ unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay Stop
 bool OcppDefinedTxNotification;
 MicroOcpp::TxNotification OcppTrackTxNotification;
 unsigned long OcppLastTxNotification;
+
+unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
 #endif //ENABLE_OCPP
 
 EXT uint32_t elapsedmax, elapsedtime;

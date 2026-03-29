@@ -333,6 +333,8 @@ extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: del
 extern bool OcppDefinedTxNotification;
 extern MicroOcpp::TxNotification OcppTrackTxNotification;
 extern unsigned long OcppLastTxNotification;
+
+extern unsigned long OcppLastOcppResponse;
 #endif //ENABLE_OCPP
 
 
@@ -2785,6 +2787,7 @@ void ocppInit() {
         });
     }
 
+    OcppLastOcppResponse = millis(); // Initialize OCPP-level response tracker
 
     endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
 }
@@ -2822,6 +2825,9 @@ void ocppDeinit() {
     OcppWsClient = nullptr;
 }
 
+#define OCPP_PROBE_INTERVAL   90000UL  // Send OCPP Heartbeat probe every 90 seconds
+#define OCPP_SILENCE_TIMEOUT 300000UL  // Force WS reconnect after 5 minutes without OCPP response
+
 void ocppLoop() {
 
     if (pilot >= PILOT_3V && pilot <= PILOT_12V) {
@@ -2829,6 +2835,32 @@ void ocppLoop() {
     }
 
     mocpp_loop();
+
+    // OCPP-level silence detection: send periodic Heartbeat probes and track responses.
+    // WS pings/pongs keep the transport alive but don't prove OCPP message flow.
+    // If the backend stops responding to OCPP messages, force a WebSocket reconnect.
+    static unsigned long lastProbe = 0;
+    if (OcppWsClient && OcppWsClient->isConnected() && millis() - lastProbe >= OCPP_PROBE_INTERVAL) {
+        lastProbe = millis();
+        sendRequest("Heartbeat",
+            [] () -> std::unique_ptr<MicroOcpp::JsonDoc> {
+                auto doc = std::unique_ptr<MicroOcpp::JsonDoc>(new MicroOcpp::JsonDoc(JSON_OBJECT_SIZE(0)));
+                doc->to<JsonObject>();
+                return doc;
+            },
+            [] (JsonObject response) {
+                OcppLastOcppResponse = millis();
+            }
+        );
+    }
+
+    if (OcppWsClient && OcppWsClient->isConnected() && OcppLastOcppResponse &&
+            millis() - OcppLastOcppResponse >= OCPP_SILENCE_TIMEOUT) {
+        _LOG_A("OCPP backend unresponsive for %lus, forcing WebSocket reconnect\n",
+                (millis() - OcppLastOcppResponse) / 1000UL);
+        OcppLastOcppResponse = millis(); // Reset to avoid repeated rapid reconnects
+        OcppWsClient->reloadConfigs();
+    }
 
     // handle Configuration updates
 
