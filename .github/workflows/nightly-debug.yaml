@@ -57,16 +57,16 @@ jobs:
         env:
           super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
+          cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.bin
           if [ -z "$super_secret" ]; then
-            echo "Signing key not available, shipping unsigned"
-            cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.bin
-            exit 0
+            echo "Signing key not available — unsigned firmware only"
+          else
+            secret_file=$(mktemp)
+            echo "$super_secret" > "$secret_file"
+            openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./dist/firmware.bin
+            cat firmware.sign ./dist/firmware.bin > ./dist/firmware.signed.bin
+            rm -f "$secret_file" firmware.sign
           fi
-          secret_file=$(mktemp)
-          echo "$super_secret" > "$secret_file"
-          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
-          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./dist/firmware.signed.bin
-          rm -f "$secret_file"
 
       - name: Build debug firmware
         run: |
@@ -76,16 +76,16 @@ jobs:
         env:
           super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
+          cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.debug.bin
           if [ -z "$super_secret" ]; then
-            echo "Signing key not available, shipping unsigned"
-            cp ./SmartEVSE-3/.pio/build/release/firmware.bin ./dist/firmware.debug.bin
-            exit 0
+            echo "Signing key not available — unsigned firmware only"
+          else
+            secret_file=$(mktemp)
+            echo "$super_secret" > "$secret_file"
+            openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./dist/firmware.debug.bin
+            cat firmware.sign ./dist/firmware.debug.bin > ./dist/firmware.debug.signed.bin
+            rm -f "$secret_file" firmware.sign
           fi
-          secret_file=$(mktemp)
-          echo "$super_secret" > "$secret_file"
-          openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
-          cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./dist/firmware.debug.signed.bin
-          rm -f "$secret_file"
 
       - name: Delete existing nightly release
         run: gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
