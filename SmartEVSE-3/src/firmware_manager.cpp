@@ -100,12 +100,15 @@ bool getLatestVersion(String owner_repo, String asset_name, char *version) {
 }
 
 
-// SHA-Verify the OTA partition after it's been written
-// https://techtutorialsx.com/2018/05/10/esp32-arduino-mbed-tls-using-the-sha-256-algorithm/
-// https://github.com/ARMmbed/mbedtls/blob/development/programs/pkey/rsa_verify.c
-bool validate_sig( const esp_partition_t* partition, unsigned char *signature, int size )
-{
-    const char* rsa_key_pub = R"RSA_KEY_PUB(
+// Multi-key firmware signature validation.
+// Trusted public keys — firmware signed with ANY of these keys is accepted.
+// Key 0: upstream (dingo35/SmartEVSE-3.5) — for Factory/Community firmware
+// Key 1: basmeerman fork — for fork-specific releases and nightly builds
+// Forks: replace or add keys here. Only PUBLIC keys are embedded.
+// The corresponding PRIVATE key goes in GitHub secrets (SECRET_RSA_KEY).
+static const char* trusted_keys[] = {
+    // Key 0: upstream (dingo35)
+    R"RSA_KEY_PUB(
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtjEWhkfKPAUrtX1GueYq
 JmDp4qSHBG6ndwikAHvteKgWQABDpwaemZdxh7xVCuEdjEkaecinNOZ0LpSCF3QO
@@ -120,46 +123,58 @@ UQ2fmTzIaTBbNlCMeTQFIpZCosM947aGKNBp672wdf996SRwg9E2VWzW2Z1UuwWV
 BPVQkHb1Hsy7C9fg5JcLKB9zEfyUH0Tm9Iur1vsuA5++JNl2+T55192wqyF0R9sb
 YtSTUJNSiSwqWt1m0FLOJD0CAwEAAQ==
 -----END PUBLIC KEY-----
-)RSA_KEY_PUB";
+)RSA_KEY_PUB",
+    // Key 1: basmeerman fork
+    R"RSA_KEY_PUB(
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAszIwpCc5beY4JzIvxO+K
+cZZNi60raj9x6HrQtF5+aP9/o6W55QZ3MTLBe+NNDG9d8AVOGrE4Kc39opiZXPlO
+mtOZ2fT4QDFRCvupnT3Vn7/97M/VRjXZf03h1jtCTeWGynsny8trv2fOx5SAGfxw
+MHDYpRZehQKFuDI4nF7ynUuwuqlQ66WdkQkRoB57IqEvlzrIVcB+WuatEyvHwSc6
+GFlwhsoIsHzoFZKitsK81C0DwscEGxaQk/qFlqSVYkyRlQG2ZdCxHhD+HWJAUs9x
+fwzweKmnIys1IqqUG9LiwJDWmIKrnJoWoduZJ4hgzIbdLtzFBwMXZNvM1P0xs6w+
+DkLbII7WrZVrRgbViTprHLZytnFmDdiTpTNnW4JGh52bpXnRNZUzz5vHtOmvVFM8
+eT0fanYmE4eM9ANIJixom+SvD8YNKK3yQlLNPRTGLzOv6xZSdohDFO1wSvsxgMWn
+9fwBTIjkO0eDTZs4B7vaDuEi3J/C69emfxlAcQbwouOE5CDFwrP1UBp5EcrN6E1D
+RyNSvJ/PcAO4rVLnTexYuGQ0QdGhZfOMZCd8F5BWNGz5dY/1awUuroz//nXI0qd1
+hgf1KwL8pocfZrsteBOiTz2FJp2RJxpom9SsJQ+W2jIyHJH9flOge+pV3nOK6PIF
+H8w9QDYueo8WXrrsxnbqkh0CAwEAAQ==
+-----END PUBLIC KEY-----
+)RSA_KEY_PUB",
+};
+#define NUM_TRUSTED_KEYS (sizeof(trusted_keys) / sizeof(trusted_keys[0]))
 
+// SHA-Verify the OTA partition after it's been written.
+// Hashes the partition once, then tries each trusted key until one matches.
+// https://techtutorialsx.com/2018/05/10/esp32-arduino-mbed-tls-using-the-sha-256-algorithm/
+// https://github.com/ARMmbed/mbedtls/blob/development/programs/pkey/rsa_verify.c
+bool validate_sig( const esp_partition_t* partition, unsigned char *signature, int size )
+{
     if( !partition ) {
         _LOG_A( "Could not find update partition!.\n");
         return false;
     }
-    _LOG_D("Creating mbedtls context.\n");
-    mbedtls_pk_context pk;
-    mbedtls_md_context_t rsa;
-    mbedtls_pk_init( &pk );
-    _LOG_D("Parsing public key.\n");
 
-    int ret;
-    if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)rsa_key_pub, strlen(rsa_key_pub)+1 ) ) != 0 ) {
-        _LOG_A( "Parsing public key failed! mbedtls_pk_parse_public_key %d (%d bytes)\n%s", ret, strlen(rsa_key_pub)+1, rsa_key_pub);
-        return false;
-    }
-    if( !mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ) ) {
-        _LOG_A( "Public key is not an rsa key -0x%x", -ret );
-        return false;
-    }
-    _LOG_D("Initing mbedtls.\n");
+    // Phase 1: Hash the partition content (expensive — SPI flash reads)
+    _LOG_D("Hashing partition for signature validation.\n");
     const mbedtls_md_info_t *mdinfo = mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 );
-    mbedtls_md_init( &rsa );
-    mbedtls_md_setup( &rsa, mdinfo, 0 );
-    mbedtls_md_starts( &rsa );
+    mbedtls_md_context_t md_ctx;
+    mbedtls_md_init( &md_ctx );
+    mbedtls_md_setup( &md_ctx, mdinfo, 0 );
+    mbedtls_md_starts( &md_ctx );
     int bytestoread = SPI_FLASH_SEC_SIZE;
     int bytesread = 0;
     uint8_t *_buffer = (uint8_t*)malloc(SPI_FLASH_SEC_SIZE);
     if(!_buffer){
         _LOG_A( "malloc failed.\n");
+        mbedtls_md_free( &md_ctx );
         return false;
     }
-    _LOG_D("Parsing content.\n");
     _LOG_V( "Reading partition (%i sectors, sec_size: %i)", size, bytestoread );
     while( bytestoread > 0 ) {
         _LOG_V( "Left: %i (%i)               \r", size, bytestoread );
-
         if( ESP.partitionRead( partition, bytesread, (uint32_t*)_buffer, bytestoread ) ) {
-            mbedtls_md_update( &rsa, (uint8_t*)_buffer, bytestoread );
+            mbedtls_md_update( &md_ctx, (uint8_t*)_buffer, bytestoread );
             bytesread = bytesread + bytestoread;
             size = size - bytestoread;
             if( size <= SPI_FLASH_SEC_SIZE ) {
@@ -167,6 +182,8 @@ YtSTUJNSiSwqWt1m0FLOJD0CAwEAAQ==
             }
         } else {
             _LOG_A( "partitionRead failed!.\n");
+            free( _buffer );
+            mbedtls_md_free( &md_ctx );
             return false;
         }
     }
@@ -175,19 +192,49 @@ YtSTUJNSiSwqWt1m0FLOJD0CAwEAAQ==
     unsigned char *hash = (unsigned char*)malloc( mdinfo->size );
     if(!hash){
         _LOG_A( "malloc failed.\n");
+        mbedtls_md_free( &md_ctx );
         return false;
     }
-    mbedtls_md_finish( &rsa, hash );
-    ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, mdinfo->size, (unsigned char*)signature, SIGNATURE_LENGTH );
+    mbedtls_md_finish( &md_ctx, hash );
+    mbedtls_md_free( &md_ctx );
+
+    // Phase 2: Try each trusted key (cheap — just RSA verify)
+    bool verified = false;
+    for (unsigned int k = 0; k < NUM_TRUSTED_KEYS && !verified; k++) {
+        mbedtls_pk_context pk;
+        mbedtls_pk_init( &pk );
+        int ret = mbedtls_pk_parse_public_key( &pk,
+            (const unsigned char*)trusted_keys[k],
+            strlen(trusted_keys[k]) + 1 );
+        if( ret != 0 ) {
+            _LOG_A( "Parsing trusted key %u failed: %d\n", k, ret);
+            mbedtls_pk_free( &pk );
+            continue;
+        }
+        if( !mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ) ) {
+            _LOG_A( "Trusted key %u is not RSA\n", k);
+            mbedtls_pk_free( &pk );
+            continue;
+        }
+        ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, mdinfo->size,
+                                 (unsigned char*)signature, SIGNATURE_LENGTH );
+        mbedtls_pk_free( &pk );
+        if( ret == 0 ) {
+            _LOG_D( "Signature verified with trusted key %u.\n", k);
+            verified = true;
+        } else {
+            _LOG_V( "Trusted key %u did not match (ret=%d).\n", k, ret);
+        }
+    }
+
     free( hash );
-    mbedtls_md_free( &rsa );
-    mbedtls_pk_free( &pk );
-    if( ret == 0 ) {
+
+    if( verified ) {
         return true;
     }
 
-    // validation failed, overwrite the first few bytes so this partition won't boot!
-    log_w( "Validation failed, erasing the invalid partition.\n");
+    // All keys failed — overwrite the first few bytes so this partition won't boot!
+    log_w( "Validation failed (tried %u keys), erasing the invalid partition.\n", (unsigned)NUM_TRUSTED_KEYS);
     ESP.partitionEraseRange( partition, 0, ENCRYPTED_BLOCK_SIZE);
     return false;
 }
