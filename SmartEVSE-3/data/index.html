@@ -158,41 +158,6 @@
   </div>
 </div>
 
-<!-- Capacity Tariff (visible when mains meter configured) -->
-<div class="with_mainsmeter" id="capacity_tariff_card" style="display:none">
-  <div class="card">
-    <div class="section-toggle collapsed" onclick="toggleSection(this)">
-      <span class="card-title" style="margin-bottom:0">Capacity Tariff</span>
-    </div>
-    <div class="section-body collapsed">
-      <div class="form-row">
-        <span class="form-label">
-          <span class="tooltip">Peak Limit
-            <span class="tooltiptext">15-minute average power limit (kW). Set to 0 to disable. Belgian capaciteitstarief / EU capacity billing.</span>
-          </span>
-        </span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input type="number" id="capacity_limit_input" min="0" max="25" step="0.1" style="width:80px;padding:4px 6px;border:1px solid var(--bg3);border-radius:6px;background:var(--bg);color:var(--fg);font-size:.85rem;text-align:center" title="0 = disabled">
-          <span style="font-size:.85rem;color:var(--fg2)">kW</span>
-          <button type="button" class="btn btn-sm" onclick="setCapacityLimit()">Set</button>
-        </div>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Window Avg</span>
-        <span class="detail-value" id="capacity_window_avg">-</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Monthly Peak</span>
-        <span class="detail-value" id="capacity_monthly_peak">-</span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Headroom</span>
-        <span class="detail-value" id="capacity_headroom">-</span>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Original Phase Details (with home battery) -->
 <div id="with_homebattery" style="display:none">
   <div class="detail-grid">
@@ -362,6 +327,41 @@
           <span class="form-label">Rot. Timer</span>
           <span id="rotation_timer" style="font-size:.85rem">-</span>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Capacity Tariff (visible when mains meter configured) -->
+<div class="with_mainsmeter" id="capacity_tariff_card" style="display:none">
+  <div class="card">
+    <div class="section-toggle collapsed" onclick="toggleSection(this)">
+      <span class="card-title" style="margin-bottom:0">Capacity Tariff</span>
+    </div>
+    <div class="section-body collapsed">
+      <div class="form-row">
+        <span class="form-label">
+          <span class="tooltip">Peak Limit
+            <span class="tooltiptext">15-minute average power limit (kW). Set to 0 to disable. Belgian capaciteitstarief / EU capacity billing.</span>
+          </span>
+        </span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="capacity_limit_input" min="0" max="25" step="0.1" style="width:80px;padding:4px 6px;border:1px solid var(--bg3);border-radius:6px;background:var(--bg);color:var(--fg);font-size:.85rem;text-align:center" title="0 = disabled">
+          <span style="font-size:.85rem;color:var(--fg2)">kW</span>
+          <button type="button" class="btn btn-sm" onclick="setCapacityLimit()">Set</button>
+        </div>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Window Avg</span>
+        <span class="detail-value" id="capacity_window_avg">-</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Monthly Peak</span>
+        <span class="detail-value" id="capacity_monthly_peak">-</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Headroom</span>
+        <span class="detail-value" id="capacity_headroom">-</span>
       </div>
     </div>
   </div>
