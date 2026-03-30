@@ -821,6 +821,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
             timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarmEnable(timerA);                                           // Re-enable alarm in case it was disabled by a single-shot fire
 #else //CH32
             TIM1->CH1CVR = 1000;                                               // Set CP output to +12V
 #endif
@@ -915,6 +916,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
             timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarmEnable(timerA);                                           // Re-enable alarm in case it was disabled by a single-shot fire
 #else //CH32                                                                          // EV should detect and stop charging within 3 seconds
             TIM1->CH1CVR = 1000;                                                // Set CP output to +12V
 #endif
