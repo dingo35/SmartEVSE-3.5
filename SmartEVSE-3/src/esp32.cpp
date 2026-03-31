@@ -999,15 +999,19 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
+            if (MainsMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+                MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
+            if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+                MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
         }
         if (EVMeter.Type) {
             MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
+            if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+                MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
+            if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+                MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
         }
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
@@ -1078,7 +1082,7 @@ void SetupMQTTClientSmartEVSE() {
     mqttSmartEVSEPublishData();
 }
 
-// SmartEVSE server MQTT publish data
+// SmartEVSE server MQTT publish data; this is for the APP
 void mqttSmartEVSEPublishData() {
     if (!MQTTclientSmartEVSE.connected) return;
     
@@ -1682,11 +1686,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
-        doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
-        doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy; // Wh
+        if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
+        if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy; // Wh
 
-        doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
-        doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
+        if (MainsMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
+        if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
             doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
         }
