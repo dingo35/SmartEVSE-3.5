@@ -98,12 +98,29 @@ extern uint8_t RCMTestCounter;
 
 void st7565_command(unsigned char data) {
     _A0_0;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
 }
 
 void st7565_data(unsigned char data) {
     _A0_1;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    if (EthPresent) {
+        etherlcd_lcd_transfer_buf(buf, len);
+    } else {
+        SPI.writeBytes(buf, len);
+    }
 }
 #else //SMARTEVSE_VERSION
 
@@ -118,6 +135,13 @@ void st7565_data(unsigned char data) {
     _A0_1;
     digitalWrite(LCD_CS, LOW);
     LCD_SPI2.transfer(data);
+    digitalWrite(LCD_CS, HIGH);
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    digitalWrite(LCD_CS, LOW);
+    LCD_SPI2.writeBytes(buf, len);
     digitalWrite(LCD_CS, HIGH);
 }
 #endif //SMARTEVSE_VERSION
@@ -145,13 +169,11 @@ void goto_xy(unsigned char x, unsigned char y) {
 }
 
 void glcd_clrln(unsigned char ln, unsigned char data) {
-    unsigned char i;
+    uint8_t linebuf[128];
+    memset(linebuf, data, 128);
     goto_xy(0, ln);
-    for (i = 0; i < 128; i++) {
-        st7565_data(data);                                                      // put data on data port
-        // Also update the buffer that mirrors the LCD.
-        GLCDbuf2[i + activeRow * 128] = data;
-    }
+    st7565_data_buf(linebuf, 128);
+    memcpy(&GLCDbuf2[activeRow * 128], linebuf, 128);
 }
 
 /*
@@ -178,17 +200,15 @@ void GLCD_buffer_clr(void) {
 }
 
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
-    unsigned char i, y = 0;
+    unsigned char y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
-        // Sends one chunk of 8 pixels height and 128 pixels wide.
-        for (i = 0; i < 128; i++) {
-            const uint8_t data = GLCDbuf[x++];
-            st7565_data(data);                                              // put data on data port
-            GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
-        }
+        // Send entire 128-byte row in one bulk SPI transfer.
+        st7565_data_buf(&GLCDbuf[x], 128);
+        memcpy(&GLCDbuf2[activeRow * 128], &GLCDbuf[x], 128);              // Also update buffer copy
+        x += 128;
     } while (++y < Rows);
 }
 
@@ -199,7 +219,10 @@ void GLCD_font_condense(unsigned char c, unsigned char *start, unsigned char *en
         if(font[c][1] == 0) *start = 2;
         else *start = 1;
     }
-    if(font[c][4] == 0) *end = 4;
+    if(font[c][4] == 0) {
+        if(font[c][3] == 0) *end = 3;
+        else *end = 4;
+    }
 }
 
 unsigned char GLCD_text_length(const char *str) {
@@ -493,9 +516,19 @@ void GLCD(void) {
             if (MQTTclientSmartEVSE.connected) GLCD_write_buf_str(0, 0, "Connected to server", GLCD_ALIGN_LEFT);
             else GLCD_write_buf_str(0, 0, "No server connection", GLCD_ALIGN_LEFT);
         } else {
-            // When connected to Wifi, display IP and time in top row
+            // Display IP and time in top row (Ethernet takes priority over WiFi)
             uint8_t WIFImode = getItemValue(MENU_WIFI);
-            if (WIFImode == 1 ) {   // Wifi Enabled
+            if (EthHasIP) {
+                if (LCDNav == MENU_WIFI && WIFImode != 0) {
+                    GLCD_write_buf_str(0,0, "Disconnect Eth first", GLCD_ALIGN_LEFT);
+                } else {
+                    sprintf(Str, "%s", ch390_get_ip());
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+                    if (LocalTimeSet) sprintf(Str, "%02u:%02u",timeinfo.tm_hour, timeinfo.tm_min);
+                    else sprintf(Str, "--:--");
+                    GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
+                }
+            } else if (WIFImode == 1 ) {   // Wifi Enabled
 
                 if (WiFi.status() == WL_CONNECTED) {
                     sprintf(Str, "%s",WiFi.localIP().toString().c_str());

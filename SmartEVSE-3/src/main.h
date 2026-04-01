@@ -154,10 +154,12 @@
 #define PILOT_NOK   0
 #define PILOT_SHORT 255
 
+#ifndef SMARTEVSE_VERSION
 #define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
 #define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
 #define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
 #define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
+#endif
 
 #define STATE_A_LED_BRIGHTNESS 40
 #define STATE_B_LED_BRIGHTNESS 255
@@ -315,6 +317,7 @@ extern void Timer100ms(void * parameter);
 extern void Timer1S(void * parameter);
 extern void BlinkLed(void * parameter);
 extern void getButtonState();
+extern void setLCDbacklight(uint8_t pwm);
 extern void PowerPanicESP();
 
 extern uint8_t LCDlock;

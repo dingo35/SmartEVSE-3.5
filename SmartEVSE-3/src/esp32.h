@@ -67,6 +67,8 @@
 #define SPI_SCK 26
 #define SPI_SS -1
 
+#include "etherlcd.h"                                                           // CH32V003 Ethernet+LCD board interface
+
 #define CP_CHANNEL 0
 #define RED_CHANNEL 2                                                           // PWM channel 2 (0 and 1 are used by CP signal)
 #define GREEN_CHANNEL 3
@@ -87,10 +89,12 @@
 #define PIN_EXT_V31 13
 #define PIN_BUZZER_V31 18
 
-#define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
-#define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
-#define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
-#define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
+// LCD control line macros — route through CH32V003 when Ethernet board is present,
+// otherwise fall back to direct GPIO.
+#define _RSTB_0 do { if (EthPresent) etherlcd_lcd_rst(false); else digitalWrite(PIN_LCD_RST, LOW); } while(0)
+#define _RSTB_1 do { if (EthPresent) etherlcd_lcd_rst(true);  else digitalWrite(PIN_LCD_RST, HIGH); } while(0)
+#define _A0_0   do { if (EthPresent) etherlcd_lcd_a0(false);  else digitalWrite(PIN_LCD_A0_B2, LOW); } while(0)
+#define _A0_1   do { if (EthPresent) etherlcd_lcd_a0(true);   else digitalWrite(PIN_LCD_A0_B2, HIGH); } while(0)
 
 extern portMUX_TYPE rtc_spinlock;   //TODO: Will be placed in the appropriate position after the rtc module is finished.
 

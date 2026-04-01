@@ -27,6 +27,7 @@
 
 #include "main.h" //so SENSORBOX_VERSION is read in Sensorbox
 #include "mongoose.h"
+#include "ch390.h"
 #include <ArduinoJson.h>
 
 #ifndef MQTT
@@ -59,6 +60,7 @@ extern uint8_t lastMqttUpdate;
 extern bool MQTTtls;
 extern bool MQTTSmartServer;
 extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from network_loop()
+extern bool WIFImodeChanged;               // Flag to trigger handleWIFImode() from network_loop()
 extern String MQTTprivatePassword;   
 
 class MQTTclient_t {
@@ -154,6 +156,8 @@ extern int downloadProgress;
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
+extern bool NetworkConnected(void);                                             // true if WiFi or Ethernet has IP
+extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
 extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
 extern String homeWizardHost;
