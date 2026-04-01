@@ -27,6 +27,7 @@
 
 #include "main.h" //so SENSORBOX_VERSION is read in Sensorbox
 #include "mongoose.h"
+#include "ch390.h"
 #include <ArduinoJson.h>
 
 #ifndef MQTT

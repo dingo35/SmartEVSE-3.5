@@ -19,7 +19,6 @@
 
 #ifndef SENSORBOX_VERSION
 #include "esp32.h"
-#include "ch390.h"
 #endif
 
 #if SMARTEVSE_VERSION >=30
@@ -1803,23 +1802,12 @@ bool NetworkConnected(void) {
 }
 
 static bool servicesStarted = false;
-static bool mgrInitialized = false;
-
-// Ensure mongoose event manager is initialized (safe to call multiple times).
-static void ensureMgrInit(void) {
-    if (!mgrInitialized) {
-        mg_mgr_init(&mgr);
-        mgrInitialized = true;
-    }
-}
 
 // Start network services (HTTP, MQTT, mDNS, SNTP, RemoteDebug).
 // Safe to call multiple times — only starts services once.
 static void startNetworkServices(void) {
     if (servicesStarted) return;
     servicesStarted = true;
-
-    ensureMgrInit();
     mg_log_set(MG_LL_NONE);
 
     // Start HTTP listeners (bind to 0.0.0.0 — works on all interfaces)
@@ -1855,8 +1843,6 @@ static void startNetworkServices(void) {
 // Configure DNS, SNTP and mDNS when an interface gets an IP.
 // Can be called from both WiFi and Ethernet got-IP events.
 void onGotIP(const char *dns_ip) {
-    ensureMgrInit();
-
     // Load DHCP DNS into mongoose
     static char dns4url[] = "udp://123.123.123.123:53";
     if (dns_ip && strlen(dns_ip) > 0) {
@@ -1949,7 +1935,6 @@ void handleWIFImode() {
 #endif
         IPAddress IP = WiFi.softAPIP();
 
-        ensureMgrInit();
         if (!HttpListener80) {
             HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
         }
@@ -2086,7 +2071,7 @@ void WiFiSetup(void) {
         APpassword[i] = c;
     }
 
-    ensureMgrInit();     // Safe: no-op if Ethernet already initialised mgr
+    mg_mgr_init(&mgr);
 
     WiFi.setAutoReconnect(true);                                                // Required for Arduino 3
     //WiFi.persistent(true);

@@ -32,7 +32,6 @@
 #include "utils.h"
 #include "meter.h"
 #include "network_common.h"
-#include "ch390.h"
 #include "font.cpp"
 #include "font2.cpp"
 
