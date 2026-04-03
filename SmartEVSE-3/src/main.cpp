@@ -257,6 +257,8 @@ uint8_t ColorSmart[3] = {0, 255, 0};    // Green
 uint8_t ColorSolar[3] = {255, 170, 0};    // Orange
 uint8_t ColorCustom[3] = {0, 0, 255};    // Blue
 
+uint8_t LedMode = 0;                                                            // LED color scheme. 0:Standard / 1:Public
+
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
 uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
@@ -2721,7 +2723,7 @@ static unsigned int LedPwm = 0;                                                /
         GreenPwm = ColorCustom[1];
         BluePwm = ColorCustom[2];
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
-    } else if (!OcppMode && (AccessStatus == OFF || State == STATE_MODEM_DENIED)) {
+    } else if (!LedMode && (AccessStatus == OFF || State == STATE_MODEM_DENIED)) {
 #else
     } else if (AccessStatus == OFF || State == STATE_MODEM_DENIED) {
 #endif
@@ -2752,7 +2754,7 @@ static unsigned int LedPwm = 0;                                                /
             }    
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0)) {
+    } else if (LedMode && (RFIDReader == 6 || RFIDReader == 0)) {
         // OCPP LED color scheme (public charging)
         unsigned long now = millis();
         if (now - OcppLastRfidUpdate < 200) {
@@ -3450,6 +3452,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_EMCUSTOM_EDIVISOR, EMConfig[EM_CUSTOM].EDivisor)
         SETITEM(MENU_RFIDREADER, RFIDReader)
         SETITEM(MENU_AUTOUPDATE, AutoUpdate)
+        SETITEM(MENU_LEDMODE, LedMode)
         SETITEM(STATUS_SOLAR_TIMER, SolarStopTimer)
         SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
         case MENU_C2:
@@ -3632,7 +3635,9 @@ uint16_t getItemValue(uint8_t nav) {
         case MENU_RCMON:
             return RCmon;
         case MENU_APPSERVER:
-            return MQTTSmartServer;  
+            return MQTTSmartServer;
+        case MENU_LEDMODE:
+            return LedMode;
         case STATUS_SERIAL:
             return serialnr;
 #endif
