@@ -257,6 +257,8 @@ uint8_t ColorSmart[3] = {0, 255, 0};    // Green
 uint8_t ColorSolar[3] = {255, 170, 0};    // Orange
 uint8_t ColorCustom[3] = {0, 0, 255};    // Blue
 
+uint8_t LedMode = 0;                                                            // LED color scheme. 0:Standard / 1:Public
+
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
 uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
@@ -2690,7 +2692,13 @@ void ModbusRequestLoop() {
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40   //CH32 and v3 ESP32
 // Blink the RGB LED.
 //
-// NOTE: need to add multiple colour schemes 
+// When OCPP mode is active, uses public charging color scheme:
+//  Green (dim)    = Available (State A)
+//  Blue (static)  = EV connected (State B)
+//  Blue (fading)  = Charging (State C)
+//  Yellow (blink) = Waiting / Reserved
+//  Red (flash)    = Error / Fault / Unavailable
+// Otherwise uses per-Mode colors (Normal=green, Smart=green, Solar=orange)
 //
 // Task is called every 10ms
 void BlinkLed_singlerun(void) {
@@ -2714,7 +2722,11 @@ static unsigned int LedPwm = 0;                                                /
         RedPwm = ColorCustom[0];
         GreenPwm = ColorCustom[1];
         BluePwm = ColorCustom[2];
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
+    } else if (!LedMode && (AccessStatus == OFF || State == STATE_MODEM_DENIED)) {
+#else
     } else if (AccessStatus == OFF || State == STATE_MODEM_DENIED) {
+#endif
         RedPwm = ColorOff[0];
         GreenPwm = ColorOff[1];
         BluePwm = ColorOff[2];
@@ -2742,40 +2754,62 @@ static unsigned int LedPwm = 0;                                                /
             }    
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                millis() - OcppLastRfidUpdate < 200) {
-        RedPwm = 128;
-        GreenPwm = 128;
-        BluePwm = 128;
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                millis() - OcppLastTxNotification < 1000 && OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized) {
-        RedPwm = 0;
-        GreenPwm = 255;
-        BluePwm = 0;
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                millis() - OcppLastTxNotification < 2000 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
-                                                             OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
-                                                             OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict)) {
-        RedPwm = 255;
-        GreenPwm = 0;
-        BluePwm = 0;
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                millis() - OcppLastTxNotification < 300 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
-                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout)) {
-        RedPwm = 255;
-        GreenPwm = 0;
-        BluePwm = 0;
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                getChargePointStatus() == ChargePointStatus_Reserved) {
-        RedPwm = 196;
-        GreenPwm = 64;
-        BluePwm = 0;
-    } else if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
-                (getChargePointStatus() == ChargePointStatus_Unavailable ||
-                 getChargePointStatus() == ChargePointStatus_Faulted)) {
-        RedPwm = 255;
-        GreenPwm = 0;
-        BluePwm = 0;
+    } else if (LedMode && (RFIDReader == 6 || RFIDReader == 0)) {
+        // OCPP LED color scheme (public charging)
+        unsigned long now = millis();
+        if (now - OcppLastRfidUpdate < 200) {
+            RedPwm = 128;                                                   // Grey - RFID update
+            GreenPwm = 128;
+            BluePwm = 128;
+        } else if (now - OcppLastTxNotification < 1000 && OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized) {
+            RedPwm = 0;                                                     // Green flash - Authorized
+            GreenPwm = 255;
+            BluePwm = 0;
+        } else if (now - OcppLastTxNotification < 2000 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
+                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
+                                                            OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict)) {
+            RedPwm = 255;                                                   // Red flash - Rejected
+            GreenPwm = 0;
+            BluePwm = 0;
+        } else if (now - OcppLastTxNotification < 300 && (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
+                                                           OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout)) {
+            RedPwm = 255;                                                   // Red flash - Timeout
+            GreenPwm = 0;
+            BluePwm = 0;
+        } else if (getChargePointStatus() == ChargePointStatus_Reserved) {
+            RedPwm = 255;                                                   // Orange - Reserved
+            GreenPwm = 128;
+            BluePwm = 0;
+        } else if (getChargePointStatus() == ChargePointStatus_Unavailable ||
+                   getChargePointStatus() == ChargePointStatus_Faulted) {
+            RedPwm = 255;                                                   // Red - Unavailable/Faulted
+            GreenPwm = 0;
+            BluePwm = 0;
+        } else if (ErrorFlags || ChargeDelay) {                             // Waiting for power / delayed
+            LedCount += 2;                                                  // Slow blinking orange
+            if (LedCount > 230) LedPwm = WAITING_LED_BRIGHTNESS;
+            else LedPwm = 0;
+            RedPwm = LedPwm;
+            GreenPwm = LedPwm / 2;
+            BluePwm = 0;
+        } else if (State == STATE_A) {
+            LedPwm = STATE_A_LED_BRIGHTNESS;                                // Green (dimmed) - Available
+            RedPwm = 0;
+            GreenPwm = LedPwm;
+            BluePwm = 0;
+        } else if (State == STATE_B || State == STATE_B1 || State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT) {
+            LedPwm = STATE_B_LED_BRIGHTNESS;                                // Blue (static) - EV connected
+            LedCount = 128;
+            RedPwm = 0;
+            GreenPwm = 0;
+            BluePwm = LedPwm;
+        } else if (State == STATE_C) {
+            LedCount += 2;                                                  // Blue fading - Charging
+            LedPwm = ease8InOutQuad(triwave8(LedCount));
+            RedPwm = 0;
+            GreenPwm = 0;
+            BluePwm = LedPwm;
+        }
 #endif //ENABLE_OCPP
     } else {                                                                // State A, B or C
 
@@ -3418,6 +3452,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_EMCUSTOM_EDIVISOR, EMConfig[EM_CUSTOM].EDivisor)
         SETITEM(MENU_RFIDREADER, RFIDReader)
         SETITEM(MENU_AUTOUPDATE, AutoUpdate)
+        SETITEM(MENU_LEDMODE, LedMode)
         SETITEM(STATUS_SOLAR_TIMER, SolarStopTimer)
         SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
         case MENU_C2:
@@ -3600,7 +3635,9 @@ uint16_t getItemValue(uint8_t nav) {
         case MENU_RCMON:
             return RCmon;
         case MENU_APPSERVER:
-            return MQTTSmartServer;  
+            return MQTTSmartServer;
+        case MENU_LEDMODE:
+            return LedMode;
         case STATUS_SERIAL:
             return serialnr;
 #endif

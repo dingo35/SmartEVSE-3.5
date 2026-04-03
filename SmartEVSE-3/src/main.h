@@ -289,9 +289,10 @@ void setPilot(bool On);
 #define MENU_LCDPIN 40
 #define MENU_PAIRING 41
 #define MENU_APPSERVER 42
-#define MENU_OFF 43                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 44                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 45
+#define MENU_LEDMODE 43
+#define MENU_OFF 44                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 45                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 46
 
 #define MENU_STATE 50
 
