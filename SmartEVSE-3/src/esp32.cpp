@@ -2744,7 +2744,17 @@ void ocppInit() {
 
     setOccupiedInput([] () -> bool {
         // Keep Finishing state while LockingTx effectively blocks new transactions
-        return OcppLockingTx != nullptr;
+        if (OcppLockingTx != nullptr) return true;
+
+        // Keep connector in Finishing state briefly after transaction ends so
+        // StatusNotification "Finishing" is sent before "Available"
+        if (OcppDefinedTxNotification &&
+                OcppTrackTxNotification == MicroOcpp::TxNotification::StopTx &&
+                millis() - OcppLastTxNotification < 2000) {
+            return true;
+        }
+
+        return false;
     });
 
     setStopTxReadyInput([] () {
