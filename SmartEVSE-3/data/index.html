@@ -126,6 +126,7 @@
 
           jsonBox.innerHTML = highlightJson(escapeHtml(prettyJson));
           downloadBtn.disabled = false;
+          status.textContent = "";
 
         } catch (error) {
           latestRawSettingsJson = "";
