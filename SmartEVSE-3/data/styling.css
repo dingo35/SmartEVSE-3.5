@@ -135,3 +135,39 @@ button.ui-btn, a.ui-btn {
     margin-right: .25rem;
     gap: .25rem;
 }
+
+.raw-data-page {
+    background: #000;
+    color: #e5e7eb;
+}
+
+.raw-data-page-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 14px;
+}
+
+#raw_data_status {
+    margin: .25rem 0;
+    color: #9ca3af;
+}
+
+#raw_data_json {
+    margin: .25rem 0 0 0;
+    padding: .75rem;
+    border: 1px solid #1f2937;
+    border-radius: .35rem;
+    background: #000;
+    color: #e5e7eb;
+    font-family: var(--font-family-monospace);
+    font-size: .9rem;
+    line-height: 1.4;
+    max-height: calc(100vh - 120px);
+    overflow: auto;
+}
+
+#raw_data_json .json-key { color: #93c5fd; }
+#raw_data_json .json-string { color: #86efac; }
+#raw_data_json .json-number { color: #c4b5fd; }
+#raw_data_json .json-boolean { color: #fcd34d; }
+#raw_data_json .json-null { color: #fda4af; }
