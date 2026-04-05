@@ -54,8 +54,17 @@
       let mqttEditMode = false;
       let ocppEditMode = false;
       let last_evse_state_id=0;
+      let latestRawSettingsJson = "";
+      const isRawDataPage = new URLSearchParams(window.location.search).get('raw') === '1';
+      window.isRawDataPage = isRawDataPage;
 
-      $(document).ready(loadData());
+      $(document).ready(function() {
+        if (isRawDataPage) {
+          initRawDataPage();
+          return;
+        }
+        loadData();
+      });
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
@@ -70,6 +79,109 @@
        * Helper function to query the DOM for a single element.
        */
       const $qs = (selector) => document.querySelector(selector);
+
+      function escapeHtml(text) {
+        return text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function highlightJson(jsonText) {
+        return jsonText.replace(
+          /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\b\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?\b)/g,
+          function (match) {
+            let cls = "json-number";
+            if (match[0] === "\"") {
+              cls = match.endsWith(":") ? "json-key" : "json-string";
+            } else if (match === "true" || match === "false") {
+              cls = "json-boolean";
+            } else if (match === "null") {
+              cls = "json-null";
+            }
+            return "<span class=\"" + cls + "\">" + match + "</span>";
+          }
+        );
+      }
+
+      async function loadRawSettings() {
+        const status = document.getElementById("raw_data_status");
+        const jsonBox = document.getElementById("raw_data_json");
+        const downloadBtn = document.getElementById("raw_download");
+        status.textContent = "Loading settings...";
+        jsonBox.textContent = "";
+        downloadBtn.disabled = true;
+
+        try {
+          const response = await fetch("/settings", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+
+          latestRawSettingsJson = await response.text();
+          let prettyJson = latestRawSettingsJson;
+          try {
+            prettyJson = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
+          } catch (parseError) {}
+
+          jsonBox.innerHTML = highlightJson(escapeHtml(prettyJson));
+          downloadBtn.disabled = false;
+          status.textContent = "";
+
+        } catch (error) {
+          latestRawSettingsJson = "";
+          status.textContent = "Error loading /settings: " + error.message;
+          jsonBox.textContent = "Failed to load /settings.";
+        }
+      }
+
+      function downloadRawSettings() {
+        if (!latestRawSettingsJson) return;
+        const now = new Date();
+        const pad = function (n) { return String(n).padStart(2, "0"); };
+        const timestamp = now.getFullYear() +
+          pad(now.getMonth() + 1) +
+          pad(now.getDate()) + "-" +
+          pad(now.getHours()) +
+          pad(now.getMinutes()) +
+          pad(now.getSeconds());
+
+        const blob = new Blob([latestRawSettingsJson], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "settings-" + timestamp + ".json";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      function initRawDataPage() {
+        document.body.classList.add("raw-data-page");
+        document.body.innerHTML = `
+          <div class="raw-data-page-wrap">
+            <form class="form-inline" id="form_mode">
+              <button class="ui-btn ui-shadow ui-corner-all" id="raw_back" type="button">Back</button>
+              <button class="ui-btn ui-shadow ui-corner-all" id="raw_refresh" type="button">Refresh</button>
+              <button class="ui-btn ui-shadow ui-corner-all" id="raw_download" type="button" disabled>Download JSON</button>
+            </form>
+            <div id="raw_data_status">Loading settings...</div>
+            <pre id="raw_data_json"></pre>
+          </div>
+        `;
+
+        if (typeof $.fn.enhanceWithin === 'function') {
+          $(document.body).enhanceWithin();
+        }
+
+        document.getElementById("raw_back").addEventListener("click", function () {
+          window.location.href = "/";
+        });
+        document.getElementById("raw_refresh").addEventListener("click", loadRawSettings);
+        document.getElementById("raw_download").addEventListener("click", downloadRawSettings);
+        loadRawSettings();
+      }
 
       function loadData(){
         $.ajax({
@@ -1561,7 +1673,7 @@
                                         <div class="col form-inline">
                                           <a class="ui-btn ui-shadow ui-corner-all" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot your device">Reboot</a>
                                           <a class="ui-btn ui-shadow ui-corner-all" href="/update" data-ajax="false" title="Update your firmware">Update</a>
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="/settings" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
+                                          <a class="ui-btn ui-shadow ui-corner-all" href="/?raw=1" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
                                           <a class="ui-btn ui-shadow ui-corner-all" href="#" onclick="gotoDoc(event)" title="Show the online documentation">Help</a>
                                         </div>
                                     </div>
@@ -1687,26 +1799,28 @@
       </div>
   </div>
   <script>
-    // Get the current date and time
-    var now = new Date();
-    $('[id=stoptime_group]').hide();
-    $('[id=daily_repeat_group]').hide();
+    if (!window.isRawDataPage) {
+      // Get the current date and time
+      var now = new Date();
+      $('[id=stoptime_group]').hide();
+      $('[id=daily_repeat_group]').hide();
 
-    // Format the date and time as a string that can be used as the value of the input field
-    var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
-    var dateTimeString = dateString + 'T' + timeString;
+      // Format the date and time as a string that can be used as the value of the input field
+      var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+      var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+      var dateTimeString = dateString + 'T' + timeString;
 
-    // Set the value of the input field to the current date and time
-    document.getElementById('starttime').value = dateTimeString;
-    document.getElementById('stoptime').value = dateTimeString;
-    document.getElementById('starttime').onchange = function () {
-        $('[id=stoptime_group]').show();
+      // Set the value of the input field to the current date and time
+      document.getElementById('starttime').value = dateTimeString;
+      document.getElementById('stoptime').value = dateTimeString;
+      document.getElementById('starttime').onchange = function () {
+          $('[id=stoptime_group]').show();
+      }
+      document.getElementById('stoptime').onchange = function () {
+          $('[id=daily_repeat_group]').show();
+      }
+      $('daily_repeat').prop('checked', false);
     }
-    document.getElementById('stoptime').onchange = function () {
-        $('[id=daily_repeat_group]').show();
-    }
-    $('daily_repeat').prop('checked', false);
   </script>
 </body>
 </html>
