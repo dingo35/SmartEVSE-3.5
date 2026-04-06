@@ -78,6 +78,59 @@
        */
       const $qs = (selector) => document.querySelector(selector);
 
+      function escapeHtml(text) {
+        return text.replace(/[&<>"']/g, function (char) {
+          return ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+            "'": "&#39;"
+          })[char];
+        });
+      }
+
+      function highlightJson(jsonText) {
+        let out = "";
+        let i = 0;
+        while (i < jsonText.length) {
+          const ch = jsonText[i];
+
+          if (ch === "\"") {
+            let j = i + 1;
+            let escaped = false;
+            while (j < jsonText.length) {
+              const next = jsonText[j];
+              if (escaped) {
+                escaped = false;
+              } else if (next === "\\") {
+                escaped = true;
+              } else if (next === "\"") {
+                j++;
+                break;
+              }
+              j++;
+            }
+            out += '<span class="json-string">' + escapeHtml(jsonText.slice(i, j)) + "</span>";
+            i = j;
+            continue;
+          }
+
+          if (ch === "-" || (ch >= "0" && ch <= "9")) {
+            const match = jsonText.slice(i).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+\-]?\d+)?/);
+            if (match) {
+              out += '<span class="json-number">' + match[0] + "</span>";
+              i += match[0].length;
+              continue;
+            }
+          }
+
+          out += escapeHtml(ch);
+          i++;
+        }
+        return out;
+      }
+
       async function loadRawSettings() {
         const status = document.getElementById("raw_data_status");
         const jsonBox = document.getElementById("raw_data_json");
@@ -92,11 +145,13 @@
             throw new Error("HTTP " + response.status);
           }
           latestRawSettingsJson = await response.text();
+          let formattedJson = latestRawSettingsJson;
           try {
-            jsonBox.textContent = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
+            formattedJson = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
           } catch (parseError) {
-            jsonBox.textContent = latestRawSettingsJson;
+            formattedJson = latestRawSettingsJson;
           }
+          jsonBox.innerHTML = highlightJson(formattedJson);
           downloadBtn.disabled = false;
           status.textContent = "";
         } catch (error) {

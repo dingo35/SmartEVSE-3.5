@@ -168,6 +168,14 @@ button.ui-btn, a.ui-btn {
     overflow: auto;
 }
 
+#raw_data_json .json-string {
+    color: #34d399;
+}
+
+#raw_data_json .json-number {
+    color: #f59e0b;
+}
+
 .raw-btn {
     display: inline-block;
     min-width: 100px;
