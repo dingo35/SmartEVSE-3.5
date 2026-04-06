@@ -137,7 +137,9 @@ button.ui-btn, a.ui-btn {
 }
 
 .raw-data-page {
-    background: #000;
+    min-height: 100vh;
+    margin: 0;
+    background: #000 !important;
     color: #e5e7eb;
 }
 
@@ -155,7 +157,7 @@ button.ui-btn, a.ui-btn {
 #raw_data_json {
     margin: .25rem 0 0 0;
     padding: .75rem;
-    border: 1px solid #1f2937;
+    border: 1px solid #374151;
     border-radius: .35rem;
     background: #000;
     color: #e5e7eb;
@@ -166,8 +168,20 @@ button.ui-btn, a.ui-btn {
     overflow: auto;
 }
 
-#raw_data_json .json-key { color: #93c5fd; }
-#raw_data_json .json-string { color: #86efac; }
-#raw_data_json .json-number { color: #c4b5fd; }
-#raw_data_json .json-boolean { color: #fcd34d; }
-#raw_data_json .json-null { color: #fda4af; }
+.raw-btn {
+    display: inline-block;
+    min-width: 100px;
+    margin: .2em .2em .2em 0;
+    padding: .6em 1em;
+    border: 1px solid #ccc;
+    border-radius: .4em;
+    background: linear-gradient(#fff, #f1f1f1);
+    color: #2f3e46;
+    font-weight: 700;
+    text-shadow: 0 1px 0 #fff;
+}
+
+.raw-btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}

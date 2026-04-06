@@ -58,13 +58,11 @@
       const isRawDataPage = new URLSearchParams(window.location.search).get('raw') === '1';
       window.isRawDataPage = isRawDataPage;
 
-      $(document).ready(function() {
-        if (isRawDataPage) {
-          initRawDataPage();
-          return;
-        }
-        loadData();
-      });
+      if (isRawDataPage) {
+        document.addEventListener('DOMContentLoaded', initRawDataPage);
+      } else {
+        $(document).ready(loadData());
+      }
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
@@ -80,30 +78,6 @@
        */
       const $qs = (selector) => document.querySelector(selector);
 
-      function escapeHtml(text) {
-        return text
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-      }
-
-      function highlightJson(jsonText) {
-        return jsonText.replace(
-          /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\b\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?\b)/g,
-          function (match) {
-            let cls = "json-number";
-            if (match[0] === "\"") {
-              cls = match.endsWith(":") ? "json-key" : "json-string";
-            } else if (match === "true" || match === "false") {
-              cls = "json-boolean";
-            } else if (match === "null") {
-              cls = "json-null";
-            }
-            return "<span class=\"" + cls + "\">" + match + "</span>";
-          }
-        );
-      }
-
       async function loadRawSettings() {
         const status = document.getElementById("raw_data_status");
         const jsonBox = document.getElementById("raw_data_json");
@@ -117,17 +91,14 @@
           if (!response.ok) {
             throw new Error("HTTP " + response.status);
           }
-
           latestRawSettingsJson = await response.text();
-          let prettyJson = latestRawSettingsJson;
           try {
-            prettyJson = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
-          } catch (parseError) {}
-
-          jsonBox.innerHTML = highlightJson(escapeHtml(prettyJson));
+            jsonBox.textContent = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
+          } catch (parseError) {
+            jsonBox.textContent = latestRawSettingsJson;
+          }
           downloadBtn.disabled = false;
           status.textContent = "";
-
         } catch (error) {
           latestRawSettingsJson = "";
           status.textContent = "Error loading /settings: " + error.message;
@@ -162,19 +133,14 @@
         document.body.innerHTML = `
           <div class="raw-data-page-wrap">
             <form class="form-inline" id="form_mode">
-              <button class="ui-btn ui-shadow ui-corner-all" id="raw_back" type="button">Back</button>
-              <button class="ui-btn ui-shadow ui-corner-all" id="raw_refresh" type="button">Refresh</button>
-              <button class="ui-btn ui-shadow ui-corner-all" id="raw_download" type="button" disabled>Download JSON</button>
+              <button class="raw-btn" id="raw_back" type="button">Back</button>
+              <button class="raw-btn" id="raw_refresh" type="button">Refresh</button>
+              <button class="raw-btn" id="raw_download" type="button" disabled>Download JSON</button>
             </form>
             <div id="raw_data_status">Loading settings...</div>
             <pre id="raw_data_json"></pre>
           </div>
         `;
-
-        if (typeof $.fn.enhanceWithin === 'function') {
-          $(document.body).enhanceWithin();
-        }
-
         document.getElementById("raw_back").addEventListener("click", function () {
           window.location.href = "/";
         });
