@@ -1733,6 +1733,13 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         _LOG_I("No power/current Errors Cleared.\n");
     }
 
+    // While ChargeDelay is counting down (waiting to start charging), keep re-checking solar availability.
+    // If solar power has disappeared during the countdown, re-set the LESS_6A error to restart the wait cycle.
+    if (ChargeDelay && !(ErrorFlags & LESS_6A) && Mode == MODE_SOLAR && (LoadBl < 2) && !IsCurrentAvailable()) {
+        setErrorFlags(LESS_6A);
+        _LOG_I("Solar power no longer available during ChargeDelay, restarting wait.\n");
+    }
+
     // Mainsmeter defined, and power sharing set to Disabled or Master
     if (MainsMeter.Type && LoadBl < 2) {
         if ( MainsMeter.Timeout == 0 && !(ErrorFlags & CT_NOCOMM) && Mode != MODE_NORMAL) { // timeout if current measurement takes > 10 secs
