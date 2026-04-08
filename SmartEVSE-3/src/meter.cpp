@@ -6,6 +6,7 @@
 extern unsigned long pow_10[10];
 extern void CalcIsum(void);
 extern void RecomputeSoC(void);
+extern void request_write_settings(void);
 
 #define ENDIANESS_LBF_LWF 0
 #define ENDIANESS_LBF_HWF 1
@@ -198,7 +199,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
             SB2.SoftwareVer = buf[0];
             // Make sure the version and datalength are correct before processing the data.
             // the version alone does not indicate that we have read the extended registers.
-            if (SB2.SoftwareVer == 1 && MB.DataLength == 64) {
+            if ((SB2.SoftwareVer == 1 || SB2.SoftwareVer == 3) && MB.DataLength == 64) {
                 // Read Status, IP, AP Password from Sensorbox
                 SB2.WiFiConnected = buf[40]>>1 & 1;
                 SB2.WiFiAPSTA = buf[40]>>2 & 1;
@@ -213,10 +214,24 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
                 }
                 SB2.APpassword[8] = '\0';
 
+                // On first read, sync local SB2_WIFImode to match Sensorbox
+                // After that, allow sending changes from LCD menu
+                if (!SB2.WIFImodeSynced) {
+                    SB2.WIFImodeSynced = 1;
+                    if (SB2.WIFImode != SB2_WIFImode) {
+                        SB2_WIFImode = SB2.WIFImode;
+#ifdef SMARTEVSE_VERSION //ESP32
+                        request_write_settings();
+#else //CH32
+                        printf("@write_settings\n");
+#endif
+                    }
+                }
+
                 if (SB2_WIFImode == 2 && SB2.WiFiConnected && !SubMenu) {
                     SB2_WIFImode = 1;                                       // Portal active and connected? Switch back to Enabled.
 #ifdef SMARTEVSE_VERSION //ESP32
-                    write_settings();
+                    request_write_settings();
 #else //CH32
                     printf("@write_settings\n");
 #endif

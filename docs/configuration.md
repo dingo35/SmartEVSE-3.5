@@ -174,6 +174,26 @@ Only appears when [WIFI](#wifi) is **Enabled**. Automatic update of the SmartEVS
 - **Enabled**: Checks daily for a new stable firmware version and installs it when no EV is connected.  
   **Note**: This will not work if your version is not in the format `vx.y.z` (e.g., v3.6.1). Locally compiled versions or RCx versions will not auto-update.
 
+## APP PIN
+Only appears when [WIFI](#wifi) is **Enabled**. Generate a 6-digit pairing PIN for connecting the SmartEVSE mobile app.
+
+- Press the middle button to generate a new PIN.
+- The PIN is displayed on the LCD screen and is valid for 2 minutes.
+- Enter this PIN in the SmartEVSE mobile app to pair your device.
+- The PIN is automatically cleared when you exit the menu or after the timeout expires.
+
+## APP SERVR
+Only appears when [WIFI](#wifi) is **Enabled**. Enable or disable the connection to the SmartEVSE cloud server for mobile app integration.
+
+- **Disabled**: No connection to the SmartEVSE server.
+- **Enabled**: Connect to `mqtt.smartevse.nl` for mobile app communication.
+
+When enabled, the top row shows the current connection status:
+- **Connected to server**: Successfully connected to the SmartEVSE server.
+- **No server connection**: Not connected to the server.
+
+This feature uses a unique per-device key stored in the controller. If you somehow erased the controller completely this data will be lost, and the controller will not be able to connect to the server. 
+
 ## MAX TEMP
 Maximum allowed temperature for your SmartEVSE: 40-75°C (default 65°C).  
 Charging will stop once the internal temperature reaches this threshold and resume once it drops to 55°C.
@@ -229,7 +249,7 @@ For user experiences with back-end providers, see [OCPP Backends](ocpp.md)
 For the specification of the REST API, see [REST API](REST_API.md)
 
 # MQTT API
-Your SmartEVSE can now export the most important data to your MQTT-server. Just fill in the configuration data on the webserver and the data will automatically be announced to your MQTT server. Note that because the configuration data is transported to the SmartEVSE via the URL, special characters are not allowed.
+Your SmartEVSE can now export the most important data to your MQTT-server. Just fill in the configuration data on the webserver and the data will automatically be announced to your MQTT server.
 
 You can easily show all the MQTT topics published:
 ```
@@ -259,6 +279,10 @@ Valid topics you can publish to are:
 /Set/CableLock
 /Set/EnableC2  0 "Not present", 1 "Always Off", 2 "Solar Off", 3 "Always On", 4 "Auto" ; do not change during charging to prevent unexpected errors of your EV!
                You can send either the number or the string, SmartEVSE will accept both!
+/Set/RFID      Hex string representing RFID card UID (12 or 14 hex characters for 6 or 7 byte UIDs)
+               Example: "112233445566" (6 bytes) or "11223344556677" (7 bytes)
+               This will simulate an RFID card swipe and start/stop a charging session using all existing RFID checks
+               (whitelist verification, OCPP authorization, etc.)
 ```
 Your mains kWh meter data can be fed with:
 ```
@@ -275,7 +299,18 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...where P is the Power in W,
 ...where E is the Energy in Wh.
 
+You can simulate an RFID card swipe via MQTT to start/stop a charging session:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/RFID' -m '112233445566'
+```
+...where 112233445566 is the hex representation of your RFID card's UID (6 byte example).
+...For a 7 byte UID, use 14 hex characters (e.g., '11223344556677').
+...The RFID will be processed using all existing checks: whitelist verification, OCPP authorization, etc.
+...Swiping the same card again will typically stop the session (behavior depends on RFID Reader mode setting).
+
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
+
+The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.

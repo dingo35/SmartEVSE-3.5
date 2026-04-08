@@ -31,6 +31,7 @@
 #include "glcd.h"
 #include "utils.h"
 #include "meter.h"
+#include "network_common.h"
 #include "font.cpp"
 #include "font2.cpp"
 
@@ -97,12 +98,29 @@ extern uint8_t RCMTestCounter;
 
 void st7565_command(unsigned char data) {
     _A0_0;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
 }
 
 void st7565_data(unsigned char data) {
     _A0_1;
-    SPI.transfer(data);
+    if (EthPresent) {
+        etherlcd_lcd_transfer(data);
+    } else {
+        SPI.transfer(data);
+    }
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    if (EthPresent) {
+        etherlcd_lcd_transfer_buf(buf, len);
+    } else {
+        SPI.writeBytes(buf, len);
+    }
 }
 #else //SMARTEVSE_VERSION
 
@@ -117,6 +135,13 @@ void st7565_data(unsigned char data) {
     _A0_1;
     digitalWrite(LCD_CS, LOW);
     LCD_SPI2.transfer(data);
+    digitalWrite(LCD_CS, HIGH);
+}
+
+void st7565_data_buf(const uint8_t *buf, size_t len) {
+    _A0_1;
+    digitalWrite(LCD_CS, LOW);
+    LCD_SPI2.writeBytes(buf, len);
     digitalWrite(LCD_CS, HIGH);
 }
 #endif //SMARTEVSE_VERSION
@@ -144,13 +169,11 @@ void goto_xy(unsigned char x, unsigned char y) {
 }
 
 void glcd_clrln(unsigned char ln, unsigned char data) {
-    unsigned char i;
+    uint8_t linebuf[128];
+    memset(linebuf, data, 128);
     goto_xy(0, ln);
-    for (i = 0; i < 128; i++) {
-        st7565_data(data);                                                      // put data on data port
-        // Also update the buffer that mirrors the LCD.
-        GLCDbuf2[i + activeRow * 128] = data;
-    }
+    st7565_data_buf(linebuf, 128);
+    memcpy(&GLCDbuf2[activeRow * 128], linebuf, 128);
 }
 
 /*
@@ -177,17 +200,15 @@ void GLCD_buffer_clr(void) {
 }
 
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
-    unsigned char i, y = 0;
+    unsigned char y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
-        // Sends one chunk of 8 pixels height and 128 pixels wide.
-        for (i = 0; i < 128; i++) {
-            const uint8_t data = GLCDbuf[x++];
-            st7565_data(data);                                              // put data on data port
-            GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
-        }
+        // Send entire 128-byte row in one bulk SPI transfer.
+        st7565_data_buf(&GLCDbuf[x], 128);
+        memcpy(&GLCDbuf2[activeRow * 128], &GLCDbuf[x], 128);              // Also update buffer copy
+        x += 128;
     } while (++y < Rows);
 }
 
@@ -198,7 +219,10 @@ void GLCD_font_condense(unsigned char c, unsigned char *start, unsigned char *en
         if(font[c][1] == 0) *start = 2;
         else *start = 1;
     }
-    if(font[c][4] == 0) *end = 4;
+    if(font[c][4] == 0) {
+        if(font[c][3] == 0) *end = 3;
+        else *end = 4;
+    }
 }
 
 unsigned char GLCD_text_length(const char *str) {
@@ -469,23 +493,42 @@ void GLCD(void) {
 
             } else if (SB2_WIFImode == 2) {         // Enable Portal on Sensorbox 2
                 if (SubMenu) {
-                    sprintf(Str, "O button starts config");
+                    sprintf(Str, "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
                     // Show Portal Password
-                    sprintf(Str, "Password: %s", SB2.APpassword);
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
-                    GLCD_sendbuf(7, 1);
-                    GLCD_buffer_clr();
-                    sprintf(Str, "Now connect to portal");
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
+                    sprintf(Str, "Portal PW: %s", SB2.APpassword);
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
+                LCDTimer = 0;                                                       // reset timer, so it will not exit the menu when setting up WiFi
             }        
-        
+        // Show extra Contactor 2 information on top row
+        } else if (LCDNav == MENU_C2 && SubMenu) {
+            if (EnableC2 == NOT_PRESENT)     GLCD_write_buf_str(0, 0, "Three-phase Charging", GLCD_ALIGN_LEFT);
+            else if (EnableC2 == ALWAYS_OFF) GLCD_write_buf_str(0, 0, "Single-phase Charging", GLCD_ALIGN_LEFT);
+            else if (EnableC2 == SOLAR_OFF)  GLCD_write_buf_str(0, 0, "Solar 1P - Smart 3P", GLCD_ALIGN_LEFT);
+            else if (EnableC2 == ALWAYS_ON)  GLCD_write_buf_str(0, 0, "Three-phase Charging", GLCD_ALIGN_LEFT);
+            else if (EnableC2 == AUTO)       GLCD_write_buf_str(0, 0, "Auto 3P <> 1P Charging", GLCD_ALIGN_LEFT);
+        } else if (LCDNav == MENU_PAIRING && SubMenu) {
+            sprintf(Str, "SmartEVSE-%u", serialnr);
+            GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+        } else if (LCDNav == MENU_APPSERVER && SubMenu) {
+            if (MQTTclientSmartEVSE.connected) GLCD_write_buf_str(0, 0, "Connected to server", GLCD_ALIGN_LEFT);
+            else GLCD_write_buf_str(0, 0, "No server connection", GLCD_ALIGN_LEFT);
         } else {
-            // When connected to Wifi, display IP and time in top row
+            // Display IP and time in top row (Ethernet takes priority over WiFi)
             uint8_t WIFImode = getItemValue(MENU_WIFI);
-            if (WIFImode == 1 ) {   // Wifi Enabled
+            if (EthHasIP) {
+                if (LCDNav == MENU_WIFI && WIFImode != 0) {
+                    GLCD_write_buf_str(0,0, "Disconnect Eth first", GLCD_ALIGN_LEFT);
+                } else {
+                    sprintf(Str, "%s", ch390_get_ip());
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+                    if (LocalTimeSet) sprintf(Str, "%02u:%02u",timeinfo.tm_hour, timeinfo.tm_min);
+                    else sprintf(Str, "--:--");
+                    GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
+                }
+            } else if (WIFImode == 1 ) {   // Wifi Enabled
 
                 if (WiFi.status() == WL_CONNECTED) {
                     sprintf(Str, "%s",WiFi.localIP().toString().c_str());
@@ -501,10 +544,7 @@ void GLCD(void) {
                     sprintf(Str, "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
-                    // Show Access Point password
-                    //sprintf(Str, "AP:SmartEVSE-config");
-                    //GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
-                    sprintf(Str, "Portal PW:%s", APpassword.c_str());
+                    sprintf(Str, "Portal PW: %s", APpassword.c_str());
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
                 LCDTimer = 0;                                                   // reset timer, so we will not exit the menu while setting up WiFi
@@ -515,6 +555,7 @@ void GLCD(void) {
 
         if (LCDTimer > 120) {
             LCDNav = 0;                                                         // Exit Setup menu after 120 seconds.
+            PairingPin = "";                                                    // Reset PairingPin when exiting menu.
             read_settings();                                                    // don't save, but restore settings
         } else return;                                                          // disable LCD status messages when navigating LCD Menu
     } // if LCDNav
@@ -1035,6 +1076,17 @@ const char * getMenuItemOption(uint8_t nav) {
             else return StrDisabled;
         case MENU_SWITCH:
             return StrSwitch[value];
+        case MENU_PAIRING:
+            if (SubMenu) {
+                uint32_t tempPin = random(1, 1000000);                                 // generate random PIN 1-999999 when selecting sub menu
+                sprintf(Str, "%06u", tempPin);
+                PairingPin = Str;
+            } else {
+                PairingPin = "";
+                sprintf(Str, "Create PIN");
+            }    
+            return Str;
+        case MENU_APPSERVER:        
         case MENU_AUTOUPDATE:
         case MENU_RCMON:
             if (value) return StrEnabled;
@@ -1116,7 +1168,7 @@ uint8_t getMenuItems (void) {
             MenuItems[m++] = MENU_MAINSMETER;                                   // - - Type of Mains electric meter (0: Disabled / Constants EM_*)
             if (MainsMeter.Type == EM_SENSORBOX) {                              // - - ? Sensorbox?
                 if (GridActive == 1) MenuItems[m++] = MENU_GRID;
-                if (SB2.SoftwareVer == 0x01) {
+                if (SB2.SoftwareVer == 0x01 || SB2.SoftwareVer == 0x03) {
                     MenuItems[m++] = MENU_SB2_WIFI;                             // Sensorbox-2 Wifi  0:Disabled / 1:Enabled / 2:Portal
                 }
             } else if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) { // - - ? Other?
@@ -1166,6 +1218,8 @@ uint8_t getMenuItems (void) {
     MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
     if (getItemValue(MENU_WIFI)  == 1) {                                        // only show AutoUpdate menu if Wifi enabled
         MenuItems[m++] = MENU_AUTOUPDATE;                                       // Firmware automatic update Disabled / Enabled
+        MenuItems[m++] = MENU_PAIRING;                                          // Generate PairingPin for SmartEVSE App
+        MenuItems[m++] = MENU_APPSERVER;                                        // App Server (0:Disable / 1:Enable)
     }
     MenuItems[m++] = MENU_MAX_TEMP;
     if (MainsMeter.Type && LoadBl < 2) {
@@ -1338,15 +1392,15 @@ void GLCDMenu(uint8_t Buttons) {
                 setChargeDelay(0);                                              // Clear ChargeDelay
                 setSolarStopTimer(0);                                           // Disable Solar Timer
                 GLCD();
-                write_settings();                                               // Write to eeprom
+                write_settings();                                               // Write immediately to nvs when exiting menu
                 ButtonRelease = 2;                                              // Skip updating of the LCD 
+                PairingPin = "";                                                // Reset PairingPin
             }
         }
 
     } else if (Buttons == 0x7) {                                                // Buttons released
         ButtonRelease = 0;
         ButtonRepeat = 0;
-        delay(10);                                                              // debounce keys (blocking)
     }
 
     //

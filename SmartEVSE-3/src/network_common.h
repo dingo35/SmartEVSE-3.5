@@ -27,6 +27,7 @@
 
 #include "main.h" //so SENSORBOX_VERSION is read in Sensorbox
 #include "mongoose.h"
+#include "ch390.h"
 #include <ArduinoJson.h>
 
 #ifndef MQTT
@@ -56,6 +57,11 @@ extern String MQTTprefix;
 extern String MQTTHost;
 extern uint16_t MQTTPort;
 extern uint8_t lastMqttUpdate;
+extern bool MQTTtls;
+extern bool MQTTSmartServer;
+extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from network_loop()
+extern bool WIFImodeChanged;               // Flag to trigger handleWIFImode() from network_loop()
+extern String MQTTprivatePassword;   
 
 class MQTTclient_t {
 #if MQTT_ESP == 0
@@ -73,8 +79,8 @@ public:
 #else
 public:
     void connect(void);
-    void disconnect(void) { esp_mqtt_client_stop(client); connected = false; }; //we have to set connected because for some reason MQTT_EVENT_DISCONNECTED is not happening
-    esp_mqtt_client_handle_t client;
+    void disconnect(void);
+    esp_mqtt_client_handle_t client = nullptr;
 #endif
 private:
     //jsn(device_class, current) expands to:
@@ -98,6 +104,28 @@ public:
 extern MQTTclient_t MQTTclient;
 extern void SetupMQTTClient();
 extern void mqtt_receive_callback(const String topic, const String payload);
+extern String readMqttCaCert();
+extern void writeMqttCaCert(const String& cert);
+extern const char* root_ca_letsencrypt;
+
+// SmartEVSE server MQTT client (separate connection)
+class MQTTclientSmartEVSE_t {
+public:
+    void connect(void);
+    void disconnect(void);
+    void publish(const String &topic, const String &payload, bool retained, int qos);
+    void subscribe(const String &topic, int qos);
+    bool connected = false;
+#if MQTT_ESP == 1
+    esp_mqtt_client_handle_t client = nullptr;
+private:
+    void cleanup(bool publishOffline = false);
+#endif
+};
+extern MQTTclientSmartEVSE_t MQTTclientSmartEVSE;
+extern String MQTTSmartEVSEprefix;              // Shared prefix for all SmartEVSE MQTT operations
+extern void mqttSmartEVSEPublishData();
+extern void SetupMQTTClientSmartEVSE();
 #endif //MQTT
 
 // wrapper so hasParam and getParam still work
@@ -105,7 +133,7 @@ class webServerRequest {
 private:
     struct mg_http_message *hm_internal;
     String _value;
-    char temp[64];
+    char temp[2048];     // buffer for params (CA cert ~1.5KB)
 
 public:
     void setMessage(struct mg_http_message *hm);
@@ -123,9 +151,13 @@ extern uint8_t WIFImode;
 extern char *downloadUrl;
 extern uint32_t serialnr;
 extern void RunFirmwareUpdate(void);
+extern bool forceUpdate(const char* firmwareURL, bool validate);
+extern int downloadProgress;
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
+extern bool NetworkConnected(void);                                             // true if WiFi or Ethernet has IP
+extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
 extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
 extern String homeWizardHost;

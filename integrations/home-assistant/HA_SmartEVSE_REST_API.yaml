@@ -1,0 +1,207 @@
+# SmartEVSE Native Home Assistant Integration Package
+# =====================================================
+# This package integrates SmartEVSE directly with Home Assistant using the native REST API.
+# No MQTT broker or Node-RED required.
+#
+# NOTE: MQTT is the preferred integration method for SmartEVSE
+# --------------------------------------------------------
+# If you already use MQTT in your Home Assistant setup, SmartEVSE will be automatically
+# discovered with MQTT configured - no additional setup needed!
+# The REST API method shown here is an alternative for manual configuration, but will result
+# in slower data updates compared to MQTT integration. Consider using MQTT for better
+# performance and easier setup.
+#
+# INSTALLATION:
+# 1. Create a 'packages' folder in your Home Assistant config directory
+# 2. Place this file in that folder
+# 3. Add the following to your Home Assistant configuration.yaml:
+#
+#    homeassistant:
+#      packages:
+#        smartevse_rest: !include packages/HA_SmartEVSE_REST_API.yaml
+#
+# 4. Update the SmartEVSE IP address below (replace 192.168.x.x with your device IP)
+# 5. Restart Home Assistant
+
+sensor:
+  - platform: rest
+    resource: http://192.168.x.x/settings
+    name: smartevse
+    scan_interval: 300
+    timeout: 20
+    json_attributes:
+      - mode
+      - mode_id
+      - car_connected
+      - evse
+      - settings
+      - ev_meter
+      - mains_meter
+      - phase_currents
+    value_template: "OK"
+
+# Template sensors extracted from SmartEVSE API attributes
+template:
+  - sensor:
+      - name: "smartevse_mode"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'mode') }}
+      - name: "smartevse_car_connected"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'car_connected') }}
+      # ===================
+      # EVSE Status Sensors
+      # ===================
+      - name: "smartevse_temp"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['temp'] }}
+        device_class: temperature
+        unit_of_measurement: "°C"
+      - name: "smartevse_connected"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['connected'] }}
+      - name: "smartevse_access"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['access'] }}
+      - name: "smartevse_mode2"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['mode'] }}
+      - name: "smartevse_charge_timer"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['charge_timer'] }}
+      - name: "smartevse_solar_stop_timer"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['solar_stop_timer'] }}
+      - name: "smartevse_state"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['state'] }}
+      - name: "smartevse_state_id"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['state_id'] }}
+      - name: "smartevse_error"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['error'] }}
+      - name: "smartevse_error_id"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'evse')['error_id'] }}
+      # ================================
+      # Settings & Configuration Sensors
+      # ================================
+      - name: "smartevse_charge_current"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['charge_current'] / 10 }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_override_current"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['override_current'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_current_min"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['current_min'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_current_max"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['current_max'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_current_main"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['current_main'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_solar_max_import"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['solar_max_import'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_solar_start_current"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['solar_start_current'] }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_solar_stop_time"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'settings')['solar_stop_time'] }}
+      # =======================
+      # Energy & Meter Readings
+      # =======================
+      - name: "smartevse_ev_import_active_energy"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'ev_meter')['import_active_energy'] }}
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+      - name: "smartevse_mains_import_active_energy"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'mains_meter')['import_active_energy'] }}
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+      - name: "smartevse_mains_export_active_energy"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'mains_meter')['export_active_energy'] }}
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+      # =====================
+      # Phase Current Readings
+      # =====================
+      - name: "smartevse_total"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'phase_currents')['TOTAL'] / 10 }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_l1"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'phase_currents')['L1'] / 10 }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_l2"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'phase_currents')['L2'] / 10 }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_l3"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'phase_currents')['L3'] / 10 }}
+        unit_of_measurement: "A"
+        device_class: current
+      - name: "smartevse_last_data_update"
+        state: >-
+          {{ state_attr('sensor.smartevse', 'phase_currents')['last_data_update'] | timestamp_custom ('%Y/%m/%d %H:%M:%S') }}
+
+# REST Commands for controlling SmartEVSE
+# ========================================
+# Use rest_command for control via automations and scripts
+rest_command:
+  smartevse_mode_solar:
+    url: http://192.168.x.x/settings?mode=3
+    method: POST
+    headers:
+      accept: application/json
+      Content-Type: application/json
+    payload: '{}'
+  smartevse_mode_off:
+    url: http://192.168.x.x/settings?mode=0
+    method: POST
+    headers:
+      accept: application/json
+      Content-Type: application/json
+    payload: '{}'
+  smartevse_mode_normal:
+    url: http://192.168.x.x/settings?mode=1
+    method: POST
+    headers:
+      accept: application/json
+      Content-Type: application/json
+    payload: '{}'
+  smartevse_mode_smart:
+    url: http://192.168.x.x/settings?mode=2
+    method: POST
+    headers:
+      accept: application/json
+      Content-Type: application/json
+    payload: '{}'

@@ -161,13 +161,13 @@ uint8_t RFIDReader = RFID_READER;                                           // R
 uint8_t Show_RFID = 0;
 #endif
 
-EnableC2_t EnableC2 = ENABLE_C2;                                            // Contactor C2
+EnableC2_t EnableC2 = ENABLE_C2;                                            // CONTACT 2 menu setting, can be set to: NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO
 uint16_t maxTemp = MAX_TEMPERATURE;
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
-uint8_t Nr_Of_Phases_Charging = 3;                                          // nr of phases
-Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // switching phases only used in SOLAR mode with Contactor C2 = AUTO
+uint8_t Nr_Of_Phases_Charging = 3;                                          // Nr of phases we are charging with. Set to 1 or 3, depending on the CONTACT 2 setting, and the MODE we are in.
+Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // Switching between 1P and 3P with the second contactor output, depends on the CONTACT 2 setting, and the MODE.
 
 uint8_t State = STATE_A;
 uint8_t ErrorFlags;
@@ -199,6 +199,7 @@ Node_t Node[NR_EVSES] = {                                                       
     {      0,       1,     0,       0,       0,      0,      0,      0,     0,    0 }            
 };
 void ModbusRequestLoop(void);
+uint8_t Force_Single_Phase_Charging(void);
 uint8_t C1Timer = 0;
 uint8_t ModemStage = 0;                                                     // 0: Modem states will be executed when Modem is enabled 1: Modem stages will be skipped, as SoC is already extracted
 int8_t DisconnectTimeCounter = -1;                                          // Count for how long we're disconnected, so we can more reliably throw disconnect event. -1 means counter is disabled
@@ -248,7 +249,7 @@ int phasesLastUpdate = 0;
 bool phasesLastUpdateFlag = false;
 int16_t IrmsOriginal[3]={0, 0, 0};
 int16_t homeBatteryCurrent = 0;
-int homeBatteryLastUpdate = 0; // Time in milliseconds
+time_t homeBatteryLastUpdate = 0; // Time in seconds since epoch
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 uint8_t ColorOff[3] = {0, 0, 0};          // off
 uint8_t ColorNormal[3] = {0, 255, 0};   // Green
@@ -287,6 +288,8 @@ unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay Stop
 bool OcppDefinedTxNotification;
 MicroOcpp::TxNotification OcppTrackTxNotification;
 unsigned long OcppLastTxNotification;
+
+unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
 #endif //ENABLE_OCPP
 
 EXT uint32_t elapsedmax, elapsedtime;
@@ -309,6 +312,8 @@ extern uint8_t processAllNodeStates(uint8_t NodeNr);
 extern void BroadcastCurrent(void);
 extern void CheckRFID(void);
 extern void mqttPublishData();
+extern void mqttSmartEVSEPublishData();
+extern bool MQTTclientSmartEVSE_AppConnected;
 extern void DisconnectEvent(void);
 extern char EVCCID[32];
 extern char RequiredEVCCID[32];
@@ -387,7 +392,7 @@ void Button::HandleSwitch(void)
                 MqttButtonState = true;
                 break;
             case 4: // Smart-Solar Switch
-                if (Mode == MODE_SOLAR) {
+                if (Mode == MODE_SOLAR && AccessStatus == ON) {
                     setMode(MODE_SMART);
                 }
                 MqttButtonState = true;
@@ -434,7 +439,7 @@ void Button::HandleSwitch(void)
                 MqttButtonState = false;
                 break;
             case 3: // Smart-Solar Button
-                if (tmpMillis < TimeOfPress + 1500) {                            // short press
+                if ((tmpMillis < TimeOfPress + 1500) && AccessStatus == ON) {                            // short press
                     if (Mode == MODE_SMART) {
                         setMode(MODE_SOLAR);
                     } else if (Mode == MODE_SOLAR) {
@@ -449,7 +454,7 @@ void Button::HandleSwitch(void)
                 MqttButtonState = false;
                 break;
             case 4: // Smart-Solar Switch
-                if (Mode == MODE_SMART) setMode(MODE_SOLAR);
+                if (Mode == MODE_SMART && AccessStatus == ON) setMode(MODE_SOLAR);
                 MqttButtonState = false;
                 break;
             case 5: // Grid relay
@@ -534,6 +539,45 @@ void setOverrideCurrent(uint16_t Current) { //c
 
 
 /**
+ *  Check if we can switch to 1 or 3 phase charging, depending on the Enable C2 setting 
+ */
+void CheckSwitchingPhases(void) {
+    // we want to obey EnableC2 settings at all times, after switching modes and/or C2 settings
+    if (EnableC2 != AUTO || Mode == MODE_SOLAR) {
+        if (Force_Single_Phase_Charging()) {                                
+            if (Nr_Of_Phases_Charging != 1) {                               // Currently charging with 3 phases
+                if (State != STATE_A) {                                 
+                    Switching_Phases_C2 = GOING_TO_SWITCH_1P;
+                    _LOG_A("Switching to 1P!!!\n");
+                } else Nr_Of_Phases_Charging = 1;                           // We are in STATE_A, just set the correct nr of phases.
+            } else {
+                Switching_Phases_C2 = NO_SWITCH;                            // Currently charging on 1 phase, no need to switch
+                _LOG_A("No need to switch to 1P !\n");
+            }
+        } else {
+            if (Nr_Of_Phases_Charging != 3) {                               // Currently charging on 1 phase
+                if (State != STATE_A) {
+                    Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+                    _LOG_A("Switching to 3P!!!\n");
+                } else Nr_Of_Phases_Charging = 3;                           // We are in STATE_A, just set the correct nr of phases.
+            } else {
+                Switching_Phases_C2 = NO_SWITCH;                            // Currently charging with 3 phases, no need to switch
+                _LOG_A("No need to switch to 3P !\n");
+            }
+        }
+    } else if (Mode == MODE_SMART) {                                        // SMART mode with CONTACT 2 set to AUTO
+            if (Nr_Of_Phases_Charging != 3) {                               // in SMART AUTO mode go back to the old 3P
+                Switching_Phases_C2 = GOING_TO_SWITCH_3P;
+                _LOG_A("AUTO Switching to 3P\n");
+            } else if (Switching_Phases_C2 != NO_SWITCH) {
+                Switching_Phases_C2 = NO_SWITCH;                            // Was about to switch phases, but cancelled now
+                _LOG_A("Switching Cancelled!\n");
+            }   
+    } 
+    _LOG_D("NrPhasesCharging:%u\n",Nr_Of_Phases_Charging); 
+}
+
+/**
  * Set EVSE mode
  * 
  * @param uint8_t Mode
@@ -560,21 +604,30 @@ void setMode(uint8_t NewMode) {
     // it's only the regulation algorithm that is changing...
     // EXCEPT when EnableC2 == Solar Off, because we would expect C2 to be off when in Solar Mode and EnableC2 == Solar Off
     // and also the other way around, multiple phases might be wanted when changing from Solar to Normal or Smart
-    bool switchOnLater = false;
     if (EnableC2 == SOLAR_OFF) {
         if ((Mode != MODE_SOLAR && NewMode == MODE_SOLAR) || (Mode == MODE_SOLAR && NewMode != MODE_SOLAR)) {
-            //we are switching from non-solar to solar
-            //since we EnableC2 == SOLAR_OFF C2 is turned On now, and should be turned off
-            setAccess(OFF);                                                     //switch to OFF
-            switchOnLater = true;
+
+            // Set State to C1 or B1 to make sure CP is disconnected for 5 seconds, before switching contactors on/off
+            if (State == STATE_C) setState(STATE_C1); 
+            else if (State != STATE_C1 && State == STATE_B) setState(STATE_B1);
+            
+            _LOG_A("Disconnect CP when switching C2\n");
         }
     }
 
-    /* rob040: similar to the above, when solar charging at 1P and mode change, we need to switch back to 3P */
-    if ((EnableC2 == AUTO) && (Mode != NewMode) && (Mode == MODE_SOLAR) && (Nr_Of_Phases_Charging == 1)) {
-        setAccess(OFF);                                                       //switch to OFF
-        switchOnLater = true;
+    // similar to the above, when switching between solar charging at 1P and mode change, we need to switch back to 3P
+    // TODO make sure that Smart 3P -> Solar 1P also disconnects
+    if ((EnableC2 == AUTO) && (Mode != NewMode) && (Mode == MODE_SOLAR) && (Nr_Of_Phases_Charging == 1) ) {
+    
+        // Set State to C1 or B1 to make sure CP is disconnected for 5 seconds, before switching contactors on/off
+        if (State == STATE_C) setState(STATE_C1);
+        else if (State != STATE_C1 && State == STATE_B) setState(STATE_B1);
+
+        _LOG_A("AUTO Solar->Smart/Normal charging 1p->3p\n");
     }
+
+    // Also check all other switching options
+    CheckSwitchingPhases();
 
 #if MQTT
     // Update MQTT faster
@@ -592,17 +645,9 @@ void setMode(uint8_t NewMode) {
     Mode = NewMode;    
     SEND_TO_CH32(Mode); //d
 
-    if (switchOnLater)
-        setAccess(ON);
 
     //make mode and start/stoptimes persistent on reboot
-    if (preferences.begin("settings", false) ) {                        //false = write mode
-        preferences.putUChar("Mode", Mode);
-        preferences.putULong("DelayedStartTim", DelayedStartTime.epoch2); //epoch2 only needs 4 bytes
-        preferences.putULong("DelayedStopTime", DelayedStopTime.epoch2);   //epoch2 only needs 4 bytes
-        preferences.putUShort("DelayedRepeat", DelayedRepeat);
-        preferences.end();
-    }
+    request_write_settings();
 #else //CH32
     printf("@Mode:%u.\n", NewMode); //a
     _LOG_V("[<-] Mode:%u\n", NewMode);
@@ -635,7 +680,7 @@ void setSolarStopTimer(uint16_t Timer) {
  * This is only relevant on a 3P mains and 3P car installation!
  * 1P car will always charge 1P undetermined by CONTACTOR2
  */
-uint8_t Force_Single_Phase_Charging() {                                         // abbreviated to FSPC
+uint8_t Force_Single_Phase_Charging() {
     switch (EnableC2) {
         case NOT_PRESENT:                                                       //no use trying to switch a contactor on that is not present
             return 0;   //3P charging
@@ -762,7 +807,7 @@ void setState(uint8_t NewState) { //c
     switch (NewState) {
         case STATE_B1:
             if (!ChargeDelay) setChargeDelay(3);                                // When entering State B1, wait at least 3 seconds before switching to another state.
-            if (State != STATE_B1 && !PilotDisconnected) {
+            if (State != STATE_B1 && !PilotDisconnected && AccessStatus == ON) {    // Don't disconnect Pilot when switching to OFF or PAUSE
                 PILOT_DISCONNECTED;
                 PilotDisconnected = true;
                 PilotDisconnectTime = 5;                                       // Set PilotDisconnectTime to 5 seconds
@@ -776,6 +821,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
             timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarmEnable(timerA);                                           // Re-enable alarm in case it was disabled by a single-shot fire
 #else //CH32
             TIM1->CH1CVR = 1000;                                               // Set CP output to +12V
 #endif
@@ -784,7 +830,6 @@ void setState(uint8_t NewState) { //c
                 ModemStage = 0;                                                 // Start modem if EV connects
                 clearErrorFlags(LESS_6A);
                 setChargeDelay(0);
-                Switching_Phases_C2 = NO_SWITCH;
                 // Reset Node
                 Node[0].Timer = 0;
                 Node[0].IntTimer = 0;
@@ -818,6 +863,7 @@ void setState(uint8_t NewState) { //c
 #endif
             break;
         case STATE_B:
+            CheckSwitchingPhases();
 #if MODEM
             PILOT_CONNECTED;
             DisconnectTimeCounter = -1;                                         // Disable Disconnect timer. Car is connected
@@ -827,7 +873,7 @@ void setState(uint8_t NewState) { //c
 #ifdef SMARTEVSE_VERSION //v3
             timerAlarmWrite(timerA, PWM_95, false);                             // Enable Timer alarm, set to diode test (95%)
 #endif
-            SetCurrent(ChargeCurrent);                                          // Enable PWM
+
 #ifndef SMARTEVSE_VERSION //CH32
             TIM1->CH4CVR = PWM_96;                                              // start ADC sampling at 96% (Diode Check)
 #endif
@@ -842,33 +888,35 @@ void setState(uint8_t NewState) { //c
             SEND_TO_ESP32(RCMTestCounter);
             testRCMON();
 #endif
-
+            // Here at State C we actually switch the contactors,
+            // and set the new Nr_Of_Phases_Charging to the new value. 
             if (Switching_Phases_C2 == GOING_TO_SWITCH_1P) {
-                    CONTACTOR2_OFF;
-                    setSolarStopTimer(0);
-                    MaxSumMainsTimer = 0;
-                    Nr_Of_Phases_Charging = 1;                                  // switch to 1F
-                    Switching_Phases_C2 = NO_SWITCH;                            // we finished the switching process,
-                                                                                // BUT we don't know which is the single phase
+                Nr_Of_Phases_Charging = 1;                                      // Set phases charging to single phase
+
+            } else if (Switching_Phases_C2 == GOING_TO_SWITCH_3P) {
+                Nr_Of_Phases_Charging = 3;                                      // Set phases charging to three phase charging
             }
 
-            if (Switching_Phases_C2 == GOING_TO_SWITCH_3P) {
-                    setSolarStopTimer(0);
-                    MaxSumMainsTimer = 0;
-                    Nr_Of_Phases_Charging = 3;                                  // switch to 3P
-                    SEND_TO_ESP32(Nr_Of_Phases_Charging);
-                    Switching_Phases_C2 = NO_SWITCH;                            // we finished the switching process,
-            }
-
-            CONTACTOR1_ON;
-            if (!Force_Single_Phase_Charging()) {                               // in AUTO mode we start with 3phases
+            CONTACTOR1_ON;            
+            if (!Force_Single_Phase_Charging()) {                               // Force_Single_Phase_Charging will check Nr_Of_Phases_Charging when the Contact2 menu option is set to 'AUTO' 
                 CONTACTOR2_ON;                                                  // Contactor2 ON
-            }
+                Nr_Of_Phases_Charging = 3;
+            } else {
+                CONTACTOR2_OFF;
+                Nr_Of_Phases_Charging = 1;                                      // keep track of the nr of phases which are active
+            }    
+            SEND_TO_ESP32(Nr_Of_Phases_Charging);
+
+            setSolarStopTimer(0);
+            MaxSumMainsTimer = 0;
+            Switching_Phases_C2 = NO_SWITCH;                                    // we finished the switching process
+
             break;
         case STATE_C1:
 #ifdef SMARTEVSE_VERSION //v3
             SetCPDuty(1024);                                                    // PWM off,  channel 0, duty cycle 100%
             timerAlarmWrite(timerA, PWM_100, true);                             // Alarm every 1ms, auto reload
+            timerAlarmEnable(timerA);                                           // Re-enable alarm in case it was disabled by a single-shot fire
 #else //CH32                                                                          // EV should detect and stop charging within 3 seconds
             TIM1->CH1CVR = 1000;                                                // Set CP output to +12V
 #endif
@@ -932,12 +980,8 @@ void setAccess(AccessStatus_t Access) { //c
         else if (State != STATE_C1 && (State == STATE_B || State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE || State == STATE_MODEM_DENIED)) setState(STATE_B1);
     }
 
-    //make mode and start/stoptimes persistent on reboot
-    if (preferences.begin("settings", false) ) {                        //false = write mode
-        preferences.putUChar("Access", AccessStatus);
-        preferences.putUShort("CardOffs16", CardOffset);
-        preferences.end();
-    }
+    //make AccessStatus and CardOffset persistent on reboot
+    request_write_settings();
 
 #if MQTT
     // Update MQTT faster
@@ -1067,8 +1111,11 @@ char IsCurrentAvailable(void) {
         return 0;                                                           // Not enough current available!, return with error
     } //else
         //printf("@MSG: Current available MaxCircuit line %d. ActiveEVSE=%u, Baseload_EV=%d.%dA, MinCurrent=%uA, MaxCircuit=%uA.\n", __LINE__, ActiveEVSE, Baseload_EV/10, abs(Baseload_EV%10), MinCurrent, MaxCircuit);
-    //assume the current should be available on all 3 phases
-    int Phases = 1; //Force_Single_Phase_Charging() ? 1 : 3;
+
+    // When PowerSharing is disabled (LoadBl == 0) set correct nr of Phases
+    // When using PowerSharing, we do not know the configuration of the nodes, assume 1 Phase
+    uint8_t Phases = 1;
+    if (LoadBl == 0) Phases = Force_Single_Phase_Charging() ? 1 : 3;
     if (Mode != MODE_NORMAL && MaxSumMains && ((Phases * ActiveEVSE * MinCurrent * 10) + Isum > MaxSumMains * 10)) {
         //printf("@MSG: No current available MaxSumMains line %d. ActiveEVSE=%u, MinCurrent=%uA, Isum=%d.%dA, MaxSumMains=%uA.\n", __LINE__, ActiveEVSE, MinCurrent, Isum/10, abs(Isum%10), MaxSumMains);
         return 0;                                                           // Not enough current available!, return with error
@@ -1186,36 +1233,18 @@ void CalcBalancedCurrent(char mod) {
                 }
             }
         }
-        // we want to obey EnableC2 settings at all times, after switching modes and/or C2 settings
-        // TODO move this to setMode and glcd.cpp C2_MENU?
-        if (EnableC2 != AUTO) {
-            if (Force_Single_Phase_Charging()) {
-                if (Nr_Of_Phases_Charging != 1) {
-                    Switching_Phases_C2 = GOING_TO_SWITCH_1P;
-                }
-            } else {
-                if (Nr_Of_Phases_Charging != 3) {
-                    Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                }
-            }
-        } else if (Mode == MODE_SMART) {
-                if (Nr_Of_Phases_Charging != 3) {                               // in SMART AUTO mode go back to the old 3P
-                    Switching_Phases_C2 = GOING_TO_SWITCH_3P;
-                } else if (Switching_Phases_C2 != NO_SWITCH) {
-                    Switching_Phases_C2 = NO_SWITCH;                            // Was about to switch phases, but cancelled now
-                }   
-        }
+       
         // adapt IsetBalanced in Smart Mode, and ensure the MaxMains/MaxCircuit settings for Solar
 
-        if ((LoadBl == 0 && EVMeter.Type) || LoadBl == 1)                       // Conditions in which MaxCircuit has to be considered;
+        if ((LoadBl == 0 && EVMeter.Type) || (LoadBl == 1 && EVMeter.Type))     // Conditions in which MaxCircuit has to be considered;
                                                                                 // mode = Smart/Solar so don't test for that
             Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - EVMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
         int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);// /Nr_Of_Phases_Charging;
         if (MaxSumMains) {
+            Idifference = ExcessMaxSumMains;
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
-                Idifference = ExcessMaxSumMains;
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
             } else {
@@ -1314,10 +1343,11 @@ void CalcBalancedCurrent(char mod) {
                                               // Importing too much?
                 if (ActiveEVSE && IsumImport > 0 &&
                         // Would a stop free so much current that StartCurrent would immediately restart charging?
-                        (Isum > (ActiveEVSE * MinCurrent * Nr_Of_Phases_Charging - StartCurrent) * 10 ||
+                        // Isum and StartCurrent are both sum-of-phases, so no phase multiplication needed
+                        (Isum > (ActiveEVSE * MinCurrent - StartCurrent) * 10 ||
                          // don't apply that rule if we are 3P charging and we could switch to 1P
                          (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO))) {
-                    if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO) {
+                    if (Nr_Of_Phases_Charging > 1 && EnableC2 == AUTO && State == STATE_C) {        // Only for Master when charging, Nodes are not supported yet
                         // not enough current for 3-phase operation; we can switch to 1-phase after some time
                         // start solar stop timer
                         if (SolarStopTimer == 0) {
@@ -1375,7 +1405,8 @@ void CalcBalancedCurrent(char mod) {
             // ############### no shortage of power  #################
 
             // Solar mode with C2=AUTO and enough power for switching from 1P to 3P solar charge?
-            if (Mode == MODE_SOLAR && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && IsetBalanced + 8 >= MaxCurrent * 10) {
+            // This is only relevant for the Master controller when charging, Nodes are not yet supported
+            if (Mode == MODE_SOLAR && Nr_Of_Phases_Charging == 1 && EnableC2 == AUTO && IsetBalanced + 8 >= MaxCurrent * 10 && State == STATE_C) {
                     // are we at max regulation at 1P (Iset hovers at 15.2-16.0A on 16A MaxCurrent)(warning: Iset can also be at max when EV limits current)
                     // and is there enough spare that we can go to 3P charging?
                     // Can it take the step from 1x16A to 3x7A (in regular config)?
@@ -1505,7 +1536,7 @@ void Timer1S_singlerun(void) {
 printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n", State, pilot, AccessTimer, PilotDisconnected);
 #endif
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
-    static uint8_t Broadcast = 1;
+    static uint8_t Broadcast = 4;
 #endif
 #ifdef SMARTEVSE_VERSION //ESP32
     if (BacklightTimer) BacklightTimer--;                               // Decrease backlight counter every second.
@@ -1710,6 +1741,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
             setErrorFlags(CT_NOCOMM);
             setStatePowerUnavailable();
             SB2.SoftwareVer = 0;
+            SB2.WIFImodeSynced = 0;         // Allow SB2 to be reconnected / resynced.
             _LOG_W("Error, MainsMeter communication error!\n");
         } else {
             if (MainsMeter.Timeout) MainsMeter.Timeout--;
@@ -1768,6 +1800,12 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         // Publish latest data, every 10 seconds
         // We will try to publish data faster if something has changed
         mqttPublishData();
+    }
+    // Publish to SmartEVSE server every 5 seconds, but only when app is connected or pairing in progress
+    static uint8_t lastSmartEVSEUpdate = 0;
+    if ((MQTTclientSmartEVSE_AppConnected || PairingPin.length()) && ++lastSmartEVSEUpdate >= 5) {
+        lastSmartEVSEUpdate = 0;
+        mqttSmartEVSEPublishData();
     }
 #endif
 
@@ -2157,7 +2195,9 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
 
     // Here we set the Masters Mode to the one we received from a Slave/Node
     if (NodeNewMode) {
-        setMode(NodeNewMode -1);
+        if ((NodeNewMode -1) != Mode) {                                         // Don't call setMode if we are already in the correct Mode
+            setMode(NodeNewMode -1);
+        }   
         NodeNewMode = 0;
 #ifndef SMARTEVSE_VERSION //CH32
         printf("@NodeNewMode:%u.\n", 0); //CH32 sends new value to ESP32
@@ -2466,7 +2506,10 @@ void ModbusRequestLoop() {
 
     static uint8_t PollEVNode = NR_EVSES;
     static uint16_t energytimer = 0;
+    static uint8_t NodeOfflineProbe = 1;
+    static bool probedThisCycle = false;
     uint8_t updated = 0;
+    uint8_t nodeNr;
 
     // Every 2 seconds, request measurements from modbus meters
         // Slaves all have ModbusRequest at 0 so they never enter here
@@ -2541,9 +2584,27 @@ void ModbusRequestLoop() {
             case 10:
             case 11:
             case 12:
+                // Request Node Status, skip offline nodes to save time in the loop.
+                // Probe One offline Node per cycle.
                 if (LoadBl == 1) {
-                    requestNodeStatus(ModbusRequest - 5u);                   // Master, Request Node 1-8 status
-                    break;
+                    if (ModbusRequest == 6) probedThisCycle = false;
+
+                    while (ModbusRequest <= 12) {
+                        nodeNr = ModbusRequest - 5u;
+                        if (Node[nodeNr].Online || (!probedThisCycle && nodeNr == NodeOfflineProbe)) {
+                            if (!Node[nodeNr].Online) {
+                                probedThisCycle = true;
+                                do { 
+                                    if (++NodeOfflineProbe >= NR_EVSES) NodeOfflineProbe = 1;
+                                } while (Node[NodeOfflineProbe].Online && NodeOfflineProbe != nodeNr);
+                                _LOG_D("Probing offline Node %u\n", nodeNr);
+                            }
+                            requestNodeStatus(nodeNr);
+                            break;
+                        }
+                        ModbusRequest++;
+                    }
+                    if (ModbusRequest <= 12) break;
                 }
                 ModbusRequest = 13;
                 // fall through
@@ -2966,18 +3027,18 @@ void Timer10ms_singlerun(void) {
     if (BacklightTimer > 1 && BacklightSet != 1) {                      // Enable LCD backlight at max brightness
                                                                         // start only when fully off(0) or when we are dimming the backlight(2)
         LcdPwm = LCD_BRIGHTNESS;
-        ledcWrite(LCD_CHANNEL, LcdPwm);
+        setLCDbacklight(LcdPwm);
         BacklightSet = 1;                                               // 1: we have set the backlight to max brightness
     }
 
     if (BacklightTimer == 1 && LcdPwm >= 3) {                           // Last second of Backlight
         LcdPwm -= 3;
-        ledcWrite(LCD_CHANNEL, ease8InOutQuad(LcdPwm));                 // fade out
+        setLCDbacklight(ease8InOutQuad(LcdPwm));                        // fade out
         BacklightSet = 2;                                               // 2: we are dimming the backlight
     }
                                                                         // Note: could be simplified by removing following code if LCD_BRIGHTNESS is multiple of 3
     if (BacklightTimer == 0 && BacklightSet) {                          // End of LCD backlight
-        ledcWrite(LCD_CHANNEL, 0);                                      // switch off LED PWM
+        setLCDbacklight(0);                                             // switch off LED PWM
         BacklightSet = 0;                                               // 0: backlight fully off
     }
 
@@ -3023,11 +3084,7 @@ void Timer10ms_singlerun(void) {
     if (State == STATE_A || State == STATE_COMM_B || State == STATE_B1) {
         // When the pilot line is disconnected, wait for PilotDisconnectTime, then reconnect
         if (PilotDisconnected) {
-#ifdef SMARTEVSE_VERSION //ESP32 v3
-            if (PilotDisconnectTime == 0 && pilot == PILOT_SHORT ) {        // Pilot should be ~ 0V when disconnected
-#else //CH32
-            if (PilotDisconnectTime == 0 && pilot == PILOT_3V ) {          // Pilot should be ~ 3V when disconnected TODO is this ok?
-#endif
+            if (PilotDisconnectTime == 0) {                                 // Pilot is floating, don't check voltage as it could be anything
                 PILOT_CONNECTED;
                 PilotDisconnected = false;
                 _LOG_A("Pilot Connected\n");
@@ -3107,7 +3164,7 @@ void Timer10ms_singlerun(void) {
                     BalancedMax[0] = ChargeCurrent;
                     if (IsCurrentAvailable()) {
 
-                        Balanced[0] = 0;                                    // For correct baseload calculation set current to zero
+                        Balanced[0] = MinCurrent * 10;                      // Set Balanced[0] to MinCurrent (baseload calc might be off briefly)
                         CalcBalancedCurrent(1);                             // Calculate charge current for all connected EVSE's
                         DiodeCheck = 0;                                     // (local variable)
                         setState(STATE_C);                                  // switch to STATE_C
@@ -3365,6 +3422,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(STATUS_CONFIG_CHANGED, ConfigChanged)
         case MENU_C2:
             EnableC2 = (EnableC2_t) val;
+            CheckSwitchingPhases();
             SEND_TO_CH32(EnableC2)
             SEND_TO_ESP32(EnableC2)
             break;
@@ -3383,9 +3441,15 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             EMConfig[EM_CUSTOM].DataType = (mb_datatype)val;
             break;
 #ifdef SMARTEVSE_VERSION
+        case MENU_APPSERVER:
+            MQTTSmartServer = val;
+            MQTTSmartServerChanged = true;                                      // Signal network_loop() to handle reconnect
+            break;
         case MENU_RCMON:
             RCmon = val;
+#if SMARTEVSE_VERSION >= 40 //v4            
             Serial1.printf("@RCmon:%u\n", RCmon);
+#endif            
             break;
         case MENU_WIFI:
             WIFImode = val;
@@ -3535,6 +3599,8 @@ uint16_t getItemValue(uint8_t nav) {
 #ifdef SMARTEVSE_VERSION //not on CH32
         case MENU_RCMON:
             return RCmon;
+        case MENU_APPSERVER:
+            return MQTTSmartServer;  
         case STATUS_SERIAL:
             return serialnr;
 #endif
@@ -3558,12 +3624,14 @@ uint16_t getItemValue(uint8_t nav) {
  */
 // 
 int16_t getBatteryCurrent(void) {
-    if (Mode == MODE_SOLAR && ((uint32_t)homeBatteryLastUpdate > (millis()-60000))) {
+    if (homeBatteryLastUpdate && (time(NULL) - homeBatteryLastUpdate) > 60) {
+        homeBatteryLastUpdate = 0;                      // last update was more then 60s ago, set to 0
+        homeBatteryCurrent = 0;
+        return 0;
+    } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
         return homeBatteryCurrent;
     } else {
-        homeBatteryCurrent = 0;
-        homeBatteryLastUpdate = 0;
-        return 0;
+        return 0;                                       // don't touch homeBatteryCurrent, just return 0
     }
 }
 

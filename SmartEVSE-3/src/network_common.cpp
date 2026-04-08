@@ -1,9 +1,15 @@
 #if defined(ESP32)
 
 #include <WiFi.h>
+#include <vector>
 #include "mbedtls/md_internal.h"
+#include "mbedtls/base64.h"
+#include "mbedtls/sha256.h"
 #include "utils.h"
 #include "network_common.h"
+#include "glcd.h"
+#include "esp32.h"
+#include <ArduinoJson.h>
 
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
@@ -34,7 +40,7 @@ bool LocalTimeSet = false;
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
-String APhostname = "SmartEVSE-" + String( MacId() & 0xffff, 10);           // SmartEVSE access point Name = SmartEVSE-xxxxx
+String APhostname;
 String APpassword = "00000000";
 
 #if MQTT
@@ -46,7 +52,39 @@ String MQTTHost = "";
 uint16_t MQTTPort;
 mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
+bool MQTTtls = false;
+bool MQTTSmartServer = false;               // Use mqtt.smartevse.nl server, can be set from the LCD menu
+bool MQTTSmartServerChanged = false;        // Flag to trigger reconnect from network_loop()
+bool WIFImodeChanged = false;               // Flag to trigger handleWIFImode() from network_loop()
+String MQTTprivatePassword;                 // mqtt.smartevse.nl pre calculated password (hash of ec_private key)
 #endif
+
+// WebSocket LCD image timer and connection tracking
+mg_timer *LCDImageTimer = nullptr;
+std::vector<mg_connection*> wsLcdConnections;
+
+static void stopLCDImageTimer(struct mg_mgr *manager) {
+    if (LCDImageTimer != nullptr && manager != nullptr) {
+        mg_timer_free(&manager->timers, LCDImageTimer);
+        LCDImageTimer = nullptr;
+        _LOG_V("Stopped LCD image timer\n");
+    }
+}
+
+static bool isTrackedLcdWsConnection(const mg_connection *connection) {
+    for (const auto *tracked : wsLcdConnections) {
+        if (tracked == connection) return true;
+    }
+    return false;
+}
+
+static void sendWsError(struct mg_connection *c, const char *reason) {
+    DynamicJsonDocument response(96);
+    response["error"] = reason;
+    String json;
+    serializeJson(response, json);
+    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+}
 
 mg_connection *HttpListener80, *HttpListener443;
 
@@ -60,12 +98,13 @@ extern uint8_t AutoUpdate;
 extern Preferences preferences;
 extern uint16_t firmwareUpdateTimer;
 
-uint32_t serialnr;
+uint32_t serialnr = 0;
 
 
 // The following data will be updated by eeprom/storage data at powerup:
 uint8_t WIFImode = WIFI_MODE;                                               // WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
 String TZinfo = "";                                                         // contains POSIX time string
+String TZname = "";                                                         // contains timezone name (e.g. Europe/Amsterdam)
 
 char *downloadUrl = NULL;
 int downloadProgress = 0;
@@ -110,16 +149,52 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 
 void MQTTclient_t::connect(void) {
-    if (MQTTHost != "") {
-        char s_mqtt_url[80];
-        snprintf(s_mqtt_url, sizeof(s_mqtt_url), "mqtt://%s:%i", MQTTHost.c_str(), MQTTPort);
-        String lwtTopic = MQTTprefix + "/connected";
-        esp_mqtt_client_config_t mqtt_cfg = { .uri = s_mqtt_url, .client_id=MQTTprefix.c_str(), .username=MQTTuser.c_str(), .password=MQTTpassword.c_str(), .lwt_topic=lwtTopic.c_str(), .lwt_msg="offline", .lwt_qos=0, .lwt_retain=1, .lwt_msg_len=7, .keepalive=15 };
-        MQTTclient.client = esp_mqtt_client_init(&mqtt_cfg);
-        /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
-        esp_mqtt_client_register_event(MQTTclient.client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
-        if (WiFi.status() == WL_CONNECTED)
-            esp_mqtt_client_start(MQTTclient.client);
+    if (MQTTHost == "") return;
+    
+    // Stop and destroy old client if exists to prevent memory leak
+    if (client) {
+        esp_mqtt_client_stop(client);
+        esp_mqtt_client_destroy(client);
+        client = nullptr;
+    }
+    
+    static String ca_cert_str;
+    if (MQTTtls) {
+        ca_cert_str = readMqttCaCert();
+        if (ca_cert_str.length() < 10) {
+            ca_cert_str = root_ca_letsencrypt;
+            _LOG_A("No CA cert in LittleFS, using LetsEncrypt as default");
+        }
+    }
+    
+    static char s_mqtt_url[80];
+    snprintf(s_mqtt_url, sizeof(s_mqtt_url), "%s://%s:%i", MQTTtls ? "mqtts" : "mqtt", MQTTHost.c_str(), MQTTPort);
+    static String lwtTopic;
+    lwtTopic = MQTTprefix + "/connected";
+    esp_mqtt_client_config_t mqtt_cfg = { .uri = s_mqtt_url, .client_id=MQTTprefix.c_str(), .username=MQTTuser.c_str(), .password=MQTTpassword.c_str(), .lwt_topic=lwtTopic.c_str(), .lwt_msg="offline", .lwt_qos=0, .lwt_retain=1, .lwt_msg_len=7, .keepalive=15, .buffer_size=512, .out_buffer_size=512 };
+    
+    if (MQTTtls) {
+        mqtt_cfg.cert_pem = ca_cert_str.c_str();
+        _LOG_D("Using CA cert (%d bytes).\n", ca_cert_str.length());
+    }
+    _LOG_A("MQTT connecting to %s as %s\n", MQTTHost.c_str(), MQTTprefix.c_str());
+
+    client = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
+    // Start now if any network interface is connected (WiFi or Ethernet)
+    if (NetworkConnected()) {
+        esp_mqtt_client_start(client);
+    }
+}
+
+void MQTTclient_t::disconnect(void) {
+    connected = false;  // Set flag first to prevent event handler from using client
+    if (client) {
+        esp_mqtt_client_publish(client, (MQTTprefix + "/connected").c_str(), "offline", 7, 0, 1);
+        esp_mqtt_client_stop(client);
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+        esp_mqtt_client_destroy(client);
+        client = nullptr;
     }
 }
 #endif
@@ -137,8 +212,7 @@ void MQTTclient_t::publish(const String &topic, const String &payload, bool reta
         mg_mqtt_pub(s_conn, &opts);
     }
 #else
-    //esp_mqtt_client_enqueue(client, topic.c_str(), payload.c_str(), payload.length(), qos, retained, 1);
-    if (connected)
+    if (connected && client)
         esp_mqtt_client_publish(client, topic.c_str(), payload.c_str(), payload.length(), qos, retained);
 #endif
 }
@@ -152,7 +226,7 @@ void MQTTclient_t::subscribe(const String &topic, int qos) {
         mg_mqtt_sub(s_conn, &opts);
     }
 #else
-    if (connected)
+    if (connected && client)
         esp_mqtt_client_subscribe(client, topic.c_str(), qos);
 #endif
 }
@@ -163,13 +237,21 @@ void MQTTclient_t::announce(const String& entity_name, const String& domain, con
     entity_suffix.replace(" ", "");
     String topic = "homeassistant/" + domain + "/" + MQTTprefix + "-" + entity_suffix + "/config";
 
-    const String config_url = "http://" + WiFi.localIP().toString();
-    const String device_payload = String(R"("device": {)") + jsn("model","SmartEVSE v3") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+    // Build default_entity_id: must be lowercase, only [a-z0-9_] allowed. See: https://www.home-assistant.io/docs/configuration/customizing-devices/
+    String default_entity_id = domain + "." + MQTTprefix + "_" + entity_suffix;
+    default_entity_id.toLowerCase();
+    default_entity_id.replace("-", "_");
 
+    const String config_url = "http://" + WiFi.localIP().toString();
+#ifndef SENSORBOX_VERSION
+    const String device_payload = String(R"("device": {)") + jsn("model","SmartEVSE v3") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+#else
+    const String device_payload = String(R"("device": {)") + jsn("model","Sensorbox v2") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+#endif
     String payload = "{"
         + jsn("name", entity_name)
         + jsna("object_id", String(MQTTprefix + "-" + entity_suffix))  // Deprecated for HA 2026.4 - still setting for backwards compatibility. Will not raise error if new default_entity_id is also set: https://github.com/home-assistant/core/pull/151996
-        + jsna("default_entity_id", String(MQTTprefix + "-" + entity_suffix))  // HA 2025.10 and up: https://github.com/home-assistant/core/pull/151775
+        + jsna("default_entity_id", default_entity_id)  // HA 2025.10 and up: must include domain prefix (e.g. sensor.smartevse_chargecurrent). See: https://community.home-assistant.io/t/mqtt-discovery-wrong-entity-id-names-unnamed-device/945927
         + jsna("unique_id", String(MQTTprefix + "-" + entity_suffix))
         + jsna("state_topic", String(MQTTprefix + "/" + entity_suffix))
         + jsna("availability_topic", String(MQTTprefix + "/connected"))
@@ -180,6 +262,133 @@ void MQTTclient_t::announce(const String& entity_name, const String& domain, con
 }
 
 MQTTclient_t MQTTclient;
+
+#ifndef SENSORBOX_VERSION
+// SmartEVSE server MQTT client implementation
+MQTTclientSmartEVSE_t MQTTclientSmartEVSE;
+bool MQTTclientSmartEVSE_AppConnected = false;  // Track if app is connected
+String MQTTSmartEVSEprefix;                     // Initialized once in connect(), used by all SmartEVSE MQTT functions
+
+#if MQTT_ESP == 1
+void mqtt_smartevse_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, esp_mqtt_event_t *event) {
+    switch ((esp_mqtt_event_id_t)event_id) {
+    case MQTT_EVENT_CONNECTED:
+        // Ignore connection if user disabled the server while connecting
+        // Note: Cannot call disconnect() here - we're in MQTT task context and esp_mqtt_client_stop() would deadlock
+        if (!MQTTSmartServer) {
+            _LOG_I("SmartEVSE MQTT: Connection completed but server is disabled, ignoring.\n");
+            break;  // Don't set connected=true, cleanup will happen on next connect() call
+        }
+        MQTTclientSmartEVSE.connected = true;
+        _LOG_A("SmartEVSE MQTT server connected.\n");
+        SetupMQTTClientSmartEVSE();
+        break;
+    case MQTT_EVENT_DISCONNECTED:
+        MQTTclientSmartEVSE.connected = false;
+        MQTTclientSmartEVSE_AppConnected = false;
+        _LOG_I("SmartEVSE MQTT server disconnected.\n");
+        break;
+    case MQTT_EVENT_DATA:
+        {
+        String topic = String(event->topic).substring(0, event->topic_len);
+        String payload = String(event->data).substring(0, event->data_len);
+        _LOG_D("SmartEVSE MQTT received: topic=%s, payload=%s\n", topic.c_str(), payload.c_str());
+        // Check if App status changed
+        if (topic == MQTTSmartEVSEprefix + "/App/Status") {
+            if (payload != "offline") {
+                MQTTclientSmartEVSE_AppConnected = true;
+                _LOG_I("SmartEVSE App connected, publishing data.\n");
+                mqttSmartEVSEPublishData();
+            } else {
+                MQTTclientSmartEVSE_AppConnected = false;
+                _LOG_I("SmartEVSE App disconnected.\n");
+            }
+        } else if (topic.indexOf("/Set/") >= 0) {
+            // Handle Set commands and publish updated data immediately
+            mqtt_receive_callback(topic, payload);
+            mqttSmartEVSEPublishData();
+        } else {
+            // Other messages (e.g. subscribed topics) - just process, don't publish
+            mqtt_receive_callback(topic, payload);
+        }
+        }
+        break;
+    case MQTT_EVENT_ERROR:
+        _LOG_I("SmartEVSE MQTT_EVENT_ERROR; Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
+        break;
+    default:
+        break;
+    }
+}
+
+// Centralized cleanup - prevents race conditions by atomically clearing state before stopping client
+void MQTTclientSmartEVSE_t::cleanup(bool publishOffline) {
+    connected = false;
+    MQTTclientSmartEVSE_AppConnected = false;
+    if (!client) return;
+    
+    if (publishOffline && MQTTSmartEVSEprefix.length()) {
+        esp_mqtt_client_publish(client, (MQTTSmartEVSEprefix + "/connected").c_str(), "offline", 7, 0, 1);
+    }
+    
+    // Stop and destroy client - esp_mqtt_client_stop may block briefly
+    // Note: This must NOT be called from MQTT task context (event handler)
+    esp_mqtt_client_stop(client);
+    vTaskDelay(50 / portTICK_PERIOD_MS);  // Allow MQTT task to finish gracefully
+    esp_mqtt_client_destroy(client);
+    client = nullptr;
+}
+
+void MQTTclientSmartEVSE_t::connect(void) {
+    if (!MQTTSmartServer || MQTTprivatePassword.length() == 0) {
+        if (MQTTSmartServer) _LOG_A("SmartEVSE MQTT: No private key hash available.\n");
+        return;
+    }
+    if (ESP.getFreeHeap() < 50000) {
+        _LOG_A("SmartEVSE MQTT: Not enough memory for TLS connection.\n");
+        return;
+    }
+    
+    cleanup();  // Clean up any existing connection first
+    
+    // Initialize shared prefix (used by all SmartEVSE MQTT functions)
+    MQTTSmartEVSEprefix = "SmartEVSE-" + String(serialnr);
+    
+    // Static strings kept alive for esp_mqtt_client
+    static String lwtTopic;
+    static char s_mqtt_url[] = "mqtts://mqtt.smartevse.nl:8883";
+    lwtTopic = MQTTSmartEVSEprefix + "/connected";
+    
+    esp_mqtt_client_config_t cfg = { 
+        .uri = s_mqtt_url, .client_id = MQTTSmartEVSEprefix.c_str(), 
+        .username = MQTTSmartEVSEprefix.c_str(), .password = MQTTprivatePassword.c_str(),
+        .lwt_topic = lwtTopic.c_str(), .lwt_msg = "offline", .lwt_qos = 0, .lwt_retain = 1, .lwt_msg_len = 7,
+        .keepalive = 15, .buffer_size = 512, .out_buffer_size = 512
+    };
+    cfg.cert_pem = root_ca_letsencrypt;
+    
+    _LOG_A("SmartEVSE MQTT connecting as %s (heap: %u)\n", MQTTSmartEVSEprefix.c_str(), ESP.getFreeHeap());
+    client = esp_mqtt_client_init(&cfg);
+    esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t)ESP_EVENT_ANY_ID, (esp_event_handler_t)mqtt_smartevse_event_handler, NULL);
+    esp_mqtt_client_start(client);
+}
+
+void MQTTclientSmartEVSE_t::disconnect(void) {
+    cleanup(true);  // Publish offline before disconnecting
+}
+
+void MQTTclientSmartEVSE_t::publish(const String &topic, const String &payload, bool retained, int qos) {
+    if (connected && client)
+        esp_mqtt_client_publish(client, topic.c_str(), payload.c_str(), payload.length(), qos, retained);
+}
+
+void MQTTclientSmartEVSE_t::subscribe(const String &topic, int qos) {
+    if (connected && client)
+        esp_mqtt_client_subscribe(client, topic.c_str(), qos);
+}
+#endif  // SENSORBOX_VERSION
+
+#endif
 
 #endif
 
@@ -207,6 +416,42 @@ FsMuCIKchjN0djsoTI0DQoWz4rIjQtUfenVqGtF8qmchxDM6OW1TyaLtYiKou+JV
 bJlsQ2uRl9EMC5MCHdK8aXdJ5htN978UeAOwproLtOGFfy/cQjutdAFI3tZs4RmY
 CV4Ks2dH/hzg1cEo70qLRDEmBDeNiXQ2Lu+lIg+DdEmSx/cQwgwp+7e9un/jX9Wf
 8qn0dNW44bOwgeThpWOjzOoEeJBuv/c=
+-----END CERTIFICATE-----
+)ROOT_CA";
+
+// Let's Encrypt ISRG Root X1
+// valid till 2035
+const char* root_ca_letsencrypt = R"ROOT_CA(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )ROOT_CA";
 
@@ -601,45 +846,13 @@ void setTimeZone(void * parameter) {
         httpClient.end();
         vTaskDelete(NULL);                                                      //end this task so it will not take up resources
     };
-    // lookup current timezone
-    httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    String host[2] = { "http://worldtimeapi.org/api/ip", "http://ip-api.com/json"};
-    int httpCode;
-    for (int i=0; i<15; i++) {
-        httpClient.begin(host[i%2]);
-        httpCode = httpClient.GET();  //Make the request
-        // only handle 200/301, fail on everything else
-        if ( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) { //fail
-            httpClient.end();
-            _LOG_A("Error on HTTP request (httpCode=%i), host=%s, try=%i.\n", httpCode, host[i%2].c_str(), i);
-            delay(1000);
-        } else {
-            break;
-        }
-    }
 
-    // only handle 200/301, fail on everything else
-    if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
-        _LOG_A("Error on HTTP request (httpCode=%i)\n", httpCode);
+    // Check if browser timezone was saved during WiFi setup
+    if (TZname == "") {
+        _LOG_A("No browser timezone available.\n");
         onErrorCloseTask();
     }
-
-    // The filter: it contains "true" for each value we want to keep
-    DynamicJsonDocument  filter(16);
-    filter["timezone"] = true;
-    DynamicJsonDocument doc2(80);
-    DeserializationError error = deserializeJson(doc2, httpClient.getStream(), DeserializationOption::Filter(filter));
-    if (error) {
-        _LOG_A("deserializeJson() failed: %s\n", error.c_str());
-        onErrorCloseTask();
-    }
-    String tzname = doc2["timezone"];
-    if (tzname == "") {
-        _LOG_A("Could not detect Timezone.\n");
-        onErrorCloseTask();
-    }
-    httpClient.end();
-    _LOG_A("Timezone detected: tz=%s.\n", tzname.c_str());
+    _LOG_A("Using browser timezone: %s\n", TZname.c_str());
 
     // takes TZname (format: Europe/Berlin) , gets TZ_INFO (posix string, format: CET-1CEST,M3.5.0,M10.5.0/3) and sets and stores timezonestring accordingly
     //httpClient.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -648,7 +861,7 @@ void setTimeZone(void * parameter) {
     char *URL;
     asprintf(&URL, "%s/zones.csv", FW_DOWNLOAD_PATH); //will be freed
     httpClient.begin(URL);
-    httpCode = httpClient.GET();  //Make the request
+    int httpCode = httpClient.GET();  //Make the request
 
     // only handle 200/301, fail on everything else
     if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
@@ -660,10 +873,10 @@ void setTimeZone(void * parameter) {
     stream = httpClient.getStreamPtr();
     while(httpClient.connected() && stream->available()) {
         l = stream->readStringUntil('\n');
-        if (l.indexOf(tzname) > 0) {
+        if (l.indexOf(TZname) > 0) {
             int from = l.indexOf("\",\"") + 3;
             TZinfo = l.substring(from, l.length() - 1);
-            _LOG_A("Detected Timezone info: TZname = %s, tz_info=%s.\n", tzname.c_str(), TZinfo.c_str());
+            _LOG_A("Detected Timezone info: TZname = %s, tz_info=%s.\n", TZname.c_str(), TZinfo.c_str());
             setenv("TZ",TZinfo.c_str(),1);
             tzset();
             if (preferences.begin("settings", false) ) {
@@ -674,7 +887,7 @@ void setTimeZone(void * parameter) {
         }
     }
     if (TZinfo == "") {
-        _LOG_A("Could not find TZname %s in zones.csv.\n", tzname.c_str());
+        _LOG_A("Could not find TZname %s in zones.csv.\n", TZname.c_str());
         FREE(URL);
         onErrorCloseTask();
     }
@@ -687,23 +900,19 @@ void setTimeZone(void * parameter) {
 String homeWizardHost;
 HTTPClient* homeWizardHttpClient=nullptr;
 bool homeWizardHttpClientInitialized = false;
+static bool mdnsDiscoveryInProgress = false;            // True when async mDNS task is running
+static unsigned long lastMdnsQueryTime = 0;             // Last time mDNS query was attempted
+static const unsigned long MDNS_RETRY_INTERVAL = 30000; // Retry mDNS discovery every 30 seconds if not found
 
 /**
- * @brief Discovers a HomeWizard P1 meter service on the local network.
- *
- * This function uses mDNS to search for services advertising "_hwenergy._tcp" on the local network.
- *
- * @return A string containing the hostname and port of the first matching HomeWizard P1 meter service
- * or an empty string in case no HomeWizard P1 meter is found in the local network
+ * @brief FreeRTOS task that performs mDNS discovery in the background.
+ * 
+ * This task runs the blocking mDNS query without blocking the main loop.
+ * When complete, it updates homeWizardHost and deletes itself.
  */
-String discoverHomeWizardP1() {
-
-    // If there's a cached result, return it immediately
-    if (!homeWizardHost.isEmpty()) {
-        _LOG_A("discoverHWP1(): Using cached host '%s'.\n", homeWizardHost.c_str());
-        return homeWizardHost;
-    }
-
+void mdnsDiscoveryTask(void* parameter) {
+    _LOG_A("mDNS discovery task started\n");
+    
     // Search for _hwenergy._tcp services.
     // https://api-documentation.homewizard.com/docs/discovery/
     const int n = MDNS.queryService("hwenergy", "tcp");
@@ -719,14 +928,71 @@ String discoverHomeWizardP1() {
                 _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(),
                        MDNS.IP(i).toString().c_str(), port);
 
-                // Return first match.
-                // Cache the result before returning it
+                // Cache the result
                 homeWizardHost = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
-                return homeWizardHost;
+                break;
             }
         }
-        _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
+        if (homeWizardHost.isEmpty()) {
+            _LOG_A("discoverHWP1(): No matching HWP1 service found.\n");
+        }
     }
+    
+    mdnsDiscoveryInProgress = false;
+    _LOG_A("mDNS discovery task completed\n");
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief Starts async mDNS discovery for HomeWizard P1 meter.
+ *
+ * This function uses mDNS to search for services advertising "_hwenergy._tcp" on the local network.
+ * This function spawns a background task to perform the blocking mDNS query,
+ * so the main loop remains responsive. The result is cached in homeWizardHost.
+ *
+ * @return The cached hostname if available, empty string if discovery is pending or not found
+ */
+String discoverHomeWizardP1() {
+
+    // If there's a cached result, return it immediately
+    if (!homeWizardHost.isEmpty()) {
+        _LOG_D("discoverHWP1(): Using cached host '%s'.\n", homeWizardHost.c_str());
+        return homeWizardHost;
+    }
+
+    // If discovery is already in progress, don't start another
+    if (mdnsDiscoveryInProgress) {
+        _LOG_D("discoverHWP1(): Discovery already in progress.\n");
+        return "";
+    }
+
+    // Rate limit discovery attempts
+    unsigned long now = millis();
+    if (lastMdnsQueryTime != 0 && (now - lastMdnsQueryTime) < MDNS_RETRY_INTERVAL) {
+        // Still in cooldown period, skip mDNS query
+        return "";
+    }
+    lastMdnsQueryTime = now;
+    
+    // Start async mDNS discovery task
+    mdnsDiscoveryInProgress = true;
+    _LOG_A("discoverHWP1(): Starting async mDNS discovery (next retry in %lu seconds)...\n", MDNS_RETRY_INTERVAL / 1000);
+    
+    // Create task with 4KB stack, priority 1 (low), running on any core
+    BaseType_t result = xTaskCreate(
+        mdnsDiscoveryTask,      // Task function
+        "mDNS_HWP1",            // Task name
+        4096,                   // Stack size (bytes)
+        NULL,                   // Parameters
+        1,                      // Priority (low)
+        NULL                    // Task handle (not needed)
+    );
+    
+    if (result != pdPASS) {
+        _LOG_A("discoverHWP1(): Failed to create mDNS discovery task!\n");
+        mdnsDiscoveryInProgress = false;
+    }
+    
     return "";
 }
 
@@ -770,6 +1036,13 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
         delete homeWizardHttpClient;
         homeWizardHttpClient = nullptr;
         homeWizardHttpClientInitialized = false;
+        // Clear cached hostname on connection errors so we can rediscover
+        // (e.g., if the HomeWizard P1 got a new IP address)
+        if (httpCode < 0) {
+            homeWizardHost = "";
+            lastMdnsQueryTime = 0;  // Allow immediate rediscovery
+            _LOG_A("getMainsFromHWP1(): Connection failed, clearing cache for rediscovery.\n");
+        }
         return {false, {0, 0, 0}};
     }
 
@@ -911,6 +1184,131 @@ static void timer_fn(void *arg) {
 }
 #endif
 
+// Timer function - sends LCD image to all connected websocket clients
+static void lcd_image_timer_fn(void *arg) {
+    struct mg_mgr *mgr = (struct mg_mgr *) arg;
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
+    // First remove stale/closing sockets.
+    for (size_t i = wsLcdConnections.size(); i > 0; --i) {
+        const size_t idx = i - 1;
+        mg_connection *c = wsLcdConnections[idx];
+        if (c == nullptr || c->is_closing) {
+            wsLcdConnections.erase(wsLcdConnections.begin() + idx);
+        }
+    }
+
+    if (wsLcdConnections.empty()) {
+        stopLCDImageTimer(mgr);
+        return;
+    }
+
+    // Generate BMP image from LCD buffer
+    const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+
+    // Send to all connected websocket clients
+    for (auto *c : wsLcdConnections) {
+        mg_ws_send(c, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
+    }
+}
+
+// Handle button command received via WebSocket
+// Expected JSON format: {"button":"left|middle|right", "state":0|1}
+static void handleButtonCommand(struct mg_connection *c, const char* data, size_t len) {
+    if (!LCDPasswordOK) {
+        _LOG_W("Rejected WebSocket button command: PIN not verified\n");
+        sendWsError(c, "unauthorized");
+        return;
+    }
+
+    DynamicJsonDocument doc(128);
+    DeserializationError error = deserializeJson(doc, data, len);
+
+    if (error) {
+        _LOG_W("Failed to parse button command JSON: %s\n", error.c_str());
+        sendWsError(c, "invalid_json");
+        return;
+    }
+
+    if (!doc.containsKey("button") || !doc.containsKey("state")) {
+        _LOG_W("Button command missing 'button' or 'state' field\n");
+        sendWsError(c, "missing_fields");
+        return;
+    }
+
+    if (!doc["button"].is<const char*>()) {
+        _LOG_W("Button command has invalid 'button' type\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+    const char *btnName = doc["button"].as<const char*>();
+    if (btnName == nullptr || btnName[0] == '\0') {
+        _LOG_W("Button command has empty 'button' value\n");
+        sendWsError(c, "invalid_button");
+        return;
+    }
+
+    if (!(doc["state"].is<int>() || doc["state"].is<bool>())) {
+        _LOG_W("Button command has invalid 'state' type\n");
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const int state = doc["state"].as<int>();
+    if (state != 0 && state != 1) {
+        _LOG_W("Button command has invalid 'state' value: %d\n", state);
+        sendWsError(c, "invalid_state");
+        return;
+    }
+    const bool btnDown = state == 1;
+
+    // Button state bitmasks
+    static constexpr uint8_t RIGHT_MASK = 0b100;
+    static constexpr uint8_t MIDDLE_MASK = 0b010;
+    static constexpr uint8_t LEFT_MASK = 0b001;
+    static constexpr uint8_t ALL_BUTTONS_UP = 0b111;
+
+    uint8_t mask = 0;
+    if (strcmp(btnName, "right") == 0) {
+        mask = RIGHT_MASK;
+    } else if (strcmp(btnName, "middle") == 0) {
+        mask = MIDDLE_MASK;
+    } else if (strcmp(btnName, "left") == 0) {
+        mask = LEFT_MASK;
+    } else {
+        _LOG_W("Unknown button name: %s\n", btnName);
+        sendWsError(c, "unknown_button");
+        return;
+    }
+
+    // Update button state with mutex protection
+    xSemaphoreTake(buttonMutex, portMAX_DELAY);
+    if (btnDown) {
+        ButtonStateOverride = ALL_BUTTONS_UP & ~mask;
+    } else {
+        ButtonStateOverride = ALL_BUTTONS_UP | mask;
+    }
+    LastBtnOverrideTime = millis();
+    xSemaphoreGive(buttonMutex);
+
+    _LOG_V("WebSocket button command: %s = %s\n", btnName, btnDown ? "down" : "up");
+
+    // Send acknowledgment back to client
+    DynamicJsonDocument response(128);
+    response["button"][btnName] = btnDown ? "down" : "up";
+    String json;
+    serializeJson(response, json);
+    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+
+    // Schedule LCD image update after a short delay to allow button processing
+    // The timer will fire ~100ms after button press, giving the device time to update the LCD
+    if (LCDImageTimer != nullptr) {
+        LCDImageTimer->expire = mg_millis() + 100;  // Update in 100ms
+    }
+}
 
 // HTML web form for entering WIFI credentials in AP setup portal
 static const char *html_form = R"EOF(
@@ -925,28 +1323,57 @@ input[type=text],input[type=password]{width:100%;padding:8px;font-size:14px;bord
 input[type=submit]{width:100%;padding:8px;font-size:14px;background:#4CAF50;color:#fff;border:0;cursor:pointer}
 input[type=submit]:hover{background:#45a049}
 @media (max-width:600px){form{width:95%}}</style>
-<script>function togglePassword(){var x=document.getElementById('password');x.type=x.type==='password'?'text':'password'}</script>
+<script>function togglePassword(){var x=document.getElementById('password');x.type=x.type==='password'?'text':'password'}
+window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone}</script>
 </head>
 <body><form action="/save" method="POST">
 <h2>WiFi Setup</h2>
+)EOF"
+#ifdef SENSORBOX_VERSION
+"<small>Sensorbox only connects to 2.4 GHz networks.</small>"
+#else
+"<small>SmartEVSE only connects to 2.4 GHz networks.</small>"
+#endif
+R"EOF(
 <label>SSID:</label>
-<input type="text" name="ssid" required>
+<input type="text" name="ssid" required minlength="1" maxlength="32" pattern="[ -~]{1,32}" title="SSID must be 1-32 printable characters">
 <label>Password:</label>
-<input type="password" name="password" id="password" required>
+<input type="password" name="password" id="password" required minlength="8" maxlength="63" pattern="[ -~]{8,63}" title="Password must be 8-63 printable characters">
 <label><input type="checkbox" onclick="togglePassword()">Show Password</label>
+<input type="hidden" name="tz" id="tz">
 <input type="submit" value="Save">
 </form></body></html>
 )EOF";
 
+
+// Maximum concurrent HTTP connections to prevent socket exhaustion
+#define MAX_HTTP_CONNECTIONS 8
+
+// Count active connections in the manager
+static int countConnections(struct mg_mgr *mgr) {
+  int n = 0;
+  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) n++;
+  return n;
+}
 
 // Connection event handler function
 // indenting lower level two spaces to stay compatible with old StartWebServer
 // We use the same event handler function for HTTP and HTTPS connections
 // fn_data is NULL for plain HTTP, and non-NULL for HTTPS
 static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
-  if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
+  if (ev == MG_EV_ACCEPT) {
+    // Limit concurrent connections to prevent socket exhaustion
+    int nconns = countConnections(c->mgr);
+    if (nconns > MAX_HTTP_CONNECTIONS) {
+      _LOG_W("Too many connections (%d), rejecting new connection\n", nconns);
+      c->is_closing = 1;  // Immediately close the connection
+      return;
+    }
+    // Initialize TLS for HTTPS connections (fn_data != NULL)
+    if (c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty, .skip_verification = 0};
     mg_tls_init(c, &opts);
+    }
   } else if (ev == MG_EV_CLOSE) {
     if (c == HttpListener80) {
         _LOG_A("Free HTTP port 80");
@@ -956,9 +1383,52 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         _LOG_A("Free HTTP port 443");
         HttpListener443 = nullptr;
     }
+    // Remove websocket connection from tracking list
+    for (auto it = wsLcdConnections.begin(); it != wsLcdConnections.end(); ++it) {
+        if (*it == c) {
+            wsLcdConnections.erase(it);
+            _LOG_V("Removed websocket LCD connection, remaining: %d\n", wsLcdConnections.size());
+
+            // Stop timer if no more connections
+            if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
+            break;
+        }
+    }
+    if (wsLcdConnections.empty()) stopLCDImageTimer(c->mgr);
+  } else if (ev == MG_EV_WS_OPEN) {
+    // Websocket connection opened - check if it's for /ws/lcd endpoint
+    struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+    if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
+        wsLcdConnections.push_back(c);
+        _LOG_V("New websocket LCD connection, total: %d\n", wsLcdConnections.size());
+
+        // Start timer if this is the first connection
+        if (wsLcdConnections.size() == 1 && LCDImageTimer == nullptr) {
+            LCDImageTimer = mg_timer_add(&mgr, 1000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, lcd_image_timer_fn, &mgr);
+            _LOG_V("Started LCD image timer\n");
+        }
+    }
+  } else if (ev == MG_EV_WS_MSG) {
+    // Websocket message received - handle button commands
+    struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
+    if (!isTrackedLcdWsConnection(c)) return;
+
+    // Check if this is a text message (button commands are JSON text)
+    if ((wm->flags & 0x0f) == WEBSOCKET_OP_TEXT) {
+        handleButtonCommand(c, (const char*)wm->data.buf, wm->data.len);
+    }
+    // Binary messages are ignored (only server sends binary BMP images)
   } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
-    webServerRequest* request = new webServerRequest();
+
+    // Check for websocket upgrade request for LCD image stream
+    if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
+        mg_ws_upgrade(c, hm, NULL);  // Upgrade HTTP to WebSocket
+        return;  // Don't process as regular HTTP
+    }
+
+    static webServerRequest requestObj;  // Static to avoid heap allocation on every request
+    webServerRequest* request = &requestObj;
     request->setMessage(hm);
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
@@ -973,29 +1443,41 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               preferences.clear();
               preferences.end();       
             }
+#ifndef SENSORBOX_VERSION
             DeleteAllRFID();                                      // All RFID UIDs
+#endif            
             shouldReboot = true;
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
         } else if (mg_http_match_uri(hm, "/") && WIFImode == 2) { // serve AP page to fill in WIFI credentials
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%s", html_form);
-        } else if (mg_http_match_uri(hm, "/save")) {
-            char ssid[64], password[64];
+        // save WiFi credentials, make sure we are still in WiFiPortal mode    
+        } else if (mg_http_match_uri(hm, "/save") && WIFImode == 2) {
+            char ssid[33], password[64], tz[64];
             bool has_ssid = mg_http_get_var(&hm->body, "ssid", ssid, sizeof(ssid)) > 0;
             bool has_pass = mg_http_get_var(&hm->body, "password", password, sizeof(password)) > 0;
+            mg_http_get_var(&hm->body, "tz", tz, sizeof(tz));  // Timezone
             if (has_ssid && has_pass) {
-                mg_http_reply(c, 200, "Content-Type: text/html\r\n", "<html><body><h2>Saved! Rebooting...</h2></body></html>");
-#ifndef SENSORBOX_VERSION
-                vTaskDelay(2000 / portTICK_PERIOD_MS);                          // for some strange reason this triggers the watchdog function in Sensorbox
-#endif
+                // Store timezone name if provided (will be converted to TZ_INFO on next boot)
+                if (tz[0]) {
+                    TZname = tz;
+                    if (preferences.begin("settings", false)) {
+                        preferences.putString("TZname", TZname);
+                        preferences.end();
+                    }
+                    _LOG_A("Browser timezone saved: %s\n", tz);
+                }
+                mg_http_reply(c, 200, "Content-Type: text/html\r\n",
+                    "<!DOCTYPE html><html><head><title>Saved</title>"
+                    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                    "<style>body{font-family:Arial;padding:20px;text-align:center}</style></head>"
+                    "<body><h2>Saved!</h2><p>Connecting to <b>%s</b></p>"
+                    "<p>Access at: <b>http://%s.local</b></p><p>Rebooting...</p></body></html>",
+                    ssid, APhostname.c_str());
                 _LOG_A("Connecting to wifi network.\n");
-                WiFi.mode(WIFI_STA);                // Set Station Mode
-                WiFi.begin(ssid, password);   // Configure Wifi with credentials
-                WIFImode = 1;                                                           // we are already connected so don't call handleWIFImode
+                WiFi.begin(ssid, password);                         // Configure Wifi with credentials
+                WIFImode = 1;                                       // we are already connected so don't call handleWIFImode
                 write_settings();
-#ifndef SENSORBOX_VERSION
-                vTaskDelay(2000 / portTICK_PERIOD_MS);                          // for some strange reason this triggers the watchdog function in Sensorbox
-#endif
-                ESP.restart();
+                shouldReboot = true;                                // Allow the webserver to send the reply back before rebooting
             } else {
               mg_http_reply(c, 400, "", "Missing SSID or password");
             }
@@ -1235,6 +1717,17 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     doc["mqtt_password_set"] = (MQTTpassword != "");
                 }
 
+                if (request->hasParam("mqtt_tls")) {
+                    MQTTtls = request->getParam("mqtt_tls")->value() == "1";
+                    doc["mqtt_tls"] = MQTTtls;
+                }
+
+                if(request->hasParam("mqtt_ca_cert")) {
+                    String cert = request->getParam("mqtt_ca_cert")->value();
+                    writeMqttCaCert(cert);                      // Save to LittleFS
+                    doc["mqtt_ca_cert_set"] = !cert.isEmpty();
+                }
+
                 // disconnect mqtt so it will automatically reconnect with then new params
                 MQTTclient.disconnect();
 #if MQTT_ESP == 1
@@ -1247,6 +1740,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     preferences.putString("MQTTprefix", MQTTprefix);
                     preferences.putString("MQTTHost", MQTTHost);
                     preferences.putUShort("MQTTPort", MQTTPort);
+                    preferences.putBool("MQTTtls", MQTTtls);
                     preferences.end();
                 }
             }
@@ -1254,6 +1748,9 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             String json;
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        } else if (mg_http_match_uri(hm, "/mqtt_ca_cert") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+            String cert = readMqttCaCert();
+            mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "%s\r\n", cert.c_str());
         } else {                                                                    // if everything else fails, serve static page
             // Cache ".webp" or ".ico" image files for one year without revalidation or server checks.
             if (mg_match(hm->uri, mg_str("#.webp"), NULL) ||
@@ -1271,16 +1768,108 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
         }
     } // handle_URI
-    delete request;
+    // request is static, no delete needed
   } //HTTP request received
 }
 
 // turns out getLocalTime only checks if the current year > 2016, and if so, decides NTP must have synced;
 // this callback function actually checks if we are synced!
+// NOTE: This callback is called EVERY time SNTP syncs (every 3 hours), not just the first time!
 void timeSyncCallback(struct timeval *tv)
 {
+    // WARNING: Do NOT add \n to this log message! This callback runs in lwIP SNTP task context.
+    // Adding \n causes RemoteDebug to immediately flush the buffer via TelnetClient.print(),
+    // which is a blocking TCP send. This deadlocks because lwIP is waiting for this callback
+    // to return while the TCP send needs lwIP to process packets.
+    _LOG_A("Synced clock to NTP server!");
+#if MQTT && MQTT_ESP && SMARTEVSE_VERSION 
+    // Start SmartEVSE MQTT connection after time is synced (TLS requires correct time for certificate validation)
+    // Only connect on first sync - subsequent syncs should not restart the MQTT connection!
+    if (!LocalTimeSet) {
+        MQTTclientSmartEVSE.connect();
+    }
+#endif
     LocalTimeSet = true;
-    _LOG_A("Synced clock to NTP server!");    // somehow adding a \n here hangs the telnet server after printing this message ?!?
+}
+
+// Returns true if any network interface (WiFi or Ethernet) has an IP address
+bool NetworkConnected(void) {
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
+    if (EthHasIP) return true;
+#endif
+    if (!WiFi.isConnected()) return false;
+    return WiFi.localIP() != IPAddress((uint32_t)0);
+}
+
+static bool servicesStarted = false;
+
+// Start network services (HTTP, MQTT, mDNS, SNTP, RemoteDebug).
+// Safe to call multiple times — only starts services once.
+static void startNetworkServices(void) {
+    if (servicesStarted) return;
+    servicesStarted = true;
+    mg_log_set(MG_LL_NONE);
+
+    // Start HTTP listeners (bind to 0.0.0.0 — works on all interfaces)
+    if (!HttpListener80) {
+        HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);
+    }
+    if (!HttpListener443) {
+        HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *)1);
+    }
+    _LOG_A("HTTP server started\n");
+
+#if MQTT
+#if MQTT_ESP == 0
+    if (!MQTTtimer) {
+        MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
+    }
+#else
+    if (MQTTHost != "" && MQTTclient.client)
+        esp_mqtt_client_start(MQTTclient.client);
+#ifdef SMARTEVSE_VERSION
+    if (MQTTSmartServer && MQTTclientSmartEVSE.client)
+        esp_mqtt_client_start(MQTTclientSmartEVSE.client);
+#endif
+#endif
+#endif //MQTT
+
+#if DBG == 1
+    Debug.begin(APhostname, 23, 1);
+    Debug.showColors(true);
+#endif
+}
+
+// Configure DNS, SNTP and mDNS when an interface gets an IP.
+// Can be called from both WiFi and Ethernet got-IP events.
+void onGotIP(const char *dns_ip) {
+    // Load DHCP DNS into mongoose
+    static char dns4url[] = "udp://123.123.123.123:53";
+    if (dns_ip && strlen(dns_ip) > 0) {
+        snprintf(dns4url, sizeof(dns4url), "udp://%s:53", dns_ip);
+        mgr.dns4.url = dns4url;
+    }
+
+    // Configure SNTP (safe to call again)
+    if (!esp_sntp_enabled()) {
+        esp_sntp_setservername(1, "europe.pool.ntp.org");
+        sntp_set_time_sync_notification_cb(timeSyncCallback);
+        esp_sntp_init();
+    }
+
+    if (TZinfo == "") {
+        xTaskCreate(setTimeZone, "setTimeZone", 4096, NULL, 1, NULL);
+    }
+
+    // Start mDNS
+    if (!MDNS.begin(APhostname.c_str())) {
+        _LOG_A("Error setting up MDNS responder!\n");
+    } else {
+        _LOG_A("mDNS responder started. http://%s.local\n", APhostname.c_str());
+        MDNS.addService("http", "tcp", 80);
+    }
+
+    startNetworkServices();
 }
 
 void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
@@ -1291,72 +1880,10 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 #else
             Serial.printf("Connected to AP: %s Local IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 #endif            
-            //load dhcp dns ip4 address into mongoose
-            static char dns4url[]="udp://123.123.123.123:53";
-            sprintf(dns4url, "udp://%s:53", WiFi.dnsIP().toString().c_str());
-            mgr.dns4.url = dns4url;
-
-            // Init and get the time
-            // First option to get time from local ntp server blocks the second fallback option since 2021:
-            // See https://github.com/espressif/arduino-esp32/issues/4964
-            //sntp_servermode_dhcp(1);                                                    //try to get the ntp server from dhcp
-
-            // Configure time after WiFi is connected
-            esp_sntp_setservername(1, "europe.pool.ntp.org");
-            sntp_set_time_sync_notification_cb(timeSyncCallback);
-            esp_sntp_init();
-            
-            if (TZinfo == "") {
-                xTaskCreate(
-                    setTimeZone, // Function that should be called
-                    "setTimeZone",// Name of the task (for debugging)
-                    4096,           // Stack size (bytes)
-                    NULL,           // Parameter to pass
-                    1,              // Task priority - low
-                    NULL            // Task handle
-                );
-            }
-
-            // Start the mDNS responder so that the SmartEVSE can be accessed using a local hostame: http://SmartEVSE-xxxxxx.local
-            if (!MDNS.begin(APhostname.c_str())) {
-                _LOG_A("Error setting up MDNS responder!\n");
-            } else {
-                _LOG_A("mDNS responder started. http://%s.local\n",APhostname.c_str());
-                MDNS.addService("http", "tcp", 80);   // announce Web server
-            }
-
+            onGotIP(WiFi.dnsIP().toString().c_str());
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_CONNECTED:
             _LOG_A("Connected or reconnected to WiFi\n");
-
-#if MQTT
-#if MQTT_ESP == 0
-            if (!MQTTtimer) {
-               MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
-            }
-#else
-            if (MQTTHost != "")
-                esp_mqtt_client_start(MQTTclient.client);
-#endif
-#endif //MQTT
-            mg_log_set(MG_LL_NONE);
-            //mg_log_set(MG_LL_VERBOSE);
-
-            if (!HttpListener80) {
-                HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
-            }
-            if (!HttpListener443) {
-                HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
-            }
-            _LOG_A("HTTP server started\n");
-
-#if DBG == 1
-            // if we start RemoteDebug with no wifi credentials installed we get in a bootloop
-            // so we start it here
-            // Initialize the server (telnet or web socket) of RemoteDebug
-            Debug.begin(APhostname, 23, 1);
-            Debug.showColors(true); // Colors
-#endif
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             if (WIFImode == 1) {
@@ -1384,6 +1911,18 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
 
 void handleWIFImode() {
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
+    // Ethernet takes priority: when cable is connected, disable WiFi
+    if (EthConnected) {
+        if (WiFi.getMode() != WIFI_OFF) {
+            _LOG_A("Ethernet connected, stopping WiFi..\n");
+            WiFi.softAPdisconnect(true);
+            WiFi.disconnect(true);
+        }
+        return;
+    }
+#endif
+
     if (WIFImode == 2 && WiFi.getMode() != WIFI_AP_STA) {
         _LOG_A("Start Portal...\n");
 
@@ -1391,7 +1930,7 @@ void handleWIFImode() {
         // Start WiFi as AP
         WiFi.softAP("SmartEVSE-config", APpassword);
 #else
-        APpassword = "0123456789abcdef";
+        APpassword = "12345678";
         WiFi.softAP("Sensorbox-config", APpassword);
 #endif
         IPAddress IP = WiFi.softAPIP();
@@ -1413,58 +1952,114 @@ void handleWIFImode() {
 
     if (WIFImode == 0 && WiFi.getMode() != WIFI_OFF) {
         _LOG_A("Stopping WiFi..\n");
+        WiFi.softAPdisconnect(true);
         WiFi.disconnect(true);
     }    
+}
+
+// Compute SHA256 hash of raw 32-byte EC private key
+// Returns first 32 hex chars of hash
+String getEcPrivateKeyHashRaw(const unsigned char* key) {
+    unsigned char hash[32];
+    mbedtls_sha256(key, 32, hash, 0);
+    
+    String result;
+    result.reserve(32);
+    for (int i = 0; i < 16; i++) {
+        char hex[3];
+        snprintf(hex, sizeof(hex), "%02x", hash[i]);
+        result += hex;
+    }
+    return result;
+}
+
+// Compute SHA256 hash of raw 32-byte EC private key from PEM string
+// Returns first 32 hex chars of hash, or empty string on error
+String getEcPrivateKeyHash(const String& pem) {
+    int start = pem.indexOf("-----BEGIN EC PRIVATE KEY-----");
+    if (start < 0) return "";
+    start += 31;  // Skip header
+    
+    // Extract base64 content, stripping all whitespace
+    unsigned char b64[128];
+    int b64len = 0;
+    for (int i = start; i < (int)pem.length() && b64len < 124; i++) {
+        char c = pem[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || 
+            (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=')
+            b64[b64len++] = c;
+    }
+    
+    // Decode base64 to DER
+    unsigned char der[96];
+    size_t olen;
+    if (mbedtls_base64_decode(der, sizeof(der), &olen, b64, b64len) != 0) return "";
+    
+    // Raw 32-byte key is at offset 7 in DER (after: 30 len 02 01 01 04 20)
+    return getEcPrivateKeyHashRaw(der + 7);
 }
 
 // Setup Wifi 
 void WiFiSetup(void) {
     // We might need some sort of authentication in the future.
     // SmartEVSE v3 have programmed ECDSA-256 keys stored in nvs
-    // Unused for now.
-    if (preferences.begin("KeyStorage", true) ) {                               // true = readonly
-//prevent compiler warning
-#if DBG == 1 || (DBG == 2 && LOG_LEVEL != 0)
-        // Hardware version 01xx = SmartEVSE
-        // xx01 = v3.0 first batch
-        // xx02 = v3.0 second batch
-        // xx03 = v3.1 (ESP32-mini)
-        uint16_t hwversion = preferences.getUShort("hwversion");                
-#endif
+    // Get serial number, hwversion, and private key from NVS or efuses (in priority order)
+    uint16_t hwversion = 0;
+    // Hardware version 01xx = SmartEVSE
+    // xx01 = v3.0 first batch
+    // xx02 = v3.0 second batch
+    // xx03 = v3.1 (ESP32-mini)
+    if (preferences.begin("KeyStorage", true)) {                                // true = readonly
+        hwversion = preferences.getUShort("hwversion");
         serialnr = preferences.getUInt("serialnr");
         String ec_private = preferences.getString("ec_private");
         String ec_public = preferences.getString("ec_public");
         preferences.end();
 
-        _LOG_A("hwversion %04x serialnr:%u \n",hwversion, serialnr);
-        //_LOG_A(ec_public);
+        if (ec_private.length() > 0) {
+            MQTTprivatePassword = getEcPrivateKeyHash(ec_private);
+        }
+        _LOG_D("NVS: hwversion=%04x serialnr=%u\n", hwversion, serialnr);
+    }
 
-        // SmartEVSE v3.1 has this also stored in efuses
-        uint8_t efuse_block1[32];
+    // Try efuses for any missing values
+    if (!serialnr || !hwversion || MQTTprivatePassword.length() == 0) {
+        uint8_t efuse_privatekey[32];
         uint8_t efuse_hwversion[2];
         uint8_t efuse_serialnr[3];
-        esp_efuse_read_block(EFUSE_BLK1, efuse_block1, 0, 32*8);
+        esp_efuse_read_block(EFUSE_BLK1, efuse_privatekey, 0, 32*8);
         esp_efuse_read_block(EFUSE_BLK3, efuse_hwversion, 56, 16);
         esp_efuse_read_block(EFUSE_BLK3, efuse_serialnr, 72, 24);
 
-        // check if we can use the serialnr in the efuses if the nvs version was erased
-        uint32_t efuseserialnr = efuse_serialnr[0]+(efuse_serialnr[1]<<8)+(efuse_serialnr[2]<<16);
-        // unprogrammed efuse values are zero's
-        if (efuseserialnr != serialnr && !efuseserialnr && !serialnr) {
-            serialnr = efuseserialnr;
-        }  
-        //_LOG_A("Private key: ");
-        //for (uint8_t x=0; x<32; x++) _LOG_A_NO_FUNC("%02x",efuse_block1[x]);
-        //_LOG_A_NO_FUNC(" hwver: %02x%02x serialnr: %u\n", efuse_hwversion[1], efuse_hwversion[0], efuse_serialnr[0]+(efuse_serialnr[1]<<8));
-    } else {
-        _LOG_A("No KeyStorage found in nvs!\n");
-        if (!serialnr) serialnr = MacId() & 0xffff;                             // when serialnr is not programmed (anymore), we use the Mac address
+        if (!serialnr) {
+            serialnr = efuse_serialnr[0] + (efuse_serialnr[1] << 8) + (efuse_serialnr[2] << 16);
+        }
+        if (!hwversion) {
+            hwversion = efuse_hwversion[0] + (efuse_hwversion[1] << 8);
+        }
+        if (MQTTprivatePassword.length() == 0) {
+            // Check if efuse has a non-zero private key
+            bool hasKey = false;
+            for (uint8_t i = 0; i < 32 && !hasKey; i++) hasKey = (efuse_privatekey[i] != 0);
+            if (hasKey) {
+                MQTTprivatePassword = getEcPrivateKeyHashRaw(efuse_privatekey);
+                _LOG_D("Using efuse private key\n");
+            }
+        }
     }
-    // overwrite APhostname if serialnr is programmed
+
+    // Fallback to MAC address if no serial number found
+    if (!serialnr) {
+        serialnr = MacId() & 0xffff;
+        _LOG_A("No serialnr programmed, using MAC: %u\n", serialnr);
+    }
+    
+    _LOG_A("hwversion=%04x serialnr=%u mqtt_pwd=%s\n", hwversion, serialnr, MQTTprivatePassword.c_str());
+
 #ifndef SENSORBOX_VERSION
-    APhostname = "SmartEVSE-" + String( serialnr);                              // SmartEVSE access point Name = SmartEVSE-xxxxx
+    APhostname = "SmartEVSE-" + String(serialnr);
 #else
-    APhostname = "Sensorbox-" + String( serialnr);
+    APhostname = "Sensorbox-" + String(serialnr);
 #endif
     WiFi.setHostname(APhostname.c_str());
 
@@ -1476,7 +2071,7 @@ void WiFiSetup(void) {
         APpassword[i] = c;
     }
 
-    mg_mgr_init(&mgr);  // Initialise event manager
+    mg_mgr_init(&mgr);
 
     WiFi.setAutoReconnect(true);                                                // Required for Arduino 3
     //WiFi.persistent(true);
@@ -1484,6 +2079,7 @@ void WiFiSetup(void) {
 
     if (preferences.begin("settings", false) ) {
         TZinfo = preferences.getString("TimezoneInfo","");
+        TZname = preferences.getString("TZname","");
         if (TZinfo != "") {
             setenv("TZ",TZinfo.c_str(),1);
             tzset();
@@ -1498,6 +2094,7 @@ void WiFiSetup(void) {
 #endif
         MQTTHost = preferences.getString("MQTTHost", "");
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
+        MQTTtls = preferences.getBool("MQTTtls", false);
 #endif //MQTT
         preferences.end();
     }
@@ -1514,24 +2111,33 @@ void WiFiSetup(void) {
 // called by loop() in the main program
 void network_loop() {
     static unsigned long lastCheck_net = 0;
-    static int seconds = 0;
-    time_t now;
+
+    // Handle deferred WiFi mode changes (triggered by Ethernet events on the
+    // sys_evt task, which has too little stack for WiFi.softAP / WiFi.begin)
+    if (WIFImodeChanged) {
+        WIFImodeChanged = false;
+        handleWIFImode();
+    }
+
+#if MQTT && MQTT_ESP && SMARTEVSE_VERSION
+    // Handle SmartEVSE MQTT server setting change (set by LCD menu)
+    // This runs in main loop context where MQTT operations are safe
+    if (MQTTSmartServerChanged) {
+        MQTTSmartServerChanged = false;
+        MQTTclientSmartEVSE.disconnect();
+        if (MQTTSmartServer) MQTTclientSmartEVSE.connect();
+    }
+#endif
+
     if (millis() - lastCheck_net >= 1000) {
         lastCheck_net = millis();
         //this block is for non-time critical stuff that needs to run approx 1 / second
+        time_t now;
         time(&now);                     // get seconds since Epoch
         localtime_r(&now, &timeinfo);   // convert seconds to localtime
-        if (!LocalTimeSet && WIFImode == 1) {
+        if (!LocalTimeSet && (WIFImode == 1 || EthHasIP)) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
-        //this block is for non-time critical stuff that needs to run approx 1 / 10 seconds
-#if MQTT
-        if (seconds++ >= 9) {
-            seconds = 0;
-            MQTTclient.publish(MQTTprefix + "/ESPUptime", esp_timer_get_time() / 1000000, false, 0);
-            MQTTclient.publish(MQTTprefix + "/WiFiRSSI", String(WiFi.RSSI()), false, 0);
-        }
-#endif
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy

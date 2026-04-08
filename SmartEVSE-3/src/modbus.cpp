@@ -57,6 +57,7 @@ extern void receiveNodeStatus(uint8_t *buf, uint8_t NodeNr); //TODO move to modb
 extern void receiveNodeConfig(uint8_t *buf, uint8_t NodeNr); //TODO move to modbus.cpp?
 extern void ModbusRequestLoop();
 extern uint8_t ModbusRequest;
+extern void request_write_settings(void);
 
 
 #ifdef SMARTEVSE_VERSION //ESP32v3
@@ -616,7 +617,7 @@ void WriteItemValueResponse(void) {
 #if !defined(SMARTEVSE_VERSION) //CH32
         printf("@write_settings\n");
 #else
-        write_settings();
+        request_write_settings();
 #endif
     }
 
@@ -627,7 +628,11 @@ void WriteItemValueResponse(void) {
             ModbusException(MB.Address, MB.Function, MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE);
         } else {
             //ModbusWriteSingleResponse(MB.Address, MB.Register, MB.Value);
+#if !defined(SMARTEVSE_VERSION) //CH32
             ModbusSend8(MB.Address, 0x06, MB.Register, MB.Value);
+#else
+            response.add(MB.Address, MB.Function, (uint16_t)MB.Register, (uint16_t)MB.Value);
+#endif
         }
     }
 }
@@ -652,7 +657,7 @@ void WriteMultipleItemValueResponse(void) {
 #if !defined(SMARTEVSE_VERSION) //CH32
         printf("@write_settings\n");
 #else
-        write_settings();
+        request_write_settings();
 #endif
     }
 
@@ -821,7 +826,8 @@ void MBhandleError(Error error, uint32_t token)
   else {
     _LOG_A("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
   }
-  if (ModbusRequest) ModbusRequestLoop();  // continue with the next request.
+  // Do not advance the request loop on broadcast timeouts. 
+  if (address != BROADCAST_ADR && ModbusRequest) ModbusRequestLoop();  // continue with the next request.
 }
 
 
@@ -859,7 +865,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             if (newmode != 255) MBserver.end();
             _LOG_A("ConfigureModbusMode2 task free ram: %u\n", uxTaskGetStackHighWaterMark( NULL ));
 
-            MBclient.setTimeout(85);                        // Set modbus timeout to 85ms. 15ms lower then modbusRequestloop time of 100ms.
+            MBclient.setTimeout(150);                       // Set modbus timeout to 150ms.
             MBclient.onDataHandler(&MBhandleData);
             MBclient.onErrorHandler(&MBhandleError);
             // Start ModbusRTU Master background task

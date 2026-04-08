@@ -109,13 +109,13 @@
 #define EMCUSTOM_DATATYPE 0
 #define EMCUSTOM_FUNCTION 4
 #define EMCUSTOM_UREGISTER 0
-#define EMCUSTOM_UDIVISOR 8
+#define EMCUSTOM_UDIVISOR 0
 #define EMCUSTOM_IREGISTER 0
-#define EMCUSTOM_IDIVISOR 8
+#define EMCUSTOM_IDIVISOR 0
 #define EMCUSTOM_PREGISTER 0
-#define EMCUSTOM_PDIVISOR 8
+#define EMCUSTOM_PDIVISOR 0
 #define EMCUSTOM_EREGISTER 0
-#define EMCUSTOM_EDIVISOR 8
+#define EMCUSTOM_EDIVISOR 0
 #define RFID_READER 0
 #define WIFI_MODE 0
 #define CARD_OFFSET 0
@@ -130,6 +130,8 @@
 #define LCD_LOCK 0                                                              // 0 = LCD buttons operational, 1 = LCD buttons disabled
 #define CABLE_LOCK 0                                                            // 0 = Cable Lock disabled, 1 = Cable Lock enabled
 #define INITIALIZED 0
+#define PAIRING_PIN 0
+#define APPSERVER 0
 
 // Mode settings
 #define MODE_NORMAL 0
@@ -152,10 +154,12 @@
 #define PILOT_NOK   0
 #define PILOT_SHORT 255
 
+#ifndef SMARTEVSE_VERSION
 #define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
 #define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
 #define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
 #define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
+#endif
 
 #define STATE_A_LED_BRIGHTNESS 40
 #define STATE_B_LED_BRIGHTNESS 255
@@ -283,9 +287,11 @@ void setPilot(bool On);
 #define MENU_SUMMAINS 38
 #define MENU_SUMMAINSTIME 39
 #define MENU_LCDPIN 40
-#define MENU_OFF 41                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 42                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 43
+#define MENU_PAIRING 41
+#define MENU_APPSERVER 42
+#define MENU_OFF 43                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 44                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 45
 
 #define MENU_STATE 50
 
@@ -311,6 +317,7 @@ extern void Timer100ms(void * parameter);
 extern void Timer1S(void * parameter);
 extern void BlinkLed(void * parameter);
 extern void getButtonState();
+extern void setLCDbacklight(uint8_t pwm);
 extern void PowerPanicESP();
 
 extern uint8_t LCDlock;
@@ -328,6 +335,7 @@ struct Sensorbox {
     uint8_t WiFiConnected;      // 0:not connected / 1:connected to WiFi
     uint8_t WiFiAPSTA;          // 0:no portal /  1: portal active
     uint8_t WIFImode;           // 0:Wifi Off / 1:WiFi On / 2: Portal Start
+    uint8_t WIFImodeSynced;     // 0:not synced / 1:synced (first read done)
     uint8_t IP[4];
     uint8_t APpassword[9];      // 8 characters + null termination
 };
@@ -336,6 +344,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val);
 uint16_t getItemValue(uint8_t nav);
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
+extern EnableC2_t EnableC2;
 
 struct Node_t {
     uint8_t Online;

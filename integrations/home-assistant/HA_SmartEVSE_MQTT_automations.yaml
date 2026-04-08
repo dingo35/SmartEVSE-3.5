@@ -1,0 +1,104 @@
+# SmartEVSE MQTT Home Assistant Automations
+# ==========================================
+# This file contains Home Assistant automations for MQTT integration with SmartEVSE.
+#
+# IMPORTANT: These are AUTOMATION entries that should be added to your automations.yaml
+# DO NOT add these to configuration.yaml directly.
+#
+# INSTALLATION:
+# 1. In Home Assistant, go to Settings > Automations & Scenes > Create Automation
+# 2. Click "Edit in YAML" and paste each automation below
+# 3. Or manually add these to your automations.yaml file
+# 4. Update the MQTT topic from "SmartEVSE-XXXXX" to match your device hostname
+# 5. Adjust the entity_id values to match your sensors (meter_active_power_l*, etc.)
+# 6. Save and test the automations
+#
+# PREREQUISITES:
+# - MQTT integration configured in Home Assistant
+# - SmartEVSE configured with MQTT connection
+# - Home Assistant sensors for power/voltage measurements
+
+---
+# Automation 1: Update Mains Meter Current from Home Assistant to SmartEVSE
+# Sends current values (in 0.1A units) calculated from power and voltage readings
+# This allows SmartEVSE to dynamically adjust charging based on available grid power
+#
+alias: "SmartEVSE: Update Mains Meter Current"
+description: "Push mains meter current data to SmartEVSE via MQTT"
+mode: single
+max_exceeded: silent
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.meter_active_power_l1
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+action:
+  - service: mqtt.publish
+    data:
+      topic: "SmartEVSE-XXXXX/Set/MainsMeter"
+      payload: |-
+        {{
+          ((states('sensor.meter_active_power_l1') | float(0) / states('sensor.on_grid_l1_voltage') | float(0)) * (-1) * 10) | round(0) | int
+        }}:{{
+          ((states('sensor.meter_active_power_l2') | float(0) / states('sensor.on_grid_l2_voltage') | float(0)) * (-1) * 10) | round(0) | int
+        }}:{{
+          ((states('sensor.meter_active_power_l3') | float(0) / states('sensor.on_grid_l3_voltage') | float(0)) * (-1) * 10) | round(0) | int
+        }}
+
+---
+# Automation 2: Update Home Battery Current to SmartEVSE
+# Sends battery current data to SmartEVSE (in 0.1A units)
+# Useful for optimizing charging when a home battery system is present
+#
+alias: "SmartEVSE: Update Home Battery Current"
+description: "Push home battery current data to SmartEVSE via MQTT"
+mode: single
+max_exceeded: silent
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.battery_current
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+action:
+  - service: mqtt.publish
+    data:
+      topic: "SmartEVSE-XXXXX/Set/HomeBatteryCurrent"
+      payload: "{{ (states('sensor.battery_current') | float(0) * 10 * (-1)) | int }}"
+
+---
+# CUSTOMIZATION NOTES:
+# 
+# 1. Entity IDs:
+#    Update the following entity IDs to match your Home Assistant sensors:
+#    - sensor.meter_active_power_l1/l2/l3 (your mains meter power readings)
+#    - sensor.on_grid_l1/l2/l3_voltage (your grid voltage readings)
+#    - sensor.battery_current (your battery/inverter current)
+#
+# 2. MQTT Topic:
+#    Replace "SmartEVSE-XXXXX" with your actual SmartEVSE hostname or identifier
+#
+# 3. Trigger Timing:
+#    The "for: seconds: 1" prevents rapid updates; adjust as needed
+#    Shorter intervals = faster response, higher MQTT traffic
+#    Longer intervals = smoother behavior, delayed response
+#
+# 4. Mode: Single with Silent Error Handling:
+#    "mode: single" prevents multiple automation runs triggered simultaneously.
+#    "max_exceeded: silent" suppresses errors when a new trigger arrives while
+#    an automation is already running. The new trigger is silently dropped.
+#
+# 5. Payload Calculation:
+#    MainsMeter payload format: phase_l1_current:phase_l2_current:phase_l3_current
+#    Values are in 0.1A units (multiply by 10)
+#    Negative values indicate power export to grid
+#    HomeBatteryCurrent is a single value in 0.1A units
+#
+# 6. Error Handling:
+#    The | float(0) and | int filters provide defaults to prevent errors
+#    if sensors are unavailable
