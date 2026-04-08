@@ -2140,6 +2140,12 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
             BalancedError[NodeNr] &= ~(LESS_6A);                                // Clear Error flags
             write = 1;
         }
+    } else {
+        // Re-set LESS_6A on Node if solar power disappeared during ChargeDelay countdown.
+        if (Mode == MODE_SOLAR && BalancedState[NodeNr] == STATE_B1 && !(BalancedError[NodeNr] & LESS_6A)) {
+            BalancedError[NodeNr] |= LESS_6A;
+            write = 1;
+        }
     }
 
     if ((ErrorFlags & CT_NOCOMM) && !(BalancedError[NodeNr] & CT_NOCOMM)) {
