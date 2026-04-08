@@ -135,3 +135,61 @@ button.ui-btn, a.ui-btn {
     margin-right: .25rem;
     gap: .25rem;
 }
+
+.raw-data-page {
+    min-height: 100vh;
+    margin: 0;
+    color: #e5e7eb;
+}
+
+.raw-data-page-wrap {
+    color: #e5e7eb;
+    background: #000;
+    padding: 24px;
+    text-shadow: none;
+}
+
+#raw_data_status {
+    margin: .25rem 0 1rem 0;
+    color: #9ca3af;
+}
+
+#raw_data_json {
+    margin: .25rem 0 0 0;
+    font-family: var(--font-family-monospace), monospace;
+    font-size: .9rem;
+    line-height: 1.4;
+}
+
+#raw_data_json .json-string {
+    color: #34d399;
+}
+
+#raw_data_json .json-number {
+    color: #f59e0b;
+}
+
+.raw-btns {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: #000;
+    padding: 14px 0;
+}
+
+.raw-btn {
+    display: inline-block;
+    margin: .2em .2em .2em 0;
+    padding: .6em 1em;
+    border: 1px solid #ccc;
+    border-radius: .4em;
+    background: linear-gradient(#fff, #f1f1f1);
+    color: #2f3e46;
+    font-weight: 700;
+    text-shadow: 0 1px 0 #fff;
+}
+
+.raw-btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
