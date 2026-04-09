@@ -2754,8 +2754,8 @@ static unsigned int LedPwm = 0;                                                /
             }    
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    } else if (LedMode && (RFIDReader == 6 || RFIDReader == 0)) {
-        // OCPP LED color scheme (public charging)
+    } else if (LedMode) {
+        // Public LED color scheme
         unsigned long now = millis();
         if (now - OcppLastRfidUpdate < 200) {
             RedPwm = 128;                                                   // Grey - RFID update

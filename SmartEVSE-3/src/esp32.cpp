@@ -1658,6 +1658,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lcdlock"] = LCDlock;
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
+        doc["settings"]["ledmode"] = LedMode;
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
