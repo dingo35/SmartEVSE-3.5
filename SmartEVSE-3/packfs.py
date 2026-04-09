@@ -1,5 +1,46 @@
 #this script will be run by platformio.ini from its native directory
-import os, sys, gzip, shutil
+import os, sys, gzip, shutil, re
+
+# Asset minification during packing
+# --------------------------------
+# This build step minifies the two packed web assets used by the firmware:
+#   - data/index.html
+#   - data/styling.css
+#
+# Why:
+# - It saves a lot of bytes in the embedded filesystem image.
+# - Smaller assets reduce flash/storage usage and transfer overhead.
+#
+# Safety:
+# - Minification is whitespace/comment-focused for HTML/CSS structure.
+# - Runtime functionality is unchanged (same DOM/script logic and CSS rules).
+# - Script/style/pre/textarea blocks are protected for HTML minification so
+#   their content is not altered.
+
+def minify_css(content):
+    # Compact CSS by removing comments and unnecessary whitespace.
+    # Selectors/properties/values remain the same.
+    content = re.sub(r"/\*[\s\S]*?\*/", "", content)
+    content = re.sub(r"\s+", " ", content)
+    content = re.sub(r"\s*([{}:;,>+~])\s*", r"\1", content)
+    content = content.replace(";}", "}")
+    return content.strip() + "\n"
+
+def minify_html(content):
+    # Protect blocks where whitespace/content must remain untouched.
+    blocks = []
+    def protect(match):
+        blocks.append(match.group(0))
+        return "___HTML_BLOCK_" + str(len(blocks) - 1) + "___"
+
+    content = re.sub(r"<(script|style|pre|textarea)\b[\s\S]*?</\1>", protect, content, flags=re.IGNORECASE)
+    content = re.sub(r"<!--[\s\S]*?-->", "", content)
+    content = re.sub(r"\s{2,}", " ", content)
+    content = re.sub(r">\s+<", "><", content)
+    content = content.strip()
+    for i, block in enumerate(blocks):
+        content = content.replace("___HTML_BLOCK_" + str(i) + "___", block)
+    return content + "\n"
 
 #check for the two files we need to be able to keep updating the firmware by the /update endpoint:
 if not os.path.isfile("data/update2.html"):
@@ -16,6 +57,18 @@ try:
         if filename == "cert.pem" or filename == "key.pem" or filename == "CH32V203.bin" or filename == "SmartEVSE.webp":
             shutil.copy('data/' + filename, 'pack.tmp/data/' + filename)
             filelist.append('data/' + filename)
+            continue
+        elif filename == "index.html" or filename == "styling.css":
+            # Minify these assets before gzipping/packing to reduce footprint.
+            with open('data/' + filename, 'r', encoding='utf-8') as f_in:
+                content = f_in.read()
+            if filename == "index.html":
+                content = minify_html(content)
+            else:
+                content = minify_css(content)
+            with gzip.open('pack.tmp/data/' + filename + '.gz', 'wb') as f_out:
+                f_out.write(content.encode('utf-8'))
+            filelist.append('data/' + filename + '.gz')
             continue
         else:
             with open('data/' + filename, 'rb') as f_in, gzip.open('pack.tmp/data/' + filename + '.gz', 'wb') as f_out:

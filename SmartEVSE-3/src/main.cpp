@@ -1241,9 +1241,10 @@ void CalcBalancedCurrent(char mod) {
             Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - EVMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
-        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);// /Nr_Of_Phases_Charging;
+        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);
         if (MaxSumMains) {
-            Idifference = ExcessMaxSumMains;
+            // Use ExcessMaxSumMains as additional per-phase constraint (prevents current fluctuations when CAPACITY is used)
+            Idifference = min(Idifference, ExcessMaxSumMains / 3);
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
@@ -1733,6 +1734,13 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
         _LOG_I("No power/current Errors Cleared.\n");
     }
 
+    // While ChargeDelay is counting down (waiting to start charging), keep re-checking solar availability.
+    // If solar power has disappeared during the countdown, re-set the LESS_6A error to restart the wait cycle.
+    if (ChargeDelay && !(ErrorFlags & LESS_6A) && Mode == MODE_SOLAR && (LoadBl < 2) && !IsCurrentAvailable()) {
+        setErrorFlags(LESS_6A);
+        _LOG_I("Solar power no longer available during ChargeDelay, restarting wait.\n");
+    }
+
     // Mainsmeter defined, and power sharing set to Disabled or Master
     if (MainsMeter.Type && LoadBl < 2) {
         if ( MainsMeter.Timeout == 0 && !(ErrorFlags & CT_NOCOMM) && Mode != MODE_NORMAL) { // timeout if current measurement takes > 10 secs
@@ -2131,6 +2139,12 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
     if (current) {                                                              // Yes enough current
         if (BalancedError[NodeNr] & LESS_6A) {
             BalancedError[NodeNr] &= ~(LESS_6A);                                // Clear Error flags
+            write = 1;
+        }
+    } else {
+        // Re-set LESS_6A on Node if solar power disappeared during ChargeDelay countdown.
+        if (Mode == MODE_SOLAR && BalancedState[NodeNr] == STATE_B1 && !(BalancedError[NodeNr] & LESS_6A)) {
+            BalancedError[NodeNr] |= LESS_6A;
             write = 1;
         }
     }
