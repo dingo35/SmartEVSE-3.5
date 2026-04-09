@@ -1241,9 +1241,10 @@ void CalcBalancedCurrent(char mod) {
             Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - EVMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
-        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);// /Nr_Of_Phases_Charging;
+        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);
         if (MaxSumMains) {
-            Idifference = ExcessMaxSumMains;
+            // Use ExcessMaxSumMains as additional per-phase constraint (prevents current fluctuations when CAPACITY is used)
+            Idifference = min(Idifference, ExcessMaxSumMains / 3);
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
