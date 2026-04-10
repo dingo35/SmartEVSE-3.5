@@ -117,7 +117,7 @@ Select the LED color scheme for the SmartEVSE.
 - **Public**: The color scheme used for public charging stations. Green = available, Blue (static) = EV connected / charging finished, Blue (fading) = charging, Yellow = reserved / waiting, Red = error / fault. Note that the blue LED output is only available on the 6 pin Button connector.
 
 ## RCMON
-Residual Current Monitor (RCM14-03) plugged into connector P1.
+Residual Current Monitor (RCM14) plugged into connector RCM14 / P1.
 
 - **Disabled**: The RCD option is not used.
 - **Enabled**: When a fault current is detected, the contactor will be opened.
@@ -240,15 +240,24 @@ Currently the most reliable way to get the correct behaviour at Solar mode is:
 
 If you are at Smart mode you just set CONTACT2 to the appropriate setting as documented above.
 
-# OCPP (you want your company to pay for your electricity charges, or you want to exploit your SmartEVSE as a public charger)
-To charge a company or a user for your electricity cost, you need a Backend Provider (BP). The BP will monitor your charger usage and will bill the appropriate user and/or company, and will pay you your part.
-Your SmartEVSE can be connected to any BP by the OCPP protocol.
-See the OCPP section in the SmartEVSE dashboard for setting up identifiers and configuring the OCPP interface.
-Connect to the OCPP server using the credentials set up in the SmartEVSE dashboard. To use
-the RFID reader with OCPP, set the mode Rmt/OCPP in the RFID menu. Note that the other
-RFID modes overrule the OCPP access control. OCPP SmartCharging requires the SmartEVSE
-internal load balancing needs to be turned off.
-For user experiences with back-end providers, see [OCPP Backends](ocpp.md)
+# OCPP (Open Charge Point Protocol)
+
+Connect your charge point to a backend server. This allows you to use the SmartEVSE as a public charging station, or to bill a company or user for electricity costs.
+
+## Setup
+
+You will need a Backend Provider (BP) that supports the **OCPP 1.6j** protocol. The BP monitors your charger usage, bills the appropriate user and/or company, and pays you your share.
+
+1. Configure the OCPP connection in the **OCPP section** of the SmartEVSE dashboard (identifiers, server URL, credentials).
+2. Configure an [EV METER](#ev-meter) to measure the energy supplied to the car.
+3. To use the **RFID reader** with OCPP, set the [RFID](#rfid) mode to **Rmt/OCPP**. Note that other RFID modes override OCPP access control.
+
+## Requirements and limitations
+
+- If the backend uses **OCPP SmartCharging** the SmartEVSE internal power sharing [PWR SHARE](#pwr-share) has to be turned off.
+- **Remote firmware updates** are supported over OCPP. The SmartEVSE only accepts `http://` URLs pointing to signed firmware files.
+
+For user experiences with backend providers, see [OCPP Backends](ocpp.md).
 
 # REST API
 
