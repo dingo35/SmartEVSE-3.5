@@ -110,6 +110,12 @@ Set the Function of an External Switch (Pin SW or Connector P2).
 - **Custom B**: A momentary push button can be used for external integrations.
 - **Custom S**: A toggle switch can be used for external integrations.
 
+## LED MODE
+Select the LED color scheme for the SmartEVSE.
+
+- **Standard**: The default green/red color scheme. Green = Normal or Smart mode, Yellow = Solar mode. Red indicates errors or waiting. Custom LED colors can be set via MQTT.
+- **Public**: The color scheme used for public charging stations. Green = available, Blue (static) = EV connected / charging finished, Blue (fading) = charging, Yellow = reserved / waiting, Red = error / fault. Note that the blue LED output is only available on the 6 pin Button connector.
+
 ## RCMON
 Residual Current Monitor (RCM14-03) plugged into connector P1.
 
@@ -208,12 +214,6 @@ Only appears when [CAPACITY](#capacity) is configured. Timer in minutes. If CAPA
 ## LCD PIN
 Pin code so that you can use the buttons on the LCD menu on the web-interface.
 Left button increases the digit by one, Right button goes to next digit, Middle button ends entry.
-
-## LED MODE
-Select the LED color scheme for the SmartEVSE.
-
-- **Standard**: The default green/red color scheme. Green = Normal or Smart mode, Yellow = Solar mode. Red indicates errors or waiting. Custom LED colors can be set via MQTT.
-- **Public**: The color scheme used for public charging stations. Green = available, Blue (static) = EV connected / charging finished, Blue (fading) = charging, Yellow = reserved / waiting, Red = error / fault. Note that the blue led output is only available on the 6 pin Button connector.
 
 ## CONTACT2
 Use a second contactor (C2) to switch phases L2 and L3. 

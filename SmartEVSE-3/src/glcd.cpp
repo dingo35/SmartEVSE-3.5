@@ -1216,9 +1216,9 @@ uint8_t getMenuItems (void) {
     if (Mode != MODE_NORMAL)
         MenuItems[m++] = MENU_C2;
     MenuItems[m++] = MENU_SWITCH;                                               // External Switch on SW (0:Disable / 1:Access / 2:Smart-Solar)
+    MenuItems[m++] = MENU_LEDMODE;                                              // LED mode (0:Standard / 1:Public charging station colors)
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)
-    MenuItems[m++] = MENU_LEDMODE;                                              // LED mode (0:Standard / 1:Public charging station colors)
     MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
     if (getItemValue(MENU_WIFI)  == 1) {                                        // only show AutoUpdate menu if Wifi enabled
         MenuItems[m++] = MENU_AUTOUPDATE;                                       // Firmware automatic update Disabled / Enabled
