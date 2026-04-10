@@ -155,6 +155,7 @@ struct SettingsCache {
     uint8_t AutoUpdate, LCDlock, CableLock;
     uint16_t LCDPin;
     bool MQTTSmartServer;
+    uint8_t LedMode;
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
@@ -1252,6 +1253,7 @@ void read_settings() {
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
+        LedMode = preferences.getUChar("LedMode", 0);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
@@ -1309,6 +1311,7 @@ void read_settings() {
         settingsCache.CableLock = CableLock;
         settingsCache.LCDPin = LCDPin;
         settingsCache.MQTTSmartServer = MQTTSmartServer;
+        settingsCache.LedMode = LedMode;
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
@@ -1383,6 +1386,7 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
     PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin, LCDPin);
     PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer, MQTTSmartServer);
+    PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode, LedMode);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
@@ -1654,6 +1658,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lcdlock"] = LCDlock;
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
+        doc["settings"]["ledmode"] = LedMode;
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
