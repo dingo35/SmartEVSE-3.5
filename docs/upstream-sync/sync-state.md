@@ -4,7 +4,7 @@ Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 
 **Last synced to:** `40e78a2` (2026-02-25, merged via PR #123 base)
 **Current upstream HEAD:** `ecd088b` (2026-03-29)
-**Pending commits:** 2 (was 5; #1 + #2 integrated, #3 rejected)
+**Pending commits:** 0 open / 1 deferred (was 5; #1 + #2 integrated via PR #130, #3 rejected, #4 evaluated and deferred to a future P3 PR, #5 skipped)
 
 ---
 
@@ -15,7 +15,7 @@ Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 | 1 | `ecd088b` | 2026-03-29 | stegen | OCPP: recover from silent session loss (#345) | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_silence_decide()` in ocpp_logic.c, 10 unit tests |
 | 2 | `05c7fc2` | 2026-03-27 | stegen | OCPP: prevent actuator unlock/relock jitter | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_should_force_lock()` in ocpp_logic.c, 11 unit tests |
 | 3 | `02dafa2` | 2026-03-27 | stegen | Fix: Solar 1P stop timer | **Rejected** | P1 | #119 (alt) | Same bug as our PR #119; upstream's fix is incorrect — see analysis |
-| 4 | `190777f` | 2026-03-25 | stegen | Add OCPP firmware update functionality | New feature | P3 | — | esp32.cpp + network_common.h, 62 lines added |
+| 4 | `190777f` | 2026-03-25 | stegen | Add OCPP firmware update functionality | **Evaluated — adopt later** | P3 | — | Multi-key compatible (validation path unchanged); deferred to separate PR — see [analysis](analysis-190777f-ocpp-firmware-update.md) |
 | 5 | `c0c6b16` | 2026-02-25 | hmmbob | Improve integrations section (#334) | Docs only | P4 | — | ESPHome configs, no firmware |
 
 ---
@@ -91,16 +91,31 @@ atomicity and gaining exhaustive unit-test coverage.
 cppcheck, ESP32 release build, CH32 build) all green. Traceability spec
 regenerated.
 
-### #4: `190777f` — Add OCPP firmware update functionality
+### #4: `190777f` — Add OCPP firmware update functionality (EVALUATED — DEFER)
 
-**Summary:** Allows OCPP backend to trigger firmware updates via the OCPP
-FirmwareUpdate message. Adds download + flash logic triggered by OCPP.
+**Multi-key compatibility:** ✅ **fully compatible, no adaptation needed.**
+Upstream calls `forceUpdate(url, /*validate=*/true)` which the fork already
+routes through `validate_sig()` — and PR #125 made `validate_sig()` a
+multi-key loop. Both upstream-signed and fork-signed firmware can be pushed
+via OCPP without code changes.
 
-**Files:** esp32.cpp (60 lines), network_common.h (2 lines)
-**Fork mapping:** esp32.cpp, may interact with firmware_manager.cpp.
-**Risk:** Interacts with OTA update (firmware_manager). Must verify it works
-with multi-key validation. Medium risk.
-**Action:** Evaluate — may need adaptation for multi-key signing.
+**Other concerns** (not blockers, but should be addressed when integrating):
+
+1. **Stack budget** — upstream creates a 4096-byte FreeRTOS task; CLAUDE.md
+   requires a memory-budget check + rationale for new task creation.
+2. **`OcppFwStatus` race** — written by download task, read by OCPP loop
+   task; uses `volatile int` only. Acceptable on Xtensa but worth wrapping
+   for consistency.
+3. **`shouldReboot` reuse** — the install-status callback reads `shouldReboot`
+   which is also set by web-UI updates and other paths; could report
+   `Installed` for the OCPP transaction even when the OCPP install never ran.
+4. **Concurrent update guard** — races with web-UI update path on
+   `downloadProgress`.
+
+**Decision:** Defer to a separate P3 PR. Needs on-device CSMS verification
+(push fork-signed, upstream-signed, unsigned, and corrupted firmware).
+
+**Full analysis:** [analysis-190777f-ocpp-firmware-update.md](analysis-190777f-ocpp-firmware-update.md).
 
 ### #5: `c0c6b16` — Improve integrations section
 
@@ -116,6 +131,7 @@ Documentation only, no firmware changes.
 1. [x] **#3 (Solar 1P):** Rejected. Documented as conscious divergence in
         `upstream-differences.md`. `Broadcast = 4` sub-change deferred (P4).
 2. [x] **#1 + #2 (OCPP resilience):** Integrated as bundled fork PR with
-        pure C extraction and 21 unit tests.
-3. [ ] **#4 (OCPP FW update):** Evaluate interaction with multi-key validation.
-4. [ ] **#5 (Docs):** Skip.
+        pure C extraction and 21 unit tests (PR #130, merged).
+3. [x] **#4 (OCPP FW update):** Evaluated — multi-key compatible. Deferred to
+        separate P3 PR (needs on-device CSMS verification + memory budget review).
+4. [x] **#5 (Docs):** Skipped — ESPHome integrations dir not fork-specific.
