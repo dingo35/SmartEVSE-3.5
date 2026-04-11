@@ -69,6 +69,8 @@ Addresses upstream issue
 | OCPP settings validation | Invalid URLs/IDs accepted silently | [Features: OCPP & Authorization](features.md#rfid-ocpp--authorization) |
 | OCPP connection telemetry | No diagnostics for connection drops | [Features: OCPP & Authorization](features.md#rfid-ocpp--authorization) |
 | IEC 61851 → OCPP status mapping | EVCC integration needs standard status codes | [Features: OCPP & Authorization](features.md#rfid-ocpp--authorization) |
+| Silent OCPP session loss recovery | WebSocket pings keep transport alive but don't prove backend is processing OCPP messages — integrated upstream `ecd088b` with timing logic extracted to pure C and 10 unit tests | upstream `ecd088b` |
+| Atomic connector lock decision | Upstream `ocppLoop()` briefly flipped `OcppForcesLock` false→true within one iteration, causing actuator unlock/relock jitter — integrated upstream `05c7fc2` with the decision extracted to pure C and 11 unit tests | upstream `05c7fc2` |
 
 ### MQTT & Home Assistant
 

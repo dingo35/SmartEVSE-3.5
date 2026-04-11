@@ -157,6 +157,157 @@ void test_ev_not_ready_at_nok(void) {
     TEST_ASSERT_FALSE(ocpp_is_ev_ready(PILOT_NOK));
 }
 
+/* ---- Connector lock decision (upstream commit 05c7fc2) ---- */
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-110
+ * @scenario Active authorized transaction with car plugged → lock
+ * @given tx is present, authorized, active; CP voltage is PILOT_6V (plugged)
+ * @when ocpp_should_force_lock is called
+ * @then Returns true — connector must be locked during charging
+ */
+void test_lock_active_tx_plugged(void) {
+    bool locked = ocpp_should_force_lock(
+        /*tx_present*/ true, /*tx_authorized*/ true,
+        /*tx_active_or_running*/ true,
+        /*cp_voltage*/ PILOT_6V,
+        /*locking_tx_present*/ false,
+        /*locking_tx_start_requested*/ false);
+    TEST_ASSERT_TRUE(locked);
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-110
+ * @scenario Lock condition holds at PILOT_3V boundary (charging)
+ * @given Active authorized tx, CP voltage is PILOT_3V (lower bound)
+ * @when ocpp_should_force_lock is called
+ * @then Returns true
+ */
+void test_lock_active_tx_at_3v_boundary(void) {
+    TEST_ASSERT_TRUE(ocpp_should_force_lock(
+        true, true, true, PILOT_3V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-110
+ * @scenario Lock condition holds at PILOT_9V boundary (plugged, not charging yet)
+ * @given Active authorized tx, CP voltage is PILOT_9V (upper bound)
+ * @when ocpp_should_force_lock is called
+ * @then Returns true
+ */
+void test_lock_active_tx_at_9v_boundary(void) {
+    TEST_ASSERT_TRUE(ocpp_should_force_lock(
+        true, true, true, PILOT_9V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-111
+ * @scenario No lock when no transaction present
+ * @given tx_present false, but CP voltage and other inputs say "active"
+ * @when ocpp_should_force_lock is called
+ * @then Returns false — no transaction means no lock
+ */
+void test_lock_no_tx_no_lock(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        false, true, true, PILOT_6V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-111
+ * @scenario No lock when transaction is not authorized
+ * @given tx present but unauthorized, plugged
+ * @when ocpp_should_force_lock is called
+ * @then Returns false
+ */
+void test_lock_unauthorized_tx_no_lock(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        true, false, true, PILOT_6V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-111
+ * @scenario No lock when transaction neither active nor running
+ * @given tx authorized but isActive==false && isRunning==false
+ * @when ocpp_should_force_lock is called
+ * @then Returns false
+ */
+void test_lock_inactive_tx_no_lock(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        true, true, false, PILOT_6V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-111
+ * @scenario No lock when connector unplugged (PILOT_12V)
+ * @given Active authorized tx but CP says no vehicle
+ * @when ocpp_should_force_lock is called
+ * @then Returns false
+ */
+void test_lock_active_tx_unplugged_no_lock(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        true, true, true, PILOT_12V, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-111
+ * @scenario No lock when connector reads PILOT_NOK (fault) and no LockingTx
+ * @given Authorized active tx, CP voltage PILOT_NOK
+ * @when ocpp_should_force_lock is called
+ * @then Returns false — pilot fault means cable state is unknown,
+ *       fall back to unlocked unless a LockingTx demands otherwise
+ */
+void test_lock_pilot_nok_no_lock(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        true, true, true, PILOT_NOK, false, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-112
+ * @scenario LockingTx with start requested keeps connector locked
+ * @given No regular tx active, LockingTx present and StartSync requested
+ * @when ocpp_should_force_lock is called
+ * @then Returns true — RFID-locked connector waits for matching swipe
+ */
+void test_lock_locking_tx_start_requested(void) {
+    TEST_ASSERT_TRUE(ocpp_should_force_lock(
+        false, false, false, PILOT_12V, true, true));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-112
+ * @scenario LockingTx without start request does not force lock
+ * @given LockingTx present but its StartSync has not been requested
+ * @when ocpp_should_force_lock is called
+ * @then Returns false
+ */
+void test_lock_locking_tx_no_start_request(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        false, false, false, PILOT_12V, true, false));
+}
+
+/*
+ * @feature OCPP Connector Lock
+ * @req REQ-OCPP-113
+ * @scenario All-false baseline returns false
+ * @given Every input false / PILOT_NOK
+ * @when ocpp_should_force_lock is called
+ * @then Returns false — no condition triggers
+ */
+void test_lock_all_false_baseline(void) {
+    TEST_ASSERT_FALSE(ocpp_should_force_lock(
+        false, false, false, PILOT_NOK, false, false));
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Connector State");
@@ -172,6 +323,17 @@ int main(void) {
     RUN_TEST(test_ev_ready_at_6v);
     RUN_TEST(test_ev_not_ready_at_9v);
     RUN_TEST(test_ev_not_ready_at_12v);
+    RUN_TEST(test_lock_active_tx_plugged);
+    RUN_TEST(test_lock_active_tx_at_3v_boundary);
+    RUN_TEST(test_lock_active_tx_at_9v_boundary);
+    RUN_TEST(test_lock_no_tx_no_lock);
+    RUN_TEST(test_lock_unauthorized_tx_no_lock);
+    RUN_TEST(test_lock_inactive_tx_no_lock);
+    RUN_TEST(test_lock_active_tx_unplugged_no_lock);
+    RUN_TEST(test_lock_pilot_nok_no_lock);
+    RUN_TEST(test_lock_locking_tx_start_requested);
+    RUN_TEST(test_lock_locking_tx_no_start_request);
+    RUN_TEST(test_lock_all_false_baseline);
     RUN_TEST(test_ev_not_ready_at_nok);
 
     TEST_SUITE_RESULTS();

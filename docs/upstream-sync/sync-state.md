@@ -4,7 +4,7 @@ Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 
 **Last synced to:** `40e78a2` (2026-02-25, merged via PR #123 base)
 **Current upstream HEAD:** `ecd088b` (2026-03-29)
-**Pending commits:** 5
+**Pending commits:** 2 (was 5; #1 + #2 integrated, #3 rejected)
 
 ---
 
@@ -12,8 +12,8 @@ Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 
 | # | Hash | Date | Author | Title | Classification | Priority | Fork PR | Notes |
 |---|------|------|--------|-------|---------------|----------|---------|-------|
-| 1 | `ecd088b` | 2026-03-29 | stegen | OCPP: recover from silent session loss (#345) | New feature | P2 | — | esp32.cpp + main.cpp, OCPP resilience |
-| 2 | `05c7fc2` | 2026-03-27 | stegen | OCPP: prevent actuator unlock/relock jitter | Bug fix — non-safety | P2 | — | esp32.cpp only, actuator control |
+| 1 | `ecd088b` | 2026-03-29 | stegen | OCPP: recover from silent session loss (#345) | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_silence_decide()` in ocpp_logic.c, 10 unit tests |
+| 2 | `05c7fc2` | 2026-03-27 | stegen | OCPP: prevent actuator unlock/relock jitter | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_should_force_lock()` in ocpp_logic.c, 11 unit tests |
 | 3 | `02dafa2` | 2026-03-27 | stegen | Fix: Solar 1P stop timer | **Rejected** | P1 | #119 (alt) | Same bug as our PR #119; upstream's fix is incorrect — see analysis |
 | 4 | `190777f` | 2026-03-25 | stegen | Add OCPP firmware update functionality | New feature | P3 | — | esp32.cpp + network_common.h, 62 lines added |
 | 5 | `c0c6b16` | 2026-02-25 | hmmbob | Improve integrations section (#334) | Docs only | P4 | — | ESPHome configs, no firmware |
@@ -52,26 +52,44 @@ regardless of node count.
 after boot (one-shot init delay). Low value, low risk. Tracked as **P4** —
 evaluate independently if/when we touch Modbus init timing.
 
-### #1: `ecd088b` — OCPP: recover from silent session loss
+### #1 + #2: `ecd088b` + `05c7fc2` — OCPP resilience (INTEGRATED)
 
-**Summary:** Detects when an OCPP backend silently drops a transaction (no
-StopTransaction response) and recovers by ending the local session.
+**Bundled** as one fork PR. Both touch only `esp32.cpp` (firmware glue) plus
+one line in `main.cpp` (global declaration).
 
-**Files:** esp32.cpp (32 lines), main.cpp (2 lines)
-**Fork mapping:** esp32.cpp is firmware glue (same file in fork). The 2 lines in
-main.cpp may need to go in the bridge or state machine depending on what they do.
-**Risk:** Non-safety, OCPP-only. Low regression risk.
-**Action:** Implement — OCPP Specialist role.
+**#1 — `ecd088b` — Silent session loss recovery**
+The MicroOcpp WebSocket layer keeps the transport alive with ping/pong frames,
+but those don't prove the OCPP backend is still processing application
+messages. Upstream's fix sends periodic Heartbeat probes and forces a WebSocket
+reconnect when the backend stays silent past a timeout. In the fork, the timing
+decision was extracted into `ocpp_silence_decide()` (pure C in `ocpp_logic.c`)
+so the (now/last_response/last_probe → action) mapping can be unit-tested
+without millis() or MicroOcpp. The glue layer in `ocppLoop()` calls the pure
+function and dispatches `sendRequest("Heartbeat")` / `reloadConfigs()`.
 
-### #2: `05c7fc2` — OCPP: prevent actuator unlock/relock jitter
+  - 10 unit tests in `test_ocpp_resilience.c` (REQ-OCPP-100..104)
+  - Constants `OCPP_PROBE_INTERVAL_MS = 90000` and `OCPP_SILENCE_TIMEOUT_MS = 300000`
+    match upstream
+  - Cold-boot guard: `last_response_ms == 0` cannot trigger reconnect
+  - Reconnect priority over probe verified by test
 
-**Summary:** Prevents the cable lock actuator from rapidly cycling when OCPP
-authorization state changes during an active charge session.
+**#2 — `05c7fc2` — Actuator unlock/relock jitter**
+Upstream bug: `OcppForcesLock` was reset to false unconditionally and then
+conditionally set to true within the same `ocppLoop()` iteration. The actuator
+dispatcher could sample mid-flip and translate the brief false→true into rapid
+unlock/relock cycling. The fix is to compute the lock decision once and assign
+once. In the fork, the decision is now `ocpp_should_force_lock()` (pure C);
+the glue layer assigns the result in a single statement, achieving the same
+atomicity and gaining exhaustive unit-test coverage.
 
-**Files:** esp32.cpp (5 lines changed)
-**Fork mapping:** Same file, firmware glue.
-**Risk:** Non-safety but affects physical actuator. Low regression risk.
-**Action:** Implement — OCPP Specialist role. Can bundle with #1.
+  - 11 unit tests in `test_ocpp_connector.c` (REQ-OCPP-110..113)
+  - Boundary tests for `PILOT_3V` and `PILOT_9V`
+  - Tests for both lock conditions independently and combined
+  - All-false baseline asserted
+
+**Verification:** Full 5-step pre-push pipeline (native tests, ASan+UBSan,
+cppcheck, ESP32 release build, CH32 build) all green. Traceability spec
+regenerated.
 
 ### #4: `190777f` — Add OCPP firmware update functionality
 
@@ -97,6 +115,7 @@ Documentation only, no firmware changes.
 
 1. [x] **#3 (Solar 1P):** Rejected. Documented as conscious divergence in
         `upstream-differences.md`. `Broadcast = 4` sub-change deferred (P4).
-2. [ ] **#1 + #2 (OCPP):** Bundle and implement — OCPP Specialist.
+2. [x] **#1 + #2 (OCPP resilience):** Integrated as bundled fork PR with
+        pure C extraction and 21 unit tests.
 3. [ ] **#4 (OCPP FW update):** Evaluate interaction with multi-key validation.
 4. [ ] **#5 (Docs):** Skip.

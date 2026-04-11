@@ -261,3 +261,52 @@ const char *ocpp_iec61851_to_status(char iec_state, bool evse_ready,
         return OCPP_STATUS_FAULTED;
     }
 }
+
+/* ---- Silent OCPP session loss detection (upstream commit ecd088b) ---- */
+
+ocpp_silence_action_t ocpp_silence_decide(bool ws_connected,
+                                          unsigned long now_ms,
+                                          unsigned long last_response_ms,
+                                          unsigned long last_probe_ms) {
+    /* No decision while transport is down — the WS layer will reconnect on
+     * its own and ocppInit() reseeds last_response_ms. */
+    if (!ws_connected) {
+        return OCPP_SILENCE_NO_ACTION;
+    }
+
+    /* Force-reconnect takes priority. The 0-guard prevents a stale or
+     * uninitialized last_response_ms from triggering a reconnect on cold
+     * boot before any response has ever been observed. */
+    if (last_response_ms != 0 &&
+        (now_ms - last_response_ms) >= OCPP_SILENCE_TIMEOUT_MS) {
+        return OCPP_SILENCE_FORCE_RECONNECT;
+    }
+
+    if ((now_ms - last_probe_ms) >= OCPP_PROBE_INTERVAL_MS) {
+        return OCPP_SILENCE_SEND_PROBE;
+    }
+
+    return OCPP_SILENCE_NO_ACTION;
+}
+
+/* ---- Connector lock decision (upstream commit 05c7fc2) ---- */
+
+bool ocpp_should_force_lock(bool tx_present,
+                            bool tx_authorized,
+                            bool tx_active_or_running,
+                            uint8_t cp_voltage,
+                            bool locking_tx_present,
+                            bool locking_tx_start_requested) {
+    /* Active authorized transaction with the connector plugged. */
+    if (tx_present && tx_authorized && tx_active_or_running &&
+        cp_voltage >= PILOT_3V && cp_voltage <= PILOT_9V) {
+        return true;
+    }
+
+    /* LockingTx waiting for matching RFID swipe to release. */
+    if (locking_tx_present && locking_tx_start_requested) {
+        return true;
+    }
+
+    return false;
+}
