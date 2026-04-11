@@ -40,7 +40,7 @@ Addresses upstream issues
 | Symmetric ramp rates | Overshoot/undershoot from asymmetric regulation | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 | Tiered phase switching timers | Rapid 1P/3P cycling | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 | Stop/start cycling prevention | Solar mode stops and restarts unnecessarily | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
-| Multi-node SolarStopTimer fix | Upstream threshold scales with ActiveEVSE, unreachable for 2+ nodes (commit `94ca08e`) | [PR #119](https://github.com/basmeerman/SmartEVSE-3.5/pull/119) |
+| Multi-node SolarStopTimer fix | Upstream threshold scales with `ActiveEVSE`, unreachable for 2+ nodes (commit `94ca08e`). Upstream attempted a different fix in `02dafa2` that we evaluated and rejected — it reproduces the multi-node scaling bug and causes stop/start cycling for fixed 3-phase. See [analysis](upstream-sync/analysis-02dafa2-solar-stop-threshold.md). | [PR #119](https://github.com/basmeerman/SmartEVSE-3.5/pull/119) |
 | Slave mode sync via setMode() | Upstream `SETITEM(MENU_MODE)` skips phase switching and error clearing on slaves | [PR #121](https://github.com/basmeerman/SmartEVSE-3.5/pull/121) |
 | Slow EV compatibility | Renault Zoe stalls on rapid current changes | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
 
