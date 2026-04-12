@@ -159,6 +159,83 @@ ocpp_validate_result_t ocpp_validate_auth_key(const char *auth_key);
 const char *ocpp_iec61851_to_status(char iec_state, bool evse_ready,
                                     bool tx_active);
 
+/* ---- Silent OCPP session loss detection (upstream commit ecd088b) ---- */
+
+/*
+ * The MicroOcpp WebSocket layer keeps the transport alive with ping/pong frames,
+ * but those don't prove the OCPP backend is still processing application messages.
+ * If the backend goes silent at the OCPP layer (e.g. CSMS app crash, broken proxy),
+ * pings keep flowing and the charger thinks it's connected while transactions are
+ * silently dropped. The fix: send periodic Heartbeat probes and track responses,
+ * forcing a WebSocket reconnect if the backend stays silent for too long.
+ */
+
+#define OCPP_PROBE_INTERVAL_MS    90000UL  /* Send Heartbeat probe every 90 seconds  */
+#define OCPP_SILENCE_TIMEOUT_MS  300000UL  /* Force reconnect after 5 minutes silent */
+
+typedef enum {
+    OCPP_SILENCE_NO_ACTION       = 0,
+    OCPP_SILENCE_SEND_PROBE      = 1,
+    OCPP_SILENCE_FORCE_RECONNECT = 2
+} ocpp_silence_action_t;
+
+/*
+ * Decide whether to send a heartbeat probe or force a WebSocket reconnect.
+ *
+ *   ws_connected      — true if the underlying WebSocket reports connected
+ *   now_ms            — current monotonic millisecond timestamp (e.g. millis())
+ *   last_response_ms  — timestamp of the last received OCPP-level response;
+ *                       0 means "not yet initialized" — function returns
+ *                       NO_ACTION rather than triggering a reconnect on cold
+ *                       boot before the first probe is sent
+ *   last_probe_ms     — timestamp of the last probe we sent
+ *
+ * Force-reconnect takes priority over probe so we don't spam probes when the
+ * backend is already declared dead.
+ *
+ * The function is pure: callers update last_probe_ms / last_response_ms based
+ * on the returned action.
+ */
+ocpp_silence_action_t ocpp_silence_decide(bool ws_connected,
+                                          unsigned long now_ms,
+                                          unsigned long last_response_ms,
+                                          unsigned long last_probe_ms);
+
+/* ---- Connector lock decision (upstream commit 05c7fc2) ---- */
+
+/*
+ * Decide whether the connector cable lock actuator should be engaged.
+ *
+ * Upstream bug: the previous implementation reset OcppForcesLock to false
+ * unconditionally and then conditionally set it to true within the same loop
+ * iteration, causing brief false→true flips that the lock dispatcher could
+ * sample mid-flip and translate into rapid actuator unlock/relock cycles.
+ *
+ * Fix: compute the lock decision into a local first, assign once at the end.
+ * Extracted to pure C so the (input → boolean) decision can be tested
+ * exhaustively.
+ *
+ *   tx_present                  — getTransaction() returned non-null
+ *   tx_authorized               — transaction->isAuthorized()
+ *   tx_active_or_running        — transaction->isActive() || ->isRunning()
+ *   cp_voltage                  — OcppTrackCPvoltage (PILOT_xV constant)
+ *   locking_tx_present          — OcppLockingTx is non-null
+ *   locking_tx_start_requested  — OcppLockingTx->getStartSync().isRequested()
+ *
+ * Lock conditions (any one is sufficient):
+ *   1. Active authorized transaction with the connector plugged
+ *      (cp_voltage in [PILOT_3V .. PILOT_9V])
+ *   2. A LockingTx exists and its StartTransaction has been requested
+ *      (LockingTx persists past tx completion to keep the connector locked
+ *      until the same RFID card is presented again)
+ */
+bool ocpp_should_force_lock(bool tx_present,
+                            bool tx_authorized,
+                            bool tx_active_or_running,
+                            uint8_t cp_voltage,
+                            bool locking_tx_present,
+                            bool locking_tx_start_requested);
+
 #ifdef __cplusplus
 }
 #endif

@@ -374,6 +374,8 @@ extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: del
 extern bool OcppDefinedTxNotification;
 extern MicroOcpp::TxNotification OcppTrackTxNotification;
 extern unsigned long OcppLastTxNotification;
+
+extern unsigned long OcppLastOcppResponse;
 #endif //ENABLE_OCPP
 
 
@@ -2188,6 +2190,8 @@ void ocppInit() {
 
     OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
 
+    OcppLastOcppResponse = millis(); // Seed silence detector — see ocpp_silence_decide()
+
     endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
 }
 
@@ -2232,6 +2236,42 @@ void ocppLoop() {
     }
 
     mocpp_loop();
+
+    // Silent OCPP session loss detection (upstream commit ecd088b).
+    // The MicroOcpp WebSocket layer keeps the transport alive with ping/pong
+    // frames, but those don't prove the OCPP backend is still processing
+    // application messages. Send periodic Heartbeat probes; if the backend
+    // stays silent at the OCPP layer past OCPP_SILENCE_TIMEOUT_MS, force a
+    // WebSocket reconnect. The decision is in ocpp_logic.c so the timing
+    // logic is unit-tested without hardware.
+    {
+        static unsigned long lastProbe = 0;
+        bool wsConnected = (OcppWsClient && OcppWsClient->isConnected());
+        ocpp_silence_action_t silenceAction = ocpp_silence_decide(
+                wsConnected,
+                millis(),
+                OcppLastOcppResponse,
+                lastProbe);
+
+        if (silenceAction == OCPP_SILENCE_SEND_PROBE) {
+            lastProbe = millis();
+            sendRequest("Heartbeat",
+                [] () -> std::unique_ptr<MicroOcpp::JsonDoc> {
+                    auto doc = std::unique_ptr<MicroOcpp::JsonDoc>(new MicroOcpp::JsonDoc(JSON_OBJECT_SIZE(0)));
+                    doc->to<JsonObject>();
+                    return doc;
+                },
+                [] (JsonObject response) {
+                    OcppLastOcppResponse = millis();
+                }
+            );
+        } else if (silenceAction == OCPP_SILENCE_FORCE_RECONNECT) {
+            _LOG_A("OCPP backend unresponsive for %lus, forcing WebSocket reconnect\n",
+                    (millis() - OcppLastOcppResponse) / 1000UL);
+            OcppLastOcppResponse = millis(); // Reset to avoid repeated rapid reconnects
+            OcppWsClient->reloadConfigs();
+        }
+    }
 
     // Check OCPP / LoadBl mutual exclusivity at runtime
     ocpp_lb_status_t lb_status = ocpp_check_lb_exclusivity(LoadBl, OcppMode, OcppWasStandalone);
@@ -2375,16 +2415,18 @@ void ocppLoop() {
         } // There may be further edge cases
     }
 
-    OcppForcesLock = false;
-
-    if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
-            (OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_9V)) { // Connector plugged
-        OcppForcesLock = true;
-    }
-
-    if (OcppLockingTx && OcppLockingTx->getStartSync().isRequested()) { // LockingTx goes beyond tx completion
-        OcppForcesLock = true;
-    }
+    // Atomic lock-decision assignment (upstream commit 05c7fc2): compute the
+    // result once and assign at the end so the actuator dispatcher cannot
+    // sample a brief false→true mid-flip and translate it into rapid
+    // unlock/relock cycling. Decision logic lives in ocpp_logic.c so the
+    // (input → boolean) mapping is exhaustively unit-tested.
+    OcppForcesLock = ocpp_should_force_lock(
+            /*tx_present*/                 (bool)transaction,
+            /*tx_authorized*/              transaction && transaction->isAuthorized(),
+            /*tx_active_or_running*/       transaction && (transaction->isActive() || transaction->isRunning()),
+            /*cp_voltage*/                 OcppTrackCPvoltage,
+            /*locking_tx_present*/         (bool)OcppLockingTx,
+            /*locking_tx_start_requested*/ OcppLockingTx && OcppLockingTx->getStartSync().isRequested());
 
     // Mark active session with OCPP flag when transaction is running
     {
