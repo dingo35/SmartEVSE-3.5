@@ -503,15 +503,23 @@ Up to eight SmartEVSE modules can share one mains supply.
 - Set one SmartEVSE PWR SHARE setting to MASTER, and the others to NODE 1-7. Make sure there is only one Master, and the Node numbers are unique.
 - See [Master setup](#master-setup-power-share) and [Node setup](#node-setup-power-share) above for step-by-step instructions.
 
-# OCPP (you want your company to pay for your electricity charges, or you want to exploit your SmartEVSE as a public charger)
-To charge a company or a user for your electricity cost, you need a Backend Provider (BP). The BP will monitor your charger usage and will bill the appropriate user and/or company, and will pay you your part.
-Your SmartEVSE can be connected to any BP by the OCPP protocol.
-See the OCPP section in the SmartEVSE dashboard for setting up identifiers and configuring the OCPP interface.
-Connect to the OCPP server using the credentials set up in the SmartEVSE dashboard. To use
-the RFID reader with OCPP, set the mode Rmt/OCPP in the RFID menu. Note that the other
-RFID modes overrule the OCPP access control. OCPP SmartCharging requires the SmartEVSE
-internal load balancing needs to be turned off.
-For user experiences with back-end providers, see [OCPP Backends](ocpp.md)
+# OCPP (Open Charge Point Protocol)
+
+Connect your charge point to a backend server. This allows you to use the SmartEVSE as a public charging station, or to bill a company or user for electricity costs.
+
+## Setup
+
+You will need a Backend Provider (BP) that supports the **OCPP 1.6j** protocol. The BP monitors your charger usage, bills the appropriate user and/or company, and pays you your share.
+
+1. Configure the OCPP connection in the **OCPP section** of the SmartEVSE dashboard (identifiers, server URL, credentials).
+2. Configure an [EV METER](#ev-meter) to measure the energy supplied to the car.
+3. To use the **RFID reader** with OCPP, set the [RFID](#rfid) mode to **Rmt/OCPP**. Note that other RFID modes override OCPP access control.
+
+## Requirements and limitations
+
+- If the backend uses **OCPP SmartCharging** the SmartEVSE internal power sharing [PWR SHARE](#pwr-share) has to be turned off.
+
+For user experiences with backend providers, see [OCPP Backends](ocpp.md).
 
 # REST API
 
