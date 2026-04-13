@@ -522,6 +522,7 @@ function loadData() {
 
             if (data.evse.rfid != "Not Installed") {
                 $id('rfid').textContent = data.evse.rfid;
+                showById('show_rfid');                /* fix: sibling to the hide branch — without this the RFID indicator stays hidden by HTML default */
             } else {
                 hideById('show_rfid');
             }
@@ -655,6 +656,12 @@ function loadData() {
             }
 
             if (data.ocpp) {
+                /* Reveal the outer card whenever the backend is shipping OCPP
+                 * data (always true on builds compiled with ENABLE_OCPP). The
+                 * matching hideById in the else branch keeps non-OCPP builds
+                 * silent. Without this, the HTML default `display:none` left
+                 * the panel permanently invisible (issue #129). */
+                showById('ocpp_config_outer');
                 if (data.ocpp.mode == "Enabled") {
                     showById('ocpp_settings');
                     $id('enable_ocpp').checked = true;
@@ -774,7 +781,8 @@ function toggleCableLock() {
     fetch("/settings?cablelock=" + ($id('cablelock').checked ? 1 : 0), { method: 'POST' });
 }
 function toggleEnableOcpp() {
-    fetch("/settings?ocpp_update=1&ocpp_mode=" + ($id('enable_ocpp').checked ? 1 : 0), { method: 'POST' });
+    fetch("/settings?ocpp_update=1&ocpp_mode=" + ($id('enable_ocpp').checked ? 1 : 0), { method: 'POST' })
+        .then(loadData);   /* Refresh immediately so the inner OCPP fields appear/disappear without a 5s wait */
 }
 function toggleEnableOcppAutoAuth() {
     fetch("/settings?ocpp_update=1&ocpp_auto_auth=" + ($id('ocpp_auto_auth').checked ? 1 : 0), { method: 'POST' });

@@ -164,6 +164,12 @@ test: $(TEST_BINS)
 $(TEST_NAMES): %: $(BUILD)/test_%
 	@$(BUILD)/test_$*
 
+# Plan 07 — assert show/hide symmetry for hidden-by-default UI elements.
+# Catches the issue #129 pattern: HTML default `display:none` with no matching
+# showById() in app.js → element permanently invisible to users.
+lint-ui-visibility:
+	@python3 scripts/lint_ui_visibility.py
+
 clean:
 	rm -rf $(BUILD)
 
