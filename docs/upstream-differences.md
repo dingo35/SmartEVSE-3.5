@@ -190,6 +190,7 @@ Findings from the security review (see internal report; most issues are inherite
 | OCPP URL validator rejects SSRF targets | Upstream accepts `wss://127.0.0.1/`, `wss://[::1]/`, `wss://169.254.x/`, `wss://user:pass@host/`. Fork rejects loopback + link-local + embedded credentials. RFC1918 still allowed for self-hosted CSMS | Security fix H-4 |
 | Full partition erase on signature failure | Upstream erases only the first `ENCRYPTED_BLOCK_SIZE` (4 KB) on sig-fail, leaving >4 KB of attacker bytes in flash. Fork erases the entire partition | Security fix M-4 |
 | Hash buffer zeroed before free in `validate_sig` | Hygiene: keeps debug-memory dumps from trivially revealing the firmware fingerprint | Security fix M-3 |
+| Opt-in HTTP auth layer (`AuthMode` NVS setting) | Upstream has no authentication on any HTTP endpoint. Fork adds `AuthMode` (0=Off legacy default, 1=Required) with a pure-C decision helper, LCD-PIN reuse, 30-min idle session timeout, Origin-based CSRF, and applied to every mutating endpoint + `GET /settings`. **Default 0 on upgrade so no install is bricked.** Integrations (HA / custom scripts) continue to work unchanged; security-conscious users explicitly opt in | Plan 16 — Phase 1 — closes C-3, H-1, H-2, H-3, H-7, M-1, M-2, M-8 when enabled |
 
 ---
 

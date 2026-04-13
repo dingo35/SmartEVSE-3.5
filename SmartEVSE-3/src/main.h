@@ -305,6 +305,7 @@ void setPilot(bool On);
 #define MENU_STATE 50
 
 #define MENU_LEDMODE 51                                                         // LED color scheme (0:Standard / 1:Public charging station) — upstream 3679fe3
+#define MENU_AUTHMODE 52                                                        // HTTP auth mode (0:Off legacy / 1:Required) — Plan 16 Phase 1
 
 class Button {
   public:
