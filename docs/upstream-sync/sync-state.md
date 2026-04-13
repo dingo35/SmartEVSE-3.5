@@ -22,7 +22,7 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 | 5 | `543af26` | 2026-04-01 | stegen | EtherLCD support: Ethernet add-on board that replaces the LCD board (#349) | New feature — hardware | P3 | — | **1768 lines**, 11 files, hardware-specific. Evaluate whether fork users want this; substantial review. |
 | 6 | `afd72a8` | 2026-04-03 | stegen | OCPP: send Finishing state before Available (fixes #348) | **Integrated** | P2 | (P2 bundle) | Decision extracted to `ocpp_should_report_occupied()` in ocpp_logic.c; 6 unit tests |
 | 7 | `74e20c8` | 2026-04-07 | stegen | `main.cpp`: reset ChargeDelay countdown when solar power disappears (master) | **Integrated** | P2 | (P2 bundle) | Ported into pure C `evse_tick_1s()`; 3 unit tests in test_tick_1s.c |
-| 8 | `2c015fb` | 2026-04-08 | Juurlink | Improved Raw Settings view: formatted JSON + Download button (#353) | Web UI feature | P3 | — | 280/25 lines, 5 files. Useful; likely conflicts with fork web UI divergences. |
+| 8 | `2c015fb` | 2026-04-08 | Juurlink | Improved Raw Settings view: formatted JSON + Download button (#353) | **Evaluated — defer to Plan 07** | P3 | — | 280/25 lines lands in fork's 500-line diverged `index.html`; stylesheet rename collision (`styling.css` vs fork `style.css`); `packfs.py` path differs. No functional regression from keeping existing Raw Data link. See [analysis](analysis-2c015fb-raw-settings-ui.md). |
 | 9 | `3ab1cee` | 2026-04-08 | stegen | `main.cpp`: reset Node ChargeDelay countdown when solar power disappears | **Integrated** | P2 | (P2 bundle) | Applied in `processAllNodeStates()` master-side slave-node error tracking |
 | 10 | `a54b07f` | 2026-04-09 | stegen | `main.cpp`: prevent current fluctuations when CAPACITY is used (fixes #327) | **Integrated** | P2 | (P2 bundle) | Applied in pure C `evse_calc_balanced_current()`; 3 unit tests. `test_s9_maxsummains_limits` updated to use larger exceedance (Isum 350→600) so per-phase reduction crosses fork's SmartDeadBand — documents the gentler, correct per-phase semantics. |
 | 11 | `92d42eb` | 2026-04-10 | Juurlink | Refactor tooltips: centralize styles in `styling.css` + a11y (#301) | Web UI cosmetic | P4 | — | CSS-only. |
@@ -40,7 +40,7 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
    - #10 `a54b07f` CAPACITY current fluctuation — review for overlap with Plan 13
 3. **Features (P3) — each as separate PR:**
    - #12 `3679fe3` OCPP LED scheme — adapt into `led_color.c`
-   - #8 `2c015fb` Raw Settings UI — evaluate against fork web UI
+   - #8 `2c015fb` Raw Settings UI — **evaluated and deferred** to Plan 07 (Web UI Modernization); see analysis
    - #5 `543af26` EtherLCD — biggest item, stand-alone evaluation
 4. **Cosmetic / docs (P4) — batch or skip:**
    - #4 `4e6c06d` update2.html
