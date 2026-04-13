@@ -1297,13 +1297,27 @@ R"EOF(
 )EOF";
 
 
-// Maximum concurrent HTTP connections to prevent socket exhaustion
+// Maximum concurrent accepted HTTP/HTTPS/WS client connections to prevent
+// socket exhaustion. This is a cap on browser/API clients only; listeners
+// (port 80/443), outbound clients (MQTT, OCPP WS, DNS/SNTP), and connections
+// already marked for close are intentionally excluded from the count.
+// v4 (ESP32-S3, PSRAM) has headroom for more concurrent sessions.
+#if SMARTEVSE_VERSION >= 40
+#define MAX_HTTP_CONNECTIONS 12
+#else
 #define MAX_HTTP_CONNECTIONS 8
+#endif
 
-// Count active connections in the manager
+// Count active accepted server-side connections. Listeners and outbound
+// client connections share struct mg_connection with accepted ones in
+// mgr->conns; counting all of them caused spurious rejections (e.g. 2
+// listeners + MQTT + OCPP WS + 4 browser sockets = 8, limit tripped on
+// the next page load). See log analysis for PR #150 context.
 static int countConnections(struct mg_mgr *mgr) {
   int n = 0;
-  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) n++;
+  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) {
+    if (t->is_accepted && !t->is_closing) n++;
+  }
   return n;
 }
 
