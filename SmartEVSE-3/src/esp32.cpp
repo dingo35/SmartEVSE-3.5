@@ -2149,8 +2149,16 @@ void ocppInit() {
     });
 
     setOccupiedInput([] () -> bool {
-        // Keep Finishing state while LockingTx effectively blocks new transactions
-        return OcppLockingTx != nullptr;
+        // Keep Finishing state while LockingTx effectively blocks new transactions,
+        // and for a brief grace window after StopTx so the CSMS sees the correct
+        // Charging → Finishing → Available sequence. (upstream afd72a8, fixes #348)
+        // Decision lives in ocpp_logic.c so timing logic is unit-testable.
+        return ocpp_should_report_occupied(
+                /*locking_tx_present*/ OcppLockingTx != nullptr,
+                /*tx_notif_defined*/   OcppDefinedTxNotification,
+                /*tx_notif_is_stoptx*/ OcppTrackTxNotification == MicroOcpp::TxNotification::StopTx,
+                /*now_ms*/             millis(),
+                /*last_tx_notif_ms*/   OcppLastTxNotification);
     });
 
     setStopTxReadyInput([] () {

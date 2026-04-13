@@ -847,7 +847,9 @@ void MBhandleError(Error error, uint32_t token)
   else {
     _LOG_A("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
   }
-  if (ModbusRequest) ModbusRequestLoop();  // continue with the next request.
+  // Do not advance the request loop on broadcast timeouts — broadcasts have no reply so a timeout
+  // is expected, and advancing would skip the next legitimate slave response. (upstream b104576)
+  if (address != BROADCAST_ADR && ModbusRequest) ModbusRequestLoop();  // continue with the next request.
 }
 
 

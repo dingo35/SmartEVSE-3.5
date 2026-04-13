@@ -737,7 +737,15 @@ void evse_calc_balanced_current(evse_ctx_t *ctx, int mod) {
 
         int32_t ExcessMaxSumMains = ((int32_t)(ctx->MaxSumMains * 10) - ctx->Isum);
         if (ctx->MaxSumMains) {
-            Idifference = ExcessMaxSumMains;
+            /* Upstream a54b07f (fixes #327): use ExcessMaxSumMains as an
+             * ADDITIONAL per-phase constraint — don't overwrite Idifference.
+             * ExcessMaxSumMains is sum-of-phases (matches Isum); Idifference
+             * is per-phase. Divide by 3 to convert, then take min() with the
+             * other per-phase constraints (MaxMains / MaxCircuit). Assigning
+             * directly caused current fluctuations when CAPACITY was used. */
+            int32_t excess_per_phase = ExcessMaxSumMains / 3;
+            if (excess_per_phase < Idifference)
+                Idifference = excess_per_phase;
             if (ExcessMaxSumMains < 0) {
                 LimitedByMaxSumMains = true;
             } else {
@@ -1606,6 +1614,14 @@ void evse_tick_1s(evse_ctx_t *ctx) {
 
     // ChargeDelay countdown (line 1713)
     if (ctx->ChargeDelay > 0) ctx->ChargeDelay--;
+
+    // Upstream 74e20c8: re-set LESS_6A if solar power disappears during the
+    // ChargeDelay countdown. Without this, the countdown can expire and charging
+    // is attempted even though no solar is available → immediate LESS_6A → oscillation.
+    if (ctx->ChargeDelay && !(ctx->ErrorFlags & LESS_6A) && ctx->Mode == MODE_SOLAR &&
+            ctx->LoadBl < 2 && !evse_is_current_available(ctx)) {
+        evse_set_error_flags(ctx, LESS_6A);
+    }
 
     // AccessTimer (lines 1715-1719)
     if (ctx->AccessTimer > 0 && ctx->State == STATE_A) {

@@ -308,6 +308,114 @@ void test_lock_all_false_baseline(void) {
         false, false, false, PILOT_NOK, false, false));
 }
 
+/* ---- Occupied-input decision (upstream afd72a8, fixes #348) ---- */
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-120
+ * @scenario LockingTx present → occupied (pre-existing condition)
+ * @given locking_tx_present=true, no recent StopTx
+ * @when ocpp_should_report_occupied is called
+ * @then Returns true
+ */
+void test_occupied_locking_tx_present(void) {
+    TEST_ASSERT_TRUE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ true,
+        /*tx_notif_defined*/   false,
+        /*tx_notif_is_stoptx*/ false,
+        /*now_ms*/             1000000UL,
+        /*last_tx_notif_ms*/   0UL));
+}
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-121
+ * @scenario StopTx within grace window → occupied (Finishing)
+ * @given No locking tx, StopTx fired 500 ms ago (< 2000 ms grace)
+ * @when ocpp_should_report_occupied is called
+ * @then Returns true so CSMS sees Finishing before Available
+ */
+void test_occupied_stoptx_inside_grace_window(void) {
+    unsigned long now = 1000000UL;
+    TEST_ASSERT_TRUE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ false,
+        /*tx_notif_defined*/   true,
+        /*tx_notif_is_stoptx*/ true,
+        /*now_ms*/             now,
+        /*last_tx_notif_ms*/   now - 500UL));
+}
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-121
+ * @scenario StopTx exactly at grace boundary → NOT occupied (< is strict)
+ * @given No locking tx, StopTx fired exactly OCPP_FINISHING_GRACE_MS ago
+ * @when ocpp_should_report_occupied is called
+ * @then Returns false — grace window has elapsed
+ */
+void test_occupied_stoptx_at_grace_boundary_exclusive(void) {
+    unsigned long now = 1000000UL;
+    TEST_ASSERT_FALSE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ false,
+        /*tx_notif_defined*/   true,
+        /*tx_notif_is_stoptx*/ true,
+        /*now_ms*/             now,
+        /*last_tx_notif_ms*/   now - OCPP_FINISHING_GRACE_MS));
+}
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-122
+ * @scenario StopTx past grace window → NOT occupied (Available)
+ * @given No locking tx, StopTx fired 3 seconds ago
+ * @when ocpp_should_report_occupied is called
+ * @then Returns false — grace expired, transition to Available
+ */
+void test_occupied_stoptx_past_grace_window(void) {
+    unsigned long now = 1000000UL;
+    TEST_ASSERT_FALSE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ false,
+        /*tx_notif_defined*/   true,
+        /*tx_notif_is_stoptx*/ true,
+        /*now_ms*/             now,
+        /*last_tx_notif_ms*/   now - 3000UL));
+}
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-122
+ * @scenario Non-StopTx notification within grace → NOT occupied
+ * @given tx_notif_defined=true but tx_notif_is_stoptx=false (e.g. StartTx)
+ * @when ocpp_should_report_occupied is called
+ * @then Returns false — only StopTx triggers Finishing
+ */
+void test_occupied_non_stoptx_notification_ignored(void) {
+    unsigned long now = 1000000UL;
+    TEST_ASSERT_FALSE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ false,
+        /*tx_notif_defined*/   true,
+        /*tx_notif_is_stoptx*/ false,
+        /*now_ms*/             now,
+        /*last_tx_notif_ms*/   now - 500UL));
+}
+
+/*
+ * @feature OCPP Connector State
+ * @req REQ-OCPP-122
+ * @scenario Uninitialized notification state → NOT occupied
+ * @given tx_notif_defined=false (no notification has ever fired)
+ * @when ocpp_should_report_occupied is called
+ * @then Returns false — no spurious Finishing on fresh boot
+ */
+void test_occupied_notification_undefined(void) {
+    TEST_ASSERT_FALSE(ocpp_should_report_occupied(
+        /*locking_tx_present*/ false,
+        /*tx_notif_defined*/   false,
+        /*tx_notif_is_stoptx*/ true,    /* would match, but defined=false */
+        /*now_ms*/             1000000UL,
+        /*last_tx_notif_ms*/   999500UL));
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Connector State");
@@ -335,6 +443,12 @@ int main(void) {
     RUN_TEST(test_lock_locking_tx_no_start_request);
     RUN_TEST(test_lock_all_false_baseline);
     RUN_TEST(test_ev_not_ready_at_nok);
+    RUN_TEST(test_occupied_locking_tx_present);
+    RUN_TEST(test_occupied_stoptx_inside_grace_window);
+    RUN_TEST(test_occupied_stoptx_at_grace_boundary_exclusive);
+    RUN_TEST(test_occupied_stoptx_past_grace_window);
+    RUN_TEST(test_occupied_non_stoptx_notification_ignored);
+    RUN_TEST(test_occupied_notification_undefined);
 
     TEST_SUITE_RESULTS();
 }
