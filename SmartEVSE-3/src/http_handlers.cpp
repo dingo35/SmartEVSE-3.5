@@ -742,6 +742,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     if (vr != OCPP_VALIDATE_OK) {
                         doc["ocpp_backend_url"] = vr == OCPP_VALIDATE_EMPTY ? "URL is empty"
                                                 : vr == OCPP_VALIDATE_BAD_SCHEME ? "URL must start with ws:// or wss://"
+                                                : vr == OCPP_VALIDATE_EMBEDDED_CREDS ? "URL must not contain embedded user:pass@ credentials"
+                                                : vr == OCPP_VALIDATE_SSRF_LOOPBACK ? "URL must not point to the charger itself (loopback / 127.x / ::1)"
+                                                : vr == OCPP_VALIDATE_SSRF_LINK_LOCAL ? "URL must not point to link-local (169.254.x / fe80::)"
                                                 : "Invalid URL";
                     } else if (OcppWsClient) {
                         OcppWsClient->setBackendUrl(url);

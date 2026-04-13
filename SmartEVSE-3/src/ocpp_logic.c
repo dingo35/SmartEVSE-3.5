@@ -140,6 +140,58 @@ ocpp_lb_status_t ocpp_check_lb_exclusivity(uint8_t load_bl, bool ocpp_mode,
 
 /* ---- Settings validation ---- */
 
+/* Case-insensitive prefix compare, byte-level — avoids depending on strncasecmp
+ * availability in the pure-C build. */
+static bool ocpp_ci_has_prefix(const char *s, size_t s_len, const char *prefix) {
+    size_t p_len = strlen(prefix);
+    if (s_len < p_len) return false;
+    for (size_t i = 0; i < p_len; i++) {
+        char a = s[i], b = prefix[i];
+        if (a >= 'A' && a <= 'Z') a = (char)(a + ('a' - 'A'));
+        if (b >= 'A' && b <= 'Z') b = (char)(b + ('a' - 'A'));
+        if (a != b) return false;
+    }
+    return true;
+}
+
+/* SECURITY H-4: detect an IP literal or hostname that points to the charger
+ * itself or somewhere on the same node (SSRF). Also catches 0.0.0.0 which some
+ * stacks alias to loopback. The check is prefix-based on the raw authority,
+ * matching common forms written into an OCPP URL. */
+static bool ocpp_authority_is_loopback(const char *host, size_t host_len) {
+    if (ocpp_ci_has_prefix(host, host_len, "localhost")) {
+        /* Accept "localhost", "localhost:port", "localhost/path" — reject all */
+        if (host_len == 9) return true;
+        char c = host[9];
+        if (c == ':' || c == '/' || c == '\0') return true;
+    }
+    /* 127.0.0.0/8 — any address starting with 127. is loopback */
+    if (host_len >= 4 && host[0] == '1' && host[1] == '2' && host[2] == '7' && host[3] == '.') {
+        return true;
+    }
+    /* 0.0.0.0 — some stacks bind-any, resolves to loopback on connect */
+    if (host_len >= 7 && strncmp(host, "0.0.0.0", 7) == 0) {
+        char c = (host_len > 7) ? host[7] : '\0';
+        if (c == '\0' || c == ':' || c == '/') return true;
+    }
+    /* IPv6 loopback — raw "::1" or bracketed "[::1]" */
+    if (host_len >= 3 && strncmp(host, "::1", 3) == 0) {
+        char c = (host_len > 3) ? host[3] : '\0';
+        if (c == '\0' || c == ':' || c == '/') return true;
+    }
+    if (host_len >= 5 && strncmp(host, "[::1]", 5) == 0) return true;
+    return false;
+}
+
+/* SECURITY H-4: link-local addresses — the charger must never speak OCPP into
+ * the 169.254.0.0/16 AutoIP range or the IPv6 fe80::/10 link-local range. */
+static bool ocpp_authority_is_link_local(const char *host, size_t host_len) {
+    if (host_len >= 8 && strncmp(host, "169.254.", 8) == 0) return true;
+    if (ocpp_ci_has_prefix(host, host_len, "fe80:"))  return true;
+    if (ocpp_ci_has_prefix(host, host_len, "[fe80:")) return true;
+    return false;
+}
+
 ocpp_validate_result_t ocpp_validate_backend_url(const char *url) {
     if (!url || url[0] == '\0') {
         return OCPP_VALIDATE_EMPTY;
@@ -159,6 +211,32 @@ ocpp_validate_result_t ocpp_validate_backend_url(const char *url) {
         return OCPP_VALIDATE_BAD_SCHEME;
     }
 
+    /* SECURITY H-4: parse the authority (between scheme and first /?# or end)
+     * and run the anti-SSRF + anti-userinfo checks on just that portion.
+     * Characters permitted elsewhere in the URL (path/query) are not affected. */
+    const char *auth_start = url + scheme_len;
+    size_t auth_len = 0;
+    bool has_userinfo = false;
+    while (auth_start[auth_len] != '\0' &&
+           auth_start[auth_len] != '/'  &&
+           auth_start[auth_len] != '?'  &&
+           auth_start[auth_len] != '#') {
+        if (auth_start[auth_len] == '@') has_userinfo = true;
+        auth_len++;
+    }
+    if (has_userinfo) {
+        return OCPP_VALIDATE_EMBEDDED_CREDS;
+    }
+    if (auth_len == 0) {
+        return OCPP_VALIDATE_BAD_SCHEME;  /* scheme with no host */
+    }
+    if (ocpp_authority_is_loopback(auth_start, auth_len)) {
+        return OCPP_VALIDATE_SSRF_LOOPBACK;
+    }
+    if (ocpp_authority_is_link_local(auth_start, auth_len)) {
+        return OCPP_VALIDATE_SSRF_LINK_LOCAL;
+    }
+
     /* Validate characters after scheme: allow only URL-safe characters.
      * Reject control chars, spaces, CRLF injection, and other problematic chars. */
     for (size_t i = scheme_len; url[i] != '\0'; i++) {
@@ -170,7 +248,7 @@ ocpp_validate_result_t ocpp_validate_backend_url(const char *url) {
         /* Allowed URL special characters */
         if (c == '.' || c == ':' || c == '/' || c == '-' || c == '_' ||
             c == '?' || c == '=' || c == '&' || c == '@' || c == '%' ||
-            c == '+' || c == '#') {
+            c == '+' || c == '#' || c == '[' || c == ']') {
             continue;
         }
         return OCPP_VALIDATE_BAD_CHARS;

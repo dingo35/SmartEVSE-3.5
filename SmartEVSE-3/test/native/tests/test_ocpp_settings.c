@@ -158,13 +158,16 @@ void test_url_space_rejected(void) {
  * @feature OCPP Settings Validation
  * @req REQ-OCPP-097
  * @scenario URL with valid special characters accepted
- * @given URL contains all allowed special chars: . : / - _ ? = & @ % + #
+ * @given URL contains all allowed special chars (path/query/fragment): . : / - _ ? = & @ % + #
  * @when ocpp_validate_backend_url is called
  * @then Returns OCPP_VALIDATE_OK
+ * @note `@` moved from the authority to the path segment because the H-4
+ *       SSRF hardening now rejects embedded `user@host` userinfo in the
+ *       authority. `@` is still permitted elsewhere in the URL.
  */
 void test_url_valid_special_chars_accepted(void) {
     TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
-        ocpp_validate_backend_url("ws://user@host.com:8080/path-name_ok?a=1&b=2#frag+%20"));
+        ocpp_validate_backend_url("ws://host.com:8080/path-name_ok?a=1&b=2#frag+%20@tag"));
 }
 
 /*
@@ -314,6 +317,132 @@ void test_auth_key_empty_accepted(void) {
         ocpp_validate_auth_key(""));
 }
 
+/* ---- Security H-4: SSRF hardening of backend URL validator ---- */
+
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario Loopback IPv4 127.0.0.1 rejected
+ */
+void test_url_loopback_127_0_0_1_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("wss://127.0.0.1/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario Any 127.x loopback rejected (covers 127.42.0.1 etc.)
+ */
+void test_url_loopback_127_any_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("ws://127.42.9.7:8080/"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario localhost hostname rejected
+ */
+void test_url_loopback_localhost_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("wss://localhost/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario LOCALHOST uppercase rejected (case-insensitive host check)
+ */
+void test_url_loopback_localhost_uppercase_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("wss://LOCALHOST:8443/"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario 0.0.0.0 (bind-any / loopback alias) rejected
+ */
+void test_url_loopback_0_0_0_0_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("ws://0.0.0.0/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-001
+ * @scenario IPv6 loopback [::1] rejected
+ */
+void test_url_loopback_ipv6_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LOOPBACK,
+        ocpp_validate_backend_url("wss://[::1]/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-002
+ * @scenario IPv4 link-local 169.254.x rejected (AutoIP / APIPA)
+ */
+void test_url_linklocal_ipv4_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LINK_LOCAL,
+        ocpp_validate_backend_url("wss://169.254.10.20:8443/"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-002
+ * @scenario IPv6 link-local fe80:: rejected
+ */
+void test_url_linklocal_ipv6_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_SSRF_LINK_LOCAL,
+        ocpp_validate_backend_url("wss://[fe80::1]/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-003
+ * @scenario Embedded user:pass@host rejected
+ */
+void test_url_embedded_creds_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_EMBEDDED_CREDS,
+        ocpp_validate_backend_url("wss://user:pass@evil.example/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-003
+ * @scenario Embedded @ in authority (even without colon) rejected
+ */
+void test_url_embedded_at_rejected(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_EMBEDDED_CREDS,
+        ocpp_validate_backend_url("ws://user@evil.example/ocpp"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-004
+ * @scenario @ inside path component is allowed (authority is clean)
+ */
+void test_url_at_in_path_allowed(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("wss://ocpp.tapelectric.app/path/with@sign"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-005
+ * @scenario RFC1918 private ranges still allowed — many users self-host CSMS on LAN
+ */
+void test_url_rfc1918_private_still_allowed(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("ws://192.168.1.10:8080/steve/"));
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("ws://10.0.0.5/ocpp"));
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("ws://172.20.0.1/"));
+}
+/*
+ * @feature OCPP Settings Validation
+ * @req REQ-OCPP-H4-005
+ * @scenario Normal public hostnames still allowed (regression-proof)
+ */
+void test_url_public_hostname_still_allowed(void) {
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("wss://ocpp.tapelectric.app/CB123"));
+    TEST_ASSERT_EQUAL_INT(OCPP_VALIDATE_OK,
+        ocpp_validate_backend_url("wss://csms.example.com:8443/ocpp?id=42"));
+}
+
 /* ---- Main ---- */
 int main(void) {
     TEST_SUITE_BEGIN("OCPP Settings Validation");
@@ -341,6 +470,21 @@ int main(void) {
     RUN_TEST(test_auth_key_too_long);
     RUN_TEST(test_auth_key_exactly_40_accepted);
     RUN_TEST(test_auth_key_empty_accepted);
+
+    /* Security H-4 — SSRF hardening */
+    RUN_TEST(test_url_loopback_127_0_0_1_rejected);
+    RUN_TEST(test_url_loopback_127_any_rejected);
+    RUN_TEST(test_url_loopback_localhost_rejected);
+    RUN_TEST(test_url_loopback_localhost_uppercase_rejected);
+    RUN_TEST(test_url_loopback_0_0_0_0_rejected);
+    RUN_TEST(test_url_loopback_ipv6_rejected);
+    RUN_TEST(test_url_linklocal_ipv4_rejected);
+    RUN_TEST(test_url_linklocal_ipv6_rejected);
+    RUN_TEST(test_url_embedded_creds_rejected);
+    RUN_TEST(test_url_embedded_at_rejected);
+    RUN_TEST(test_url_at_in_path_allowed);
+    RUN_TEST(test_url_rfc1918_private_still_allowed);
+    RUN_TEST(test_url_public_hostname_still_allowed);
 
     TEST_SUITE_RESULTS();
 }

@@ -101,11 +101,15 @@ ocpp_lb_status_t ocpp_check_lb_exclusivity(uint8_t load_bl, bool ocpp_mode,
 /* ---- Settings validation ---- */
 
 typedef enum {
-    OCPP_VALIDATE_OK          = 0,
-    OCPP_VALIDATE_EMPTY       = 1,
-    OCPP_VALIDATE_BAD_SCHEME  = 2,
-    OCPP_VALIDATE_TOO_LONG    = 3,
-    OCPP_VALIDATE_BAD_CHARS   = 4
+    OCPP_VALIDATE_OK               = 0,
+    OCPP_VALIDATE_EMPTY            = 1,
+    OCPP_VALIDATE_BAD_SCHEME       = 2,
+    OCPP_VALIDATE_TOO_LONG         = 3,
+    OCPP_VALIDATE_BAD_CHARS        = 4,
+    /* Added by security review H-4 — SSRF hardening: */
+    OCPP_VALIDATE_SSRF_LOOPBACK    = 5,  /* 127.x.x.x, localhost, 0.0.0.0, ::1 */
+    OCPP_VALIDATE_SSRF_LINK_LOCAL  = 6,  /* 169.254.x.x, fe80::/10 */
+    OCPP_VALIDATE_EMBEDDED_CREDS   = 7   /* userinfo (user:pass@host) in authority */
 } ocpp_validate_result_t;
 
 /*
