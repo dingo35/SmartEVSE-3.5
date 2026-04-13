@@ -674,7 +674,13 @@ function loadData() {
                 if (!ocppEditMode) {
                     $id('ocpp_backend_url').value = data.ocpp.backend_url;
                     $id('ocpp_cb_id').value = data.ocpp.cb_id;
-                    $id('ocpp_auth_key').value = data.ocpp.auth_key;
+                    /* Security C-2: backend no longer returns the plaintext auth_key;
+                     * it sends auth_key_set: bool instead. Show a placeholder so the
+                     * user knows a key is configured without exposing it. */
+                    $id('ocpp_auth_key').value = data.ocpp.auth_key_set ? '••••••••' : '';
+                    $id('ocpp_auth_key').placeholder = data.ocpp.auth_key_set
+                        ? 'Auth key configured (enter new value to replace)'
+                        : 'Only for SP2 connections';
                     $id('ocpp_auto_auth_idtag').value = data.ocpp.auto_auth_idtag;
                 }
 
@@ -802,9 +808,16 @@ function configureOcpp() {
         ocpp_update:          1,
         ocpp_backend_url:     $id('ocpp_backend_url').value,
         ocpp_cb_id:           $id('ocpp_cb_id').value,
-        ocpp_auth_key:        $id('ocpp_auth_key').value,
         ocpp_auto_auth_idtag: $id('ocpp_auto_auth_idtag').value
     };
+    /* Security C-2: only include ocpp_auth_key when the user actually typed a
+     * new value. The displayed placeholder '••••••••' is a stand-in for the
+     * configured-but-hidden key — sending it back would overwrite the real
+     * secret with bullets. Skip the field if it's empty or still the placeholder. */
+    var key = $id('ocpp_auth_key').value;
+    if (key && key !== '••••••••') {
+        params.ocpp_auth_key = key;
+    }
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");

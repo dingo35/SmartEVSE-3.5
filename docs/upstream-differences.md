@@ -184,6 +184,12 @@ Findings from the security review (see internal report; most issues are inherite
 | Fix | Why | Details |
 |-----|-----|---------|
 | Unsigned firmware upload rejected at `POST /update` | Upstream accepts `firmware.bin` / `firmware.debug.bin` uploads over unauthenticated HTTP with no signature check → any LAN client can flash arbitrary firmware (unauthenticated RCE). Fork accepts only `*.signed.bin` — verified via the multi-key RSA validator from PR #125 | Security fix C-1 |
+| OCPP auth_key never exposed via `/settings` GET | Upstream returns the plaintext OCPP backend basic-auth key to any client calling `GET /settings`. Fork emits only `auth_key_set: bool` and the Web UI shows a placeholder | Security fix C-2 |
+| MQTT private password redacted from boot log | Upstream logs the full EC-private-key-hash on every boot. Fork logs a 4-char prefix then `[redacted]` | Security fix C-5 |
+| `strncpy(RequiredEVCCID, ...)` always NUL-terminated | Upstream pattern leaves the buffer unterminated when source fills it; subsequent `%s` walks past end | Security fix H-5 |
+| OCPP URL validator rejects SSRF targets | Upstream accepts `wss://127.0.0.1/`, `wss://[::1]/`, `wss://169.254.x/`, `wss://user:pass@host/`. Fork rejects loopback + link-local + embedded credentials. RFC1918 still allowed for self-hosted CSMS | Security fix H-4 |
+| Full partition erase on signature failure | Upstream erases only the first `ENCRYPTED_BLOCK_SIZE` (4 KB) on sig-fail, leaving >4 KB of attacker bytes in flash. Fork erases the entire partition | Security fix M-4 |
+| Hash buffer zeroed before free in `validate_sig` | Hygiene: keeps debug-memory dumps from trivially revealing the firmware fingerprint | Security fix M-3 |
 
 ---
 
