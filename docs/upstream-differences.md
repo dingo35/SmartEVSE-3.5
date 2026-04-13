@@ -43,6 +43,7 @@ Addresses upstream issues
 | Multi-node SolarStopTimer fix | Upstream threshold scales with `ActiveEVSE`, unreachable for 2+ nodes (commit `94ca08e`). Upstream attempted a different fix in `02dafa2` that we evaluated and rejected — it reproduces the multi-node scaling bug and causes stop/start cycling for fixed 3-phase. See [analysis](upstream-sync/analysis-02dafa2-solar-stop-threshold.md). | [PR #119](https://github.com/basmeerman/SmartEVSE-3.5/pull/119) |
 | Slave mode sync via setMode() | Upstream `SETITEM(MENU_MODE)` skips phase switching and error clearing on slaves | [PR #121](https://github.com/basmeerman/SmartEVSE-3.5/pull/121) |
 | Slow EV compatibility | Renault Zoe stalls on rapid current changes | [Features: Solar & Smart Mode](features.md#solar--smart-mode) |
+| ChargeDelay re-set on solar loss | Solar mode ChargeDelay could expire without solar, causing charging-without-solar oscillation — integrated upstream `74e20c8` (master) + `3ab1cee` (node-side) with 3 unit tests | upstream `74e20c8`, `3ab1cee` |
 
 ### Load Balancing
 
@@ -56,6 +57,7 @@ Addresses upstream issue
 | Distribution smoothing | Sudden jumps stress contactors and EV controllers | [Features: Load Balancing](features.md#load-balancing--power-sharing) |
 | Diagnostic snapshot | No visibility into load balancing decisions | [Features: Load Balancing](features.md#load-balancing--power-sharing) |
 | 126 convergence tests | Algorithm changes blocked by regression risk | [Features: Load Balancing](features.md#load-balancing--power-sharing) |
+| CAPACITY fluctuation fix | `MaxSumMains` overwrote per-phase Idifference with a sum-of-phases value, causing current fluctuations when the EU capacity limit was configured — integrated upstream `a54b07f` (fixes #327) with 3 unit tests | upstream `a54b07f` |
 
 ### RFID, OCPP & Authorization
 
@@ -71,6 +73,8 @@ Addresses upstream issue
 | IEC 61851 → OCPP status mapping | EVCC integration needs standard status codes | [Features: OCPP & Authorization](features.md#rfid-ocpp--authorization) |
 | Silent OCPP session loss recovery | WebSocket pings keep transport alive but don't prove backend is processing OCPP messages — integrated upstream `ecd088b` with timing logic extracted to pure C and 10 unit tests | upstream `ecd088b` |
 | Atomic connector lock decision | Upstream `ocppLoop()` briefly flipped `OcppForcesLock` false→true within one iteration, causing actuator unlock/relock jitter — integrated upstream `05c7fc2` with the decision extracted to pure C and 11 unit tests | upstream `05c7fc2` |
+| OCPP Finishing-before-Available sequence | CSMS missed the Finishing state because OccupiedInput went false immediately after StopTx — integrated upstream `afd72a8` with the decision extracted to pure C (`ocpp_should_report_occupied`) and 6 unit tests | upstream `afd72a8` |
+| Cable disconnect detection under PAUSE | CP sampling timer left disabled after STATE_B single-shot fired — integrated upstream `e6110b1` (timerAlarmEnable in STATE_A/STATE_C1 paths) | upstream `e6110b1` |
 
 ### MQTT & Home Assistant
 
@@ -94,6 +98,7 @@ Addresses upstream issues
 | Improvement | Why | Details |
 |-------------|-----|---------|
 | Orno WE-517/516 meter support | Community-requested meters | [Features: Metering](features.md#metering--modbus) |
+| Modbus broadcast timeout handling | Timeout on a broadcast address would advance the request loop and skip the next legitimate slave response — integrated upstream `b104576` (1-line guard) | upstream `b104576` |
 | Pure C Modbus frame decoder | Modbus logic untestable | [Features: Metering](features.md#metering--modbus) |
 | Pure C meter byte decoder | 30 test scenarios for all endianness/data types | [Features: Metering](features.md#metering--modbus) |
 | Pure C HomeWizard P1 parser | P1 parsing untestable | [Features: Metering](features.md#metering--modbus) |

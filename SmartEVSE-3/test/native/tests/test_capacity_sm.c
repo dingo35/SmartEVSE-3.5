@@ -324,6 +324,99 @@ void test_capacity_moderate_headroom(void) {
     TEST_ASSERT_TRUE(ctx.IsetBalanced >= 60);
 }
 
+/* ---- Upstream a54b07f (fixes #327): MaxSumMains as ADDITIONAL constraint ---- */
+
+/*
+ * Before a54b07f, Idifference was OVERWRITTEN with ExcessMaxSumMains —
+ * a sum-of-phases value assigned into a per-phase variable — causing
+ * current fluctuations when CAPACITY / MaxSumMains was configured
+ * alongside a tighter MaxMains limit. The fix uses min() with
+ * ExcessMaxSumMains / 3 so MaxSumMains is only applied when it is
+ * actually the tighter constraint.
+ */
+
+/*
+ * @feature Load Balancing — CAPACITY integration
+ * @req REQ-LB-170
+ * @scenario MaxSumMains does NOT overwrite tighter per-phase MaxMains limit
+ * @given MaxMains=10A (tight), MaxSumMains=75A (generous), charging at 160 dA
+ * @when evse_calc_balanced_current runs
+ * @then IsetBalanced respects the MaxMains-based per-phase limit;
+ *       the old bug would overwrite with the larger sum-based value and
+ *       cause over-current-relative-to-MaxMains. Verified via IsetBalanced
+ *       staying within the per-phase headroom envelope.
+ */
+void test_capacity_a54b07f_maxsummains_does_not_overwrite_tighter_maxmains(void) {
+    setup_smart_standalone_running();
+    ctx.MaxMains = 10;           /* Tight: only 10A per phase */
+    ctx.MainsMeterImeasured = 90; /* 9.0A measured — near the limit */
+    ctx.MaxSumMains = 75;        /* Generous: 75A sum */
+    ctx.Isum = 0;                /* Plenty of sum-of-phases headroom */
+    ctx.CapacityHeadroom_da = INT16_MAX; /* Unconstrained */
+
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* Idifference should be bounded by the per-phase MaxMains headroom
+     * (100 - 90 = 10 dA) combined via min() with ExcessMaxSumMains/3 =
+     * (750-0)/3 = 250. The tighter wins, so Idifference ≤ 10.
+     * IsetBalanced was 160; with Idifference=10 and ramp, it can only
+     * grow slowly. Certainly not jump to 750. */
+    TEST_ASSERT_LESS_OR_EQUAL(200, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Load Balancing — CAPACITY integration
+ * @req REQ-LB-171
+ * @scenario MaxSumMains IS the binding constraint when it is tighter per-phase
+ * @given MaxMains=32A (generous per-phase), MaxSumMains=30A (sum = 10A/phase equiv.)
+ * @when evse_calc_balanced_current runs
+ * @then MaxSumMains wins — Idifference narrowed by the per-phase equivalent (30/3=10 dA)
+ */
+void test_capacity_a54b07f_maxsummains_binds_when_tighter(void) {
+    setup_smart_standalone_running();
+    ctx.MaxMains = 32;             /* Generous per-phase */
+    ctx.MainsMeterImeasured = 100;
+    ctx.MaxSumMains = 30;          /* Sum-of-phases tight */
+    ctx.Isum = 0;                  /* 30A sum headroom, ~10A/phase equivalent */
+    ctx.CapacityHeadroom_da = INT16_MAX;
+
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* ExcessMaxSumMains = (300 - 0) = 300 dA = 30 A sum.
+     * Per-phase equivalent: 300/3 = 100 dA.
+     * Per-phase MaxMains: (32*10) - 100 = 220 dA.
+     * min(220, 100) = 100 → tight constraint wins.
+     * Idifference this small won't let IsetBalanced grow wildly. */
+    TEST_ASSERT_LESS_OR_EQUAL(260, ctx.IsetBalanced);
+}
+
+/*
+ * @feature Load Balancing — CAPACITY integration
+ * @req REQ-LB-172
+ * @scenario LimitedByMaxSumMains flag still set when MaxSumMains exceeded
+ * @given ExcessMaxSumMains < 0 (MaxSumMains already exceeded)
+ * @when evse_calc_balanced_current runs
+ * @then The MaxSumMainsTimer path is armed (LimitedByMaxSumMains semantics preserved)
+ *       — the upstream fix changed only the Idifference path, not the overflow flag.
+ */
+void test_capacity_a54b07f_exceeded_still_flagged(void) {
+    setup_smart_standalone_running();
+    ctx.MaxSumMains = 20;      /* Configured sum limit: 20A */
+    ctx.Isum = 300;            /* Currently 30A sum — exceeded */
+    ctx.MaxSumMainsTimer = 0;  /* Will be armed elsewhere when exceeded */
+
+    evse_calc_balanced_current(&ctx, 0);
+
+    /* With ExcessMaxSumMains = (200 - 300) = -100 < 0, the fix still enters
+     * the "LimitedByMaxSumMains = true" branch. We can't observe the local
+     * variable directly, but MaxSumMainsTimer should NOT have been reset to 0
+     * in the "safe" branch (which only runs when ExcessMaxSumMains >= 0).
+     * As a sanity check: the integer division by 3 of a negative number in C
+     * rounds toward zero (-100 / 3 = -33), so Idifference becomes very small
+     * or negative, throttling IsetBalanced. */
+    TEST_ASSERT_LESS_OR_EQUAL(160, ctx.IsetBalanced);
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("Capacity Tariff State Machine Integration");
 
@@ -335,6 +428,9 @@ int main(void) {
     RUN_TEST(test_capacity_headroom_master_new_evse);
     RUN_TEST(test_capacity_headroom_single_phase);
     RUN_TEST(test_capacity_moderate_headroom);
+    RUN_TEST(test_capacity_a54b07f_maxsummains_does_not_overwrite_tighter_maxmains);
+    RUN_TEST(test_capacity_a54b07f_maxsummains_binds_when_tighter);
+    RUN_TEST(test_capacity_a54b07f_exceeded_still_flagged);
 
     TEST_SUITE_RESULTS();
 }

@@ -1547,6 +1547,15 @@ uint8_t processAllNodeStates(uint8_t NodeNr) {
             BalancedError[NodeNr] &= ~(LESS_6A);                                // Clear Error flags
             write = 1;
         }
+    } else {
+        // Upstream 3ab1cee: re-set LESS_6A on Node if solar power disappeared
+        // during its ChargeDelay countdown (BalancedState STATE_B1 = Node is
+        // waiting after LESS_6A → ChargeDelay path). Without this the Node's
+        // ChargeDelay expires and charging is attempted without solar.
+        if (Mode == MODE_SOLAR && BalancedState[NodeNr] == STATE_B1 && !(BalancedError[NodeNr] & LESS_6A)) {
+            BalancedError[NodeNr] |= LESS_6A;
+            write = 1;
+        }
     }
 
     if ((ErrorFlags & CT_NOCOMM) && !(BalancedError[NodeNr] & CT_NOCOMM)) {

@@ -15,16 +15,16 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 
 | # | Hash | Date | Author | Title | Classification | Priority | Fork PR | Notes |
 |---|------|------|--------|-------|----------------|----------|---------|-------|
-| 1 | `e6110b1` | 2026-03-31 | stegen | Fix cable disconnect not detected when switching to PAUSE (fixes #347) | Bug fix — safety-adjacent | **P1** | — | `main.cpp` 2 lines; cable state detection under PAUSE — needs state-machine review in fork |
+| 1 | `e6110b1` | 2026-03-31 | stegen | Fix cable disconnect not detected when switching to PAUSE (fixes #347) | **Integrated** | **P1** | #133 | Applied in `evse_bridge.cpp` STATE_A/B1 and STATE_C1 paths (2-line fix) |
 | 2 | `cdc8f67` | 2026-03-31 | dingo35 | Prevent `[Mains\|EV]Meter.[Im\|Ex]port_active_energy` exported when zero | **Already fixed** | — | — | Fork already has broader `> 0` guards at `esp32.cpp:1257-1300` + Circuit meter. No action. |
-| 3 | `b104576` | 2026-03-31 | stegen | `modbus.cpp`: do not advance request loop on broadcast timeouts | Bug fix — non-safety | P2 | — | 2 lines; reduces lost requests when broadcast peer times out |
+| 3 | `b104576` | 2026-03-31 | stegen | `modbus.cpp`: do not advance request loop on broadcast timeouts | **Integrated** | P2 | (P2 bundle) | Verbatim; 1-line guard on `BROADCAST_ADR` |
 | 4 | `4e6c06d` | 2026-04-01 | dingo35 | `update2.html`: warning message + layout | Web UI cosmetic | P4 | — | `data/` HTML → `packed_fs.c` regen |
 | 5 | `543af26` | 2026-04-01 | stegen | EtherLCD support: Ethernet add-on board that replaces the LCD board (#349) | New feature — hardware | P3 | — | **1768 lines**, 11 files, hardware-specific. Evaluate whether fork users want this; substantial review. |
-| 6 | `afd72a8` | 2026-04-03 | stegen | OCPP: send Finishing state before Available (fixes #348) | Bug fix — non-safety | P2 | — | OCPP state sequence correctness; 11/1 lines. Candidate for pure C in `ocpp_logic.c` / IEC 61851 mapping. |
-| 7 | `74e20c8` | 2026-04-07 | stegen | `main.cpp`: reset ChargeDelay countdown when solar power disappears (master) | Bug fix — non-safety | P2 | — | Pairs with #9 (3ab1cee). Fork has no equivalent. Solar-mode stability. Bundle with #9. |
+| 6 | `afd72a8` | 2026-04-03 | stegen | OCPP: send Finishing state before Available (fixes #348) | **Integrated** | P2 | (P2 bundle) | Decision extracted to `ocpp_should_report_occupied()` in ocpp_logic.c; 6 unit tests |
+| 7 | `74e20c8` | 2026-04-07 | stegen | `main.cpp`: reset ChargeDelay countdown when solar power disappears (master) | **Integrated** | P2 | (P2 bundle) | Ported into pure C `evse_tick_1s()`; 3 unit tests in test_tick_1s.c |
 | 8 | `2c015fb` | 2026-04-08 | Juurlink | Improved Raw Settings view: formatted JSON + Download button (#353) | Web UI feature | P3 | — | 280/25 lines, 5 files. Useful; likely conflicts with fork web UI divergences. |
-| 9 | `3ab1cee` | 2026-04-08 | stegen | `main.cpp`: reset Node ChargeDelay countdown when solar power disappears | Bug fix — non-safety | P2 | — | Node-side of #7. Bundle. |
-| 10 | `a54b07f` | 2026-04-09 | stegen | `main.cpp`: prevent current fluctuations when CAPACITY is used (fixes #327) | Bug fix — non-safety | P2 | — | 3/2 lines. Interacts with fork load balancing + Capacity Tariff tracking (Plan 13). Review for overlap. |
+| 9 | `3ab1cee` | 2026-04-08 | stegen | `main.cpp`: reset Node ChargeDelay countdown when solar power disappears | **Integrated** | P2 | (P2 bundle) | Applied in `processAllNodeStates()` master-side slave-node error tracking |
+| 10 | `a54b07f` | 2026-04-09 | stegen | `main.cpp`: prevent current fluctuations when CAPACITY is used (fixes #327) | **Integrated** | P2 | (P2 bundle) | Applied in pure C `evse_calc_balanced_current()`; 3 unit tests. `test_s9_maxsummains_limits` updated to use larger exceedance (Isum 350→600) so per-phase reduction crosses fork's SmartDeadBand — documents the gentler, correct per-phase semantics. |
 | 11 | `92d42eb` | 2026-04-10 | Juurlink | Refactor tooltips: centralize styles in `styling.css` + a11y (#301) | Web UI cosmetic | P4 | — | CSS-only. |
 | 12 | `3679fe3` | 2026-04-10 | stegen | OCPP: public charging station LED colour scheme when OCPP is enabled (#351) | New feature | P3 | — | 6 files, adds LedMode menu option. Fork has pure C `led_color.c`; need to adapt, not cherry-pick. |
 | 13 | `790f2a9` | 2026-04-10 | stegen | `docs`: update OCPP documentation | Docs only | P4 | — | Skip or cherry-pick docs bits. |

@@ -535,7 +535,11 @@ void test_s9_maxsummains_limits(void) {
     both_charging_at(100, 160);
     ctx.EVMeterImeasured = 0;
     ctx.MainsMeterImeasured = 200;
-    ctx.Isum = 350;
+    /* Larger excess (Isum=600 vs MaxSumMains*10=300) ensures per-phase
+     * excess_per_phase = -100 clears the fork's SmartDeadBand (10 dA).
+     * Upstream a54b07f (fixes #327): MaxSumMains reduces IsetBalanced
+     * proportionally per-phase rather than overwriting with sum-of-phases. */
+    ctx.Isum = 600;
     ctx.IsetBalanced = 200;
 
     evse_calc_balanced_current(&ctx, 0);

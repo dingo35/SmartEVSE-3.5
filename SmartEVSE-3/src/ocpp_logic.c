@@ -310,3 +310,25 @@ bool ocpp_should_force_lock(bool tx_present,
 
     return false;
 }
+
+/* ---- Occupied-input decision (upstream commit afd72a8) ---- */
+
+bool ocpp_should_report_occupied(bool locking_tx_present,
+                                 bool tx_notif_defined,
+                                 bool tx_notif_is_stoptx,
+                                 unsigned long now_ms,
+                                 unsigned long last_tx_notif_ms) {
+    /* A LockingTx (RFID-bound transaction) keeps the connector occupied. */
+    if (locking_tx_present) {
+        return true;
+    }
+
+    /* Brief grace window after StopTx so the CSMS sees "Finishing" before
+     * "Available" (OCPP 1.6 state-sequence requirement). */
+    if (tx_notif_defined && tx_notif_is_stoptx &&
+        (now_ms - last_tx_notif_ms) < OCPP_FINISHING_GRACE_MS) {
+        return true;
+    }
+
+    return false;
+}

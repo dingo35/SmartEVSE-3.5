@@ -236,6 +236,39 @@ bool ocpp_should_force_lock(bool tx_present,
                             bool locking_tx_present,
                             bool locking_tx_start_requested);
 
+/* ---- Occupied-input decision (upstream commit afd72a8) ---- */
+
+/*
+ * MicroOcpp uses the OccupiedInput to decide whether to report the connector
+ * as Finishing (still held) or Available. OCPP 1.6 requires the CSMS to see
+ * Charging → Finishing → Available on transaction end. Upstream fix #348:
+ * hold Occupied for a grace window after StopTx so Finishing is observed
+ * even when no LockingTx persists.
+ */
+
+#define OCPP_FINISHING_GRACE_MS  2000UL  /* Hold Occupied for 2 seconds after StopTx notification */
+
+/*
+ * Decide whether the connector should be reported as Occupied.
+ *
+ *   locking_tx_present   — OcppLockingTx is non-null
+ *   tx_notif_defined     — OcppDefinedTxNotification
+ *   tx_notif_is_stoptx   — caller computed (OcppTrackTxNotification == StopTx)
+ *   now_ms               — millis()
+ *   last_tx_notif_ms     — OcppLastTxNotification
+ *
+ * Returns true while:
+ *   1. A LockingTx exists (same as before upstream's fix), OR
+ *   2. A StopTx notification was fired within the last OCPP_FINISHING_GRACE_MS
+ *
+ * Pure: caller converts the MicroOcpp enum to a bool before calling.
+ */
+bool ocpp_should_report_occupied(bool locking_tx_present,
+                                 bool tx_notif_defined,
+                                 bool tx_notif_is_stoptx,
+                                 unsigned long now_ms,
+                                 unsigned long last_tx_notif_ms);
+
 #ifdef __cplusplus
 }
 #endif
