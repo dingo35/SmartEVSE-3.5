@@ -751,7 +751,10 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
         case MQTT_CMD_REQUIRED_EVCCID:
 #if MODEM
+            // SECURITY H-5: strncpy does NOT NUL-terminate when the source fills the buffer.
+            // Without the explicit NUL, the subsequent %s read walks past the buffer end.
             strncpy(RequiredEVCCID, cmd.evccid, sizeof(RequiredEVCCID));
+            RequiredEVCCID[sizeof(RequiredEVCCID) - 1] = '\0';
             Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
             request_write_settings();
 #endif
@@ -1641,7 +1644,10 @@ void read_settings() {
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
 #if MODEM
+        // SECURITY H-5: NUL-terminate after strncpy — preferences.getString() can
+        // return a string exactly sizeof(RequiredEVCCID) bytes long.
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
+        RequiredEVCCID[sizeof(RequiredEVCCID) - 1] = '\0';
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
         PrioStrategy = preferences.getUChar("PrioStrategy", PRIO_MODBUS_ADDR);
@@ -1707,6 +1713,7 @@ void read_settings() {
         settingsCache.EnableC2 = EnableC2;
 #if MODEM
         strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
+        settingsCache.RequiredEVCCID[sizeof(settingsCache.RequiredEVCCID) - 1] = '\0';  // SECURITY H-5
 #endif
         settingsCache.maxTemp = maxTemp;
         settingsCache.PrioStrategy = PrioStrategy;
@@ -1792,6 +1799,7 @@ void write_settings(void) {
     if (!settingsCache.valid || strcmp(RequiredEVCCID, settingsCache.RequiredEVCCID) != 0) {
         preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
         strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
+        settingsCache.RequiredEVCCID[sizeof(settingsCache.RequiredEVCCID) - 1] = '\0';  // SECURITY H-5
     }
 #endif
     PREFS_PUT_USHORT_IF_CHANGED("maxTemp", maxTemp, maxTemp);
