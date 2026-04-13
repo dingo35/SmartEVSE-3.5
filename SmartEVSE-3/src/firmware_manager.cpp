@@ -227,15 +227,28 @@ bool validate_sig( const esp_partition_t* partition, unsigned char *signature, i
         }
     }
 
+    // SECURITY M-3: zero the hash buffer before freeing so the fingerprint
+    // of the firmware we just validated does not linger in heap. Cheap
+    // defense-in-depth — hash is not itself secret but keeps debug-memory
+    // dumps from trivially revealing it.
+    if (hash) {
+        memset( hash, 0, mdinfo->size );
+    }
     free( hash );
 
     if( verified ) {
         return true;
     }
 
-    // All keys failed — overwrite the first few bytes so this partition won't boot!
-    log_w( "Validation failed (tried %u keys), erasing the invalid partition.\n", (unsigned)NUM_TRUSTED_KEYS);
-    ESP.partitionEraseRange( partition, 0, ENCRYPTED_BLOCK_SIZE);
+    // SECURITY M-4: all keys failed — erase the ENTIRE partition, not just
+    // the first ENCRYPTED_BLOCK_SIZE. The previous narrow erase only
+    // invalidated the boot header. If a reset happened during the next
+    // chargepoint update (or if the bootloader ever tolerated a missing
+    // header), the remaining >4KB of attacker bytes could still be
+    // observed or executed. Full partition erase is the safe default.
+    log_w( "Validation failed (tried %u keys), erasing the full invalid partition (%u bytes).\n",
+           (unsigned)NUM_TRUSTED_KEYS, (unsigned)partition->size);
+    ESP.partitionEraseRange( partition, 0, partition->size );
     return false;
 }
 
