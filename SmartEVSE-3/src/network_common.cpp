@@ -1591,33 +1591,19 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               mg_http_reply(c, 400, "", "size required");
               res = -5;
             } else {
+                // NOTE: the unsigned firmware.bin / firmware.debug.bin upload path
+                // was removed as SECURITY FIX C-1 — it allowed any LAN client to
+                // flash arbitrary firmware over plain HTTP with no authentication
+                // and no signature check (unauthenticated RCE). Only the signed
+                // upload path below is supported now; fork/upstream-signed images
+                // are both accepted via the multi-key validator from PR #125.
                 if (!memcmp(file,"firmware.bin", sizeof("firmware.bin")) || !memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin"))) {
-                    if(!offset) {
-                        _LOG_A("Update Start: %s\n", file);
-                        if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
-                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
-                            Update.printError(Serial);
-                        }
-                    }
-                    if(!Update.hasError()) {
-                        if(Update.write((uint8_t*) hm->body.buf, hm->body.len) != hm->body.len) {
-                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
-                            Update.printError(Serial);
-                        } else {
-                            _LOG_A("bytes written %lu\r", offset + hm->body.len);
-                        }
-                    }
-                    if (offset + hm->body.len >= size) {                                           //EOF
-                        if(Update.end(true)) {
-                            _LOG_A("\nUpdate Success\n");
-                            delay(1000);
-                            ESP.restart();
-                        } else {
-                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
-                            Update.printError(Serial);
-                        }
-                    }
-                } else //end of firmware.bin
+                    _LOG_A("Unsigned firmware upload rejected: %s (security C-1)\n", file);
+                    mg_http_reply(c, 403, "",
+                                  "Unsigned firmware uploads are disabled. "
+                                  "Upload firmware.signed.bin or firmware.debug.signed.bin instead.");
+                    res = -6;
+                } else
                 if (!memcmp(file,"firmware.signed.bin", sizeof("firmware.signed.bin")) || !memcmp(file,"firmware.debug.signed.bin", sizeof("firmware.debug.signed.bin"))) {
     #define dump(X)   for (int i= 0; i< SIGNATURE_LENGTH; i++) _LOG_A_NO_FUNC("%02x", X[i]); _LOG_A_NO_FUNC(".\n");
                     if(!offset) {

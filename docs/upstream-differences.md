@@ -177,6 +177,14 @@ Addresses upstream issues
 | Diagnostic telemetry viewer | No way to view diagnostics in browser | [Features: Web](features.md#web--connectivity) |
 | LCD widget modernization | Old layout, not responsive | [Features: Web](features.md#web--connectivity) |
 
+### Security Hardening (Fork-only)
+
+Findings from the security review (see internal report; most issues are inherited from upstream).
+
+| Fix | Why | Details |
+|-----|-----|---------|
+| Unsigned firmware upload rejected at `POST /update` | Upstream accepts `firmware.bin` / `firmware.debug.bin` uploads over unauthenticated HTTP with no signature check → any LAN client can flash arbitrary firmware (unauthenticated RCE). Fork accepts only `*.signed.bin` — verified via the multi-key RSA validator from PR #125 | Security fix C-1 |
+
 ---
 
 ## Contributing Upstream

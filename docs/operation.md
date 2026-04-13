@@ -20,7 +20,7 @@ Once your Wi-Fi parameters are configured, your SmartEVSE will be accessible on 
 ### Firmware Updates (OTA)
 
 * Navigate to `http://<your-smartevse>/update` or press the "UPDATE" button on the webserver.
-* Upload the `firmware.bin` file from this archive, or use `firmware.debug.bin` renamed to `firmware.bin` for a debug version (accessible via Telnet). Ensure the file name is correct; otherwise, flashing will fail.
+* Upload `firmware.signed.bin` (or `firmware.debug.signed.bin` for the Telnet debug build). Only RSA-signed images are accepted — the fork rejects unsigned uploads as a security measure.
 * In case of failure (FAIL), check your Wi-Fi connection and retry.
 * After a successful update (OK), wait 10-30 seconds for the firmware, including the webserver, to go online.
 
