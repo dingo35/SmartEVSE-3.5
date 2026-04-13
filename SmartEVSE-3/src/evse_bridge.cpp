@@ -202,6 +202,7 @@ static void hal_on_state_change(uint8_t old_state, uint8_t new_state) {
         case STATE_A:
 #ifdef SMARTEVSE_VERSION
             timerAlarmWrite(timerA, PWM_100, true);
+            timerAlarmEnable(timerA);                                   // Re-enable in case STATE_B's single-shot (auto_reload=false) fired and disabled the alarm — otherwise CP sampling stops and cable disconnect in PAUSE is not detected (upstream e6110b1, fixes #347)
 #else
             TIM1->CH1CVR = 1000;
 #endif
@@ -244,6 +245,7 @@ static void hal_on_state_change(uint8_t old_state, uint8_t new_state) {
         case STATE_C1:
 #ifdef SMARTEVSE_VERSION
             timerAlarmWrite(timerA, PWM_100, true);
+            timerAlarmEnable(timerA);                                   // See STATE_A note (upstream e6110b1)
 #else
             TIM1->CH1CVR = 1000;
 #endif
