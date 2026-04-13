@@ -280,6 +280,8 @@ uint8_t ColorSmart[3] = {0, 255, 0};    // Green
 uint8_t ColorSolar[3] = {255, 170, 0};    // Orange
 uint8_t ColorCustom[3] = {0, 0, 255};    // Blue
 
+uint8_t LedMode = 0;                    // LED color scheme: 0=Standard, 1=Public charging station (upstream 3679fe3)
+
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
 uint16_t firmwareUpdateTimer = 0;                                               // timer for firmware updates in seconds, max 0xffff = approx 18 hours
@@ -2157,7 +2159,37 @@ void BlinkLed_singlerun(void) {
     uint8_t RedPwm, GreenPwm, BluePwm;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    // OCPP LED overrides (depend on millis() and MicroOcpp types, kept here)
+    if (LedMode) {
+        // Public charging station scheme (upstream 3679fe3).
+        // Pre-compute millis()/MicroOcpp-dependent booleans here, then call
+        // the pure C decision function so color mapping stays testable.
+        led_public_state_t pub;
+        memset(&pub, 0, sizeof(pub));
+        pub.error_flags  = ErrorFlags;
+        pub.charge_delay = ChargeDelay;
+        pub.state        = State;
+        unsigned long now = millis();
+        pub.rfid_read_flash     = (now - OcppLastRfidUpdate) < 200;
+        pub.tx_authorized_flash = (now - OcppLastTxNotification) < 1000 &&
+                                  OcppTrackTxNotification == MicroOcpp::TxNotification::Authorized;
+        pub.tx_rejected_flash   = (now - OcppLastTxNotification) < 2000 &&
+                                  (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationRejected ||
+                                   OcppTrackTxNotification == MicroOcpp::TxNotification::DeAuthorized ||
+                                   OcppTrackTxNotification == MicroOcpp::TxNotification::ReservationConflict);
+        pub.tx_timeout_flash    = (now - OcppLastTxNotification) < 300 &&
+                                  (OcppTrackTxNotification == MicroOcpp::TxNotification::AuthorizationTimeout ||
+                                   OcppTrackTxNotification == MicroOcpp::TxNotification::ConnectionTimeout);
+        switch (getChargePointStatus()) {
+            case ChargePointStatus_Reserved:    pub.cp_status = LED_CP_STATUS_RESERVED;    break;
+            case ChargePointStatus_Unavailable: pub.cp_status = LED_CP_STATUS_UNAVAILABLE; break;
+            case ChargePointStatus_Faulted:     pub.cp_status = LED_CP_STATUS_FAULTED;     break;
+            default:                            pub.cp_status = LED_CP_STATUS_OTHER;       break;
+        }
+        led_rgb_t rgb = led_public_compute(&pub, &ctx);
+        RedPwm = rgb.r; GreenPwm = rgb.g; BluePwm = rgb.b;
+    } else
+    // OCPP LED overrides for the Standard scheme (depend on millis() and
+    // MicroOcpp types, kept here). Only applied when LedMode == 0.
     if (OcppMode && (RFIDReader == 6 || RFIDReader == 0) &&
                 millis() - OcppLastRfidUpdate < 200) {
         RedPwm = 128; GreenPwm = 128; BluePwm = 128;
@@ -2420,7 +2452,7 @@ static void timer10ms_buttons(void) {
     }
 
     // Update/Show Helpmenu
-    if (LCDNav > MENU_ENTER && (LCDNav < MENU_EXIT || (LCDNav >= MENU_PRIO && LCDNav <= MENU_IDLE_TIMEOUT)) && (!SubMenu)) GLCDHelp();
+    if (LCDNav > MENU_ENTER && (LCDNav < MENU_EXIT || (LCDNav >= MENU_PRIO && LCDNav <= MENU_IDLE_TIMEOUT) || LCDNav == MENU_LEDMODE) && (!SubMenu)) GLCDHelp();
 
     if (timeinfo.tm_sec != old_sec) {
         old_sec = timeinfo.tm_sec;
@@ -2741,6 +2773,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_PRIO, PrioStrategy)
         SETITEM(MENU_ROTATION, RotationInterval)
         SETITEM(MENU_IDLE_TIMEOUT, IdleTimeout)
+        SETITEM(MENU_LEDMODE, LedMode)
         case MENU_CAPLIMIT:
             CapacityLimit = val * 100;
             capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
@@ -2911,6 +2944,8 @@ uint16_t getItemValue(uint8_t nav) {
             return IdleTimeout;
         case MENU_CAPLIMIT:
             return CapacityLimit / 100;
+        case MENU_LEDMODE:
+            return LedMode;
 
         // Status writeable
         case STATUS_STATE:

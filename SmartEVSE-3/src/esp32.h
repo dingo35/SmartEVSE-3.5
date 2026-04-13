@@ -130,6 +130,7 @@ extern uint16_t SolarStopTimer;
 extern uint16_t MaxSumMainsTimer;
 extern uint8_t RFIDstatus;
 extern uint8_t OcppMode;
+extern uint8_t LedMode;
 extern bool LocalTimeSet;
 extern uint32_t serialnr;
 extern String PairingPin;

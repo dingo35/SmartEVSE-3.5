@@ -291,6 +291,12 @@ Set the Function of an External Switch (Pin SW or Connector P2).
 - **Custom B**: A momentary push button can be used for external integrations.
 - **Custom S**: A toggle switch can be used for external integrations.
 
+## LED MODE
+Select the LED color scheme.
+
+- **Standard** — Default color scheme: green/smart-color for charging, orange for solar, red for errors. Custom colors can be set via MQTT.
+- **Public** — Public charging station scheme, OCPP-aware. Green (dim) = Available, Blue (static) = EV connected, Blue (fading) = Charging, Orange = Reserved, Red = Faulted / Unavailable. RFID read produces a short grey flash; authorization result produces a short green (granted) or red (rejected/timeout) flash. Best used with OCPP enabled.
+
 ## RCMON
 Residual Current Monitor (RCM14-03) plugged into connector P1.
 

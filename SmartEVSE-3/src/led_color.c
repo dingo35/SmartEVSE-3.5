@@ -152,3 +152,68 @@ led_rgb_t led_compute_color(const led_state_t *state, led_context_t *ctx) {
 
     return rgb;
 }
+
+/* ---- Public charging station scheme (upstream commit 3679fe3) ---- */
+
+led_rgb_t led_public_compute(const led_public_state_t *state,
+                             led_context_t *ctx) {
+    led_rgb_t rgb = {0, 0, 0};
+
+    /* Decision tree mirrors upstream main.cpp Public block. Order matters —
+     * flashes for recent events win over steady-state indicators. */
+
+    if (state->rfid_read_flash) {
+        /* Grey flash — RFID read in progress */
+        rgb.r = 128; rgb.g = 128; rgb.b = 128;
+    } else if (state->tx_authorized_flash) {
+        /* Green flash — authorization granted */
+        rgb.r = 0; rgb.g = 255; rgb.b = 0;
+    } else if (state->tx_rejected_flash) {
+        /* Red flash — authorization rejected */
+        rgb.r = 255; rgb.g = 0; rgb.b = 0;
+    } else if (state->tx_timeout_flash) {
+        /* Red flash — auth/connection timeout */
+        rgb.r = 255; rgb.g = 0; rgb.b = 0;
+    } else if (state->cp_status == LED_CP_STATUS_RESERVED) {
+        /* Orange — reserved */
+        rgb.r = 255; rgb.g = 128; rgb.b = 0;
+    } else if (state->cp_status == LED_CP_STATUS_UNAVAILABLE ||
+               state->cp_status == LED_CP_STATUS_FAULTED) {
+        /* Red — unavailable / faulted */
+        rgb.r = 255; rgb.g = 0; rgb.b = 0;
+    } else if (state->error_flags || state->charge_delay) {
+        /* Slow orange blink — waiting for power / delayed */
+        ctx->led_count += 2;
+        if (ctx->led_count > 230)
+            ctx->led_pwm = WAITING_LED_BRIGHTNESS;
+        else
+            ctx->led_pwm = 0;
+        rgb.r = ctx->led_pwm;
+        rgb.g = ctx->led_pwm / 2;
+        rgb.b = 0;
+    } else if (state->state == STATE_A) {
+        /* Green (dim) — Available */
+        ctx->led_pwm = STATE_A_LED_BRIGHTNESS;
+        rgb.r = 0;
+        rgb.g = ctx->led_pwm;
+        rgb.b = 0;
+    } else if (state->state == STATE_B || state->state == STATE_B1 ||
+               state->state == STATE_MODEM_REQUEST || state->state == STATE_MODEM_WAIT) {
+        /* Blue static — EV connected */
+        ctx->led_pwm = STATE_B_LED_BRIGHTNESS;
+        ctx->led_count = 128;  /* seed fade animation for the STATE_C transition */
+        rgb.r = 0;
+        rgb.g = 0;
+        rgb.b = ctx->led_pwm;
+    } else if (state->state == STATE_C) {
+        /* Blue fading — Charging */
+        ctx->led_count += 2;
+        ctx->led_pwm = led_ease8InOutQuad(led_triwave8(ctx->led_count));
+        rgb.r = 0;
+        rgb.g = 0;
+        rgb.b = ctx->led_pwm;
+    }
+    /* else: rgb stays {0,0,0} — nothing to display */
+
+    return rgb;
+}
