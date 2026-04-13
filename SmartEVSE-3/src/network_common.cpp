@@ -1681,8 +1681,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         res = offset + hm->body.len;
                         unsigned int RFID_UID[8] = {1, 0, 0, 0, 0, 0, 0, 0};
                         char RFIDtxtstring[20];                                     // 17 characters + NULL terminator
-                        int r, pos = 0;
-                        int beginpos = 0;
+                        /* SECURITY L-4: use size_t for pos/beginpos — body.len is
+                         * size_t (unsigned). Previously `int pos` compared via
+                         * `pos <= body.len` on large bodies would promote pos to
+                         * size_t and lose sign semantics. Mongoose caps Content-
+                         * Length upstream so not currently exploitable, but fix
+                         * the types to make the invariant obvious. */
+                        int r;
+                        size_t pos = 0, beginpos = 0;
                         while (pos <= hm->body.len) {
                             char c;
                             c = *(hm->body.buf + pos);
