@@ -110,11 +110,11 @@ var setStatus = function(text) {
           CUSTOM FLASHING
           <br><br>
           Flash one of:<ul>
-              <li>firmware.bin or firmware.signed.bin (to update the firmware);</li>
-              <li>firmware.debug.bin or firmware.debug.signed.bin (if you want to telnet to your SmartEVSE to see debug messages);</li>
+              <li>firmware.signed.bin (to update the firmware);</li>
+              <li>firmware.debug.signed.bin (if you want to telnet to your SmartEVSE to see debug messages);</li>
               <li>rfid.txt (if you want to bulk upload allowed NFC tags for the RFID reader);</li>
           </ul>
-          You should only flash files with those exact names.<br>No need to flash spiffs.bin for versions 3.6.0-RC1 and newer!<br>No need to rename firmware.debug.bin anymore for versions 3.6.0-RC2 and newer!<br>Signed firmware is verified to be original and can be handled by versions 3.6.2 and newer.
+          You should only flash files with those exact names.<br>No need to flash spiffs.bin for versions 3.6.0-RC1 and newer!<br><b>Unsigned firmware.bin uploads are no longer accepted</b> — only signature-verified .signed.bin files are flashed (security fix). Build signed firmware locally via the release workflow or use the prebuilt assets from the releases page.
           <br><br><br>NOTE: "Choose file:"  uploads only work with http connections, and will fail with https connections!<br>
       </div>
       <div id="wrapper">
