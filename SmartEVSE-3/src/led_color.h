@@ -59,6 +59,48 @@ typedef struct {
  */
 led_rgb_t led_compute_color(const led_state_t *state, led_context_t *ctx);
 
+/* ---- Public charging station LED scheme (upstream commit 3679fe3) ---- */
+
+/*
+ * OCPP ChargePointStatus values the Public scheme cares about.
+ * Mirror of MicroOcpp::ChargePointStatus — caller converts.
+ */
+typedef enum {
+    LED_CP_STATUS_OTHER       = 0,  /* Any status we don't color specially */
+    LED_CP_STATUS_RESERVED    = 1,
+    LED_CP_STATUS_UNAVAILABLE = 2,
+    LED_CP_STATUS_FAULTED     = 3
+} led_cp_status_t;
+
+/*
+ * Snapshot for the Public scheme. Caller pre-computes timing booleans
+ * from millis() and MicroOcpp types so the pure function stays testable.
+ */
+typedef struct {
+    uint8_t  error_flags;        /* ErrorFlags */
+    uint8_t  charge_delay;       /* ChargeDelay */
+    uint8_t  state;              /* STATE_A / B / B1 / C / MODEM_* */
+
+    /* RFID-read grey flash: (millis() - OcppLastRfidUpdate) < 200 */
+    bool     rfid_read_flash;
+
+    /* Tx-notification flashes — caller pre-computes (age + enum check). */
+    bool     tx_authorized_flash;  /* < 1000ms && Authorized */
+    bool     tx_rejected_flash;    /* < 2000ms && {Rejected, DeAuthorized, ReservationConflict} */
+    bool     tx_timeout_flash;     /* <  300ms && {AuthorizationTimeout, ConnectionTimeout} */
+
+    /* ChargePointStatus (from getChargePointStatus()) */
+    led_cp_status_t cp_status;
+} led_public_state_t;
+
+/*
+ * Compute RGB for the Public (public charging station) scheme. Applied only
+ * when the LedMode setting is 1; callers keep using led_compute_color() for
+ * the Standard scheme otherwise. ctx persists across calls (animation).
+ */
+led_rgb_t led_public_compute(const led_public_state_t *state,
+                             led_context_t *ctx);
+
 #ifdef __cplusplus
 }
 #endif

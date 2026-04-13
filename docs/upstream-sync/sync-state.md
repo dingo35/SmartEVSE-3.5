@@ -26,7 +26,7 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 | 9 | `3ab1cee` | 2026-04-08 | stegen | `main.cpp`: reset Node ChargeDelay countdown when solar power disappears | **Integrated** | P2 | (P2 bundle) | Applied in `processAllNodeStates()` master-side slave-node error tracking |
 | 10 | `a54b07f` | 2026-04-09 | stegen | `main.cpp`: prevent current fluctuations when CAPACITY is used (fixes #327) | **Integrated** | P2 | (P2 bundle) | Applied in pure C `evse_calc_balanced_current()`; 3 unit tests. `test_s9_maxsummains_limits` updated to use larger exceedance (Isum 350→600) so per-phase reduction crosses fork's SmartDeadBand — documents the gentler, correct per-phase semantics. |
 | 11 | `92d42eb` | 2026-04-10 | Juurlink | Refactor tooltips: centralize styles in `styling.css` + a11y (#301) | Web UI cosmetic | P4 | — | CSS-only. |
-| 12 | `3679fe3` | 2026-04-10 | stegen | OCPP: public charging station LED colour scheme when OCPP is enabled (#351) | New feature | P3 | — | 6 files, adds LedMode menu option. Fork has pure C `led_color.c`; need to adapt, not cherry-pick. |
+| 12 | `3679fe3` | 2026-04-10 | stegen | OCPP: public charging station LED colour scheme when OCPP is enabled (#351) | **Integrated** | P3 | (this PR) | Public scheme extracted to `led_public_compute()` in `led_color.c`; 14 unit tests. `MENU_LEDMODE=51` (fork avoids renumber cascade). |
 | 13 | `790f2a9` | 2026-04-10 | stegen | `docs`: update OCPP documentation | Docs only | P4 | — | Skip or cherry-pick docs bits. |
 
 ### Suggested batching

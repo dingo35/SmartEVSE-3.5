@@ -179,6 +179,7 @@ struct SettingsCache {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
+    uint8_t LedMode;
     uint16_t CapacityLimit;
     bool valid;  // True once cache is populated from read_settings()
 };
@@ -1651,6 +1652,8 @@ void read_settings() {
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
 #endif //ENABLE_OCPP
 
+        LedMode = preferences.getUChar("LedMode", 0);
+
         CapacityLimit = preferences.getUShort("CapacityLim", 0);
         // Restore monthly peak from NVS
         CapacityState.monthly.monthly_peak_w = preferences.getInt("CapPeak", 0);
@@ -1721,6 +1724,7 @@ void read_settings() {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
+        settingsCache.LedMode = LedMode;
         settingsCache.CapacityLimit = CapacityLimit;
         settingsCache.valid = true;
         _LOG_D("Settings cache populated from NVS\n");
@@ -1807,6 +1811,8 @@ void write_settings(void) {
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
 #endif //ENABLE_OCPP
+
+    PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode, LedMode);
 
     PREFS_PUT_USHORT_IF_CHANGED("CapacityLim", CapacityLimit, CapacityLimit);
     // Persist monthly peak across reboots

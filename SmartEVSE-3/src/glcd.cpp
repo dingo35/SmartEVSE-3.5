@@ -429,6 +429,7 @@ void GLCDHelp(void)                                                             
         case MENU_ROTATION:     desc = "Rotation interval in minutes (0=off)"; break;
         case MENU_IDLE_TIMEOUT: desc = "Idle timeout in seconds (anti-flap)"; break;
         case MENU_CAPLIMIT:     desc = "Capacity tariff 15-min peak limit (kW)"; break;
+        case MENU_LEDMODE:      desc = "LED color scheme (Standard / Public)";   break;
         default:                desc = (LCDNav < MENU_EXIT) ? MenuStr[LCDNav].Desc : ""; break;
     }
     unsigned int x = strlen(desc);
@@ -1135,6 +1136,8 @@ const char * getMenuItemOption(uint8_t nav) {
                 snprintf(Str, sizeof(Str), "%u.%u kW", value / 10, value % 10);
                 return Str;
             } else return StrDisabled;
+        case MENU_LEDMODE:
+            return value ? "Public" : "Standard";
         case MENU_EXIT:
             return StrExitMenu;
         default:
@@ -1229,6 +1232,7 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_IDLE_TIMEOUT;
     }
     MenuItems[m++] = MENU_LCDPIN;
+    MenuItems[m++] = MENU_LEDMODE;                                              // LED color scheme (0:Standard / 1:Public)
     MenuItems[m++] = MENU_EXIT;
 
     return m;
@@ -1371,6 +1375,10 @@ void GLCDMenu(uint8_t Buttons) {
                         value = MenuNavInt(Buttons, value, 0, 250);
                         setItemValue(LCDNav, value);
                         break;
+                    case MENU_LEDMODE:
+                        value = MenuNavInt(Buttons, value, 0, 1);
+                        setItemValue(LCDNav, value);
+                        break;
                     default:
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         setItemValue(LCDNav, value);
@@ -1445,6 +1453,7 @@ void GLCDMenu(uint8_t Buttons) {
                         case MENU_ROTATION:     lcdLabel = "ROTATION"; break;
                         case MENU_IDLE_TIMEOUT: lcdLabel = "IDLE TMO"; break;
                         case MENU_CAPLIMIT:     lcdLabel = "CAP PEAK"; break;
+                        case MENU_LEDMODE:      lcdLabel = "LED MODE"; break;
                         default:                lcdLabel = (LCDNav < MENU_EXIT) ? MenuStr[LCDNav].LCD : ""; break;
                     }
                     GLCD_print_menu(2, lcdLabel);                                           // add navigation arrows on both sides

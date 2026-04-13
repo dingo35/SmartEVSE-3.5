@@ -484,6 +484,277 @@ void test_state_b_custom_override(void) {
 }
 
 /* ================================================================
+ * Public charging station scheme (upstream commit 3679fe3)
+ * ================================================================ */
+
+static led_public_state_t make_public_default(void) {
+    led_public_state_t s;
+    memset(&s, 0, sizeof(s));
+    s.state = STATE_A;
+    s.cp_status = LED_CP_STATUS_OTHER;
+    return s;
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-100
+ * @scenario RFID read grey flash wins over all other signals
+ * @given rfid_read_flash true, other flashes also asserted
+ * @when led_public_compute is called
+ * @then Returns grey (128,128,128) — highest priority in the decision tree
+ */
+void test_public_rfid_flash_priority(void) {
+    led_public_state_t s = make_public_default();
+    s.rfid_read_flash = true;
+    s.tx_authorized_flash = true;   /* should be ignored */
+    s.cp_status = LED_CP_STATUS_RESERVED;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(128, rgb.r);
+    TEST_ASSERT_EQUAL_INT(128, rgb.g);
+    TEST_ASSERT_EQUAL_INT(128, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-100
+ * @scenario Authorized-grant green flash
+ * @given tx_authorized_flash true, no higher-priority signal
+ * @when led_public_compute is called
+ * @then Returns green (0,255,0)
+ */
+void test_public_tx_authorized_green(void) {
+    led_public_state_t s = make_public_default();
+    s.tx_authorized_flash = true;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(255, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-100
+ * @scenario Authorization-rejected red flash
+ * @given tx_rejected_flash true
+ * @when led_public_compute is called
+ * @then Returns red (255,0,0)
+ */
+void test_public_tx_rejected_red(void) {
+    led_public_state_t s = make_public_default();
+    s.tx_rejected_flash = true;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(255, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-100
+ * @scenario Auth-timeout red flash
+ * @given tx_timeout_flash true
+ * @when led_public_compute is called
+ * @then Returns red (255,0,0)
+ */
+void test_public_tx_timeout_red(void) {
+    led_public_state_t s = make_public_default();
+    s.tx_timeout_flash = true;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(255, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-101
+ * @scenario Reserved ChargePoint status → orange
+ * @given cp_status = LED_CP_STATUS_RESERVED, no flashes
+ * @when led_public_compute is called
+ * @then Returns orange (255,128,0)
+ */
+void test_public_reserved_orange(void) {
+    led_public_state_t s = make_public_default();
+    s.cp_status = LED_CP_STATUS_RESERVED;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(255, rgb.r);
+    TEST_ASSERT_EQUAL_INT(128, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-101
+ * @scenario Unavailable ChargePoint status → red
+ * @given cp_status = LED_CP_STATUS_UNAVAILABLE
+ * @when led_public_compute is called
+ * @then Returns red (255,0,0)
+ */
+void test_public_unavailable_red(void) {
+    led_public_state_t s = make_public_default();
+    s.cp_status = LED_CP_STATUS_UNAVAILABLE;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(255, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-101
+ * @scenario Faulted ChargePoint status → red
+ * @given cp_status = LED_CP_STATUS_FAULTED
+ * @when led_public_compute is called
+ * @then Returns red (255,0,0)
+ */
+void test_public_faulted_red(void) {
+    led_public_state_t s = make_public_default();
+    s.cp_status = LED_CP_STATUS_FAULTED;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(255, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-102
+ * @scenario Waiting / ChargeDelay → slow orange blink (bright phase)
+ * @given charge_delay set, led_count seeded past 230
+ * @when led_public_compute is called
+ * @then Returns orange at waiting brightness (R=WAITING_LED_BRIGHTNESS, G=R/2, B=0)
+ */
+void test_public_waiting_orange_bright(void) {
+    led_public_state_t s = make_public_default();
+    s.charge_delay = 30;
+    led_context_t c = {230, 0};  /* +2 inside fn crosses the 230 threshold */
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(WAITING_LED_BRIGHTNESS, rgb.r);
+    TEST_ASSERT_EQUAL_INT(WAITING_LED_BRIGHTNESS / 2, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-102
+ * @scenario Waiting / ChargeDelay → slow orange blink (dark phase)
+ * @given error flag set, led_count seeded so post-increment is <= 230
+ * @when led_public_compute is called
+ * @then Returns (0,0,0) — dark part of the blink
+ */
+void test_public_waiting_orange_dark(void) {
+    led_public_state_t s = make_public_default();
+    s.error_flags = CT_NOCOMM;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-103
+ * @scenario STATE_A → green (dimmed) = Available
+ * @given state = STATE_A, no flashes, no waiting
+ * @when led_public_compute is called
+ * @then Returns (0, STATE_A_LED_BRIGHTNESS, 0)
+ */
+void test_public_state_a_green_dim(void) {
+    led_public_state_t s = make_public_default();
+    s.state = STATE_A;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(STATE_A_LED_BRIGHTNESS, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-103
+ * @scenario STATE_B → blue static = EV connected
+ * @given state = STATE_B
+ * @when led_public_compute is called
+ * @then Returns (0, 0, STATE_B_LED_BRIGHTNESS) and seeds led_count=128
+ */
+void test_public_state_b_blue_static(void) {
+    led_public_state_t s = make_public_default();
+    s.state = STATE_B;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(STATE_B_LED_BRIGHTNESS, rgb.b);
+    TEST_ASSERT_EQUAL_INT(128, c.led_count);  /* seeds fade animation */
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-103
+ * @scenario STATE_B1 and STATE_MODEM_* also → blue static
+ * @given state = STATE_B1
+ * @when led_public_compute is called
+ * @then Returns (0, 0, STATE_B_LED_BRIGHTNESS)
+ */
+void test_public_state_b1_blue_static(void) {
+    led_public_state_t s = make_public_default();
+    s.state = STATE_B1;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(STATE_B_LED_BRIGHTNESS, rgb.b);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-103
+ * @scenario STATE_C → blue fading (animation advances)
+ * @given state = STATE_C, led_count incremented across calls
+ * @when led_public_compute is called twice
+ * @then Both outputs have R=0, G=0, B>0 and led_count advances
+ */
+void test_public_state_c_blue_fading(void) {
+    led_public_state_t s = make_public_default();
+    s.state = STATE_C;
+    led_context_t c = {0, 0};
+    led_rgb_t rgb1 = led_public_compute(&s, &c);
+    uint8_t count_after_1 = c.led_count;
+    led_rgb_t rgb2 = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb1.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb1.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb2.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb2.g);
+    TEST_ASSERT_TRUE(c.led_count > count_after_1);  /* count advanced */
+}
+
+/*
+ * @feature LED Color — Public Scheme
+ * @req REQ-LED-104
+ * @scenario Default/unknown state with no signals → all off
+ * @given Default snapshot, state is unknown value
+ * @when led_public_compute is called
+ * @then Returns (0,0,0) — falls off the decision tree
+ */
+void test_public_unknown_state_off(void) {
+    led_public_state_t s = make_public_default();
+    s.state = 99;  /* not any handled state */
+    led_context_t c = {0, 0};
+    led_rgb_t rgb = led_public_compute(&s, &c);
+    TEST_ASSERT_EQUAL_INT(0, rgb.r);
+    TEST_ASSERT_EQUAL_INT(0, rgb.g);
+    TEST_ASSERT_EQUAL_INT(0, rgb.b);
+}
+
+/* ================================================================
  * Main
  * ================================================================ */
 
@@ -518,6 +789,22 @@ int main(void) {
     /* Color modes */
     RUN_TEST(test_state_a_solar_color);
     RUN_TEST(test_state_b_custom_override);
+
+    /* Public scheme (upstream 3679fe3) */
+    RUN_TEST(test_public_rfid_flash_priority);
+    RUN_TEST(test_public_tx_authorized_green);
+    RUN_TEST(test_public_tx_rejected_red);
+    RUN_TEST(test_public_tx_timeout_red);
+    RUN_TEST(test_public_reserved_orange);
+    RUN_TEST(test_public_unavailable_red);
+    RUN_TEST(test_public_faulted_red);
+    RUN_TEST(test_public_waiting_orange_bright);
+    RUN_TEST(test_public_waiting_orange_dark);
+    RUN_TEST(test_public_state_a_green_dim);
+    RUN_TEST(test_public_state_b_blue_static);
+    RUN_TEST(test_public_state_b1_blue_static);
+    RUN_TEST(test_public_state_c_blue_fading);
+    RUN_TEST(test_public_unknown_state_off);
 
     TEST_SUITE_RESULTS();
 }

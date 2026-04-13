@@ -75,6 +75,7 @@ Addresses upstream issue
 | Atomic connector lock decision | Upstream `ocppLoop()` briefly flipped `OcppForcesLock` false→true within one iteration, causing actuator unlock/relock jitter — integrated upstream `05c7fc2` with the decision extracted to pure C and 11 unit tests | upstream `05c7fc2` |
 | OCPP Finishing-before-Available sequence | CSMS missed the Finishing state because OccupiedInput went false immediately after StopTx — integrated upstream `afd72a8` with the decision extracted to pure C (`ocpp_should_report_occupied`) and 6 unit tests | upstream `afd72a8` |
 | Cable disconnect detection under PAUSE | CP sampling timer left disabled after STATE_B single-shot fired — integrated upstream `e6110b1` (timerAlarmEnable in STATE_A/STATE_C1 paths) | upstream `e6110b1` |
+| Public charging station LED scheme | Public-charger color semantics (available/connected/charging/reserved/faulted) selectable via new `LedMode` menu — integrated upstream `3679fe3` with the decision tree extracted to pure C (`led_public_compute()`) and 14 unit tests. Fork keeps `MENU_LEDMODE=51` to avoid renumber cascade. | upstream `3679fe3` |
 
 ### MQTT & Home Assistant
 
