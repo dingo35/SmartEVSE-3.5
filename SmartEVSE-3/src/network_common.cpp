@@ -2077,7 +2077,14 @@ void WiFiSetup(void) {
         _LOG_A("No serialnr programmed, using MAC: %u\n", serialnr);
     }
     
-    _LOG_A("hwversion=%04x serialnr=%u mqtt_pwd=%s\n", hwversion, serialnr, MQTTprivatePassword.c_str());
+    // SECURITY C-5: do NOT log the full MQTTprivatePassword (hash of EC
+    // private key used to authenticate to mqtt.smartevse.nl). Anyone who
+    // captures the boot log — serial, telnet, cloud-forwarded — could
+    // impersonate the device against the app server. Log a short prefix
+    // only as an aid for debugging, never the full secret.
+    _LOG_A("hwversion=%04x serialnr=%u mqtt_pwd=%.4s...[redacted]\n",
+           hwversion, serialnr,
+           MQTTprivatePassword.length() >= 4 ? MQTTprivatePassword.c_str() : "----");
 
 #ifndef SENSORBOX_VERSION
     APhostname = "SmartEVSE-" + String(serialnr);

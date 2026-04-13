@@ -62,6 +62,17 @@ in embedded firmware is high.
 - **Never bypass error checks or safety validations.** Do not remove or weaken
   bounds checking, overcurrent protection, or state machine guard conditions.
 - **Never use `sprintf`.** Always use `snprintf` with explicit buffer sizes.
+- **Always NUL-terminate after `strncpy`.** `strncpy(buf, src, sizeof(buf))` does
+  NOT write a terminator when the source fills the buffer. Every `strncpy` MUST
+  be followed by `buf[sizeof(buf) - 1] = '\0';`. Prefer `snprintf(buf, sizeof(buf), "%s", src)`
+  when possible — it always terminates. Rule introduced after security review
+  finding H-5 (MQTT/NVS input into `RequiredEVCCID` could leave the buffer
+  unterminated, causing subsequent `%s` reads past the end).
+- **Never log secrets.** Do not pass credential material (MQTT passwords, OCPP
+  auth keys, private-key-derived tokens, WiFi passwords, pairing PINs, RFID
+  UIDs) to `_LOG_A` / `_LOG_I` / `Serial.print` / `printf`. A short fingerprint
+  (first 4 chars + ellipsis) is acceptable for debugging. Rule introduced after
+  security review finding C-5 (`MQTTprivatePassword` was printed on every boot).
 - **Never allocate heap memory in ISRs, timer callbacks, or critical sections.**
   No `malloc`, `new`, Arduino `String`, or any blocking call inside
   `portENTER_CRITICAL` / `portEXIT_CRITICAL` blocks.
