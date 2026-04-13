@@ -2,18 +2,61 @@
 
 Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 
-**Last synced to:** `40e78a2` (2026-02-25, merged via PR #123 base)
-**Current upstream HEAD:** `ecd088b` (2026-03-29)
-**Pending commits:** 0 open / 1 deferred (was 5; #1 + #2 integrated via PR #130, #3 rejected, #4 evaluated and deferred to a future P3 PR, #5 skipped)
+**Last synced to:** `ecd088b` (2026-03-29, 2026-03-29 triage closed)
+**Current upstream HEAD:** `790f2a9` (2026-04-10)
+**Open pending commits (2026-04-13 window):** 13 — triage below
+
+Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
+1 evaluated/deferred (190777f), 1 skipped.
 
 ---
 
-## Sync: 2026-03-29 — Triage
+## Sync: 2026-04-13 — Triage (13 commits since `ecd088b`)
+
+| # | Hash | Date | Author | Title | Classification | Priority | Fork PR | Notes |
+|---|------|------|--------|-------|----------------|----------|---------|-------|
+| 1 | `e6110b1` | 2026-03-31 | stegen | Fix cable disconnect not detected when switching to PAUSE (fixes #347) | Bug fix — safety-adjacent | **P1** | — | `main.cpp` 2 lines; cable state detection under PAUSE — needs state-machine review in fork |
+| 2 | `cdc8f67` | 2026-03-31 | dingo35 | Prevent `[Mains\|EV]Meter.[Im\|Ex]port_active_energy` exported when zero | **Already fixed** | — | — | Fork already has broader `> 0` guards at `esp32.cpp:1257-1300` + Circuit meter. No action. |
+| 3 | `b104576` | 2026-03-31 | stegen | `modbus.cpp`: do not advance request loop on broadcast timeouts | Bug fix — non-safety | P2 | — | 2 lines; reduces lost requests when broadcast peer times out |
+| 4 | `4e6c06d` | 2026-04-01 | dingo35 | `update2.html`: warning message + layout | Web UI cosmetic | P4 | — | `data/` HTML → `packed_fs.c` regen |
+| 5 | `543af26` | 2026-04-01 | stegen | EtherLCD support: Ethernet add-on board that replaces the LCD board (#349) | New feature — hardware | P3 | — | **1768 lines**, 11 files, hardware-specific. Evaluate whether fork users want this; substantial review. |
+| 6 | `afd72a8` | 2026-04-03 | stegen | OCPP: send Finishing state before Available (fixes #348) | Bug fix — non-safety | P2 | — | OCPP state sequence correctness; 11/1 lines. Candidate for pure C in `ocpp_logic.c` / IEC 61851 mapping. |
+| 7 | `74e20c8` | 2026-04-07 | stegen | `main.cpp`: reset ChargeDelay countdown when solar power disappears (master) | Bug fix — non-safety | P2 | — | Pairs with #9 (3ab1cee). Fork has no equivalent. Solar-mode stability. Bundle with #9. |
+| 8 | `2c015fb` | 2026-04-08 | Juurlink | Improved Raw Settings view: formatted JSON + Download button (#353) | Web UI feature | P3 | — | 280/25 lines, 5 files. Useful; likely conflicts with fork web UI divergences. |
+| 9 | `3ab1cee` | 2026-04-08 | stegen | `main.cpp`: reset Node ChargeDelay countdown when solar power disappears | Bug fix — non-safety | P2 | — | Node-side of #7. Bundle. |
+| 10 | `a54b07f` | 2026-04-09 | stegen | `main.cpp`: prevent current fluctuations when CAPACITY is used (fixes #327) | Bug fix — non-safety | P2 | — | 3/2 lines. Interacts with fork load balancing + Capacity Tariff tracking (Plan 13). Review for overlap. |
+| 11 | `92d42eb` | 2026-04-10 | Juurlink | Refactor tooltips: centralize styles in `styling.css` + a11y (#301) | Web UI cosmetic | P4 | — | CSS-only. |
+| 12 | `3679fe3` | 2026-04-10 | stegen | OCPP: public charging station LED colour scheme when OCPP is enabled (#351) | New feature | P3 | — | 6 files, adds LedMode menu option. Fork has pure C `led_color.c`; need to adapt, not cherry-pick. |
+| 13 | `790f2a9` | 2026-04-10 | stegen | `docs`: update OCPP documentation | Docs only | P4 | — | Skip or cherry-pick docs bits. |
+
+### Suggested batching
+
+1. **Safety / P1 first:**
+   - #1 `e6110b1` cable-disconnect-on-PAUSE — needs fork state-machine analysis
+2. **Bug-fix bundle (P2) — all solar/load-balancing/OCPP stability:**
+   - #3 `b104576` Modbus broadcast timeout
+   - #6 `afd72a8` OCPP Finishing→Available sequence
+   - #7 + #9 `74e20c8` + `3ab1cee` ChargeDelay reset (bundled, both sides)
+   - #10 `a54b07f` CAPACITY current fluctuation — review for overlap with Plan 13
+3. **Features (P3) — each as separate PR:**
+   - #12 `3679fe3` OCPP LED scheme — adapt into `led_color.c`
+   - #8 `2c015fb` Raw Settings UI — evaluate against fork web UI
+   - #5 `543af26` EtherLCD — biggest item, stand-alone evaluation
+4. **Cosmetic / docs (P4) — batch or skip:**
+   - #4 `4e6c06d` update2.html
+   - #11 `92d42eb` tooltip CSS
+   - #13 `790f2a9` OCPP docs update
+5. **No action (already fixed):**
+   - #2 `cdc8f67` energy zero-value guard — noted, no action
+
+---
+
+## Sync: 2026-03-29 — Triage (CLOSED)
 
 | # | Hash | Date | Author | Title | Classification | Priority | Fork PR | Notes |
 |---|------|------|--------|-------|---------------|----------|---------|-------|
-| 1 | `ecd088b` | 2026-03-29 | stegen | OCPP: recover from silent session loss (#345) | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_silence_decide()` in ocpp_logic.c, 10 unit tests |
-| 2 | `05c7fc2` | 2026-03-27 | stegen | OCPP: prevent actuator unlock/relock jitter | **Integrated** | P2 | (PR pending) | Logic extracted to `ocpp_should_force_lock()` in ocpp_logic.c, 11 unit tests |
+| 1 | `ecd088b` | 2026-03-29 | stegen | OCPP: recover from silent session loss (#345) | **Integrated** | P2 | #130 | Logic extracted to `ocpp_silence_decide()` in ocpp_logic.c, 10 unit tests |
+| 2 | `05c7fc2` | 2026-03-27 | stegen | OCPP: prevent actuator unlock/relock jitter | **Integrated** | P2 | #130 | Logic extracted to `ocpp_should_force_lock()` in ocpp_logic.c, 11 unit tests |
 | 3 | `02dafa2` | 2026-03-27 | stegen | Fix: Solar 1P stop timer | **Rejected** | P1 | #119 (alt) | Same bug as our PR #119; upstream's fix is incorrect — see analysis |
 | 4 | `190777f` | 2026-03-25 | stegen | Add OCPP firmware update functionality | **Evaluated — adopt later** | P3 | — | Multi-key compatible (validation path unchanged); deferred to separate PR — see [analysis](analysis-190777f-ocpp-firmware-update.md) |
 | 5 | `c0c6b16` | 2026-02-25 | hmmbob | Improve integrations section (#334) | Docs only | P4 | — | ESPHome configs, no firmware |
