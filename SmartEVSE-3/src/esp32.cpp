@@ -180,6 +180,7 @@ struct SettingsCache {
     uint8_t OcppMode;
 #endif
     uint8_t LedMode;
+    uint8_t AuthMode;
     uint16_t CapacityLimit;
     bool valid;  // True once cache is populated from read_settings()
 };
@@ -1659,6 +1660,7 @@ void read_settings() {
 #endif //ENABLE_OCPP
 
         LedMode = preferences.getUChar("LedMode", 0);
+        AuthMode = preferences.getUChar("AuthMode", 0);   // Plan 16: default 0 (legacy) on upgrade
 
         CapacityLimit = preferences.getUShort("CapacityLim", 0);
         // Restore monthly peak from NVS
@@ -1732,6 +1734,7 @@ void read_settings() {
         settingsCache.OcppMode = OcppMode;
 #endif
         settingsCache.LedMode = LedMode;
+        settingsCache.AuthMode = AuthMode;
         settingsCache.CapacityLimit = CapacityLimit;
         settingsCache.valid = true;
         _LOG_D("Settings cache populated from NVS\n");
@@ -1821,6 +1824,7 @@ void write_settings(void) {
 #endif //ENABLE_OCPP
 
     PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode, LedMode);
+    PREFS_PUT_UCHAR_IF_CHANGED("AuthMode", AuthMode, AuthMode);
 
     PREFS_PUT_USHORT_IF_CHANGED("CapacityLim", CapacityLimit, CapacityLimit);
     // Persist monthly peak across reboots

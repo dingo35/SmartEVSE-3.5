@@ -1474,6 +1474,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     // handles URI and response, returns true if handled, false if not
     if (!handle_URI(c, hm, request)) {
         if (mg_match(hm->uri, mg_str("/erasesettings"), NULL)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate (C-3 unauthenticated factory reset)
             if ( preferences.begin("settings", false) ) {         // our own settings
               preferences.clear();
               preferences.end();
@@ -1521,6 +1522,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               mg_http_reply(c, 400, "", "Missing SSID or password");
             }
         } else if (mg_http_match_uri(hm, "/autoupdate")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             char owner[40];
             char buf[8];
             char tag[40] = "";
@@ -1565,6 +1567,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         } else if (mg_http_match_uri(hm, "/update")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             //modified version of mg_http_upload
             char buf[20] = "0", file[40];
             size_t max_size = 0x1B0000;                                             //from partition_custom.csv
@@ -1716,6 +1719,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 mg_http_reply(c, 200, "", "%ld", res);
             }
         } else if (mg_http_match_uri(hm, "/reboot")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             shouldReboot = true;
 #ifndef SMARTEVSE_VERSION //sensorbox
             mg_http_reply(c, 200, "", "Rebooting after 5s...");
@@ -1727,6 +1731,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
 #endif
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             DynamicJsonDocument doc(64);
 #if MQTT
             if (request->hasParam("mqtt_update") && request->getParam("mqtt_update")->value().toInt() == 1) {
@@ -1798,6 +1803,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         } else if (mg_http_match_uri(hm, "/mqtt_ca_cert") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             String cert = readMqttCaCert();
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "%s\r\n", cert.c_str());
         } else {                                                                    // if everything else fails, serve static page

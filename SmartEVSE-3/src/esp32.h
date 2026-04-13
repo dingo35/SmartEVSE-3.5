@@ -131,6 +131,8 @@ extern uint16_t MaxSumMainsTimer;
 extern uint8_t RFIDstatus;
 extern uint8_t OcppMode;
 extern uint8_t LedMode;
+extern uint8_t AuthMode;                // HTTP auth gate (0=Off legacy, 1=Required) — Plan 16
+extern uint32_t LCDPasswordOkSince;     // millis() when LCDPasswordOK last asserted — session timeout tracking
 extern bool LocalTimeSet;
 extern uint32_t serialnr;
 extern String PairingPin;

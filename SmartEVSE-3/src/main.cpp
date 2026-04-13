@@ -281,6 +281,8 @@ uint8_t ColorSolar[3] = {255, 170, 0};    // Orange
 uint8_t ColorCustom[3] = {0, 0, 255};    // Blue
 
 uint8_t LedMode = 0;                    // LED color scheme: 0=Standard, 1=Public charging station (upstream 3679fe3)
+uint8_t AuthMode = 0;                   // HTTP auth mode: 0=Off (legacy, default on upgrade), 1=Required — Plan 16 Phase 1
+uint32_t LCDPasswordOkSince = 0;        // millis() when LCDPasswordOK was last asserted — drives the 30-min auth session timeout
 
 //#define FW_UPDATE_DELAY 30        //DINGO TODO                                            // time between detection of new version and actual update in seconds
 #define FW_UPDATE_DELAY 3600                                                    // time between detection of new version and actual update in seconds
@@ -2774,6 +2776,7 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         SETITEM(MENU_ROTATION, RotationInterval)
         SETITEM(MENU_IDLE_TIMEOUT, IdleTimeout)
         SETITEM(MENU_LEDMODE, LedMode)
+        SETITEM(MENU_AUTHMODE, AuthMode)
         case MENU_CAPLIMIT:
             CapacityLimit = val * 100;
             capacity_set_limit(&CapacityState, (int32_t)CapacityLimit);
@@ -2946,6 +2949,8 @@ uint16_t getItemValue(uint8_t nav) {
             return CapacityLimit / 100;
         case MENU_LEDMODE:
             return LedMode;
+        case MENU_AUTHMODE:
+            return AuthMode;
 
         // Status writeable
         case STATUS_STATE:
