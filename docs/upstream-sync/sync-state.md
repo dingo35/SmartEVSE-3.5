@@ -4,7 +4,7 @@ Tracks integration status of upstream commits from `dingo35/SmartEVSE-3.5`.
 
 **Last synced to:** `ecd088b` (2026-03-29, 2026-03-29 triage closed)
 **Current upstream HEAD:** `790f2a9` (2026-04-10)
-**Open pending commits (2026-04-13 window):** 1 (EtherLCD deferred to long-lived branch per user direction) + 3 deferred-to-Plan-07 (UI). 9 integrated, 1 rejected-pre-fix, 1 already-fixed.
+**Open pending commits (2026-04-13 window):** 0 in master backlog. EtherLCD is parked on long-lived test branch `upstream/543af26-etherlcd-test` (awaiting hardware testing, no master PR until cleared). 2 deferred to Plan 07 (Web UI). 9 integrated, 1 already-fixed.
 
 Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 1 evaluated/deferred (190777f), 1 skipped.
@@ -19,7 +19,7 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 | 2 | `cdc8f67` | 2026-03-31 | dingo35 | Prevent `[Mains\|EV]Meter.[Im\|Ex]port_active_energy` exported when zero | **Already fixed** | — | — | Fork already has broader `> 0` guards at `esp32.cpp:1257-1300` + Circuit meter. No action. |
 | 3 | `b104576` | 2026-03-31 | stegen | `modbus.cpp`: do not advance request loop on broadcast timeouts | **Integrated** | P2 | (P2 bundle) | Verbatim; 1-line guard on `BROADCAST_ADR` |
 | 4 | `4e6c06d` | 2026-04-01 | dingo35 | `update2.html`: warning message + layout | **Integrated** | P4 | (P4 batch) | Applied verbatim to fork's update2.html (label clarity, HTTPS-upload warning, button caps) |
-| 5 | `543af26` | 2026-04-01 | stegen | EtherLCD support: Ethernet add-on board that replaces the LCD board (#349) | New feature — hardware | P3 | — | **1768 lines**, 11 files, hardware-specific. Evaluate whether fork users want this; substantial review. |
+| 5 | `543af26` | 2026-04-01 | stegen | EtherLCD support: Ethernet add-on board that replaces the LCD board (#349) | **Parked on long-lived test branch** | P3 | branch [`upstream/543af26-etherlcd-test`](https://github.com/basmeerman/SmartEVSE-3.5/tree/upstream/543af26-etherlcd-test) | Cherry-pick + minimal compile fixes done. Branch builds (ESP32+CH32) and 51 native suites pass. **Several upstream `esp32.cpp` and `network_common.cpp` integration points are NOT applied** (HEAD's pure-C extractions preserved instead). Per user direction: weeks of on-device hardware testing required before any master PR. Full status, missing-integrations checklist and on-device test protocol live in [`analysis-543af26-etherlcd.md`](https://github.com/basmeerman/SmartEVSE-3.5/blob/upstream/543af26-etherlcd-test/docs/upstream-sync/analysis-543af26-etherlcd.md) on that branch. |
 | 6 | `afd72a8` | 2026-04-03 | stegen | OCPP: send Finishing state before Available (fixes #348) | **Integrated** | P2 | (P2 bundle) | Decision extracted to `ocpp_should_report_occupied()` in ocpp_logic.c; 6 unit tests |
 | 7 | `74e20c8` | 2026-04-07 | stegen | `main.cpp`: reset ChargeDelay countdown when solar power disappears (master) | **Integrated** | P2 | (P2 bundle) | Ported into pure C `evse_tick_1s()`; 3 unit tests in test_tick_1s.c |
 | 8 | `2c015fb` | 2026-04-08 | Juurlink | Improved Raw Settings view: formatted JSON + Download button (#353) | **Evaluated — defer to Plan 07** | P3 | — | 280/25 lines lands in fork's 500-line diverged `index.html`; stylesheet rename collision (`styling.css` vs fork `style.css`); `packfs.py` path differs. No functional regression from keeping existing Raw Data link. See [analysis](analysis-2c015fb-raw-settings-ui.md). |
@@ -41,7 +41,7 @@ Prior sync window (2026-03-29, now closed): 2 integrated (PR #130), 1 rejected,
 3. **Features (P3) — each as separate PR:**
    - #12 `3679fe3` OCPP LED scheme — adapt into `led_color.c`
    - #8 `2c015fb` Raw Settings UI — **evaluated and deferred** to Plan 07 (Web UI Modernization); see analysis
-   - #5 `543af26` EtherLCD — biggest item, stand-alone evaluation
+   - #5 `543af26` EtherLCD — **parked on long-lived branch** `upstream/543af26-etherlcd-test`. Cherry-pick + minimal compile fixes only; missing integrations documented on that branch. Awaiting on-device hardware bring-up.
 4. **Cosmetic / docs (P4) — processed:**
    - #4 `4e6c06d` update2.html — **integrated**
    - #11 `92d42eb` tooltip CSS — **deferred to Plan 07** (styling.css name collision)
