@@ -367,7 +367,7 @@ function setCapacityLimit() {
     var val = parseFloat($id('capacity_limit_input').value);
     if (isNaN(val) || val < 0 || val > 25) { alert('Value must be 0-25 kW'); return; }
     var watts = Math.round(val * 1000);
-    fetch('/settings?capacity_limit=' + watts, { method: 'POST' });
+    fetch('/settings?capacity_limit=' + watts, { method: 'POST' , body: '' });
 }
 
 /* ========== Cert visibility ========== */
@@ -484,8 +484,13 @@ function loadData() {
                 showById('mode_3');
                 $qa('#form_pwm input, #form_pwm button, #form_pwm select').forEach(function(el) { el.disabled = false; el.style.opacity = ''; el.title = ''; });
             }
-            /* Gray out slave-restricted settings */
+            /* Gray out slave-restricted settings. Also surface a visible
+             * note next to the override dropdown so slave users understand
+             * the restriction instead of silently wondering why clicking
+             * NORMAL/SMART doesn't change the override. */
             setSlaveRestricted('mode_override_current', isSlave);
+            if (isSlave) showById('override_slave_note');
+            else         hideById('override_slave_note');
             setSlaveRestricted('solar_start_current', false); /* solar settings editable on all */
             setSlaveRestricted('solar_max_import_current', false);
             setSlaveRestricted('solar_stop_time', false);
@@ -522,6 +527,7 @@ function loadData() {
 
             if (data.evse.rfid != "Not Installed") {
                 $id('rfid').textContent = data.evse.rfid;
+                showById('show_rfid');                /* fix: sibling to the hide branch — without this the RFID indicator stays hidden by HTML default */
             } else {
                 hideById('show_rfid');
             }
@@ -655,6 +661,12 @@ function loadData() {
             }
 
             if (data.ocpp) {
+                /* Reveal the outer card whenever the backend is shipping OCPP
+                 * data (always true on builds compiled with ENABLE_OCPP). The
+                 * matching hideById in the else branch keeps non-OCPP builds
+                 * silent. Without this, the HTML default `display:none` left
+                 * the panel permanently invisible (issue #129). */
+                showById('ocpp_config_outer');
                 if (data.ocpp.mode == "Enabled") {
                     showById('ocpp_settings');
                     $id('enable_ocpp').checked = true;
@@ -696,22 +708,22 @@ function loadData() {
 
 /* ========== Settings functions ========== */
 function SolStartCurr() {
-    fetch("/settings?solar_start_current=" + $id('solar_start_current').value, { method: 'POST' });
+    fetch("/settings?solar_start_current=" + $id('solar_start_current').value, { method: 'POST' , body: '' });
 }
 function SolImportCurr() {
-    fetch("/settings?solar_max_import=" + $id('solar_max_import_current').value, { method: 'POST' });
+    fetch("/settings?solar_max_import=" + $id('solar_max_import_current').value, { method: 'POST' , body: '' });
 }
 function SolStopTime() {
-    fetch("/settings?stop_timer=" + $id('solar_stop_time').value, { method: 'POST' });
+    fetch("/settings?stop_timer=" + $id('solar_stop_time').value, { method: 'POST' , body: '' });
 }
 function setPrioStrategy() {
-    fetch("/settings?prio_strategy=" + $id('prio_strategy').value, { method: 'POST' });
+    fetch("/settings?prio_strategy=" + $id('prio_strategy').value, { method: 'POST' , body: '' });
 }
 function setRotationInterval() {
-    fetch("/settings?rotation_interval=" + $id('rotation_interval').value, { method: 'POST' });
+    fetch("/settings?rotation_interval=" + $id('rotation_interval').value, { method: 'POST' , body: '' });
 }
 function setIdleTimeout() {
-    fetch("/settings?idle_timeout=" + $id('idle_timeout').value, { method: 'POST' });
+    fetch("/settings?idle_timeout=" + $id('idle_timeout').value, { method: 'POST' , body: '' });
 }
 
 /* ========== Mode activation ========== */
@@ -727,10 +739,17 @@ function activate(mode) {
         repeat: '' + repeat2
     });
     if ([1, 2, 3].includes(mode)) {
-        var override_current = $qs('#mode_override_current').value;
-        params.append('override_current', '' + (override_current * 10));
+        /* Only send override_current when the dropdown is NOT disabled.
+         * On slave nodes (LoadBl >= 2) the dropdown is disabled via
+         * setSlaveRestricted() — the backend would reject the value with
+         * "Value not allowed!" and leave the response confusing. Skipping
+         * the param keeps the mode-activation clean on slaves. */
+        var overrideEl = $qs('#mode_override_current');
+        if (overrideEl && !overrideEl.disabled) {
+            params.append('override_current', '' + (overrideEl.value * 10));
+        }
     }
-    fetch(endpoint + '?' + params, { method: 'POST' });
+    fetch(endpoint + '?' + params, { method: 'POST' , body: '' });
 
     /* Immediate visual feedback */
     $qs('#mode').textContent = $qs('#mode_' + mode).textContent;
@@ -767,23 +786,24 @@ function configureMqtt() {
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");
-    fetch("/settings?" + query, { method: 'POST' });
+    fetch("/settings?" + query, { method: 'POST' , body: '' });
     alert('Settings applied');
     toggleMqttEdit();
 }
 
 /* ========== Checkbox toggles ========== */
 function toggleLCDlock() {
-    fetch("/settings?lcdlock=" + ($id('lcdlock').checked ? 1 : 0), { method: 'POST' });
+    fetch("/settings?lcdlock=" + ($id('lcdlock').checked ? 1 : 0), { method: 'POST' , body: '' });
 }
 function toggleCableLock() {
-    fetch("/settings?cablelock=" + ($id('cablelock').checked ? 1 : 0), { method: 'POST' });
+    fetch("/settings?cablelock=" + ($id('cablelock').checked ? 1 : 0), { method: 'POST' , body: '' });
 }
 function toggleEnableOcpp() {
-    fetch("/settings?ocpp_update=1&ocpp_mode=" + ($id('enable_ocpp').checked ? 1 : 0), { method: 'POST' });
+    fetch("/settings?ocpp_update=1&ocpp_mode=" + ($id('enable_ocpp').checked ? 1 : 0), { method: 'POST' , body: '' })
+        .then(loadData);   /* Refresh immediately so the inner OCPP fields appear/disappear without a 5s wait */
 }
 function toggleEnableOcppAutoAuth() {
-    fetch("/settings?ocpp_update=1&ocpp_auto_auth=" + ($id('ocpp_auto_auth').checked ? 1 : 0), { method: 'POST' });
+    fetch("/settings?ocpp_update=1&ocpp_auto_auth=" + ($id('ocpp_auto_auth').checked ? 1 : 0), { method: 'POST' , body: '' });
     if ($id('ocpp_auto_auth').checked) {
         loadData();
     }
@@ -821,7 +841,7 @@ function configureOcpp() {
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");
-    fetch("/settings?" + query, { method: 'POST' });
+    fetch("/settings?" + query, { method: 'POST' , body: '' });
 }
 
 /* ========== Actions ========== */
@@ -859,11 +879,11 @@ function gotoDoc(event) {
 }
 
 function postPWM(value) {
-    fetch("/settings?override_pwm=" + value, { method: 'POST' });
+    fetch("/settings?override_pwm=" + value, { method: 'POST' , body: '' });
 }
 
 function postRequiredEVCCID() {
-    fetch("/settings?required_evccid=" + $id('required_evccid').value, { method: 'POST' });
+    fetch("/settings?required_evccid=" + $id('required_evccid').value, { method: 'POST' , body: '' });
 }
 
 /* ========== Diagnostic Telemetry Viewer ========== */
@@ -941,7 +961,18 @@ function diagStart() {
     diagActiveProfile = profile;
     diagPrevState = -1;
     $id('diag_log').innerHTML = '';
-    fetch('/diag/start?profile=' + profile, { method: 'POST' }).then(function() {
+    /* Only update badge + connect WS if the backend actually accepted the start.
+     * Previously .then() fired unconditionally — if the POST was rejected (e.g.
+     * 411 Length Required on some browsers without explicit CL:0, now fixed
+     * via body:'' — or 401 under AuthMode=1), the UI looked "Capturing" but
+     * no data streamed. */
+    fetch('/diag/start?profile=' + profile, { method: 'POST' , body: '' }).then(function(r) {
+        if (!r.ok) {
+            $id('diag_status_badge').className = 'diag-badge diag-badge-off';
+            $id('diag_status_badge').textContent = 'Err ' + r.status;
+            $id('diag_log').innerHTML = '<div class="diag-row sev-err">Start failed: HTTP ' + r.status + '</div>';
+            return;
+        }
         diagConnectWs();
         $id('diag_status_badge').className = 'diag-badge diag-badge-on';
         $id('diag_status_badge').textContent = 'Capturing';
@@ -949,7 +980,7 @@ function diagStart() {
 }
 
 function diagStop() {
-    fetch('/diag/stop', { method: 'POST' }).then(function() {
+    fetch('/diag/stop', { method: 'POST' , body: '' }).then(function() {
         $id('diag_status_badge').className = 'diag-badge diag-badge-off';
         $id('diag_status_badge').textContent = 'Stopped';
     });
@@ -975,8 +1006,21 @@ function diagConnectWs() {
         var c = $id('diag_count');
         if (c) c.textContent = rowCount + ' samples';
     };
-    ws.onclose = function() { diagWs = null; };
-    ws.onerror = function() { if (ws.readyState !== WebSocket.CLOSED) ws.close(); };
+    ws.onclose = function() {
+        diagWs = null;
+        /* Only surface a close-reason when the user had an active capture
+         * (badge is "Capturing") — don't spam on page-unload or manual stop. */
+        var badge = $id('diag_status_badge');
+        if (badge && badge.textContent === 'Capturing') {
+            badge.className = 'diag-badge diag-badge-off';
+            badge.textContent = 'WS closed';
+        }
+    };
+    ws.onerror = function() {
+        var log = $id('diag_log');
+        if (log) log.insertAdjacentHTML('beforeend', '<div class="diag-row sev-err">WebSocket error</div>');
+        if (ws.readyState !== WebSocket.CLOSED) ws.close();
+    };
 }
 
 /* Check diag status on load */
