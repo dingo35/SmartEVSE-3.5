@@ -718,12 +718,6 @@ void SetCPDuty(uint32_t DutyCycle){
 #else //CH32 and v3 ESP32
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3 ESP32
     ledcWrite(CP_CHANNEL, DutyCycle);                                       // update PWM signal
-#if DIAG_LOG
-    uint32_t readback = ledcRead(CP_CHANNEL);
-    if (readback != DutyCycle) {
-        _LOG_A("SetCPDuty MISMATCH: wrote %u, read %u\n", DutyCycle, readback);
-    }
-#endif
 #endif
 #ifndef SMARTEVSE_VERSION  //CH32
     // update PWM signal
