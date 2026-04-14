@@ -328,3 +328,16 @@ int http_api_validate_settings(const http_settings_request_t *req,
 
     return count;
 }
+
+bool http_api_allow_unsigned_upload(bool is_debug_build,
+                                    uint16_t lcd_pin,
+                                    bool lcd_password_ok) {
+    /* All three conditions must hold. A release build never accepts unsigned
+     * uploads (C-1 guarantee). A debug build still requires the operator to
+     * have configured a non-zero LCD PIN *and* verified it in this session —
+     * physical-presence auth stands in for the signature check. */
+    if (!is_debug_build) return false;
+    if (lcd_pin == 0) return false;
+    if (!lcd_password_ok) return false;
+    return true;
+}

@@ -929,6 +929,80 @@ void test_phase_switch_all_c2_configs(void) {
     TEST_ASSERT_TRUE(http_api_validate_phase_switch(&req, AUTO, 0) == NULL);
 }
 
+// ---- Unsigned firmware upload gate (debug build + LCD PIN) ----
+//
+// Policy: /update accepts unsigned firmware.bin only on debug builds when the
+// operator has entered the LCD PIN. Release builds always reject unsigned.
+// Covers the narrow C-1 revert for local dev iteration.
+
+/*
+ * @feature Debug-only unsigned firmware upload
+ * @req REQ-API-020
+ * @scenario Release builds never accept unsigned uploads
+ * @given A release firmware image (is_debug_build=false)
+ * @when /update receives an unsigned firmware.bin
+ * @then http_api_allow_unsigned_upload returns false regardless of PIN state
+ */
+void test_unsigned_upload_release_build_always_rejected(void) {
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(false, 0,    false));
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(false, 1234, false));
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(false, 1234, true));
+}
+
+/*
+ * @feature Debug-only unsigned firmware upload
+ * @req REQ-API-020
+ * @scenario Debug build without an LCD PIN rejects unsigned uploads
+ * @given is_debug_build=true but LCDPin is 0 (no PIN configured)
+ * @when /update receives an unsigned firmware.bin
+ * @then The gate returns false — no auth = no unsigned flash
+ */
+void test_unsigned_upload_debug_no_pin_rejected(void) {
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(true, 0, false));
+    /* Even if an attacker crafted LCDPasswordOK=true somehow, a zero PIN
+     * means there is no real credential to verify, so still reject. */
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(true, 0, true));
+}
+
+/*
+ * @feature Debug-only unsigned firmware upload
+ * @req REQ-API-020
+ * @scenario Debug build with PIN configured but not verified rejects upload
+ * @given is_debug_build=true, LCDPin=1234, LCDPasswordOK=false
+ * @when /update receives an unsigned firmware.bin
+ * @then The gate returns false until the operator verifies the PIN
+ */
+void test_unsigned_upload_debug_pin_not_verified_rejected(void) {
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(true, 1234, false));
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(true, 9999, false));
+}
+
+/*
+ * @feature Debug-only unsigned firmware upload
+ * @req REQ-API-020
+ * @scenario Debug build with verified LCD PIN accepts unsigned uploads
+ * @given is_debug_build=true, LCDPin>0, LCDPasswordOK=true
+ * @when /update receives an unsigned firmware.bin
+ * @then The gate returns true — physical-presence auth satisfied
+ */
+void test_unsigned_upload_debug_pin_verified_accepted(void) {
+    TEST_ASSERT_TRUE(http_api_allow_unsigned_upload(true, 1,     true));
+    TEST_ASSERT_TRUE(http_api_allow_unsigned_upload(true, 1234,  true));
+    TEST_ASSERT_TRUE(http_api_allow_unsigned_upload(true, 65535, true));
+}
+
+/*
+ * @feature Debug-only unsigned firmware upload
+ * @req REQ-API-020
+ * @scenario Release build with a verified LCD PIN still rejects unsigned
+ * @given is_debug_build=false, LCDPin=1234, LCDPasswordOK=true
+ * @when /update receives an unsigned firmware.bin
+ * @then The gate returns false — C-1 guarantee holds on release firmware
+ */
+void test_unsigned_upload_release_with_pin_still_rejected(void) {
+    TEST_ASSERT_FALSE(http_api_allow_unsigned_upload(false, 1234, true));
+}
+
 int main(void) {
     TEST_SUITE_BEGIN("HTTP API");
 
@@ -1035,6 +1109,13 @@ int main(void) {
     RUN_TEST(test_phase_switch_slave_rejected);
     RUN_TEST(test_phase_switch_zero_phases);
     RUN_TEST(test_phase_switch_all_c2_configs);
+
+    // Unsigned-upload gate (debug build + LCD PIN)
+    RUN_TEST(test_unsigned_upload_release_build_always_rejected);
+    RUN_TEST(test_unsigned_upload_debug_no_pin_rejected);
+    RUN_TEST(test_unsigned_upload_debug_pin_not_verified_rejected);
+    RUN_TEST(test_unsigned_upload_debug_pin_verified_accepted);
+    RUN_TEST(test_unsigned_upload_release_with_pin_still_rejected);
 
     TEST_SUITE_RESULTS();
 }
