@@ -883,7 +883,6 @@ void SetupMQTTClient() {
     String optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("value_template", R"({{ value | int / 10 }})");
     MQTTclient.announce("Charge Current", "sensor", optional_payload);
     MQTTclient.announce("Max Current", "sensor", optional_payload);
-	MQTTclient.announce("Max Sum Mains", "sensor", optional_payload);
     if (MainsMeter.Type) {
         MQTTclient.announce("Mains Current L1", "sensor", optional_payload);
         MQTTclient.announce("Mains Current L2", "sensor", optional_payload);
@@ -897,6 +896,8 @@ void SetupMQTTClient() {
     if (homeBatteryLastUpdate) {
         MQTTclient.announce("Home Battery Current", "sensor", optional_payload);
     }
+	optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A");
+	MQTTclient.announce("Max Sum Mains", "sensor", optional_payload);
 
 #if MODEM
         //set the parameters for modem/SoC sensor entities:
