@@ -883,6 +883,8 @@ void SetupMQTTClient() {
     String optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("value_template", R"({{ value | int / 10 }})");
     MQTTclient.announce("Charge Current", "sensor", optional_payload);
     MQTTclient.announce("Max Current", "sensor", optional_payload);
+	MQTTclient.announce("Max Sum Mains", "sensor", optional_payload);
+	MQTTclient.announce("Max Sum Mains Time", "sensor", optional_payload);
     if (MainsMeter.Type) {
         MQTTclient.announce("Mains Current L1", "sensor", optional_payload);
         MQTTclient.announce("Mains Current L2", "sensor", optional_payload);
@@ -1032,6 +1034,8 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         MQTTclient.publish(MQTTprefix + "/MaxCurrent", MaxCurrent * 10, true, 0);
+		MQTTclient.publish(MQTTprefix + "/MaxSumMains", String(MaxSumMains), true, 0);
+		MQTTclient.publish(MQTTprefix + "/MaxSumMainsTime", String(MaxSumMainsTime), true, 0);
         MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
@@ -1125,6 +1129,8 @@ void mqttSmartEVSEPublishData() {
     }
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/PairingPin", PairingPin, true, 0);
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
+	MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxSumMains", String(MaxSumMains), true, 0);
+	MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxSumMainsTime", String(MaxSumMainsTime), true, 0);
 }
 #endif
 
