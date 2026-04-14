@@ -884,7 +884,6 @@ void SetupMQTTClient() {
     MQTTclient.announce("Charge Current", "sensor", optional_payload);
     MQTTclient.announce("Max Current", "sensor", optional_payload);
 	MQTTclient.announce("Max Sum Mains", "sensor", optional_payload);
-	MQTTclient.announce("Max Sum Mains Time", "sensor", optional_payload);
     if (MainsMeter.Type) {
         MQTTclient.announce("Mains Current L1", "sensor", optional_payload);
         MQTTclient.announce("Mains Current L2", "sensor", optional_payload);
@@ -969,6 +968,7 @@ void SetupMQTTClient() {
 
     optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
     MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
+	MQTTclient.announce("Max Sum Mains Time", "sensor", optional_payload);
     //set the parameters for and MQTTclient.announce diagnostic sensor entities:
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
     MQTTclient.announce("Error", "sensor", optional_payload);
