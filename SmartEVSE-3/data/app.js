@@ -634,7 +634,15 @@ function loadData() {
                 $id('mqtt_host').value = data.mqtt.host;
                 $id('mqtt_port').value = data.mqtt.port;
                 $id('mqtt_username').value = data.mqtt.username;
-                $id('mqtt_password').value = data.mqtt.password;
+                // Backend sends password_set (bool), not password. Don't clobber the
+                // field with undefined on refresh — keeps typed value intact and, when
+                // set, shows a placeholder reminding the user a password is stored.
+                var mqttPwdField = $id('mqtt_password');
+                if (data.mqtt.password !== undefined) {
+                    mqttPwdField.value = data.mqtt.password;
+                } else if (data.mqtt.password_set && !mqttPwdField.value) {
+                    mqttPwdField.placeholder = '(password set — leave empty to keep)';
+                }
                 $id('mqtt_topic_prefix').value = data.mqtt.topic_prefix;
                 $id('mqtt_tls').checked = data.mqtt.tls;
                 if (data.mqtt.change_only !== undefined)
@@ -671,11 +679,21 @@ function loadData() {
                     $id('ocpp_auto_auth').checked = false;
                 }
 
-                if (!ocppEditMode) {
-                    $id('ocpp_backend_url').value = data.ocpp.backend_url;
-                    $id('ocpp_cb_id').value = data.ocpp.cb_id;
-                    $id('ocpp_auth_key').value = data.ocpp.auth_key;
-                    $id('ocpp_auto_auth_idtag').value = data.ocpp.auto_auth_idtag;
+                // Don't overwrite fields the user may be editing. Only repopulate
+                // non-secret fields on first load (when the inputs are still empty).
+                var urlField = $id('ocpp_backend_url');
+                var cbIdField = $id('ocpp_cb_id');
+                var idTagField = $id('ocpp_auto_auth_idtag');
+                if (!urlField.value) urlField.value = data.ocpp.backend_url || '';
+                if (!cbIdField.value) cbIdField.value = data.ocpp.cb_id || '';
+                if (!idTagField.value) idTagField.value = data.ocpp.auto_auth_idtag || '';
+                // auth_key: if backend still exposes it (pre-SEC-C2-follow-up), show it
+                // so existing users aren't surprised; once redacted, show placeholder.
+                var authField = $id('ocpp_auth_key');
+                if (data.ocpp.auth_key !== undefined && data.ocpp.auth_key !== '') {
+                    if (!authField.value) authField.value = data.ocpp.auth_key;
+                } else if (data.ocpp.auth_key_set && !authField.value) {
+                    authField.placeholder = '(auth key set — leave empty to keep)';
                 }
 
                 $id('ocpp_ws_status').textContent = data.ocpp.status;
@@ -751,13 +769,16 @@ function configureMqtt() {
         mqtt_host:         $id('mqtt_host').value,
         mqtt_port:         $id('mqtt_port').value,
         mqtt_username:     $id('mqtt_username').value,
-        mqtt_password:     $id('mqtt_password').value,
         mqtt_topic_prefix: $id('mqtt_topic_prefix').value,
         mqtt_tls:          $id('mqtt_tls').checked ? 1 : 0,
         mqtt_ca_cert:      $id('mqtt_ca_cert').value,
         mqtt_change_only:  $id('mqtt_change_only').checked ? 1 : 0,
         mqtt_heartbeat:    $id('mqtt_heartbeat').value
     };
+    // Only send password when user actually typed one; empty field means
+    // "keep existing" — prevents accidental wipe on save-without-retyping.
+    var mqttPwd = $id('mqtt_password').value;
+    if (mqttPwd !== '') params.mqtt_password = mqttPwd;
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");
@@ -784,31 +805,26 @@ function toggleEnableOcppAutoAuth() {
 }
 
 /* ========== OCPP config ========== */
-function toggleOcppEdit() {
-    ocppEditMode = !ocppEditMode;
-    var fields = ['ocpp_backend_url', 'ocpp_cb_id', 'ocpp_auth_key', 'ocpp_auto_auth', 'ocpp_auto_auth_label', 'ocpp_auto_auth_idtag'];
-    if (ocppEditMode) {
-        $id('ocpp_save_btn').textContent = "Save";
-        fields.forEach(function(id) { var el = $id(id); if (el) el.disabled = false; });
-    } else {
-        configureOcpp();
-        $id('ocpp_save_btn').textContent = "Edit Settings";
-        fields.forEach(function(id) { var el = $id(id); if (el) el.disabled = true; });
-    }
-}
+/* OCPP settings match MQTT UX: always editable, single Save button, direct POST.
+   Empty auth_key in POST means "keep existing", matching MicroOcpp library semantics
+   and the placeholder hint shown after load. */
+function toggleOcppEdit() { /* kept for backward compat, no-op */ }
 
 function configureOcpp() {
     var params = {
         ocpp_update:          1,
         ocpp_backend_url:     $id('ocpp_backend_url').value,
         ocpp_cb_id:           $id('ocpp_cb_id').value,
-        ocpp_auth_key:        $id('ocpp_auth_key').value,
         ocpp_auto_auth_idtag: $id('ocpp_auto_auth_idtag').value
     };
+    // Skip auth_key when empty so a save-without-retyping preserves the stored key.
+    var authKey = $id('ocpp_auth_key').value;
+    if (authKey !== '') params.ocpp_auth_key = authKey;
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");
     fetch("/settings?" + query, { method: 'POST' });
+    alert('Settings applied');
 }
 
 /* ========== Actions ========== */

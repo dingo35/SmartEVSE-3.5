@@ -403,7 +403,7 @@
           <div class="form-row"><span class="form-label">Host</span><input id="mqtt_host" class="form-input" title="Leave empty to disable MQTT"></div>
           <div class="form-row"><span class="form-label">Port</span><input id="mqtt_port" class="form-input" title="Usually 1883 for MQTT, 8883 for MQTTS"></div>
           <div class="form-row"><span class="form-label">Username</span><input id="mqtt_username" class="form-input" title="Leave empty for anonymous MQTT"></div>
-          <div class="form-row"><span class="form-label">Password</span><input id="mqtt_password" class="form-input" type="password" title="Leave empty for anonymous MQTT"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="mqtt_password" class="form-input" type="password" title="Leave empty to keep existing password; type to change"></div>
           <div class="form-row"><span class="form-label">Topic Prefix</span><input id="mqtt_topic_prefix" class="form-input"></div>
           <div class="form-row"><span class="form-label">Enable TLS</span><input type="checkbox" id="mqtt_tls" value="1" onchange="toggleCertVisibility()"></div>
           <div class="form-row"><span class="form-label">Change-Only</span><input type="checkbox" id="mqtt_change_only" value="1" title="Only publish changed values"></div>
@@ -441,20 +441,20 @@
             <span class="form-label">WS Status</span>
             <span id="ocpp_ws_status" style="font-size:.85rem;font-weight:600">-</span>
           </div>
-          <div class="form-row"><span class="form-label">Backend URL</span><input id="ocpp_backend_url" class="form-input" disabled title="URL provided by your OCPP provider"></div>
-          <div class="form-row"><span class="form-label">Charge Box Id</span><input id="ocpp_cb_id" class="form-input" disabled title="Identifies your charger"></div>
-          <div class="form-row"><span class="form-label">Password</span><input id="ocpp_auth_key" class="form-input" type="password" disabled title="Only for SP2 connections"></div>
+          <div class="form-row"><span class="form-label">Backend URL</span><input id="ocpp_backend_url" class="form-input" title="URL provided by your OCPP provider"></div>
+          <div class="form-row"><span class="form-label">Charge Box Id</span><input id="ocpp_cb_id" class="form-input" title="Identifies your charger"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="ocpp_auth_key" class="form-input" type="password" title="Leave empty to keep existing; only for SP2 connections"></div>
           <div class="form-row">
             <span class="form-label">Auto-authorize</span>
-            <input type="checkbox" id="ocpp_auto_auth" disabled onclick="toggleEnableOcppAutoAuth()">
+            <input type="checkbox" id="ocpp_auto_auth" onclick="toggleEnableOcppAutoAuth()">
             <label for="ocpp_auto_auth" id="ocpp_auto_auth_label" style="font-size:.85rem">Enable</label>
           </div>
           <div class="form-row" id="ocpp_auto_auth_idtag_wrapper">
             <span class="form-label">Default idTag</span>
-            <input id="ocpp_auto_auth_idtag" class="form-input" disabled placeholder="Default idTag">
+            <input id="ocpp_auto_auth_idtag" class="form-input" placeholder="Default idTag">
           </div>
           <div class="form-row" style="justify-content:flex-end;border:none">
-            <button type="button" class="btn btn-sm" id="ocpp_save_btn" onclick="toggleOcppEdit()">Edit Settings</button>
+            <button type="button" class="btn btn-sm" id="ocpp_save_btn" style="background:var(--accent);color:#fff" onclick="configureOcpp()">Save OCPP</button>
           </div>
         </div>
       </div>
