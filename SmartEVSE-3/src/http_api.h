@@ -108,6 +108,31 @@ char evse_state_to_iec61851(int state, int error_flags);
 // Returns true when the EVSE is delivering energy (STATE_C or STATE_C1).
 bool evse_charging_enabled(int state);
 
+// Decide whether an unsigned firmware.bin upload may be accepted on /update.
+//
+// Policy: unsigned uploads are only permitted on debug builds AND only when
+// the operator has demonstrated physical-presence authentication by entering
+// the LCD PIN via /lcd-verify-password. This narrowly reverts security fix
+// C-1 for development devices, letting a maintainer iterate with local
+// unsigned builds without opening an unauthenticated-RCE hole.
+//
+// Arguments:
+//   is_debug_build  — the running firmware was compiled with DBG=1.
+//   lcd_pin         — configured LCDPin value (0 means no PIN set).
+//   lcd_password_ok — true if the user has verified the PIN this session.
+//
+// Returns true only when ALL of:
+//   - is_debug_build
+//   - lcd_pin > 0  (a real PIN is configured)
+//   - lcd_password_ok (PIN was entered successfully)
+//
+// Release builds and any build with an unset/unverified PIN return false;
+// the caller should reject the unsigned upload with 403 and require the
+// standard signed upload path.
+bool http_api_allow_unsigned_upload(bool is_debug_build,
+                                    uint16_t lcd_pin,
+                                    bool lcd_password_ok);
+
 #ifdef __cplusplus
 }
 #endif

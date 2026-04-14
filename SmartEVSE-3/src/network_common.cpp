@@ -10,6 +10,7 @@
 #include "network_common.h"
 #include "glcd.h"
 #include "esp32.h"
+#include "http_api.h"
 #include <ArduinoJson.h>
 
 #include <HTTPClient.h>
@@ -1608,18 +1609,64 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               mg_http_reply(c, 400, "", "size required");
               res = -5;
             } else {
-                // NOTE: the unsigned firmware.bin / firmware.debug.bin upload path
-                // was removed as SECURITY FIX C-1 — it allowed any LAN client to
-                // flash arbitrary firmware over plain HTTP with no authentication
-                // and no signature check (unauthenticated RCE). Only the signed
-                // upload path below is supported now; fork/upstream-signed images
-                // are both accepted via the multi-key validator from PR #125.
-                if (!memcmp(file,"firmware.bin", sizeof("firmware.bin")) || !memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin"))) {
-                    _LOG_A("Unsigned firmware upload rejected: %s (security C-1)\n", file);
+                // Unsigned firmware.bin / firmware.debug.bin uploads.
+                //
+                // C-1 removed this path wholesale because plain-HTTP LAN clients
+                // could flash arbitrary firmware without authentication or a
+                // signature check — unauthenticated RCE. We narrowly re-enable
+                // it for DEBUG builds only, and only when the operator has
+                // verified the LCD PIN in this session (physical-presence auth).
+                // Release builds still reject unsigned uploads under all
+                // conditions; see http_api_allow_unsigned_upload() and its
+                // REQ-API-020 tests.
+                bool is_unsigned_upload =
+                    (!memcmp(file,"firmware.bin",       sizeof("firmware.bin"))) ||
+                    (!memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin")));
+#if DBG
+                const bool dbg_build = true;
+#else
+                const bool dbg_build = false;
+#endif
+                bool unsigned_allowed = http_api_allow_unsigned_upload(
+                        dbg_build, LCDPin, LCDPasswordOK);
+                if (is_unsigned_upload && !unsigned_allowed) {
+                    _LOG_A("Unsigned firmware upload rejected: %s "
+                           "(dbg=%d, lcd_pin_set=%d, lcd_verified=%d)\n",
+                           file, (int)dbg_build, (int)(LCDPin != 0),
+                           (int)LCDPasswordOK);
                     mg_http_reply(c, 403, "",
                                   "Unsigned firmware uploads are disabled. "
-                                  "Upload firmware.signed.bin or firmware.debug.signed.bin instead.");
+                                  "Either upload firmware.signed.bin / "
+                                  "firmware.debug.signed.bin, or — on a debug "
+                                  "build — set an LCD PIN and verify it via "
+                                  "/lcd-verify-password first.");
                     res = -6;
+                } else if (is_unsigned_upload && unsigned_allowed) {
+                    if (!offset) {
+                        _LOG_A("Update Start (UNSIGNED, debug+PIN): %s\n", file);
+                        if (!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                        }
+                    }
+                    if (!Update.hasError()) {
+                        if (Update.write((uint8_t*) hm->body.buf, hm->body.len) != hm->body.len) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                        } else {
+                            _LOG_A("bytes written %lu\r", offset + hm->body.len);
+                        }
+                    }
+                    if (offset + hm->body.len >= size) {                     // EOF
+                        if (Update.end(true)) {
+                            _LOG_A("\nUnsigned update applied (debug build, PIN verified)\n");
+                            shouldReboot = true;
+                        } else {
+                            _LOG_A("Unsigned update failed! ERROR:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                            mg_http_reply(c, 400, "", "firmware.bin update failed!");
+                        }
+                    }
                 } else
                 if (!memcmp(file,"firmware.signed.bin", sizeof("firmware.signed.bin")) || !memcmp(file,"firmware.debug.signed.bin", sizeof("firmware.debug.signed.bin"))) {
     #define dump(X)   for (int i= 0; i< SIGNATURE_LENGTH; i++) _LOG_A_NO_FUNC("%02x", X[i]); _LOG_A_NO_FUNC(".\n");
