@@ -83,6 +83,15 @@ void diag_start(diag_profile_t profile)
 
 void diag_stop(void)
 {
+    /* Reset the profile to OFF so /diag/status reports the capture as
+     * stopped. Without this the ring stays "general/solar/loadbal/..."
+     * (just frozen), and the web UI's auto-resume on page load
+     * (app.js: `if (d.profile && d.profile !== 'off') diagConnectWs()`)
+     * keeps re-attaching the WebSocket after every Stop press until
+     * the device reboots and diag_sampler_init() clears the ring.
+     * Freeze stays for symmetry — diag_start()'s diag_ring_reset()
+     * clears it back to false on the next capture. */
+    diag_set_profile(&diag_ring, DIAG_PROFILE_OFF);
     diag_ring_freeze(&diag_ring, true);
     diag_mb_enable(&g_diag_mb_ring, false);
 }
