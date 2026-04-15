@@ -969,6 +969,7 @@ void SetupMQTTClient() {
 
     optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
     MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
+     optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","min");
 	MQTTclient.announce("Max Sum Mains Time", "sensor", optional_payload);
     //set the parameters for and MQTTclient.announce diagnostic sensor entities:
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
@@ -1130,8 +1131,6 @@ void mqttSmartEVSEPublishData() {
     }
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/PairingPin", PairingPin, true, 0);
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
-	MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxSumMains", String(MaxSumMains), true, 0);
-	MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxSumMainsTime", String(MaxSumMainsTime), true, 0);
 }
 #endif
 
