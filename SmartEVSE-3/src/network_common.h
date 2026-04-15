@@ -153,6 +153,13 @@ extern void RunFirmwareUpdate(void);
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
+/* Plan 16 Phase 1: shared auth gate used by http_handlers.cpp AND the mutating
+ * endpoints in network_common.cpp. Implemented in http_handlers.cpp so the
+ * millis()/AuthMode/LCDPasswordOK state access lives in one place. Returns
+ * true if the request may proceed; returns false AFTER sending a 401/403. */
+struct mg_connection;
+struct mg_http_message;
+extern bool require_auth(struct mg_connection *c, struct mg_http_message *hm);
 #ifndef SENSORBOX_VERSION
 // Result struct for HomeWizard P1 meter readings
 struct HomeWizardP1Result {

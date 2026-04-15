@@ -26,6 +26,7 @@
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include "ocpp_logic.h"
+#include "http_auth.h"          // Plan 16 Phase 1 — HTTP auth decision (pure C)
 #include "ocpp_telemetry.h"
 #endif //ENABLE_OCPP
 
@@ -126,10 +127,83 @@ static bool is_safe_filename(const char *name, size_t len)
     return true;
 }
 
+/*
+ * Plan 16 Phase 1 — HTTP auth gate.
+ *
+ * Call at the top of every mutating or credential-exposing endpoint handler.
+ * When AuthMode is 0 (legacy default), always returns true — behavior is
+ * identical to pre-plan-16 master. When AuthMode is 1, extracts the Origin
+ * header + LCDPasswordOK state and asks the pure-C http_auth_decide() whether
+ * to let the request through. On deny, sends 401 (or 403 for CSRF) and
+ * returns false so the handler returns early WITHOUT firing its side effect.
+ *
+ * On session expiration this ALSO clears LCDPasswordOK + its timestamp so
+ * subsequent requests see a fresh unauthenticated state. On allow, refreshes
+ * the timestamp (idle-timeout keepalive).
+ */
+bool require_auth(struct mg_connection *c, struct mg_http_message *hm) {
+    /* Fast path — legacy mode. No header parsing, no state change. */
+    if (AuthMode == AUTH_MODE_OFF) {
+        return true;
+    }
+
+    /* Extract Origin header (optional). */
+    char origin_buf[128] = {0};
+    struct mg_str *origin = mg_http_get_header(hm, "Origin");
+    if (origin && origin->len > 0 && origin->len < sizeof(origin_buf)) {
+        memcpy(origin_buf, origin->buf, origin->len);
+        origin_buf[origin->len] = '\0';
+    }
+
+    /* Allowed origin host: use the device's mDNS hostname (APhostname) when
+     * set, otherwise the local IP. Mongoose stores the local IP on the
+     * connection; stringify at request time. */
+    char host_buf[64] = {0};
+    if (APhostname.length() > 0 && APhostname.length() < sizeof(host_buf)) {
+        strncpy(host_buf, APhostname.c_str(), sizeof(host_buf) - 1);
+        host_buf[sizeof(host_buf) - 1] = '\0';
+    } else {
+        IPAddress ip = WiFi.localIP();
+        snprintf(host_buf, sizeof(host_buf), "%u.%u.%u.%u",
+                 ip[0], ip[1], ip[2], ip[3]);
+    }
+
+    http_auth_result_t r = http_auth_decide(
+            AuthMode, LCDPasswordOK, LCDPasswordOkSince,
+            (uint32_t)millis(),
+            origin_buf[0] ? origin_buf : NULL,
+            host_buf[0]   ? host_buf   : NULL);
+
+    if (r == HTTP_AUTH_ALLOW) {
+        /* Keepalive: refresh timestamp so a busy session doesn't time out. */
+        uint32_t ts = (uint32_t)millis();
+        LCDPasswordOkSince = (ts == 0) ? 1 : ts;
+        return true;
+    }
+
+    if (r == HTTP_AUTH_DENY_SESSION_EXPIRED) {
+        LCDPasswordOK = false;
+        LCDPasswordOkSince = 0;
+        mg_http_reply(c, 401, "Content-Type: application/json\r\n",
+                      "{\"success\":false,\"error\":\"session_expired\"}\n");
+        return false;
+    }
+    if (r == HTTP_AUTH_DENY_CSRF) {
+        mg_http_reply(c, 403, "Content-Type: application/json\r\n",
+                      "{\"success\":false,\"error\":\"csrf_origin_mismatch\"}\n");
+        return false;
+    }
+    /* Default: UNAUTH */
+    mg_http_reply(c, 401, "Content-Type: application/json\r\n",
+                  "{\"success\":false,\"error\":\"auth_required\"}\n");
+    return false;
+}
+
 // handles URI, returns true if handled, false if not
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
     if (mg_http_match_uri(hm, "/settings")) {                            // REST API call?
+      if (!require_auth(c, hm)) return true;  // Plan 16 — gates both GET (info-disclosure surface) and POST
       if (!memcmp("GET", hm->method.buf, hm->method.len)) {                     // if GET
         String mode = "N/A";
         int modeId = -1;
@@ -240,6 +314,11 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
+        /* Plan 16 Phase 1 — HTTP auth state. `auth_mode` is the persisted setting
+         * (0=Off legacy / 1=Required); `auth_required` is the same boolean in a
+         * name the Web UI can use directly for banner / prompt logic. */
+        doc["settings"]["auth_mode"]     = AuthMode;
+        doc["settings"]["auth_required"] = (AuthMode != 0);
         doc["settings"]["prio_strategy"] = PrioStrategy;
         doc["settings"]["rotation_interval"] = RotationInterval;
         doc["settings"]["idle_timeout"] = IdleTimeout;
@@ -301,7 +380,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
         doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
         doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
-        doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+        // SECURITY C-2: never return the OCPP auth_key (basic-auth password) to
+        // any client. Mirror the mqtt.password_set pattern — caller can tell if
+        // a key is configured without being able to read it. Before this fix
+        // any LAN client calling GET /settings obtained the plaintext key.
+        {
+            const char *ak = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+            doc["ocpp"]["auth_key_set"] = (ak != NULL && ak[0] != '\0');
+        }
 
         {
             auto freevendMode = MicroOcpp::getConfigurationPublic(MO_CONFIG_EXT_PREFIX "FreeVendActive");
@@ -820,6 +906,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
       }
     } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             uint8_t r, g, b;
@@ -835,6 +922,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_normal") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             uint8_t r, g, b;
@@ -850,6 +938,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_smart") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             uint8_t r, g, b;
@@ -865,6 +954,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_solar") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             uint8_t r, g, b;
@@ -880,6 +970,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/color_custom") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             uint8_t r, g, b;
@@ -895,6 +986,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         return true;
     } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
 
         if(request->hasParam("battery_current")) {
@@ -957,6 +1049,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
     } else if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
 
         if(EVMeter.Type == EM_API) {
@@ -999,6 +1092,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/lcd")) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         if (strncmp("POST", hm->method.buf, hm->method.len) == 0) {
             DynamicJsonDocument doc(100);
             if (LCDPasswordOK) {
@@ -1074,8 +1168,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         LCDPasswordOK = (atoi(password) == LCDPin);
         if (LCDPasswordOK) {
+            /* Plan 16 Phase 1: stamp the time of successful auth so the
+             * require_auth middleware can enforce the 30-min idle timeout.
+             * Guard millis() == 0 by substituting 1 — the decide function
+             * treats ts==0 as "never set" and would skip expiration. */
+            uint32_t ts = (uint32_t)millis();
+            LCDPasswordOkSince = (ts == 0) ? 1 : ts;
             doc["success"] = true;
         } else {
+            LCDPasswordOkSince = 0;
             doc["success"] = false;
         }
 
@@ -1086,6 +1187,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
 
     } else if (mg_http_match_uri(hm, "/cablelock") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
 
         if(request->hasParam("1")) {
@@ -1102,6 +1204,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/rfid") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
 
         uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
@@ -1165,6 +1268,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
 #if MODEM && SMARTEVSE_VERSION < 40
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         DynamicJsonDocument doc(200);
 
         //State of charge posting
@@ -1266,6 +1370,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     //THAT IS DANGEROUS WHEN USED IN PRODUCTION ENVIRONMENT
     //FOR SMARTEVSE's IN A TESTING BENCH ONLY!!!!
     } else if (mg_http_match_uri(hm, "/automated_testing") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         if(request->hasParam("current_max")) {
             MaxCurrent = strtol(request->getParam("current_max")->value().c_str(),NULL,0);
             SEND_TO_CH32(MaxCurrent)
@@ -1305,6 +1410,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
     // BEGIN PLAN-06: Diagnostic telemetry REST endpoints
     } else if (mg_http_match_uri(hm, "/diag/status") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         char json[256];
         int n = diag_status_json(json, sizeof(json));
         if (n > 0)
@@ -1314,6 +1420,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/start") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         /* Parse profile from query: /diag/start?profile=general */
         char pbuf[16] = {0};
         mg_http_get_var(&hm->query, "profile", pbuf, sizeof(pbuf));
@@ -1331,12 +1438,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/stop") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         diag_stop();
         mg_http_reply(c, 200, "Content-Type: application/json\r\n",
                       "{\"stopped\":true}\r\n");
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/download") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         diag_ring_t *ring = diag_get_ring();
         /* Freeze for consistent download */
         bool was_frozen = ring->frozen;
@@ -1370,12 +1479,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/dump") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         bool ok = diag_storage_dump(DIAG_TRIGGER_MANUAL);
         mg_http_reply(c, ok ? 200 : 500, "Content-Type: application/json\r\n",
                       "{\"dumped\":%s}\r\n", ok ? "true" : "false");
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/files") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         char json[384];
         int n = diag_storage_list_json(json, sizeof(json));
         if (n > 0)
@@ -1385,6 +1496,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         /* Extract filename from URI: /diag/file/<filename> */
         struct mg_str uri = hm->uri;
         const char *prefix = "/diag/file/";
@@ -1435,6 +1547,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
 
     } else if (mg_http_match_uri(hm, "/diag/file/*") && !memcmp("DELETE", hm->method.buf, hm->method.len)) {
+        if (!require_auth(c, hm)) return true;  // Plan 16 — auth gate
         struct mg_str uri = hm->uri;
         const char *prefix = "/diag/file/";
         size_t prefix_len = strlen(prefix);

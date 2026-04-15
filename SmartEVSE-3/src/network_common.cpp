@@ -10,6 +10,7 @@
 #include "network_common.h"
 #include "glcd.h"
 #include "esp32.h"
+#include "http_api.h"
 #include <ArduinoJson.h>
 
 #include <HTTPClient.h>
@@ -1488,6 +1489,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     // handles URI and response, returns true if handled, false if not
     if (!handle_URI(c, hm, request)) {
         if (mg_match(hm->uri, mg_str("/erasesettings"), NULL)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate (C-3 unauthenticated factory reset)
             if ( preferences.begin("settings", false) ) {         // our own settings
               preferences.clear();
               preferences.end();
@@ -1535,6 +1537,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               mg_http_reply(c, 400, "", "Missing SSID or password");
             }
         } else if (mg_http_match_uri(hm, "/autoupdate")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             char owner[40];
             char buf[8];
             char tag[40] = "";
@@ -1579,6 +1582,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         } else if (mg_http_match_uri(hm, "/update")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             //modified version of mg_http_upload
             char buf[20] = "0", file[40];
             size_t max_size = 0x1B0000;                                             //from partition_custom.csv
@@ -1605,18 +1609,64 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               mg_http_reply(c, 400, "", "size required");
               res = -5;
             } else {
-                // NOTE: the unsigned firmware.bin / firmware.debug.bin upload path
-                // was removed as SECURITY FIX C-1 — it allowed any LAN client to
-                // flash arbitrary firmware over plain HTTP with no authentication
-                // and no signature check (unauthenticated RCE). Only the signed
-                // upload path below is supported now; fork/upstream-signed images
-                // are both accepted via the multi-key validator from PR #125.
-                if (!memcmp(file,"firmware.bin", sizeof("firmware.bin")) || !memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin"))) {
-                    _LOG_A("Unsigned firmware upload rejected: %s (security C-1)\n", file);
+                // Unsigned firmware.bin / firmware.debug.bin uploads.
+                //
+                // C-1 removed this path wholesale because plain-HTTP LAN clients
+                // could flash arbitrary firmware without authentication or a
+                // signature check — unauthenticated RCE. We narrowly re-enable
+                // it for DEBUG builds only, and only when the operator has
+                // verified the LCD PIN in this session (physical-presence auth).
+                // Release builds still reject unsigned uploads under all
+                // conditions; see http_api_allow_unsigned_upload() and its
+                // REQ-API-020 tests.
+                bool is_unsigned_upload =
+                    (!memcmp(file,"firmware.bin",       sizeof("firmware.bin"))) ||
+                    (!memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin")));
+#if DBG
+                const bool dbg_build = true;
+#else
+                const bool dbg_build = false;
+#endif
+                bool unsigned_allowed = http_api_allow_unsigned_upload(
+                        dbg_build, LCDPin, LCDPasswordOK);
+                if (is_unsigned_upload && !unsigned_allowed) {
+                    _LOG_A("Unsigned firmware upload rejected: %s "
+                           "(dbg=%d, lcd_pin_set=%d, lcd_verified=%d)\n",
+                           file, (int)dbg_build, (int)(LCDPin != 0),
+                           (int)LCDPasswordOK);
                     mg_http_reply(c, 403, "",
                                   "Unsigned firmware uploads are disabled. "
-                                  "Upload firmware.signed.bin or firmware.debug.signed.bin instead.");
+                                  "Either upload firmware.signed.bin / "
+                                  "firmware.debug.signed.bin, or — on a debug "
+                                  "build — set an LCD PIN and verify it via "
+                                  "/lcd-verify-password first.");
                     res = -6;
+                } else if (is_unsigned_upload && unsigned_allowed) {
+                    if (!offset) {
+                        _LOG_A("Update Start (UNSIGNED, debug+PIN): %s\n", file);
+                        if (!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                        }
+                    }
+                    if (!Update.hasError()) {
+                        if (Update.write((uint8_t*) hm->body.buf, hm->body.len) != hm->body.len) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                        } else {
+                            _LOG_A("bytes written %lu\r", offset + hm->body.len);
+                        }
+                    }
+                    if (offset + hm->body.len >= size) {                     // EOF
+                        if (Update.end(true)) {
+                            _LOG_A("\nUnsigned update applied (debug build, PIN verified)\n");
+                            shouldReboot = true;
+                        } else {
+                            _LOG_A("Unsigned update failed! ERROR:%s.\n", Update.errorString());
+                            Update.printError(Serial);
+                            mg_http_reply(c, 400, "", "firmware.bin update failed!");
+                        }
+                    }
                 } else
                 if (!memcmp(file,"firmware.signed.bin", sizeof("firmware.signed.bin")) || !memcmp(file,"firmware.debug.signed.bin", sizeof("firmware.debug.signed.bin"))) {
     #define dump(X)   for (int i= 0; i< SIGNATURE_LENGTH; i++) _LOG_A_NO_FUNC("%02x", X[i]); _LOG_A_NO_FUNC(".\n");
@@ -1692,8 +1742,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         res = offset + hm->body.len;
                         unsigned int RFID_UID[8] = {1, 0, 0, 0, 0, 0, 0, 0};
                         char RFIDtxtstring[20];                                     // 17 characters + NULL terminator
-                        int r, pos = 0;
-                        int beginpos = 0;
+                        /* SECURITY L-4: use size_t for pos/beginpos — body.len is
+                         * size_t (unsigned). Previously `int pos` compared via
+                         * `pos <= body.len` on large bodies would promote pos to
+                         * size_t and lose sign semantics. Mongoose caps Content-
+                         * Length upstream so not currently exploitable, but fix
+                         * the types to make the invariant obvious. */
+                        int r;
+                        size_t pos = 0, beginpos = 0;
                         while (pos <= hm->body.len) {
                             char c;
                             c = *(hm->body.buf + pos);
@@ -1730,6 +1786,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 mg_http_reply(c, 200, "", "%ld", res);
             }
         } else if (mg_http_match_uri(hm, "/reboot")) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             shouldReboot = true;
 #ifndef SMARTEVSE_VERSION //sensorbox
             mg_http_reply(c, 200, "", "Rebooting after 5s...");
@@ -1741,6 +1798,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
 #endif
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             DynamicJsonDocument doc(64);
 #if MQTT
             if (request->hasParam("mqtt_update") && request->getParam("mqtt_update")->value().toInt() == 1) {
@@ -1812,6 +1870,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         } else if (mg_http_match_uri(hm, "/mqtt_ca_cert") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+            if (!require_auth(c, hm)) return;  // Plan 16 — auth gate
             String cert = readMqttCaCert();
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "%s\r\n", cert.c_str());
         } else {                                                                    // if everything else fails, serve static page

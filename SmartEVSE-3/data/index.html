@@ -223,6 +223,7 @@
       </span>
       <div id="override_current_box2">
         <select id="mode_override_current" class="form-input" style="max-width:160px"></select>
+        <span id="override_slave_note" style="display:none;font-size:.75rem;color:var(--fg3);margin-left:8px">Set on master node</span>
       </div>
     </div>
     <!-- Schedule -->
@@ -403,7 +404,7 @@
           <div class="form-row"><span class="form-label">Host</span><input id="mqtt_host" class="form-input" title="Leave empty to disable MQTT"></div>
           <div class="form-row"><span class="form-label">Port</span><input id="mqtt_port" class="form-input" title="Usually 1883 for MQTT, 8883 for MQTTS"></div>
           <div class="form-row"><span class="form-label">Username</span><input id="mqtt_username" class="form-input" title="Leave empty for anonymous MQTT"></div>
-          <div class="form-row"><span class="form-label">Password</span><input id="mqtt_password" class="form-input" type="password" title="Leave empty to keep existing password; type to change"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="mqtt_password" class="form-input" type="password" title="Leave empty or bullets to keep existing; type to change"></div>
           <div class="form-row"><span class="form-label">Topic Prefix</span><input id="mqtt_topic_prefix" class="form-input"></div>
           <div class="form-row"><span class="form-label">Enable TLS</span><input type="checkbox" id="mqtt_tls" value="1" onchange="toggleCertVisibility()"></div>
           <div class="form-row"><span class="form-label">Change-Only</span><input type="checkbox" id="mqtt_change_only" value="1" title="Only publish changed values"></div>
@@ -443,7 +444,7 @@
           </div>
           <div class="form-row"><span class="form-label">Backend URL</span><input id="ocpp_backend_url" class="form-input" title="URL provided by your OCPP provider"></div>
           <div class="form-row"><span class="form-label">Charge Box Id</span><input id="ocpp_cb_id" class="form-input" title="Identifies your charger"></div>
-          <div class="form-row"><span class="form-label">Password</span><input id="ocpp_auth_key" class="form-input" type="password" title="Leave empty to keep existing; only for SP2 connections"></div>
+          <div class="form-row"><span class="form-label">Password</span><input id="ocpp_auth_key" class="form-input" type="password" title="Leave empty or bullets to keep existing; only for SP2 connections"></div>
           <div class="form-row">
             <span class="form-label">Auto-authorize</span>
             <input type="checkbox" id="ocpp_auto_auth" onclick="toggleEnableOcppAutoAuth()">

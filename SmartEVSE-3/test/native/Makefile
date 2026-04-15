@@ -104,6 +104,9 @@ $(BUILD)/test_ocpp_iec61851: $(TEST_DIR)/test_ocpp_iec61851.c $(OCPP_LOGIC_SRC) 
 $(BUILD)/test_ocpp_resilience: $(TEST_DIR)/test_ocpp_resilience.c $(OCPP_LOGIC_SRC) $(SRC_DIR)/ocpp_logic.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_ocpp_resilience.c $(OCPP_LOGIC_SRC)
 
+$(BUILD)/test_http_auth: $(TEST_DIR)/test_http_auth.c $(SRC_DIR)/http_auth.c $(SRC_DIR)/http_auth.h include/*.h | $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_http_auth.c $(SRC_DIR)/http_auth.c
+
 $(BUILD)/test_solar_debug_json: $(TEST_DIR)/test_solar_debug_json.c $(SOLAR_DEBUG_JSON_SRC) $(SRC_DIR)/solar_debug_json.h include/*.h | $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_DIR)/test_solar_debug_json.c $(SOLAR_DEBUG_JSON_SRC)
 
@@ -163,6 +166,12 @@ test: $(TEST_BINS)
 # Convenience targets: make <suite_name> runs that suite
 $(TEST_NAMES): %: $(BUILD)/test_%
 	@$(BUILD)/test_$*
+
+# Plan 07 — assert show/hide symmetry for hidden-by-default UI elements.
+# Catches the issue #129 pattern: HTML default `display:none` with no matching
+# showById() in app.js → element permanently invisible to users.
+lint-ui-visibility:
+	@python3 scripts/lint_ui_visibility.py
 
 clean:
 	rm -rf $(BUILD)

@@ -114,7 +114,7 @@ var setStatus = function(text) {
               <li>firmware.debug.signed.bin (if you want to telnet to your SmartEVSE to see debug messages);</li>
               <li>rfid.txt (if you want to bulk upload allowed NFC tags for the RFID reader);</li>
           </ul>
-          You should only flash files with those exact names.<br>No need to flash spiffs.bin for versions 3.6.0-RC1 and newer!<br><b>Unsigned firmware.bin uploads are no longer accepted</b> — only signature-verified .signed.bin files are flashed (security fix). Build signed firmware locally via the release workflow or use the prebuilt assets from the releases page.
+          You should only flash files with those exact names.<br>No need to flash spiffs.bin for versions 3.6.0-RC1 and newer!<br><b>Signed .signed.bin uploads are accepted on all firmwares.</b> Unsigned firmware.bin / firmware.debug.bin uploads are <b>only</b> accepted when running a debug build AND you have verified the LCD PIN via the web UI (physical-presence auth). Release builds always require a signed image.
           <br><br><br>NOTE: "Choose file:"  uploads only work with http connections, and will fail with https connections!<br>
       </div>
       <div id="wrapper">

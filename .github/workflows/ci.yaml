@@ -50,6 +50,9 @@ jobs:
       - name: Check stack usage (GCC)
         run: make clean all CFLAGS_EXTRA="-Wstack-usage=1024"
         working-directory: SmartEVSE-3/test/native
+      - name: UI visibility lint (Plan 07 — show/hide symmetry)
+        run: make lint-ui-visibility
+        working-directory: SmartEVSE-3/test/native
 
   memory-sanitizers:
     runs-on: ubuntu-latest
