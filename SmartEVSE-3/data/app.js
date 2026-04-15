@@ -640,7 +640,17 @@ function loadData() {
                 $id('mqtt_host').value = data.mqtt.host;
                 $id('mqtt_port').value = data.mqtt.port;
                 $id('mqtt_username').value = data.mqtt.username;
-                $id('mqtt_password').value = data.mqtt.password;
+                /* Security: backend never returns the MQTT password; it sends
+                 * password_set: bool. Mirror the OCPP auth_key pattern — show
+                 * bullets when a password is configured so the user can tell
+                 * it is set without exposing the value. configureMqtt() skips
+                 * the field if left as bullets or empty, preventing the
+                 * save-without-retyping wipe (previously the field was set to
+                 * `undefined`, turning a stray save into an accidental clear). */
+                $id('mqtt_password').value = data.mqtt.password_set ? '••••••••' : '';
+                $id('mqtt_password').placeholder = data.mqtt.password_set
+                    ? 'Password configured (enter new value to replace)'
+                    : 'Leave empty for anonymous MQTT';
                 $id('mqtt_topic_prefix').value = data.mqtt.topic_prefix;
                 $id('mqtt_tls').checked = data.mqtt.tls;
                 if (data.mqtt.change_only !== undefined)
@@ -683,18 +693,23 @@ function loadData() {
                     $id('ocpp_auto_auth').checked = false;
                 }
 
-                if (!ocppEditMode) {
-                    $id('ocpp_backend_url').value = data.ocpp.backend_url;
-                    $id('ocpp_cb_id').value = data.ocpp.cb_id;
-                    /* Security C-2: backend no longer returns the plaintext auth_key;
-                     * it sends auth_key_set: bool instead. Show a placeholder so the
-                     * user knows a key is configured without exposing it. */
-                    $id('ocpp_auth_key').value = data.ocpp.auth_key_set ? '••••••••' : '';
-                    $id('ocpp_auth_key').placeholder = data.ocpp.auth_key_set
-                        ? 'Auth key configured (enter new value to replace)'
-                        : 'Only for SP2 connections';
-                    $id('ocpp_auto_auth_idtag').value = data.ocpp.auto_auth_idtag;
-                }
+                /* OCPP panel is always editable (no edit-mode toggle). Non-secret
+                 * fields are only populated on first load (when still empty) so
+                 * the 5s background poll never clobbers what the user is typing.
+                 * The auth_key field is the secret-handling exception: always
+                 * reflects the backend state (bullets if set, empty if not), and
+                 * configureOcpp() skips submitting it when the value is still
+                 * bullets or empty. See Security C-2. */
+                var urlField  = $id('ocpp_backend_url');
+                var cbIdField = $id('ocpp_cb_id');
+                var idTagField = $id('ocpp_auto_auth_idtag');
+                if (!urlField.value)  urlField.value  = data.ocpp.backend_url || '';
+                if (!cbIdField.value) cbIdField.value = data.ocpp.cb_id || '';
+                if (!idTagField.value) idTagField.value = data.ocpp.auto_auth_idtag || '';
+                $id('ocpp_auth_key').value = data.ocpp.auth_key_set ? '••••••••' : '';
+                $id('ocpp_auth_key').placeholder = data.ocpp.auth_key_set
+                    ? 'Auth key configured (enter new value to replace)'
+                    : 'Only for SP2 connections';
 
                 $id('ocpp_ws_status').textContent = data.ocpp.status;
             } else {
@@ -776,13 +791,20 @@ function configureMqtt() {
         mqtt_host:         $id('mqtt_host').value,
         mqtt_port:         $id('mqtt_port').value,
         mqtt_username:     $id('mqtt_username').value,
-        mqtt_password:     $id('mqtt_password').value,
         mqtt_topic_prefix: $id('mqtt_topic_prefix').value,
         mqtt_tls:          $id('mqtt_tls').checked ? 1 : 0,
         mqtt_ca_cert:      $id('mqtt_ca_cert').value,
         mqtt_change_only:  $id('mqtt_change_only').checked ? 1 : 0,
         mqtt_heartbeat:    $id('mqtt_heartbeat').value
     };
+    /* Only send mqtt_password when the user typed a real new value. Empty means
+     * "anonymous MQTT or keep existing"; bullets means "keep the hidden stored
+     * password". Sending either back would either wipe the secret or overwrite
+     * it with literal bullets. Mirrors the configureOcpp() auth_key handling. */
+    var pwd = $id('mqtt_password').value;
+    if (pwd && pwd !== '••••••••') {
+        params.mqtt_password = pwd;
+    }
     var query = Object.keys(params)
         .map(function(k) { return k + "=" + encodeURIComponent(params[k]); })
         .join("&");
@@ -810,18 +832,11 @@ function toggleEnableOcppAutoAuth() {
 }
 
 /* ========== OCPP config ========== */
-function toggleOcppEdit() {
-    ocppEditMode = !ocppEditMode;
-    var fields = ['ocpp_backend_url', 'ocpp_cb_id', 'ocpp_auth_key', 'ocpp_auto_auth', 'ocpp_auto_auth_label', 'ocpp_auto_auth_idtag'];
-    if (ocppEditMode) {
-        $id('ocpp_save_btn').textContent = "Save";
-        fields.forEach(function(id) { var el = $id(id); if (el) el.disabled = false; });
-    } else {
-        configureOcpp();
-        $id('ocpp_save_btn').textContent = "Edit Settings";
-        fields.forEach(function(id) { var el = $id(id); if (el) el.disabled = true; });
-    }
-}
+/* OCPP settings panel matches MQTT UX: fields are always editable, a single
+ * "Save OCPP" button invokes configureOcpp() directly (no Edit-mode toggle).
+ * The legacy edit-mode toggle is kept as a no-op stub in case anything calls
+ * it externally (same pattern as toggleMqttEdit). */
+function toggleOcppEdit() { /* kept for backward compat, no-op */ }
 
 function configureOcpp() {
     var params = {
