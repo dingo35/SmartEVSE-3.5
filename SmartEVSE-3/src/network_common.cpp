@@ -1831,9 +1831,21 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 }
 
                 if(request->hasParam("mqtt_password")) {
-                    MQTTpassword = request->getParam("mqtt_password")->value();
-                    if (!MQTTpassword || MQTTpassword == "") {
-                        MQTTpassword.clear();
+                    /* SECURITY SEC-MQTT-KEEP (task #38): empty and the bullets
+                     * placeholder both mean "keep the existing password" —
+                     * previously an empty value wiped MQTTpassword, which
+                     * combined with GET /settings returning only password_set
+                     * (never the password itself, by Security C-2 intent) made
+                     * any non-UI client that re-POSTed the form lose the
+                     * password. The Web UI already skips the field on empty
+                     * save; this is defense-in-depth for curl / Postman / HA
+                     * REST integrations. Symmetric with ocpp_validate_auth_key
+                     * accepting empty + MicroOcpp preserving the stored value. */
+                    String newPwd = request->getParam("mqtt_password")->value();
+                    if (newPwd.length() > 0 && newPwd != "••••••••") {
+                        MQTTpassword = newPwd;
+                    } else {
+                        _LOG_A("MQTT password POST empty/placeholder — preserving stored value\n");
                     }
                     doc["mqtt_password_set"] = (MQTTpassword != "");
                 }
