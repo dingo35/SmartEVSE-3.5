@@ -1350,7 +1350,10 @@ R"EOF(
 #define MAX_HTTP_CONNECTIONS 8
 #define WS_CONNECTION_RESERVE 1
 
-// Count active connections
+// Count only accepted inbound server connections.
+// (This does not count listeners, outbound client connections,
+// or connections already closing, so the connection limit reflects actual
+// in-use HTTP/WebSocket server slots more accurately).
 static int countConnections(struct mg_mgr *mgr) {
   int n = 0;
   for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) {
