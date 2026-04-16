@@ -891,7 +891,6 @@
             socket.onopen = () => {
                 clearConnectTimeout();
                 resetWsRetryState();
-                setActivateText('Connected', 'success');
                 hideActivateOverlayAfterDelay(WS_CONNECTED_STATUS_MS);
             };
 

@@ -123,11 +123,6 @@
     background-color: rgba(253, 243, 216, .92);
 }
 
-#lcd .lcd-activate[data-state="success"] {
-    color: #0f6848;
-    background-color: rgba(210, 244, 232, .94);
-}
-
 #lcd .lcd-activate[data-state="error"] {
     color: var(--danger);
     background-color: rgba(250, 219, 216, .94);
