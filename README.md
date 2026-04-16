@@ -1,138 +1,114 @@
 SmartEVSE v3
 =========
 
-Smart Electric Vehicle Charge Controller
+Smart Electric Vehicle Charge Controller — open-source firmware for a
+DIN-rail AC charger.
 
 <img src="/pictures/SmartEVSEv3.png" alt="SmartEVSE v3 hardware" width="500">
 
 <img src="/pictures/SmartEVSEv3-WebUI.jpg" alt="SmartEVSE v3 Web UI" width="500">
 
-# About this fork
+# What it is
 
-This repository is a fork of [dingo35/SmartEVSE-3.5](https://github.com/dingo35/SmartEVSE-3.5)
-maintained as a testbed for **IT/OT software engineering with AI-assisted development**
-(multi-agent software engineering using [Claude Code](https://claude.ai/claude-code)).
+An EVSE (Electric Vehicle Supply Equipment) — the controller between
+your house wiring and an electric vehicle. It supports:
 
-The upstream SmartEVSE firmware is a monolithic embedded C++/Arduino codebase where the
-state machine, load balancing, MQTT, HTTP, and hardware control all live in a single
-~3,000-line `main.cpp`. This fork restructures the architecture to enable **native host
-testing** of the core logic — pure C modules, context structs, a bridge layer, and HAL
-callbacks — resulting in 1,200+ automated tests (1,096 native C tests across 50 suites,
-50 OCPP protocol tests, and 146 Modbus compatibility tests).
+- 1-phase and 3-phase AC charging, 6–32 A.
+- Fixed charging cable or Type 2 socket.
+- 5 locking actuator types.
+- Direct drive of a mains contactor.
+- Up to 8 modules sharing one mains supply (load balancing).
+- RFID authorization (100 cards).
+- 18 supported Modbus kWh meters + Sensorbox + HomeWizard P1 + REST API.
+- MQTT + Home Assistant auto-discovery.
+- REST API for scripts and dashboards.
+- OCPP 1.6j for public / billed charging.
+- Offline-first Web UI, dark mode, live WebSocket updates.
+- LCD + button configuration on the device itself.
 
-See [Quality Engineering](docs/quality.md) for the full architecture, testing
-methodology, CI/CD pipeline, and hardening approach. See
-[Upstream Differences](docs/upstream-differences.md) for a complete list of changes
-compared to the upstream repository.
+Operating voltage 110–240 VAC. DIN-mount, 3 modules wide (52 × 91 × 58 mm).
 
-# What is it?
+# Pick your path
 
-An open source EVSE (Electric Vehicle Supply Equipment). It supports 1-3 phase
-charging, fixed charging cable or charging socket, locking actuator support (5 types),
-and it can directly drive a mains contactor for supplying power to the EV. It features
-a display for parameter configuration. Up to 8 modules can be connected together to
-charge up to eight EVs from one mains connection without overloading it.
+| You are | Start here |
+|---|---|
+| Installing the hardware (you have the PCB in hand) | [**Installer guide**](docs/guide-installer.md) |
+| Using an already-installed charger | [**Owner guide**](docs/guide-owner.md) |
+| Integrating with Home Assistant / MQTT / REST / OCPP | [**Integrator guide**](docs/guide-integrator.md) |
+| Something is wrong | [**Troubleshooting**](docs/troubleshooting.md) |
+| Adding a feature, fixing a bug, submitting a PR | [**Contributor guide**](docs/guide-contributor.md) |
+| Wondering about LAN security / firmware signing / auth | [**Security**](docs/security.md) |
 
-# Key Features
+# Community
 
-| Feature | Highlights |
-|---------|-----------|
-| **Charging** | 1-3 phase, auto cable detection (13/16/32A), dual contactor outputs, thermal protection |
-| **Solar & Smart Mode** | Solar surplus charging, auto 1P/3P switching, EMA smoothing, dead band regulation |
-| **Load Balancing** | Up to 8 nodes, priority scheduling, oscillation dampening, convergence testing |
-| **OCPP & Authorization** | OCPP 1.6j, RFID (100 cards), pure C logic extraction (85 tests), 50 protocol tests, FreeVend solar safety |
-| **MQTT & Home Assistant** | Change-only publishing (70-97% reduction), fixed HA discovery, per-phase power/energy |
-| **Metering** | 18 Modbus meter types, 146 compatibility tests, HomeWizard P1, Sensorbox, API/MQTT feed, staleness detection |
-| **EVCC Integration** | IEC 61851 state mapping, HTTP phase switching, ready-to-use template |
-| **Diagnostics** | Ring buffer events, LittleFS persistence, WebSocket live stream, test replay |
-| **ERE Session Logging** | Dutch ERE certificate output, MQTT publish, REST endpoint, zero flash wear |
-| **Capacity Tariff** | 15-min peak tracking, monthly peak persistence, automatic current limiting, LCD/Web/MQTT/REST config |
-| **CircuitMeter** | Subpanel metering, breaker protection, ERE circuit verification, all 19 meter types supported |
-| **SoC Injection** | MQTT topics for InitialSoC/FullSoC/EnergyCapacity/EnergyRequest/EVCCID, WiCAN OBD-II integration |
-| **Web UI** | Offline-first, WebSocket updates, dark mode, load balancing dashboard, diagnostic viewer |
-| **Privacy** | No cloud, no tracking, open source |
+- **Dutch-language forum:** [Tweakers GoT — *Zelfbouw Laadpaal ervaringen*](https://gathering.tweakers.net/forum/list_messages/1648387).
+  The canonical community thread with a decade of accumulated buying,
+  installation, and integration experience. Maintainers and experienced
+  users read and answer there.
+- **Issues:** [GitHub Issues](https://github.com/basmeerman/SmartEVSE-3.5/issues).
+- **Releases:** [Releases page](https://github.com/basmeerman/SmartEVSE-3.5/releases).
 
-For detailed feature descriptions and fork improvements, see [Features](docs/features.md).
+# Privacy and longevity
+
+- Works fully offline. No cloud account required.
+- Does not collect or transmit usage statistics.
+- Open-source firmware. Fork it, modify it, keep it running long after
+  commercial chargers go EOL.
+
+# Reference documentation
+
+For topic-organised reference material (the deep detail behind the
+audience guides):
+
+| Area | Document |
+|---|---|
+| Hardware installation | [installation.md](docs/installation.md) |
+| Power-input methods (Sensorbox / P1 / Modbus / API) | [power-input-methods.md](docs/power-input-methods.md) |
+| LCD menu configuration reference | [configuration.md](docs/configuration.md) |
+| Settings matrix with access channels | [configuration-matrix.md](docs/configuration-matrix.md) |
+| Operation guide | [operation.md](docs/operation.md) |
+| MQTT topics + HA discovery | [mqtt-home-assistant.md](docs/mqtt-home-assistant.md) |
+| REST API reference | [REST_API.md](docs/REST_API.md) |
+| OCPP 1.6j coverage | [ocpp.md](docs/ocpp.md) |
+| Solar / Smart mode tuning | [solar-smart-stability.md](docs/solar-smart-stability.md) |
+| Load balancing behaviour | [load-balancing-stability.md](docs/load-balancing-stability.md) |
+| Priority scheduling (multi-node) | [priority-scheduling.md](docs/priority-scheduling.md) |
+| EVCC integration | [evcc-integration.md](docs/evcc-integration.md) |
+| ERE session logging | [ere-session-logging.md](docs/ere-session-logging.md) |
+| Building and flashing firmware | [building_flashing.md](docs/building_flashing.md) |
+| Feature catalogue | [features.md](docs/features.md) |
+| Quality engineering + CI/CD | [quality.md](docs/quality.md) |
+
+# About this repository
+
+This repository is maintained independently. It diverges from the
+reference codebase primarily in two areas: (1) a restructured
+architecture that enables native host testing of the core logic
+(1,200+ automated tests across 50 suites — state machine, parsers,
+validators, OCPP, Modbus), and (2) security hardening of the Web UI and
+firmware update paths (signed firmware, per-endpoint auth gate, PIN
+rate limiter, CSRF/Origin check, secret redaction).
+
+The refactor used multi-agent AI-assisted development (Claude Code) as
+a real-world test of the methodology on safety-critical embedded
+firmware. That's how the test suite and the security work landed so
+quickly. Details in [quality.md](docs/quality.md) for those interested;
+it doesn't affect how you install, use, or contribute.
+
+See [upstream-differences.md](docs/upstream-differences.md) for the
+complete diff against the reference codebase.
 
 # Getting started
 
 ## Connecting to WiFi
 
-Follow the instructions on the [Configuration page](docs/configuration.md#wifi),
-WiFi section.
+See [configuration.md, WiFi section](docs/configuration.md#wifi).
 
 ## Updating firmware
 
-Connect to your WiFi network, then browse to `http://smartevse-xxxx.local/update`
-(replace `xxxx` with your serial number, shown on the display). Select the
-`firmware.bin` and press Update.
+Connect to WiFi, then browse to
+`http://smartevse-<serial>.local/update` (serial shown on the LCD).
+Select `firmware.signed.bin` from the releases page and upload.
 
-# Documentation
-
-## User Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Hardware installation](docs/installation.md) | Wiring, mounting, contactor setup |
-| [Power Input Methods](docs/power-input-methods.md) | Metering options — reliability ranking, setup, troubleshooting |
-| [Configuration](docs/configuration.md) | LCD menu settings reference |
-| [Settings Reference](docs/configuration-matrix.md) | All settings by access channel with safety flags |
-| [Operation](docs/operation.md) | Day-to-day usage guide |
-
-## Feature Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Features & USPs](docs/features.md) | All features with fork improvements |
-| [Upstream Differences](docs/upstream-differences.md) | Complete diff with upstream repo |
-| [Solar & Smart Mode Stability](docs/solar-smart-stability.md) | EMA smoothing, dead bands, phase switch timers |
-| [Load Balancing Stability](docs/load-balancing-stability.md) | Oscillation dampening, diagnostics |
-| [MQTT & Home Assistant](docs/mqtt-home-assistant.md) | Topic reference, HA auto-discovery |
-| [EVCC Integration](docs/evcc-integration.md) | EVCC charger template, phase switching API |
-| [REST API reference](docs/REST_API.md) | HTTP endpoints for external integration |
-| [ERE Session Logging](docs/ere-session-logging.md) | Dutch ERE certificates, HA automation |
-| [OCPP setup](docs/ocpp.md) | Provider guides (Tap Electric, Tibber, SteVe) |
-| [Priority scheduling](docs/priority-scheduling.md) | Load balancing priority configuration |
-
-## Developer Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Quality Engineering](docs/quality.md) | Architecture, testing, CI/CD, hardening, interoperability |
-| [Building & Flashing](docs/building_flashing.md) | Compiling firmware from source |
-| [Coding standards](CODING_STANDARDS.md) | Code conventions for contributors |
-| [Contributing](CONTRIBUTING.md) | How to contribute to this project |
-| [AI agent instructions](CLAUDE.md) | Multi-agent workflow for Claude Code |
-
-# Roadmap
-
-Completed improvement plans, tracked via
-[GitHub Projects](https://github.com/basmeerman?tab=projects):
-
-| Status | Project | PRs | Upstream issues |
-|--------|---------|-----|----------------|
-| Done | Plan 01: Solar & Smart Mode Stability | [#65](https://github.com/basmeerman/SmartEVSE-3.5/pull/65), [#83](https://github.com/basmeerman/SmartEVSE-3.5/pull/83) | [#327](https://github.com/dingo35/SmartEVSE-3.5/issues/327), [#335](https://github.com/dingo35/SmartEVSE-3.5/issues/335), [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
-| Done | Plan 02: Multi-Node Load Balancing | [#69](https://github.com/basmeerman/SmartEVSE-3.5/pull/69) | [#316](https://github.com/dingo35/SmartEVSE-3.5/issues/316) |
-| Done | Plan 03: OCPP Robustness | [#77](https://github.com/basmeerman/SmartEVSE-3.5/pull/77), [#79](https://github.com/basmeerman/SmartEVSE-3.5/pull/79), [#80](https://github.com/basmeerman/SmartEVSE-3.5/pull/80) | — |
-| Done | Plan 04: EVCC Integration | [#70](https://github.com/basmeerman/SmartEVSE-3.5/pull/70) | [EVCC #13852](https://github.com/evcc-io/evcc/pull/13852) |
-| Done | Plan 05: Meter Compatibility & Modbus | [#76](https://github.com/basmeerman/SmartEVSE-3.5/pull/76) | — |
-| Done | Plan 06: Diagnostic Telemetry | [#84](https://github.com/basmeerman/SmartEVSE-3.5/pull/84) | — |
-| Done | Plan 07: Web UI Modernization | [#85](https://github.com/basmeerman/SmartEVSE-3.5/pull/85) | — |
-| Done | Plan 08: HA MQTT Integration | [#64](https://github.com/basmeerman/SmartEVSE-3.5/pull/64), [#68](https://github.com/basmeerman/SmartEVSE-3.5/pull/68), [#82](https://github.com/basmeerman/SmartEVSE-3.5/pull/82) | [#320](https://github.com/dingo35/SmartEVSE-3.5/issues/320), [#294](https://github.com/dingo35/SmartEVSE-3.5/issues/294), [PR #338](https://github.com/dingo35/SmartEVSE-3.5/pull/338) |
-| Done | Plan 09: Power Input Methods | [#86](https://github.com/basmeerman/SmartEVSE-3.5/pull/86) | — |
-| Done | Plan 10: ERE Session Logging | [#89](https://github.com/basmeerman/SmartEVSE-3.5/pull/89) | — |
-| Done | Plan 11: OCPP Compatibility Testing | [#96](https://github.com/basmeerman/SmartEVSE-3.5/pull/96) | — |
-| Done | Plan 12: Modbus Compatibility Testing | [#97](https://github.com/basmeerman/SmartEVSE-3.5/pull/97) | — |
-| Done | Plan 13: Capacity Tariff Peak Tracking | [#116](https://github.com/basmeerman/SmartEVSE-3.5/pull/116) | — |
-| Done | Plan 14: CircuitMeter — Subpanel Metering | [#117](https://github.com/basmeerman/SmartEVSE-3.5/pull/117) | — |
-| Done | Plan 15: SoC Injection via MQTT | [#115](https://github.com/basmeerman/SmartEVSE-3.5/pull/115), [#116](https://github.com/basmeerman/SmartEVSE-3.5/pull/116) | — |
-
-All 15 improvement plans are complete. The CI/CD pipeline runs a 10-job quality
-gate on every PR, including OCPP interoperability tests (mock CSMS via
-[mobilityhouse/ocpp](https://github.com/mobilityhouse/ocpp)) and Modbus
-compatibility tests (C decode functions called from Python via ctypes). See
-[Quality Engineering](docs/quality.md) for details.
-
-# SmartEVSE App
-
-The SmartEVSE-app can be found [here](https://github.com/SmartEVSE/SmartEVSE-app) or on Google Play
+For the full install flow from boxed PCB to commissioned charger, see
+the [installer guide](docs/guide-installer.md).
