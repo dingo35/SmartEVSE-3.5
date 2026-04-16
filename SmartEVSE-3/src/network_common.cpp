@@ -78,6 +78,12 @@ static bool isTrackedLcdWsConnection(const mg_connection *connection) {
     return false;
 }
 
+static void closeHttpConnectionAfterResponseIfNeeded(struct mg_connection *c, bool underPressure) {
+    if (c != nullptr && !c->is_websocket && underPressure) {
+        c->is_draining = 1;
+    }
+}
+
 static void sendWsError(struct mg_connection *c, const char *reason) {
     DynamicJsonDocument response(96);
     response["error"] = reason;
@@ -1781,6 +1787,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 mg_http_serve_dir(c, hm, &opts);
             }
         }
+        closeHttpConnectionAfterResponseIfNeeded(c, nconns >= MAX_HTTP_CONNECTIONS);
     } // handle_URI
     // request is static, no delete needed
   } //HTTP request received
