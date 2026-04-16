@@ -693,7 +693,11 @@
                                         <div class="lcd-status">
                                           <form class="lcd-password" id="lcd-password-form">
                                             <input type="password" id="lcd-password" class="form-control"
-                                                                                     placeholder="Enter PIN">
+                                                                                     placeholder="Enter PIN"
+                                                                                     inputmode="numeric"
+                                                                                     autocomplete="off"
+                                                                                     maxlength="4"
+                                                                                     pattern="[0-9]{4}">
                                             <button type="submit" id="lcd-password-submit">Unlock</button>
                                           </form>
                                           <div class="lcd-lock-status" id="lcd-lock-status">
@@ -839,6 +843,14 @@
             }
         }
 
+        function normalizePin(pin) {
+            return typeof pin === 'string' ? pin.trim() : '';
+        }
+
+        function isValidPin(pin) {
+            return /^\d{4}$/.test(pin);
+        }
+
         function updateLockUi(isUnlocked) {
             if (isUnlocked) {
                 LOCK_STATUS.textContent = 'Unlocked';
@@ -980,9 +992,21 @@
         }
 
         function verifyPassword(options = {}) {
-            const enteredPassword = options.password ?? PASSWORD_FIELD.value;
+            const enteredPassword = normalizePin(options.password ?? PASSWORD_FIELD.value);
             const showErrorAlert = options.showErrorAlert ?? true;
             const rememberPin = options.rememberPin ?? true;
+            if (!isValidPin(enteredPassword)) {
+                passwordVerified = false;
+                updateLockUi(false);
+                if (rememberPin) {
+                    clearStoredPin();
+                }
+                if (showErrorAlert) {
+                    alert("Enter the 4-digit PIN.");
+                }
+                return;
+            }
+
             $.post('/lcd-verify-password', { password: enteredPassword })
             .done(function(data) {
                 if (data.success) {
@@ -999,6 +1023,13 @@
                     if (showErrorAlert) {
                         alert("Incorrect PIN. Please try again.");
                     }
+                }
+            })
+            .fail(function() {
+                passwordVerified = false;
+                updateLockUi(false);
+                if (showErrorAlert) {
+                    alert("PIN verification failed. Please try again.");
                 }
             });
         }
@@ -1039,10 +1070,11 @@
         });
 
         const storedPin = getStoredPin();
-        if (storedPin) {
+        if (isValidPin(storedPin)) {
             PASSWORD_FIELD.value = storedPin;
             verifyPassword({ password: storedPin, showErrorAlert: false, rememberPin: false });
         } else {
+            clearStoredPin();
             updateLockUi(false);
         }
 
