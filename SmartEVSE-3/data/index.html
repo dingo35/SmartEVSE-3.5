@@ -678,6 +678,7 @@
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
                                           <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
+                                          <div class="lcd-activate" data-state="info">Starting websocket...</div>
                                           <div class="lcd-display-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
@@ -688,14 +689,20 @@
                                               <button type="button" data-name="middle">Middle</button>
                                               <button type="button" data-name="right">Right</button>
                                           </div>
+
+                                        <div class="lcd-status">
                                           <form class="lcd-password" id="lcd-password-form">
-                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 5em;">
-                                              <button type="submit" id="lcd-password-submit">Unlock</button>
-                                              <span id="lcd-lock-status" style="color: #e74a3b; font-weight: 700; white-space: nowrap;" title="Button lock status">Locked - Enter PIN</span>
+                                            <input type="password" id="lcd-password" class="form-control"
+                                                                                     placeholder="Enter PIN">
+                                            <button type="submit" id="lcd-password-submit">Unlock</button>
                                           </form>
-                                          <div id="lcd-lock-hint">
-                                              LCD buttons are locked. Enter your PIN to unlock them.
+                                          <div class="lcd-lock-status" id="lcd-lock-status">
+                                            Locked - Enter PIN
                                           </div>
+                                          <div id="lcd-lock-hint">
+                                            LCD buttons are locked. Enter your PIN to unlock them.
+                                          </div>
+                                        </div>
                                       </div>
 <script>
     (() => {
@@ -709,28 +716,72 @@
         const SESSION_STORAGE_PIN_KEY = 'lcdPinCode';
         const LOCKED_PRESS_ALERT_THRESHOLD = 3;
         const MIN_BUTTON_PRESS_MS = 300;
-        const WS_RECONNECT_BASE_MS = 1000;
-        const WS_RECONNECT_MAX_MS = 10000;
-        const WS_RECONNECT_JITTER_MS = 400;
-        const WS_INITIAL_RETRY_MS = 750;
-        const WS_INITIAL_RETRY_JITTER_MS = 250;
-        const WS_CONNECT_TIMEOUT_MS = 5000;
+        const WS_MAX_CONNECT_ATTEMPTS = 3;
+        const WS_CONNECTED_STATUS_MS = 2000;
+        const WS_RETRY_DELAY_MS = 2000;
+        const WS_CONNECT_TIMEOUT_MS = 8000;
         const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
         let blockedButtonPressCount = 0;
         let lcdSocket = null;
         let reconnectTimer = null;
         let connectTimeoutTimer = null;
-        let reconnectAttempts = 0;
-        let hasConnectedOnce = false;
-        let wsPausedByVisibility = false;
+        let activateOverlayHideTimer = null;
         let activeFrameUrl = null;
+        let wsAttemptCount = 0;
+        let wsStopped = false;
+        let wsErrorText = '';
         const activePointers = new Map();
 
-        function setActivateText(text) {
+        function setActivateText(text, state = 'info') {
+            clearActivateOverlayHideTimer();
             if (LCD_ACTIVATE) {
                 LCD_ACTIVATE.textContent = text;
+                LCD_ACTIVATE.dataset.state = state;
+                LCD_ACTIVATE.classList.remove('is-hidden');
             }
+        }
+
+        function clearActivateOverlayHideTimer() {
+            if (activateOverlayHideTimer !== null) {
+                window.clearTimeout(activateOverlayHideTimer);
+                activateOverlayHideTimer = null;
+            }
+        }
+
+        function hideActivateOverlayAfterDelay(delayMs) {
+            clearActivateOverlayHideTimer();
+            activateOverlayHideTimer = window.setTimeout(() => {
+                activateOverlayHideTimer = null;
+                hideActivateOverlay();
+            }, delayMs);
+        }
+
+        function hideActivateOverlay() {
+            clearActivateOverlayHideTimer();
+            if (LCD_ACTIVATE) {
+                LCD_ACTIVATE.classList.add('is-hidden');
+            }
+        }
+
+        function setWsStatus(prefix, state = 'info') {
+            const attemptNumber = Math.min(wsAttemptCount + 1, WS_MAX_CONNECT_ATTEMPTS);
+            const details = wsErrorText ? `\n${wsErrorText}` : '';
+            setActivateText(`${prefix}\nAttempt ${attemptNumber}/${WS_MAX_CONNECT_ATTEMPTS}${details}`, state);
+        }
+
+        function resetWsRetryState() {
+            wsAttemptCount = 0;
+            wsStopped = false;
+            wsErrorText = '';
+        }
+
+        function stopReconnectWithFinalError(errorText) {
+            wsStopped = true;
+            wsErrorText = errorText;
+            clearReconnectTimer();
+            clearConnectTimeout();
+            setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
         }
 
         function clearConnectTimeout() {
@@ -747,55 +798,21 @@
             }
         }
 
-        function shouldKeepWsActive() {
-            return !wsPausedByVisibility;
-        }
-
-        function requestImmediateReconnect() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
-            reconnectAttempts = 0;
+        function restartLCDWebSocket() {
+            resetWsRetryState();
             clearReconnectTimer();
             connectLCDWebSocket();
         }
 
-        function disconnectLCDWebSocket() {
-            clearConnectTimeout();
-            clearReconnectTimer();
-            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
-                lcdSocket.close();
-            }
-        }
-
         function scheduleReconnect() {
-            if (!shouldKeepWsActive()) {
+            if (wsStopped || reconnectTimer !== null) {
                 return;
             }
-            if (reconnectTimer !== null) {
-                return;
-            }
-            const backoffMs = hasConnectedOnce
-                ? Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS)
-                : WS_INITIAL_RETRY_MS;
-            const jitterMs = hasConnectedOnce
-                ? Math.floor(Math.random() * WS_RECONNECT_JITTER_MS)
-                : Math.floor(Math.random() * WS_INITIAL_RETRY_JITTER_MS);
-            const reconnectDelayMs = backoffMs + jitterMs;
-            reconnectAttempts += 1;
-            setActivateText(`Reconnecting in ${Math.ceil(reconnectDelayMs / 1000)}s...`);
+            setWsStatus('Reconnecting in 2s...', 'warning');
             reconnectTimer = window.setTimeout(() => {
                 reconnectTimer = null;
                 connectLCDWebSocket();
-            }, reconnectDelayMs);
-        }
-
-        function activateLCD() {
-            if (!LCD_ACTIVATE) {
-                return;
-            }
-            LCD_ACTIVATE.remove();
-            LCD_ACTIVATE = null;
+            }, WS_RETRY_DELAY_MS);
         }
 
         function getStoredPin() {
@@ -835,30 +852,47 @@
         }
 
         function connectLCDWebSocket() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
             if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
                 return;
             }
 
-            setActivateText('Connecting...');
-            const socket = new WebSocket(WS_URL);
+            if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+                stopReconnectWithFinalError(wsErrorText || 'connection failed');
+                return;
+            }
+
+            setWsStatus('Connecting to LCD websocket...', 'info');
+
+            let socket;
+            try {
+                socket = new WebSocket(WS_URL);
+            } catch (error) {
+                wsAttemptCount += 1;
+                wsErrorText = `constructor error: ${error.message}`;
+                if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+                    stopReconnectWithFinalError(wsErrorText);
+                    return;
+                }
+                scheduleReconnect();
+                return;
+            }
+
             lcdSocket = socket;
             socket.binaryType = 'arraybuffer';
 
             clearConnectTimeout();
             connectTimeoutTimer = window.setTimeout(() => {
                 if (socket.readyState === WebSocket.CONNECTING) {
+                    wsErrorText = `connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms`;
                     socket.close();
                 }
             }, WS_CONNECT_TIMEOUT_MS);
 
             socket.onopen = () => {
                 clearConnectTimeout();
-                reconnectAttempts = 0;
-                hasConnectedOnce = true;
-                activateLCD();
+                resetWsRetryState();
+                setActivateText('Connected', 'success');
+                hideActivateOverlayAfterDelay(WS_CONNECTED_STATUS_MS);
             };
 
             socket.onmessage = (event) => {
@@ -874,19 +908,31 @@
             };
 
             socket.onerror = () => {
+                wsErrorText = 'connection error';
                 if (socket.readyState !== WebSocket.CLOSED) {
                     socket.close();
                 }
             };
 
-            socket.onclose = () => {
+            socket.onclose = (event) => {
                 clearConnectTimeout();
                 if (lcdSocket === socket) {
                     lcdSocket = null;
                 }
-                if (shouldKeepWsActive()) {
-                    scheduleReconnect();
+                if (event.code === 1000) {
+                    return;
                 }
+                wsAttemptCount += 1;
+                if (event.code === 1006) {
+                    wsErrorText = wsErrorText || 'connection lost';
+                } else if (!wsErrorText) {
+                    wsErrorText = `close code ${event.code}`;
+                }
+                if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+                    stopReconnectWithFinalError(wsErrorText);
+                    return;
+                }
+                scheduleReconnect();
             };
         }
 
@@ -904,7 +950,7 @@
             }
 
             if (!lcdSocket || lcdSocket.readyState !== WebSocket.OPEN) {
-                requestImmediateReconnect();
+                restartLCDWebSocket();
                 return;
             }
 
@@ -986,24 +1032,11 @@
         });
 
         window.addEventListener('online', () => {
-            requestImmediateReconnect();
+            restartLCDWebSocket();
         });
 
         window.addEventListener('offline', () => {
-            setActivateText('Offline - waiting for network...');
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                wsPausedByVisibility = true;
-                setActivateText('Paused in background');
-                disconnectLCDWebSocket();
-                return;
-            }
-
-            wsPausedByVisibility = false;
-            setActivateText('Reconnecting...');
-            requestImmediateReconnect();
+            setActivateText('Offline - waiting for network...', 'warning');
         });
 
         const storedPin = getStoredPin();
@@ -1014,12 +1047,7 @@
             updateLockUi(false);
         }
 
-        if (document.hidden) {
-            wsPausedByVisibility = true;
-            setActivateText('Paused in background');
-        } else {
-            requestImmediateReconnect();
-        }
+        restartLCDWebSocket();
     })();
 </script>
                                   </div>

@@ -78,6 +78,12 @@ static bool isTrackedLcdWsConnection(const mg_connection *connection) {
     return false;
 }
 
+static void closeHttpConnectionAfterResponseIfNeeded(struct mg_connection *c, bool underPressure) {
+    if (c != nullptr && !c->is_websocket && underPressure) {
+        c->is_draining = 1;
+    }
+}
+
 static void sendWsError(struct mg_connection *c, const char *reason) {
     DynamicJsonDocument response(96);
     response["error"] = reason;
@@ -1346,13 +1352,18 @@ R"EOF(
 )EOF";
 
 
-// Maximum concurrent HTTP connections to prevent socket exhaustion
+// Maximum number of accepted inbound HTTP server connections we allow to stay active.
+// Keep one extra accepted slot available so a pending /ws/lcd upgrade still has a chance
+// to reach MG_EV_HTTP_MSG even when Safari briefly fans out multiple connections.
 #define MAX_HTTP_CONNECTIONS 8
+#define WS_CONNECTION_RESERVE 1
 
-// Count active connections in the manager
-static int countConnections(struct mg_mgr *mgr) {
+// Count accepted inbound server connections, excluding listeners and outbound clients.
+static int countServerConnections(struct mg_mgr *mgr) {
   int n = 0;
-  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) n++;
+  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) {
+    if (t->is_accepted && !t->is_client && !t->is_listening && !t->is_closing) n++;
+  }
   return n;
 }
 
@@ -1362,10 +1373,11 @@ static int countConnections(struct mg_mgr *mgr) {
 // fn_data is NULL for plain HTTP, and non-NULL for HTTPS
 static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_ACCEPT) {
-    // Limit concurrent connections to prevent socket exhaustion
-    int nconns = countConnections(c->mgr);
-    if (nconns > MAX_HTTP_CONNECTIONS) {
-      _LOG_W("Too many connections (%d), rejecting new connection\n", nconns);
+    // Limit concurrent accepted server connections, but keep one spare slot so a
+    // WebSocket upgrade can still reach MG_EV_HTTP_MSG under browser burstiness.
+    int nconns = countServerConnections(c->mgr);
+    if (nconns > (MAX_HTTP_CONNECTIONS + WS_CONNECTION_RESERVE)) {
+      _LOG_W("Too many accepted server connections (%d), rejecting new connection\n", nconns);
       c->is_closing = 1;  // Immediately close the connection
       return;
     }
@@ -1420,11 +1432,21 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     // Binary messages are ignored (only server sends binary BMP images)
   } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
+    const int nconns = countServerConnections(c->mgr);
 
     // Check for websocket upgrade request for LCD image stream
     if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
+        _LOG_V("Allowing /ws/lcd upgrade with %d accepted server connections\n", nconns);
         mg_ws_upgrade(c, hm, NULL);  // Upgrade HTTP to WebSocket
         return;  // Don't process as regular HTTP
+    }
+
+    if (nconns > MAX_HTTP_CONNECTIONS) {
+        _LOG_W("HTTP connection limit reached (%d), reserving slot for WebSocket upgrade\n", nconns);
+        mg_http_reply(c, 503, "Connection: close\r\nContent-Type: text/plain\r\n",
+                      "Server busy, retry shortly");
+        c->is_draining = 1;
+        return;
     }
 
     static webServerRequest requestObj;  // Static to avoid heap allocation on every request
@@ -1767,6 +1789,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 mg_http_serve_dir(c, hm, &opts);
             }
         }
+        closeHttpConnectionAfterResponseIfNeeded(c, nconns > MAX_HTTP_CONNECTIONS);
     } // handle_URI
     // request is static, no delete needed
   } //HTTP request received
