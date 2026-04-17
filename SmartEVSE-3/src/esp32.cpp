@@ -896,6 +896,8 @@ void SetupMQTTClient() {
     if (homeBatteryLastUpdate) {
         MQTTclient.announce("Home Battery Current", "sensor", optional_payload);
     }
+	optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A");
+	MQTTclient.announce("Max Sum Mains", "sensor", optional_payload);
 
 #if MODEM
         //set the parameters for modem/SoC sensor entities:
@@ -967,6 +969,8 @@ void SetupMQTTClient() {
 
     optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
     MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
+     optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","min");
+	MQTTclient.announce("Max Sum Mains Time", "sensor", optional_payload);
     //set the parameters for and MQTTclient.announce diagnostic sensor entities:
     optional_payload = MQTTclient.jsna("entity_category","diagnostic");
     MQTTclient.announce("Error", "sensor", optional_payload);
@@ -1032,6 +1036,8 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         MQTTclient.publish(MQTTprefix + "/MaxCurrent", MaxCurrent * 10, true, 0);
+		MQTTclient.publish(MQTTprefix + "/MaxSumMains", String(MaxSumMains), true, 0);
+		MQTTclient.publish(MQTTprefix + "/MaxSumMainsTime", String(MaxSumMainsTime), true, 0);
         MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
