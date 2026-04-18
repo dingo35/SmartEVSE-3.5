@@ -2099,6 +2099,10 @@ void WiFiSetup(void) {
         preferences.end();
     }
 
+    // Briefly enable WiFi to create _arduino_event_group, which
+    // WiFi.hostByName() DNS callbacks require even on Ethernet-only setups.
+    WiFi.mode(WIFI_STA);
+
     handleWIFImode();                                                           //go into the mode that was saved in nonvolatile memory
 
 #if MQTT && MQTT_ESP
