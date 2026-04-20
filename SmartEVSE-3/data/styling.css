@@ -119,7 +119,6 @@
 
 #lcd .lcd-activate[data-state="warning"] {
     color: #8a5a00;
-    color: var(--warning);
     background-color: rgba(253, 243, 216, .92);
 }
 
