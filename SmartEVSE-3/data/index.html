@@ -677,7 +677,7 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen is-hidden" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt="" />
                                           <div class="lcd-activate" data-state="info">Starting websocket...</div>
                                           <div class="lcd-display-buttons">
                                               <button type="button" data-name="left">Left</button>
@@ -712,7 +712,7 @@
     (() => {
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
         const LCD_BUTTON_CONTAINERS = document.querySelectorAll('#lcd .lcd-buttons, #lcd .lcd-display-buttons');
-        let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
+        const LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
         const PASSWORD_FIELD = document.querySelector('#lcd-password');
         const PASSWORD_FORM = document.querySelector('#lcd-password-form');
         const LOCK_STATUS = document.querySelector('#lcd-lock-status');
@@ -737,6 +737,13 @@
         let wsErrorText = '';
         const activePointers = new Map();
 
+        /**
+         * Update the LCD overlay text and make sure it is visible.
+         *
+         * @param {string} text Overlay text to display.
+         * @param {'info'|'warning'|'error'} [state='info'] Visual state for the overlay.
+         * @returns {void}
+         */
         function setActivateText(text, state = 'info') {
             clearActivateOverlayHideTimer();
             if (LCD_ACTIVATE) {
@@ -746,6 +753,11 @@
             }
         }
 
+        /**
+         * Cancel any pending timer that would hide the LCD overlay.
+         *
+         * @returns {void}
+         */
         function clearActivateOverlayHideTimer() {
             if (activateOverlayHideTimer !== null) {
                 window.clearTimeout(activateOverlayHideTimer);
@@ -753,6 +765,12 @@
             }
         }
 
+        /**
+         * Hide the LCD overlay after a delay once the websocket is healthy.
+         *
+         * @param {number} delayMs Delay in milliseconds before hiding the overlay.
+         * @returns {void}
+         */
         function hideActivateOverlayAfterDelay(delayMs) {
             clearActivateOverlayHideTimer();
             activateOverlayHideTimer = window.setTimeout(() => {
@@ -761,6 +779,11 @@
             }, delayMs);
         }
 
+        /**
+         * Hide the LCD overlay immediately.
+         *
+         * @returns {void}
+         */
         function hideActivateOverlay() {
             clearActivateOverlayHideTimer();
             if (LCD_ACTIVATE) {
@@ -768,18 +791,40 @@
             }
         }
 
+        /**
+         * Show the current websocket state together with retry details.
+         *
+         * @param {string} prefix Status text to display before retry details.
+         * @param {'info'|'warning'|'error'} [state='info'] Visual state for the overlay.
+         * @returns {void}
+         */
         function setWsStatus(prefix, state = 'info') {
-            const attemptNumber = Math.min(wsAttemptCount + 1, WS_MAX_CONNECT_ATTEMPTS);
-            const details = wsErrorText ? `\n${wsErrorText}` : '';
+          const attemptNumber = Math.min(wsAttemptCount + 1, WS_MAX_CONNECT_ATTEMPTS);
+          const details = wsErrorText ? `\n${wsErrorText}` : '';
+          if (attemptNumber > 1) {
             setActivateText(`${prefix}\nAttempt ${attemptNumber}/${WS_MAX_CONNECT_ATTEMPTS}${details}`, state);
+          } else {
+            setActivateText(prefix, state);
+          }
         }
 
+        /**
+         * Reset websocket retry bookkeeping before a fresh connection cycle.
+         *
+         * @returns {void}
+         */
         function resetWsRetryState() {
             wsAttemptCount = 0;
             wsStopped = false;
             wsErrorText = '';
         }
 
+        /**
+         * Stop reconnect attempts and show the final websocket error.
+         *
+         * @param {string} errorText Final error message shown to the user.
+         * @returns {void}
+         */
         function stopReconnectWithFinalError(errorText) {
             wsStopped = true;
             wsErrorText = errorText;
@@ -802,12 +847,22 @@
             }
         }
 
+        /**
+         * Restart the LCD websocket from a clean retry state.
+         *
+         * @returns {void}
+         */
         function restartLCDWebSocket() {
             resetWsRetryState();
             clearReconnectTimer();
             connectLCDWebSocket();
         }
 
+        /**
+         * Queue the next websocket reconnect attempt if retries are still allowed.
+         *
+         * @returns {void}
+         */
         function scheduleReconnect() {
             if (wsStopped || reconnectTimer !== null) {
                 return;
@@ -843,10 +898,22 @@
             }
         }
 
+        /**
+         * Normalize a PIN value so validation always works on trimmed text.
+         *
+         * @param {unknown} pin PIN candidate from storage or user input.
+         * @returns {string} Trimmed PIN text or an empty string for invalid input types.
+         */
         function normalizePin(pin) {
             return typeof pin === 'string' ? pin.trim() : '';
         }
 
+        /**
+         * Check whether a PIN is exactly four numeric digits.
+         *
+         * @param {string} pin PIN text to validate.
+         * @returns {boolean} True when the PIN contains exactly four digits.
+         */
         function isValidPin(pin) {
             return /^\d{4}$/.test(pin);
         }
@@ -863,17 +930,22 @@
             }
         }
 
+        /**
+         * Open the LCD websocket and manage retries, errors, and UI state.
+         *
+         * @returns {void}
+         */
         function connectLCDWebSocket() {
             if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
                 return;
             }
 
             if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+              wsErrorText = `connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms`
                 stopReconnectWithFinalError(wsErrorText || 'connection failed');
                 return;
             }
-
-            setWsStatus('Connecting to LCD websocket...', 'info');
+            setWsStatus('Connecting to LCD...', 'info');
 
             let socket;
             try {
@@ -916,6 +988,7 @@
                 }
                 activeFrameUrl = frameUrl;
                 LCD_SCREEN.src = frameUrl;
+                LCD_SCREEN.classList.remove('is-hidden');
             };
 
             socket.onerror = () => {
@@ -947,6 +1020,13 @@
             };
         }
 
+        /**
+         * Send a button press or release event to the LCD websocket.
+         *
+         * @param {string} btnName Logical LCD button name.
+         * @param {boolean} stateDown True when the button is pressed, false when released.
+         * @returns {void}
+         */
         function sendButtonState(btnName, stateDown) {
             if (!passwordVerified) {
                 blockedButtonPressCount += 1;
@@ -991,6 +1071,12 @@
             }
         }
 
+        /**
+         * Verify the configured LCD PIN and optionally persist it for this session.
+         *
+         * @param {{password?: string, showErrorAlert?: boolean, rememberPin?: boolean}} [options={}] Verification overrides.
+         * @returns {void}
+         */
         function verifyPassword(options = {}) {
             const enteredPassword = normalizePin(options.password ?? PASSWORD_FIELD.value);
             const showErrorAlert = options.showErrorAlert ?? true;

@@ -103,15 +103,14 @@
     left: 60px;
     z-index: 1;
     padding: 1rem;
-    background-color: rgba(245, 245, 245, .88);
+    background-color: rgba(255, 255, 255, .80);
     color: var(--gray-dark);
-    font-size: 1rem;
-    font-weight: 700;
+    font-size: 1.33rem;
     line-height: 1.35;
     text-align: center;
     white-space: pre-wrap;
-    user-select: text;
     pointer-events: none;
+    text-wrap: balance;
 }
 
 #lcd .lcd-activate.is-hidden {
@@ -120,6 +119,7 @@
 
 #lcd .lcd-activate[data-state="warning"] {
     color: #8a5a00;
+    color: var(--warning);
     background-color: rgba(253, 243, 216, .92);
 }
 
