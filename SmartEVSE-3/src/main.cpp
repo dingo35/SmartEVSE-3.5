@@ -269,32 +269,13 @@ uint16_t firmwareUpdateTimer = 0;                                               
                                                                                 // 0 < timer < FW_UPDATE_DELAY means we are in countdown for an actual update
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
+
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
-
-unsigned char OcppRfidUuid [7];
-size_t OcppRfidUuidLen;
-unsigned long OcppLastRfidUpdate;
-unsigned long OcppTrackLastRfidUpdate;
-
-bool OcppForcesLock = false;
-std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
-std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
-
-bool OcppTrackPermitsCharge = false;
-bool OcppTrackAccessBit = false;
-uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
-MicroOcpp::MOcppMongooseClient *OcppWsClient;
-
-float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
-
-unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
-
-bool OcppDefinedTxNotification;
-MicroOcpp::TxNotification OcppTrackTxNotification;
-unsigned long OcppLastTxNotification;
-
-unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
+extern unsigned long OcppLastRfidUpdate;
+extern bool OcppForcesLock;
+extern float OcppCurrentLimit; // Negative value: no OCPP limit defined
+extern unsigned long OcppLastTxNotification;
+extern MicroOcpp::TxNotification OcppTrackTxNotification;
 #endif //ENABLE_OCPP
 
 EXT uint32_t elapsedmax, elapsedtime;

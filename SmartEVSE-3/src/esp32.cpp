@@ -315,31 +315,32 @@ extern OneWire32& ds();
 extern CapacityNode* first_interval;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-extern unsigned char OcppRfidUuid [7];
-extern size_t OcppRfidUuidLen;
-extern unsigned long OcppLastRfidUpdate;
-extern unsigned long OcppTrackLastRfidUpdate;
+uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
 
-extern bool OcppForcesLock;
-extern std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
-extern std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
+unsigned char OcppRfidUuid [7];
+size_t OcppRfidUuidLen;
+unsigned long OcppLastRfidUpdate;
+unsigned long OcppTrackLastRfidUpdate;
 
-extern bool OcppTrackPermitsCharge;
-extern bool OcppTrackAccessBit;
-extern uint8_t OcppTrackCPvoltage;
-extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
+bool OcppForcesLock = false;
+std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
+std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
 
-extern float OcppCurrentLimit;
+bool OcppTrackPermitsCharge = false;
+bool OcppTrackAccessBit = false;
+uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
+MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
-extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
+float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
 
-extern bool OcppDefinedTxNotification;
-extern MicroOcpp::TxNotification OcppTrackTxNotification;
-extern unsigned long OcppLastTxNotification;
+unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
 
-extern unsigned long OcppLastOcppResponse;
+bool OcppDefinedTxNotification;
+MicroOcpp::TxNotification OcppTrackTxNotification;
+unsigned long OcppLastTxNotification;
+
+unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
 #endif //ENABLE_OCPP
-
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 // Some low level stuff here to setup the ADC, and perform the conversion.
