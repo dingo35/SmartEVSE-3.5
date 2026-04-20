@@ -12,10 +12,13 @@ import os, sys, gzip, shutil, re
 # - Smaller assets reduce flash/storage usage and transfer overhead.
 #
 # Safety:
-# - Minification is whitespace/comment-focused for HTML/CSS structure.
+# - Minification is conservative and avoids transformations that can change
+#   runtime behavior.
 # - Runtime functionality is unchanged (same DOM/script logic and CSS rules).
 # - Script/style/pre/textarea blocks are protected for HTML minification so
 #   their content is not altered.
+# - Inline JavaScript is left untouched except for `/* ... */` block comments
+#   inside script blocks.
 
 def minify_css(content):
     # Compact CSS by removing comments and unnecessary whitespace.
@@ -30,12 +33,17 @@ def minify_html(content):
     # Protect blocks where whitespace/content must remain untouched.
     blocks = []
     def protect(match):
-        blocks.append(match.group(0))
+        block = match.group(0)
+        if match.group(1).lower() == "script":
+            # Remove block comments from inline JavaScript only.
+            block = re.sub(r"/\*[\s\S]*?\*/", "", block)
+        blocks.append(block)
         return "___HTML_BLOCK_" + str(len(blocks) - 1) + "___"
 
     content = re.sub(r"<(script|style|pre|textarea)\b[\s\S]*?</\1>", protect, content, flags=re.IGNORECASE)
+    # Remove HTML comments outside protected blocks.
     content = re.sub(r"<!--[\s\S]*?-->", "", content)
-    content = re.sub(r"\s{2,}", " ", content)
+    # Remove whitespace that exists only between adjacent tags.
     content = re.sub(r">\s+<", "><", content)
     content = content.strip()
     for i, block in enumerate(blocks):
