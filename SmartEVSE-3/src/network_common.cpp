@@ -1348,11 +1348,17 @@ R"EOF(
 
 // Maximum concurrent HTTP connections to prevent socket exhaustion
 #define MAX_HTTP_CONNECTIONS 8
+#define WS_CONNECTION_RESERVE 1
 
-// Count active connections in the manager
+// Count only accepted inbound server connections.
+// (This does not count listeners, outbound client connections,
+// or connections already closing, so the connection limit reflects actual
+// in-use HTTP/WebSocket server slots more accurately).
 static int countConnections(struct mg_mgr *mgr) {
   int n = 0;
-  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) n++;
+  for (struct mg_connection *t = mgr->conns; t != NULL; t = t->next) {
+    if (t->is_accepted && !t->is_client && !t->is_listening && !t->is_closing) n++;
+  }
   return n;
 }
 
@@ -1364,7 +1370,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_ACCEPT) {
     // Limit concurrent connections to prevent socket exhaustion
     int nconns = countConnections(c->mgr);
-    if (nconns > MAX_HTTP_CONNECTIONS) {
+    if (nconns > (MAX_HTTP_CONNECTIONS + WS_CONNECTION_RESERVE)) {
       _LOG_W("Too many connections (%d), rejecting new connection\n", nconns);
       c->is_closing = 1;  // Immediately close the connection
       return;
@@ -1425,6 +1431,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     if (mg_match(hm->uri, mg_str("/ws/lcd"), NULL)) {
         mg_ws_upgrade(c, hm, NULL);  // Upgrade HTTP to WebSocket
         return;  // Don't process as regular HTTP
+    }
+
+    const int nconns = countConnections(c->mgr);
+    if (nconns > MAX_HTTP_CONNECTIONS) {
+        mg_http_reply(c, 503, "Connection: close\r\nContent-Type: text/plain\r\n",
+                      "Server busy, retry shortly");
+        c->is_draining = 1;
+        return;
     }
 
     static webServerRequest requestObj;  // Static to avoid heap allocation on every request
