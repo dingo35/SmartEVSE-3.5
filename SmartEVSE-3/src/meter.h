@@ -49,7 +49,7 @@
 #define EM_CHINT_3P 15
 #define EM_CARLO_CAVAZZI 16
 #define EM_CHINT_1P 17
-#define EM_UNUSED_SLOT4 18
+#define EM_HOMEWIZARD_KWH 18
 #define EM_CUSTOM 19
 
 typedef enum mb_datatype {
