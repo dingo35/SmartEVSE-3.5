@@ -489,6 +489,7 @@ void requestCurrentMeasurement(uint8_t Meter, uint8_t Address) {
     switch(Meter) {
         case EM_API:
         case EM_HOMEWIZARD_P1:
+        case EM_HOMEWIZARD_KWH:
             break;
         case EM_SENSORBOX:
             if (SB2.SoftwareVer >= 1) {
@@ -872,7 +873,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             // Also add handler for all broadcast messages from Master.
             MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
 
-            if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+            if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD_KWH) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
             if (CircuitMeter.Type && CircuitMeter.Type != EM_API) MBserver.registerWorker(CircuitMeter.Address, ANY_FUNCTION_CODE, &MBCircuitMeterResponse);
 
             // Start ModbusRTU Node background task

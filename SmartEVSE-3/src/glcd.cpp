@@ -1184,7 +1184,7 @@ uint8_t getMenuItems (void) {
                 MenuItems[m++] = MENU_CIRCUIT;                                          // - Max current of the EVSE circuit (A)
         }
         MenuItems[m++] = MENU_EVMETER;                                          // - Type of EV electric meter (0: Disabled / Constants EM_*)
-        if (EVMeter.Type && EVMeter.Type != EM_API) {                           // - ? EV meter configured?
+        if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD_KWH) {                           // - ? EV meter configured?
             MenuItems[m++] = MENU_EVMETERADDRESS;                               // - - Address of EV electric meter (9 - 247)
         }
         if (LoadBl < 2) {                                                       // - ? Load Balancing Disabled/Master?
@@ -1310,14 +1310,14 @@ void GLCDMenu(uint8_t Buttons) {
                     case MENU_MAINSMETER:
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value == EM_UNUSED_SLOT4);
+                        } while (value == EM_HOMEWIZARD_KWH);                     // do not display the HomeWizard  here
                         setItemValue(LCDNav, value);
                         break;
-                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox, HomeWizard P1 or unused slots here
-                    case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1 or unused slots here
+                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox, HomeWizard P1/KWH or unused slots here
+                    case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1/KWH or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value == EM_SENSORBOX || value == EM_HOMEWIZARD_P1 || value == EM_UNUSED_SLOT4);
+                        } while (value == EM_SENSORBOX || value == EM_HOMEWIZARD_P1);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_WIFI:

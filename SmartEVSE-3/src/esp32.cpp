@@ -1240,7 +1240,7 @@ void validate_settings(void) {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     // If the address of the MainsMeter or EVmeter on a Node has changed, we must re-register the Modbus workers.
     if (LoadBl > 1) {
-        if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+        if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD_KWH) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
     }
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
@@ -1893,7 +1893,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["circuit_meter"]["currents"]["L3"] = CircuitMeter.Irms[2];
         }
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
-            doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
+            doc["mains_meter"]["host"] = !homeWizardP1Host.isEmpty() ? homeWizardP1Host : "HomeWizard P1 Not Found";
         }
           
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
@@ -3720,7 +3720,7 @@ bool fwNeedsUpdate(char * version) {
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
   */
- void homewizard_loop() {
+ void homewizard_P1_loop() {
     static unsigned long lastCheck_homewizard = 0;
 
     constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
@@ -3730,7 +3730,7 @@ bool fwNeedsUpdate(char * version) {
         return;
     }
 
-    _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
+    _LOG_A("homewizard_p1_loop(): start HomeWizard P1 reading.");
     lastCheck_homewizard = currentTime;
 
     const auto currents = getMainsFromHomeWizardP1();
@@ -3746,11 +3746,51 @@ bool fwNeedsUpdate(char * version) {
 #endif
 }
 
+/**
+  * Periodically retrieves current measurements from the HomeWizard Kwh energy meter
+  * and updates the EV meter's currents.
+  *
+  * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
+  */
+ void homewizard_Kwh_loop() {
+    static unsigned long lastCheck_homewizard = 0;
+
+    constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
+    const unsigned long currentTime = millis();
+
+    if (currentTime - lastCheck_homewizard < interval) {
+        return;
+    }
+
+    _LOG_A("homewizard_kwh_loop(): start HomeWizard Kwh reading.");
+    lastCheck_homewizard = currentTime;
+
+    const auto evdata = getEVFromHomeWizardKwh();
+#if SMARTEVSE_VERSION < 40 //v3
+    for (int i = 0; i < evdata.first; i++)
+        EVMeter.Irms[i] = evdata.second[i];
+    if (evdata.first) {
+        EVMeter.CalcImeasured();
+        EVMeter.setTimeout(COMM_TIMEOUT);
+        EVMeter.Import_active_energy = evdata.second[3];
+        EVMeter.Export_active_energy = evdata.second[4];
+        EVMeter.PowerMeasured = evdata.second[5];
+        EVMeter.UpdateEnergies();
+        _LOG_A("homewizard_kwh_loop(): updated EVMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+     }
+#else
+    Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+}
+
 void loop() {
 
     network_loop();
     if (MainsMeter.Type == EM_HOMEWIZARD_P1 && LoadBl < 2) {
-        homewizard_loop();
+        homewizard_P1_loop();
+    }
+    if (EVMeter.Type == EM_HOMEWIZARD_KWH) {
+        homewizard_Kwh_loop();
     }
     
     static unsigned long lastCheck = 0;

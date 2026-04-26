@@ -160,8 +160,10 @@ extern bool NetworkConnected(void);                                             
 extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
 extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
-extern String homeWizardHost;
+extern String homeWizardP1Host;
 #endif
+extern std::pair<int8_t, std::array<std::int32_t, 6>> getEVFromHomeWizardKwh();
+extern String homeWizardKwhHost;
 
 #define FW_DOWNLOAD_PATH "http://smartevse-3.s3.eu-west-2.amazonaws.com"
 
