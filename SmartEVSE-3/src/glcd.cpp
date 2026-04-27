@@ -1097,6 +1097,9 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_LCDPIN:
             sprintf(Str, "%04u", value);
             return Str;
+        case MENU_EVMETER_DEVICE_OFFSET:
+            sprintf(Str, "%u", value);
+            return Str;
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
         case MENU_CIRCUITMETERADDRESS:
@@ -1186,6 +1189,9 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_EVMETER;                                          // - Type of EV electric meter (0: Disabled / Constants EM_*)
         if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD_KWH) {                           // - ? EV meter configured?
             MenuItems[m++] = MENU_EVMETERADDRESS;                               // - - Address of EV electric meter (9 - 247)
+        }
+        if (EVMeter.Type && EVMeter.Type == EM_HOMEWIZARD_KWH) {                           // - ? EV meter configured?
+            MenuItems[m++] = MENU_EVMETER_DEVICE_OFFSET;                        // - - Device offset of EV electric meter (0 - 4)
         }
         if (LoadBl < 2) {                                                       // - ? Load Balancing Disabled/Master?
             if (MainsMeter.Type == EM_CUSTOM || EVMeter.Type == EM_CUSTOM || CircuitMeter.Type == EM_CUSTOM) { // ? Custom electric meter used?

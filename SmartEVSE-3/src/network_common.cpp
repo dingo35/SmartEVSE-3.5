@@ -908,6 +908,16 @@ static bool mdnsDiscoveryInProgress = false;            // True when async mDNS 
 static unsigned long lastMdnsQueryTime = 0;             // Last time mDNS query was attempted
 static const unsigned long MDNS_RETRY_INTERVAL = 30000; // Retry mDNS discovery every 30 seconds if not found
 
+void resetHomeWizardP1Discovery() {
+    homeWizardP1Host = "";
+    lastMdnsQueryTime = 0;
+}
+
+void resetHomeWizardKwhDiscovery() {
+    homeWizardKwhHost = "";
+    lastMdnsQueryTime = 0;
+}
+
 /**
  * @brief FreeRTOS task that performs mDNS discovery in the background.
  * 
@@ -948,6 +958,7 @@ void mdnsDiscoveryTask(void* parameter) {
 
         bool foundP1 = !homeWizardP1Host.isEmpty();
         bool foundKwh = !homeWizardKwhHost.isEmpty();
+        uint8_t kwhCurrentOffset = 0;
         for (const auto &service : services) {
             if (foundP1 && foundKwh) {
                 break;
@@ -958,7 +969,7 @@ void mdnsDiscoveryTask(void* parameter) {
 
                 _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", service.hostname.c_str(),
                        service.ip.c_str(), service.port);
-
+                
                 // Cache the P1 result
                 homeWizardP1Host = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
                 foundP1 = true;
@@ -971,8 +982,12 @@ void mdnsDiscoveryTask(void* parameter) {
                        service.ip.c_str(), service.port);
 
                 // Cache the Kwh result
-                homeWizardKwhHost = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
-                foundKwh = true;
+                if (kwhCurrentOffset == EVMeter.DeviceOffset) {
+                    homeWizardKwhHost = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
+                    foundKwh = true;
+                } else {
+                    kwhCurrentOffset++;
+                }
             }
         }
         if (homeWizardP1Host.isEmpty() && homeWizardKwhHost.isEmpty()) {
@@ -994,33 +1009,29 @@ void mdnsDiscoveryTask(void* parameter) {
  *
  * @return The cached hostname if available, empty string if discovery is pending or not found
  */
-std::pair<String, String> discoverHomeWizard() {
+String discoverHomeWizard(HomeWizardDiscoveryType type) {
 
-    // If there's a cached result, return it immediately
-    if (!homeWizardP1Host.isEmpty() || !homeWizardKwhHost.isEmpty()) {
-        if (!homeWizardP1Host.isEmpty()) {
-            _LOG_A("discoverHW(): Using cached host P1='%s'.\n", homeWizardP1Host.c_str());
-        }
-        if (!homeWizardKwhHost.isEmpty()) {
-            _LOG_A("discoverHW(): Using cached host Kwh='%s'.\n", homeWizardKwhHost.c_str());
-        }
-        return {
-            homeWizardP1Host.isEmpty() ? "" : homeWizardP1Host,
-            homeWizardKwhHost.isEmpty() ? "" : homeWizardKwhHost
-        };
+    // If the requested host is cached, return it immediately
+    if (type == HW_DISCOVERY_P1 && !homeWizardP1Host.isEmpty()) {
+        _LOG_A("discoverHW(): Using cached host P1='%s'.\n", homeWizardP1Host.c_str());
+        return homeWizardP1Host;
+    }
+    if (type == HW_DISCOVERY_KWH && !homeWizardKwhHost.isEmpty()) {
+        _LOG_A("discoverHW(): Using cached host Kwh='%s'.\n", homeWizardKwhHost.c_str());
+        return homeWizardKwhHost;
     }
 
     // If discovery is already in progress, don't start another
     if (mdnsDiscoveryInProgress) {
         _LOG_D("discoverHWP1(): Discovery already in progress.\n");
-        return {"", ""} ;
+        return "";
     }
 
     // Rate limit discovery attempts
     unsigned long now = millis();
     if (lastMdnsQueryTime != 0 && (now - lastMdnsQueryTime) < MDNS_RETRY_INTERVAL) {
         // Still in cooldown period, skip mDNS query
-        return {"", ""};
+        return "";
     }
     lastMdnsQueryTime = now;
     
@@ -1043,7 +1054,7 @@ std::pair<String, String> discoverHomeWizard() {
         mdnsDiscoveryInProgress = false;
     }
     
-    return {"", ""};
+    return "";
 }
 
 /**
@@ -1059,8 +1070,7 @@ std::pair<String, String> discoverHomeWizard() {
 std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
 
     _LOG_A("getMainsFromHWP1(): invocation\n");
-    const auto host = discoverHomeWizard();
-    const String hostname = host.first;
+    const String hostname = discoverHomeWizard(HW_DISCOVERY_P1);
     if (hostname == "") {
         return {false, {0, 0, 0}};
     }
@@ -1090,8 +1100,7 @@ std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
         // Clear cached hostname on connection errors so we can rediscover
         // (e.g., if the HomeWizard P1 got a new IP address)
         if (httpCode < 0) {
-            homeWizardP1Host = "";
-            lastMdnsQueryTime = 0;  // Allow immediate rediscovery
+            resetHomeWizardP1Discovery();  // Allow immediate rediscovery
             _LOG_A("getMainsFromHWP1(): Connection failed, clearing cache for rediscovery.\n");
         }
         return {false, {0, 0, 0}};
@@ -1163,8 +1172,7 @@ return {phases, currents};
 std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
 
     _LOG_A("getEVFromHomeWizardKwh(): invocation\n");
-    const auto host = discoverHomeWizard();
-    const String hostname = host.second;
+    const String hostname = discoverHomeWizard(HW_DISCOVERY_KWH);
     if (hostname == "") {
         return {false, {0, 0, 0, 0, 0, 0}};
     }
@@ -1194,8 +1202,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
         // Clear cached hostname on connection errors so we can rediscover
         // (e.g., if the HomeWizard P1 got a new IP address)
         if (httpCode < 0) {
-            homeWizardKwhHost = "";
-            lastMdnsQueryTime = 0;  // Allow immediate rediscovery
+            resetHomeWizardKwhDiscovery();  // Allow immediate rediscovery
             _LOG_A("getEVFromHomeWizardKwh(): Connection failed, clearing cache for rediscovery.\n");
         }
         return {false, {0, 0, 0, 0, 0, 0}};
@@ -2111,7 +2118,7 @@ void handleWIFImode() {
         _LOG_A("HTTP server started\n");
     }
 
-    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF ) {
+    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF) {
         _LOG_A("Starting WiFi..\n");
         WiFi.mode(WIFI_STA);
         WiFi.begin();

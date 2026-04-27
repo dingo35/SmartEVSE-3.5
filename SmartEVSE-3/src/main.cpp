@@ -3591,7 +3591,10 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case STATUS_ACCESS:
             setAccess((AccessStatus_t) val);
             break;
-
+        case MENU_EVMETER_DEVICE_OFFSET:
+            EVMeter.DeviceOffset = val;
+            resetHomeWizardKwhDiscovery(); // reset host and cooldown, so it will be re-evaluated on next read
+            break;
         default:
             return 0;
     }
@@ -3655,6 +3658,8 @@ uint16_t getItemValue(uint8_t nav) {
             return EVMeter.Type;
         case MENU_EVMETERADDRESS:
             return EVMeter.Address;
+        case MENU_EVMETER_DEVICE_OFFSET:
+            return EVMeter.DeviceOffset;
         case MENU_CIRCUITMETER:
             return CircuitMeter.Type;
         case MENU_CIRCUITMETERADDRESS:

@@ -159,11 +159,19 @@ extern bool getLatestVersion(String owner_repo, String asset_name, char *version
 extern bool NetworkConnected(void);                                             // true if WiFi or Ethernet has IP
 extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
+enum HomeWizardDiscoveryType : uint8_t {
+    HW_DISCOVERY_P1,
+    HW_DISCOVERY_KWH,
+};
+
 extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
 extern String homeWizardP1Host;
 #endif
 extern std::pair<int8_t, std::array<std::int32_t, 6>> getEVFromHomeWizardKwh();
 extern String homeWizardKwhHost;
+extern String discoverHomeWizard(HomeWizardDiscoveryType type);
+extern void resetHomeWizardP1Discovery();
+extern void resetHomeWizardKwhDiscovery();
 
 #define FW_DOWNLOAD_PATH "http://smartevse-3.s3.eu-west-2.amazonaws.com"
 

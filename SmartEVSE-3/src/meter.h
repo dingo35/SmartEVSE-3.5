@@ -83,6 +83,7 @@ class Meter {
   public:
     uint8_t Type;                                                               // previously: MainsMeter; Type of Mains electric meter (0: Disabled / Constants EM_*)
     uint8_t Address;
+    uint8_t DeviceOffset;                                                       // For meters with multiple devices (e.g. 3P meters), the offset of the device to read (0 - 4, where 0 is usually the total or phase 1, and 1-3 are the individual phases)
     int16_t Irms[3];                                                            // Momentary current per Phase (23 = 2.3A) (resolution 100mA)
     int16_t Imeasured;                                                          // Max of all Phases (Amps *10) of mains power
     int16_t Power[3];

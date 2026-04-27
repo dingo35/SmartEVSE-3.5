@@ -143,7 +143,7 @@ struct SettingsCache {
     uint8_t Switch, RCmon;
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
+    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, EVMeterDeviceOffset, CircuitMeterType, CircuitMeterAddress;
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
@@ -1364,6 +1364,7 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        EVMeter.DeviceOffset = preferences.getUChar("EVMeterDeviceOffset",EV_METER_DEVICE_OFFSET);
         CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
         CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
@@ -1505,6 +1506,7 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    PREFS_PUT_UCHAR_IF_CHANGED("EVMeterDeviceOffset", EVMeter.DeviceOffset, EVMeterDeviceOffset);   
     PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address, CircuitMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
@@ -1877,6 +1879,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
+        if (EVMeter.Type == EM_HOMEWIZARD_KWH) {
+            doc["ev_meter"]["host"] = homeWizardKwhHost;
+        }
         if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
         if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
