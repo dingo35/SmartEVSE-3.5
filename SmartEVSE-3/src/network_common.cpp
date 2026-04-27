@@ -1,6 +1,7 @@
 #if defined(ESP32)
 
 #include <WiFi.h>
+#include <algorithm>
 #include <vector>
 #include "mbedtls/md_internal.h"
 #include "mbedtls/base64.h"
@@ -924,35 +925,53 @@ void mdnsDiscoveryTask(void* parameter) {
     } else if (n == 0) {
         _LOG_A("discoverHWP1(): No MDNS services found.\n");
     } else {
+        struct DiscoveredService {
+            String hostname;
+            uint16_t port;
+            String ip;
+        };
+
+        std::vector<DiscoveredService> services;
+        services.reserve(n);
+        for (int i = 0; i < n; i++) {
+            const String hostname = MDNS.hostname(i);
+            if (hostname.startsWith("p1meter-") || hostname.startsWith("kwhmeter-")) {
+                services.push_back({hostname, MDNS.port(i), MDNS.IP(i).toString()});
+            }
+        }
+
+        //sort services by hostname to ensure deterministic output. 
+        //Needed if we want to pick service based on a offset for when multiple services of the same type are found
+        std::sort(services.begin(), services.end(), [](const DiscoveredService &left, const DiscoveredService &right) {
+            return left.hostname < right.hostname;
+        });
+
         bool foundP1 = !homeWizardP1Host.isEmpty();
         bool foundKwh = !homeWizardKwhHost.isEmpty();
-        for (int i = 0; i < n; i++) {
+        for (const auto &service : services) {
             if (foundP1 && foundKwh) {
                 break;
             }
 
-            String hostname = MDNS.hostname(i);
-            if (hostname.startsWith("p1meter-")) {
+            if (service.hostname.startsWith("p1meter-")) {
                 if (foundP1) continue;
 
-                const uint16_t port = MDNS.port(i);
-                _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", hostname.c_str(),
-                       MDNS.IP(i).toString().c_str(), port);
+                _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", service.hostname.c_str(),
+                       service.ip.c_str(), service.port);
 
                 // Cache the P1 result
-                homeWizardP1Host = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
+                homeWizardP1Host = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
                 foundP1 = true;
                 continue;
             }
-            if (hostname.startsWith("kwhmeter-")) {
+            if (service.hostname.startsWith("kwhmeter-")) {
                 if (foundKwh) continue;
 
-                const uint16_t port = MDNS.port(i);
-                _LOG_A("discoverHWP1(): Found HW Kwh service: %s.local (%s:%d)\n", hostname.c_str(),
-                       MDNS.IP(i).toString().c_str(), port);
+                _LOG_A("discoverHWP1(): Found HW Kwh service: %s.local (%s:%d)\n", service.hostname.c_str(),
+                       service.ip.c_str(), service.port);
 
                 // Cache the Kwh result
-                homeWizardKwhHost = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
+                homeWizardKwhHost = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
                 foundKwh = true;
             }
         }
@@ -2092,7 +2111,7 @@ void handleWIFImode() {
         _LOG_A("HTTP server started\n");
     }
 
-    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF) {
+    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF ) {
         _LOG_A("Starting WiFi..\n");
         WiFi.mode(WIFI_STA);
         WiFi.begin();
