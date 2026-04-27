@@ -2570,7 +2570,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 4:                                                         // EV kWh meter, Energy measurement (total charged kWh)
                 // Request Energy if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD_KWH) {
                     _LOG_D("ModbusRequest %u: Request Energy Node %u\n", ModbusRequest, PollEVNode);
                     requestEnergyMeasurement(Node[PollEVNode].EVMeter, Node[PollEVNode].EVAddress, 0);
                     break;
@@ -2579,7 +2579,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 5:                                                         // EV kWh meter, Power measurement (momentary power in Watt)
                 // Request Power if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD_KWH) {
                     updated = 1;
                     switch(EVMeter.Type) {
                         //these meters all have their power measured via receiveCurrentMeasurement already
@@ -2654,7 +2654,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 20:                                                         // EV kWh meter, Current measurement
                 // Request Current if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD_KWH) {
                     _LOG_D("ModbusRequest %u: Request EVMeter Current Measurement Node %u\n", ModbusRequest, PollEVNode);
                     requestCurrentMeasurement(Node[PollEVNode].EVMeter, Node[PollEVNode].EVAddress);
                     break;
