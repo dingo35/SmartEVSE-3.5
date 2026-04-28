@@ -80,6 +80,7 @@ Set Type of EV kWh Meter (measures power and charged energy)
 - **Disabled**: No EV meter connected.
 - **API**: EV meter data is fed through the REST API or MQTT API.
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+- **HomeWrzd Wh**: A Networked Kwh is used.
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
@@ -89,6 +90,8 @@ Set Type of EV kWh Meter (measures power and charged energy)
 If EV METER is not **Disabled** and not **API**, this setting appears:
 
 - **EV ADR**: Set the Modbus address for the EV Meter.
+
+- **EV OFFSET**: Selects which discovered networked kWh meter to use (e.g., 0 = first meter, 1 = second meter, etc.).
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
