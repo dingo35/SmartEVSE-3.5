@@ -898,25 +898,156 @@ void setTimeZone(void * parameter) {
 }
 
 #ifndef SENSORBOX_VERSION
-String homeWizardP1Host;
-String homeWizardKwhHost;
+std::array<mDNSServiceEntry, 8> mDNSServices = {};
 HTTPClient* homeWizardP1HttpClient=nullptr;
-HTTPClient* homeWizardKwhHttpClient=nullptr;
+HTTPClient* homeWizardHttpClient=nullptr;
 bool homeWizardP1HttpClientInitialized = false;
-bool homeWizardKwhHttpClientInitialized = false;
+bool homeWizardHttpClientInitialized = false;
 static bool mdnsDiscoveryInProgress = false;            // True when async mDNS task is running
 static unsigned long lastMdnsQueryTime = 0;             // Last time mDNS query was attempted
 static const unsigned long MDNS_RETRY_INTERVAL = 30000; // Retry mDNS discovery every 30 seconds if not found
 
-void resetHomeWizardP1Discovery() {
-    homeWizardP1Host = "";
-    lastMdnsQueryTime = 0;
+struct MdnsServiceQuery {
+    const char *service;
+    const char *protocol;
+};
+
+static constexpr MdnsServiceQuery mdnsServiceQueries[] = {
+    {"hwenergy", "tcp"},
+};
+
+static bool appendDiscoveredService(const String &hostname, uint16_t port, const String &ip, uint8_t &serviceCount) {
+    if (serviceCount >= mDNSServices.size()) {
+        return false;
+    }
+
+    const String fullHostname = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
+    char serviceName[16];
+    mDNSServices[serviceCount].ServiceType = getmDNSServiceType(hostname);
+    mDNSServices[serviceCount].HostName = fullHostname;
+    compileServiceName(mDNSServices[serviceCount].ServiceType, mDNSServices[serviceCount].HostName.c_str(), serviceName, sizeof(serviceName));
+    mDNSServices[serviceCount].Name = serviceName;
+    serviceCount++;
+    return true;
 }
 
-void resetHomeWizardKwhDiscovery() {
-    homeWizardKwhHost = "";
-    lastMdnsQueryTime = 0;
+static void clearmDNSServices() {
+    for (auto &service : mDNSServices) {
+        service.ServiceType = 0;
+        service.Name = "";
+        service.HostName = "";
+    }
 }
+
+uint8_t getmDNSServiceCount(int type) {
+    uint8_t count = 0;
+    for (const auto &service : mDNSServices) {
+        if (!service.HostName.isEmpty() && service.ServiceType == type) {
+            count++;
+        }
+    }
+    return count;
+}
+uint8_t getmDNSServiceCount() {
+    uint8_t count = 0;
+    for (const auto &service : mDNSServices) {
+        if (!service.HostName.isEmpty()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+const mDNSServiceEntry *getmDNSServiceByIndex(int type, const String &hostnamePattern, uint8_t index, bool strict) {
+    uint8_t currentIndex = 0;
+    for (const auto &service : mDNSServices) {
+        const bool patternMatches = hostnamePattern.isEmpty() || service.HostName.indexOf(hostnamePattern) >= 0;
+        if (service.ServiceType != 0 &&
+            (type == 0 || service.ServiceType == type) &&
+            (!strict || patternMatches)) {
+            if (currentIndex == index) {
+                return &service;
+            }
+            currentIndex++;
+        }
+    }
+    return nullptr;
+}
+
+void compileServiceName(int type, const char *hostname, char *output, size_t outputSize) {
+    if (output == nullptr || outputSize == 0) {
+        return;
+    }
+
+    output[0] = '\0';
+    if (hostname == nullptr || hostname[0] == '\0') {
+        return;
+    }
+
+    switch (type) {
+        case EM_HOMEWIZARD: {
+            const size_t hostnameLength = strlen(hostname);
+            const char *start = hostnameLength <= 6 ? hostname : hostname + hostnameLength - 6;
+            strlcpy(output, start, outputSize);
+            return;
+        }
+        default:
+            strlcpy(output, "Unknown", outputSize);
+            return;
+    }
+}
+
+int getmDNSServiceType(const String &hostname) {
+    struct ServiceTypeMap {
+        const char *prefix;
+        const int type;
+    };
+    static const ServiceTypeMap serviceTypes[] = {
+        {"p1meter-", EM_HOMEWIZARD},
+        {"kwhmeter-", EM_HOMEWIZARD},
+         // Add more mappings here if needed
+    };
+
+    for (const auto &entry : serviceTypes) {
+        if (hostname.startsWith(entry.prefix)) {
+            return entry.type;
+        }
+    }
+
+    return 0;
+}
+
+uint8_t getCompatiblemDNSServiceCount(uint8_t meterType) {
+    if (meterType == 0) {
+        return 0;
+    }
+
+    uint8_t count = 0;
+    for (const auto &service : mDNSServices) {
+        if (!service.HostName.isEmpty() && service.ServiceType == meterType) {
+            count++;
+        }
+    }
+    return count;
+}
+
+const mDNSServiceEntry *getCompatiblemDNSServiceByIndex(uint8_t meterType, uint8_t index) {
+    if (meterType == 0) {
+        return nullptr;
+    }
+
+    uint8_t currentIndex = 0;
+    for (const auto &service : mDNSServices) {
+        if (!service.HostName.isEmpty() && service.ServiceType == meterType) {
+            if (currentIndex == index) {
+                return &service;
+            }
+            currentIndex++;
+        }
+    }
+    return nullptr;
+}
+
 
 /**
  * @brief FreeRTOS task that performs mDNS discovery in the background.
@@ -926,75 +1057,57 @@ void resetHomeWizardKwhDiscovery() {
  */
 void mdnsDiscoveryTask(void* parameter) {
     _LOG_A("mDNS discovery task started\n");
-    
-    // Search for _hwenergy._tcp services.
-    // https://api-documentation.homewizard.com/docs/discovery/
-    const int n = MDNS.queryService("hwenergy", "tcp");
-    if (n < 0) {
-        _LOG_A("discoverHWP1(): MDNS query failed.\n");
-    } else if (n == 0) {
-        _LOG_A("discoverHWP1(): No MDNS services found.\n");
-    } else {
-        struct DiscoveredService {
-            String hostname;
-            uint16_t port;
-            String ip;
-        };
+
+    bool serviceListReset = false;
+    uint8_t serviceCount = 0;
+    bool anyServicesFound = false;
+
+    struct DiscoveredService {
+        String hostname;
+        uint16_t port;
+        String ip;
+    };
+
+    for (const auto &query : mdnsServiceQueries) {
+        // Search for services defined in the compile-time query list.
+        // https://api-documentation.homewizard.com/docs/discovery/
+        const int n = MDNS.queryService(query.service, query.protocol);
+        if (n < 0) {
+            _LOG_A("discoverMeters(): MDNS query failed for %s.%s.\n", query.service, query.protocol);
+            continue;
+        }
+        if (n == 0) {
+            _LOG_A("discoverMeters(): No MDNS services found for %s.%s.\n", query.service, query.protocol);
+            continue;
+        }
 
         std::vector<DiscoveredService> services;
         services.reserve(n);
         for (int i = 0; i < n; i++) {
-            const String hostname = MDNS.hostname(i);
-            if (hostname.startsWith("p1meter-") || hostname.startsWith("kwhmeter-")) {
-                services.push_back({hostname, MDNS.port(i), MDNS.IP(i).toString()});
-            }
+            services.push_back({MDNS.hostname(i), MDNS.port(i), MDNS.IP(i).toString()});
         }
 
-        //sort services by hostname to ensure deterministic output. 
-        //Needed if we want to pick service based on a offset for when multiple services of the same type are found
         std::sort(services.begin(), services.end(), [](const DiscoveredService &left, const DiscoveredService &right) {
             return left.hostname < right.hostname;
         });
 
-        bool foundP1 = !homeWizardP1Host.isEmpty();
-        bool foundKwh = !homeWizardKwhHost.isEmpty();
-        uint8_t kwhCurrentOffset = 0;
-        for (const auto &service : services) {
-            if (foundP1 && foundKwh) {
-                break;
-            }
-
-            if (service.hostname.startsWith("p1meter-")) {
-                if (foundP1) continue;
-
-                _LOG_A("discoverHWP1(): Found HWP1 service: %s.local (%s:%d)\n", service.hostname.c_str(),
-                       service.ip.c_str(), service.port);
-                
-                // Cache the P1 result
-                homeWizardP1Host = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
-                foundP1 = true;
-                continue;
-            }
-            if (service.hostname.startsWith("kwhmeter-")) {
-                if (foundKwh) continue;
-
-                _LOG_A("discoverHWP1(): Found HW Kwh service: %s.local (%s:%d)\n", service.hostname.c_str(),
-                       service.ip.c_str(), service.port);
-
-                // Cache the Kwh result
-                if (kwhCurrentOffset == EVMeter.DeviceOffset) {
-                    homeWizardKwhHost = service.hostname + ".local" + (service.port != 80 ? ":" + String(service.port) : "");
-                    foundKwh = true;
-                } else {
-                    kwhCurrentOffset++;
-                }
-            }
+        if (!serviceListReset) {
+            clearmDNSServices();
+            serviceCount = 0;
+            serviceListReset = true;
         }
-        if (homeWizardP1Host.isEmpty() && homeWizardKwhHost.isEmpty()) {
-            _LOG_A("discoverHWP1(): No matching HWP1 or HW Kwh service found.\n");
+
+        for (const auto &service : services) {
+            _LOG_A("Discovered mDNS service: %s.local (%s:%d)\n", service.hostname.c_str(), service.ip.c_str(), service.port);
+            anyServicesFound = true;
+            appendDiscoveredService(service.hostname, service.port, service.ip, serviceCount);
         }
     }
-    
+
+    if (!anyServicesFound) {
+        _LOG_A("discoverMeters(): No matching mDNS services found.\n");
+    }
+
     mdnsDiscoveryInProgress = false;
     _LOG_A("mDNS discovery task completed\n");
     vTaskDelete(NULL);
@@ -1009,29 +1122,18 @@ void mdnsDiscoveryTask(void* parameter) {
  *
  * @return The cached hostname if available, empty string if discovery is pending or not found
  */
-String discoverHomeWizard(HomeWizardDiscoveryType type) {
-
-    // If the requested host is cached, return it immediately
-    if (type == HW_DISCOVERY_P1 && !homeWizardP1Host.isEmpty()) {
-        _LOG_A("discoverHW(): Using cached host P1='%s'.\n", homeWizardP1Host.c_str());
-        return homeWizardP1Host;
-    }
-    if (type == HW_DISCOVERY_KWH && !homeWizardKwhHost.isEmpty()) {
-        _LOG_A("discoverHW(): Using cached host Kwh='%s'.\n", homeWizardKwhHost.c_str());
-        return homeWizardKwhHost;
-    }
-
+void discoverHomeWizard() {
     // If discovery is already in progress, don't start another
     if (mdnsDiscoveryInProgress) {
-        _LOG_D("discoverHWP1(): Discovery already in progress.\n");
-        return "";
+        _LOG_D("discoverHW(): Discovery already in progress.\n");
+        return;
     }
 
     // Rate limit discovery attempts
     unsigned long now = millis();
     if (lastMdnsQueryTime != 0 && (now - lastMdnsQueryTime) < MDNS_RETRY_INTERVAL) {
         // Still in cooldown period, skip mDNS query
-        return "";
+        return;
     }
     lastMdnsQueryTime = now;
     
@@ -1054,113 +1156,11 @@ String discoverHomeWizard(HomeWizardDiscoveryType type) {
         mdnsDiscoveryInProgress = false;
     }
     
-    return "";
+    return;
 }
 
 /**
- * @brief Retrieves active current values from a HomeWizard P1 meter API.
- *
- * This function sends an HTTP GET request to the specified URL to fetch the active current data
- * in JSON format, parses the JSON response, and retrieves specific fields for current.
- *
- * @return A pair containing:
- *     - A int flag indicating: 0: failure, 1: single phase current, 3: 3 phase current
- *     - An array of 3 values representing the active current in deci-amps for L1, L2, and L3
- */
-std::pair<int8_t, std::array<std::int16_t, 3> > getMainsFromHomeWizardP1() {
-
-    _LOG_A("getMainsFromHWP1(): invocation\n");
-    const String hostname = discoverHomeWizard(HW_DISCOVERY_P1);
-    if (hostname == "") {
-        return {false, {0, 0, 0}};
-    }
-
-    const String url = "http://" + hostname + "/api/v1/data";
-    _LOG_A("getMainsFromHWP1(): connect to URL %s\n", url.c_str());
-
-
-    if (!homeWizardP1HttpClientInitialized) {
-        homeWizardP1HttpClient = new HTTPClient();
-        homeWizardP1HttpClient->setTimeout(1500);
-        homeWizardP1HttpClient->addHeader("User-Agent", "SmartEVSE-v3");
-        homeWizardP1HttpClient->addHeader("Accept", "application/json");
-        homeWizardP1HttpClientInitialized = true;
-    }
-
-    homeWizardP1HttpClient->begin(url);
-
-    // Handle HTTP errors or timeout.
-    const int httpCode = homeWizardP1HttpClient->GET();
-    if (httpCode != HTTP_CODE_OK) {
-        _LOG_A("getMainsFromHWP1(): Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url.c_str());
-        homeWizardP1HttpClient->end(); // Always cleanup
-        delete homeWizardP1HttpClient;
-        homeWizardP1HttpClient = nullptr;
-        homeWizardP1HttpClientInitialized = false;
-        // Clear cached hostname on connection errors so we can rediscover
-        // (e.g., if the HomeWizard P1 got a new IP address)
-        if (httpCode < 0) {
-            resetHomeWizardP1Discovery();  // Allow immediate rediscovery
-            _LOG_A("getMainsFromHWP1(): Connection failed, clearing cache for rediscovery.\n");
-        }
-        return {false, {0, 0, 0}};
-    }
-
-    // Get the response stream
-    WiFiClient *stream = homeWizardP1HttpClient->getStreamPtr();
-
-    const char* currentKeys[] = {"active_current_l1_a", "active_current_l2_a", "active_current_l3_a"};
-    const char* powerKeys[] = {"active_power_l1_w", "active_power_l2_w", "active_power_l3_w"};
-
-    // Create a filter to parse only specific fields.
-    StaticJsonDocument<96> filter;
-    for (const auto* key : currentKeys) filter[key] = true;
-    for (const auto* key : powerKeys) filter[key] = true;
-
-    /////test homewizard connected to single phase mainsmeter
-    //const char stream[] = "{\"wifi_ssid\":\"Imaginous\",\"wifi_strength\":86,\"smr_version\":50,\"meter_model\":\"Kaifa AIFA-METER\",\"unique_id\":\"0000000000000000000000000000000000\",\"active_tariff\":1,\"total_power_import_kwh\":7412.085,\"total_power_import_t1_kwh\":4283.482,\"total_power_import_t2_kwh\":3128.603,\"total_power_export_kwh\":6551.330,\"total_power_export_t1_kwh\":1930.678,\"total_power_export_t2_kwh\":4620.652,\"active_power_w\":-2725.000,\"active_power_l1_w\":-2725.000,\"active_voltage_l1_v\":238.400,\"active_current_a\":11.430,\"active_current_l1_a\":-11.430,\"voltage_sag_l1_count\":8.000,\"voltage_swell_l1_count\":0.000,\"any_power_fail_count\":0.000,\"long_power_fail_count\":0.000,\"total_gas_m3\":1795.627,\"gas_timestamp\":250405135009,\"gas_unique_id\":\"0000000000000000000000000000000000\",\"external\":[{\"unique_id\":\"0000000000000000000000000000000000\",\"type\":\"gas_meter\",\"timestamp\":250405135009,\"value\":1795.627,\"unit\":\"m3\"}]}";
-
-    // Create a filtered JSON document to hold the parsed data.
-    DynamicJsonDocument doc(256);
-    const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-    homeWizardP1HttpClient->end();
-
-    // Handle JSON parsing errors.
-    if (error) {
-        _LOG_A("getMainsFromHomeWizardP1(): JSON deserialization failed: %s\n", error.c_str());
-        return {false, {0, 0, 0}};
-    }
-
-    uint8_t phases = 0;
-    // Verify all required keys exist.
-    for (const auto* key : currentKeys) {
-        if (doc.containsKey(key))
-            phases++;
-    }
-
-    if (!phases) {
-        // Early return on missing data.
-        _LOG_A("getMainsFromHomeWizardP1(): required JSON fields 'active_current_l1_a' not found\n");
-        return {phases, {0, 0, 0}};
-    }
-
-    // Determine grid direction based on power: negative indicates feed-in, positive indicates usage.
-    auto getCorrection = [&doc](const char* powerKey) -> int8_t {
-        return doc[powerKey].as<int>() < 0 ? -1 : 1;
-    };
-
-    // Process all three phases.
-    std::array<int16_t, 3> currents;
-    for (size_t i = 0; i < phases; ++i) {
-        int16_t rawCurrent = doc[currentKeys[i]].as<float>() * 10;
-        currents[i] = std::abs(rawCurrent) * getCorrection(powerKeys[i]);
-    }
-return {phases, currents};
-}
-#endif
-
-/**
- * @brief Retrieves active current values from a HomeWizard P1 meter API.
+ * @brief Retrieves active current values from a HomeWizard V1 API.
  *
  * This function sends an HTTP GET request to the specified URL to fetch the active current data
  * in JSON format, parses the JSON response, and retrieves specific fields for current.
@@ -1169,47 +1169,45 @@ return {phases, currents};
  *     - A int flag indicating: 0: failure, 1: single phase current, 3: 3 phase current
  *     - An array of 6 values representing the active current in deci-amps for L1, L2, L3, total, import, and export
  */
-std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
-
-    _LOG_A("getEVFromHomeWizardKwh(): invocation\n");
-    const String hostname = discoverHomeWizard(HW_DISCOVERY_KWH);
-    if (hostname == "") {
+std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char *hostname) {
+    _LOG_A("getDataFromHomeWizard(): invocation\n");
+    if (hostname == nullptr || hostname[0] == '\0') {
+        _LOG_A("getDataFromHomeWizard(): No hostname provided.\n");
         return {false, {0, 0, 0, 0, 0, 0}};
     }
+    char url[64];
+    snprintf(url, sizeof(url), "http://%s/api/v1/data", hostname);
 
-    const String url = "http://" + hostname + "/api/v1/data";
-    _LOG_A("getEVFromHomeWizardKwh(): connect to URL %s\n", url.c_str());
+    _LOG_A("getDataFromHomeWizard(): connect to URL %s\n", url);
 
 
-    if (!homeWizardKwhHttpClientInitialized) {
-        homeWizardKwhHttpClient = new HTTPClient();
-        homeWizardKwhHttpClient->setTimeout(1500);
-        homeWizardKwhHttpClient->addHeader("User-Agent", "SmartEVSE-v3");
-        homeWizardKwhHttpClient->addHeader("Accept", "application/json");
-        homeWizardKwhHttpClientInitialized = true;
+    if (!homeWizardHttpClientInitialized) {
+        homeWizardHttpClient = new HTTPClient();
+        homeWizardHttpClient->setTimeout(1500);
+        homeWizardHttpClient->addHeader("User-Agent", "SmartEVSE-v3");
+        homeWizardHttpClient->addHeader("Accept", "application/json");
+        homeWizardHttpClientInitialized = true;
     }
 
-    homeWizardKwhHttpClient->begin(url);
+    homeWizardHttpClient->begin(url);
 
     // Handle HTTP errors or timeout.
-    const int httpCode = homeWizardKwhHttpClient->GET();
+    const int httpCode = homeWizardHttpClient->GET();
     if (httpCode != HTTP_CODE_OK) {
-        _LOG_A("getEVFromHomeWizardKwh(): Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url.c_str());
-        homeWizardKwhHttpClient->end(); // Always cleanup
-        delete homeWizardKwhHttpClient;
-        homeWizardKwhHttpClient = nullptr;
-        homeWizardKwhHttpClientInitialized = false;
-        // Clear cached hostname on connection errors so we can rediscover
-        // (e.g., if the HomeWizard P1 got a new IP address)
+        _LOG_A("getDataFromHomeWizard(): Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url);
+        homeWizardHttpClient->end(); // Always cleanup
+        delete homeWizardHttpClient;
+        homeWizardHttpClient = nullptr;
+        homeWizardHttpClientInitialized = false;
         if (httpCode < 0) {
-            resetHomeWizardKwhDiscovery();  // Allow immediate rediscovery
-            _LOG_A("getEVFromHomeWizardKwh(): Connection failed, clearing cache for rediscovery.\n");
+            lastMdnsQueryTime = 0; // Force immediate rediscovery on next attempt if the error was a connection failure
+            _LOG_A("getDataFromHomeWizard(): Connection failed, allowing immediate rediscovery.\n");
         }
         return {false, {0, 0, 0, 0, 0, 0}};
     }
 
     // Get the response stream
-    WiFiClient *stream = homeWizardKwhHttpClient->getStreamPtr();
+    WiFiClient *stream = homeWizardHttpClient->getStreamPtr();
 
     const char* currentKeys[] = {"active_current_l1_a", "active_current_l2_a", "active_current_l3_a","active_current_a"};
     const char* powerKeys[] = { "active_power_l1_w", "active_power_l2_w", "active_power_l3_w","active_power_w"};
@@ -1224,11 +1222,11 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
     // Create a filtered JSON document to hold the parsed data.
     DynamicJsonDocument doc(256);
     const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-    homeWizardKwhHttpClient->end();
+    homeWizardHttpClient->end();
 
     // Handle JSON parsing errors.
     if (error) {
-        _LOG_A("getEVFromHomeWizardKwh(): JSON deserialization failed: %s\n", error.c_str());
+        _LOG_A("getDataFromHomeWizard(): JSON deserialization failed: %s\n", error.c_str());
         return {false, {0, 0, 0, 0, 0, 0}};
     }
 
@@ -1241,7 +1239,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
 
     if (!phases) {
         // Early return on missing data.
-        _LOG_A("getEVFromHomeWizardKwh(): required JSON fields 'active_current_a' not found\n");
+        _LOG_A("getDataFromHomeWizard(): required JSON fields 'active_current_a' not found\n");
         return {phases, {0, 0, 0, 0, 0, 0}};
     }
 
@@ -1252,7 +1250,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
     };
 
     if (phases == 1) {
-         _LOG_A("getEVFromHomeWizardKwh(): reading single phase data\n");
+         _LOG_A("getDataFromHomeWizard(): reading single phase data\n");
         // Single phase case: use 'active_current_a' and 'active_power_w' for correction
         int16_t rawCurrent = doc[currentKeys[3]].as<float>() * 10;
         int8_t correction = getCorrection(powerKeys[3]);
@@ -1273,6 +1271,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getEVFromHomeWizardKwh() {
 
 return {phases, evdata};
 }
+#endif
 
 void webServerRequest::setMessage(struct mg_http_message *hm) {
     hm_internal = hm;
