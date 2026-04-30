@@ -1365,15 +1365,15 @@ void read_settings() {
 
         MainsMeter.Type = preferences.getUChar("MainsMeter", MAINS_METER);
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
-        strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsMeterDeviceHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
+        strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
         MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
-        strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterDeviceHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
+        strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
         EVMeter.DeviceHostName[sizeof(EVMeter.DeviceHostName) - 1] = '\0';
         CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
         CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
-        strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitMeterDeviceHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
+        strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
         CircuitMeter.DeviceHostName[sizeof(CircuitMeter.DeviceHostName) - 1] = '\0';
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
@@ -1444,8 +1444,11 @@ void read_settings() {
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
         strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
+        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
         settingsCache.CircuitMeterType = CircuitMeter.Type;
         settingsCache.CircuitMeterAddress = CircuitMeter.Address;
+        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
+        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1515,20 +1518,20 @@ void write_settings(void) {
 
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMeter", MainsMeter.Type, MainsMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
-    if (!settingsCache.valid || strcmp(MainsMeter.DeviceHostName, settingsCache.MainsMeterDeviceHostName) != 0) {
-        preferences.putString("MainsMeterDeviceHostName", MainsMeter.DeviceHostName);
+        if (!settingsCache.valid || strcmp(MainsMeter.DeviceHostName, settingsCache.MainsMeterDeviceHostName) != 0) {
+        preferences.putString("MainsHostName", MainsMeter.DeviceHostName);
         strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
         settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
     }
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
     if (!settingsCache.valid || strcmp(EVMeter.DeviceHostName, settingsCache.EVMeterDeviceHostName) != 0) {
-        preferences.putString("EVMeterDeviceHostName", EVMeter.DeviceHostName);
+        preferences.putString("EVMeterHostName", EVMeter.DeviceHostName);
         strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
         settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
     }
     if (!settingsCache.valid || strcmp(CircuitMeter.DeviceHostName, settingsCache.CircuitMeterDeviceHostName) != 0) {
-        preferences.putString("CircuitMeterDeviceHostName", CircuitMeter.DeviceHostName);
+        preferences.putString("CircuitHostName", CircuitMeter.DeviceHostName);
         strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
         settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
     }
