@@ -3746,8 +3746,8 @@ bool fwNeedsUpdate(char * version) {
 }
 
 /**
-  * Periodically retrieves current measurements from the HomeWizard Kwh energy meter
-  * and updates the EV meter's currents.
+  * Periodically retrieves current measurements from networked energy meters
+  * and updates the meters' currents and energies.
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
   */
@@ -3759,11 +3759,6 @@ bool fwNeedsUpdate(char * version) {
 
     if (currentTime - lastCheck_homewizard < interval) {
         return;
-    }
-    //run discovery if the mDNSServiceList is empty
-    if (getmDNSServiceCount() == 0) {
-        _LOG_A("homewizard_loop(): refreshing mDNS service list.\n");
-        discoverHomeWizard();
     }
     if (MainsInit && MainsEnabled) {
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation. 

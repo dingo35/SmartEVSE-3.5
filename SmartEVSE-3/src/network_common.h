@@ -169,7 +169,7 @@ extern std::pair<int8_t, std::array<std::int32_t, 6>> getDataFromHomeWizard(cons
 extern std::array<mDNSServiceEntry, 8> mDNSServices;
 #endif
 
-extern void discoverHomeWizard();
+extern void discoverNetworkMeters();
 extern void compileServiceName(int type, const char *hostname, char *output, size_t outputSize);
 extern uint8_t getmDNSServiceCount(int type);
 extern uint8_t getmDNSServiceCount();

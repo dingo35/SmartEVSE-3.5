@@ -913,9 +913,13 @@ struct MdnsServiceQuery {
 };
 
 static constexpr MdnsServiceQuery mdnsServiceQueries[] = {
-    {"hwenergy", "tcp"},
+    {"hwenergy", "tcp"}, //HomeWizard Energy Meters
+     // Add more service queries here for other brands/types if needed
 };
 
+/**
+ * @brief Add one discovered HomeWizard service to the cached mDNS table.
+ */
 static bool appendDiscoveredService(const String &hostname, uint16_t port, const String &ip, uint8_t &serviceCount) {
     if (serviceCount >= mDNSServices.size()) {
         return false;
@@ -931,6 +935,9 @@ static bool appendDiscoveredService(const String &hostname, uint16_t port, const
     return true;
 }
 
+/**
+ * @brief Clear the cached mDNS discovery table.
+ */
 static void clearmDNSServices() {
     for (auto &service : mDNSServices) {
         service.ServiceType = 0;
@@ -939,6 +946,9 @@ static void clearmDNSServices() {
     }
 }
 
+/**
+ * @brief Count cached services matching a specific HomeWizard service type.
+ */
 uint8_t getmDNSServiceCount(int type) {
     uint8_t count = 0;
     for (const auto &service : mDNSServices) {
@@ -948,6 +958,9 @@ uint8_t getmDNSServiceCount(int type) {
     }
     return count;
 }
+/**
+ * @brief Count all cached mDNS services.
+ */
 uint8_t getmDNSServiceCount() {
     uint8_t count = 0;
     for (const auto &service : mDNSServices) {
@@ -958,6 +971,9 @@ uint8_t getmDNSServiceCount() {
     return count;
 }
 
+/**
+ * @brief Return a cached service by type, optional hostname pattern, and zero-based index.
+ */
 const mDNSServiceEntry *getmDNSServiceByIndex(int type, const String &hostnamePattern, uint8_t index, bool strict) {
     uint8_t currentIndex = 0;
     for (const auto &service : mDNSServices) {
@@ -974,6 +990,9 @@ const mDNSServiceEntry *getmDNSServiceByIndex(int type, const String &hostnamePa
     return nullptr;
 }
 
+/**
+ * @brief Build a short display name for a discovered hostname.
+ */
 void compileServiceName(int type, const char *hostname, char *output, size_t outputSize) {
     if (output == nullptr || outputSize == 0) {
         return;
@@ -1000,6 +1019,9 @@ void compileServiceName(int type, const char *hostname, char *output, size_t out
     }
 }
 
+/**
+ * @brief Map a discovered hostname to the corresponding meter service type.
+ */
 int getmDNSServiceType(const String &hostname) {
     struct ServiceTypeMap {
         const char *prefix;
@@ -1008,7 +1030,7 @@ int getmDNSServiceType(const String &hostname) {
     static const ServiceTypeMap serviceTypes[] = {
         {"p1meter-", EM_HOMEWIZARD},
         {"kwhmeter-", EM_HOMEWIZARD},
-         // Add more mappings here if needed
+         // Add more mappings for other brands/types here if needed
     };
 
     for (const auto &entry : serviceTypes) {
@@ -1020,6 +1042,9 @@ int getmDNSServiceType(const String &hostname) {
     return 0;
 }
 
+/**
+ * @brief Count cached services compatible with the selected meter type.
+ */
 uint8_t getCompatiblemDNSServiceCount(uint8_t meterType) {
     if (meterType == 0) {
         return 0;
@@ -1034,6 +1059,9 @@ uint8_t getCompatiblemDNSServiceCount(uint8_t meterType) {
     return count;
 }
 
+/**
+ * @brief Return the zero-based compatible service for a meter type.
+ */
 const mDNSServiceEntry *getCompatiblemDNSServiceByIndex(uint8_t meterType, uint8_t index) {
     if (meterType == 0) {
         return nullptr;
@@ -1117,7 +1145,7 @@ void mdnsDiscoveryTask(void* parameter) {
 }
 
 /**
- * @brief Starts async mDNS discovery for HomeWizard meters.
+ * @brief Starts async mDNS discovery for networked meters.
  *
  * This function uses mDNS to search for services advertising "_hwenergy._tcp" on the local network.
  * This function spawns a background task to perform the blocking mDNS query,
@@ -1125,10 +1153,10 @@ void mdnsDiscoveryTask(void* parameter) {
  *
  * @return The cached hostname if available, empty string if discovery is pending or not found
  */
-void discoverHomeWizard() {
+void discoverNetworkMeters() {
     // If discovery is already in progress, don't start another
     if (mdnsDiscoveryInProgress) {
-        _LOG_D("discoverHW(): Discovery already in progress.\n");
+        _LOG_D("discoverNetworkMeters(): Discovery already in progress.\n");
         return;
     }
 
@@ -1142,12 +1170,12 @@ void discoverHomeWizard() {
     
     // Start async mDNS discovery task
     mdnsDiscoveryInProgress = true;
-    _LOG_A("discoverHW(): Starting async mDNS discovery (next retry in %lu seconds)...\n", MDNS_RETRY_INTERVAL / 1000);
+    _LOG_A("discoverNetworkMeters(): Starting async mDNS discovery (next retry in %lu seconds)...\n", MDNS_RETRY_INTERVAL / 1000);
     
     // Create task with 4KB stack, priority 1 (low), running on any core
     BaseType_t result = xTaskCreate(
         mdnsDiscoveryTask,      // Task function
-        "mDNS_HW",            // Task name
+        "mDNS_Disc",            // Task name
         4096,                   // Stack size (bytes)
         NULL,                   // Parameters
         1,                      // Priority (low)
@@ -1155,7 +1183,7 @@ void discoverHomeWizard() {
     );
     
     if (result != pdPASS) {
-        _LOG_A("discoverHW(): Failed to create mDNS discovery task!\n");
+        _LOG_A("discoverNetworkMeters(): Failed to create mDNS discovery task!\n");
         mdnsDiscoveryInProgress = false;
     }
     
@@ -2321,6 +2349,10 @@ void network_loop() {
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
+
+    if (NetworkConnected() && getmDNSServiceCount() == 0) {
+        discoverNetworkMeters();
+    }
 
 #ifndef DEBUG_DISABLED
     // Remote debug over WiFi

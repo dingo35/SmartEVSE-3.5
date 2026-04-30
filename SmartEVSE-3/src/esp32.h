@@ -167,7 +167,7 @@ const struct {
     {"RFID",    "RFID reader, learn/remove cards",                    0, 5 + (ENABLE_OCPP ? 1 : 0), RFID_READER},
     {"EV METER","Type of EV electric meter",                          0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_EV_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
-    {"EV HOST", "Selected hostname or discovered hostname index",      0, 9, 0},
+    {"EV HST", "Selected hostname or discovered hostname index",      0, 9, 0},
 
     // System configuration
     /* LCD,       Desc,                                                 Min, Max, Default */
