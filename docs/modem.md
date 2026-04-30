@@ -49,7 +49,7 @@ The datasheet lays out the wiring diagram, which is the following:
 
 Your result should look like this:
 
-![Example setup of dev board](pictures/modem/dev_board_wiring.jpg)
+![Example setup of dev board](../pictures/modem/dev_board_wiring.jpg)
 
 On the green connector,
 make sure you branch of the CP line between the car and SmartEVSE.
@@ -71,7 +71,7 @@ This option is much cheaper than a developer board, but it requires a bit of sol
 
 The datasheet lays out the wiring diagram, which is the following:
 
-![Example setup of Yellow Beet](pictures/modem/yellow_beet_wiring.jpg)
+![Example setup of Yellow Beet](../pictures/modem/yellow_beet_wiring.jpg)
 
 | Yellow beet pads | Raspberry Pi 2x20 pin GPIO connector |
 |------------------|--------------------------------------|
@@ -88,7 +88,7 @@ of the SmartEVSE. Both the car, SmartEVSE and modem should be connected to the s
 
 After soldering, your product might look like this:
 
-![Example setup of yellow beet](pictures/modem/yellow_beet_deployment.jpeg)
+![Example setup of yellow beet](../pictures/modem/yellow_beet_deployment.jpeg)
 
 The orange wires at the top are the CP and PE lines.
 
@@ -114,7 +114,7 @@ Verify if the QCA7000/5 driver probe was successful with the command:
 dmesg | grep qca
 ```
 
-![dmesg output](pictures/modem/dmesg_qca.jpg)
+![dmesg output](../pictures/modem/dmesg_qca.jpg)
 
 As seen in the log, it should have created a new ethernet port, eth1:
 
@@ -122,7 +122,7 @@ As seen in the log, it should have created a new ethernet port, eth1:
 ifconfig eth1
 ```
 
-![ifconfig output](pictures/modem/ifconfig_eth1.jpg)
+![ifconfig output](../pictures/modem/ifconfig_eth1.jpg)
 
 ## Install pyPLC
 Please follow these instructions, including the sudo-less run of pyPLC:
