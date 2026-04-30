@@ -2047,6 +2047,9 @@ static void startNetworkServices(void) {
 // Configure DNS, SNTP and mDNS when an interface gets an IP.
 // Can be called from both WiFi and Ethernet got-IP events.
 void onGotIP(const char *dns_ip) {
+    clearmDNSServices();
+    lastMdnsQueryTime = 0;
+
     // Load DHCP DNS into mongoose
     static char dns4url[] = "udp://123.123.123.123:53";
     if (dns_ip && strlen(dns_ip) > 0) {
