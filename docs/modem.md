@@ -185,9 +185,9 @@ journalctl -u pyplc -f --no-tail
 ```
 
 # Test it
-SmartEVSE needs to be build with platformio with -DMODEM=1 [building_flashing.md](building_flashing.md)
+SmartEVSE needs to be build with platformio with -DMODEM=1 [building_flashing.md](building_flashing.md) 
 
-With your eyes on the journalctl log, plug your car into the charger.
+Now, with your eyes on the journalctl log, plug your car into the charger.
 At some point, you should see messages racing by in the log, including SoC messages.
 
 If configured correctly, you should see the results in the SmartEVSE web UI.
