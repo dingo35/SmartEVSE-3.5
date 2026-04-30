@@ -1897,6 +1897,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
+        if (EVMeter.Type == EM_HOMEWIZARD) {
+            doc["ev_meter"]["host"] = strlen(EVMeter.DeviceHostName) > 0 ? EVMeter.DeviceHostName : "Not Set";
+        }
         doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured; // Watt
         doc["ev_meter"]["total_wh"] = EVMeter.Energy; // Wh
         doc["ev_meter"]["charged_wh"] = EVMeter.EnergyCharged; // Wh
@@ -1904,9 +1907,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
-        if (EVMeter.Type == EM_HOMEWIZARD) {
-            doc["ev_meter"]["host"] = strlen(EVMeter.DeviceHostName) > 0 ? EVMeter.DeviceHostName : "HomeWizard Meter Not Found";
-        }
+
         if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
         if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
@@ -1917,9 +1918,14 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
         if (MainsMeter.Type == EM_HOMEWIZARD) {
-            doc["mains_meter"]["host"] = strlen(MainsMeter.DeviceHostName) > 0 ? MainsMeter.DeviceHostName : "HomeWizard P1 Not Found";
+            doc["mains_meter"]["host"] = strlen(MainsMeter.DeviceHostName) > 0 ? MainsMeter.DeviceHostName : "Not Set";
         }
         if (CircuitMeter.Type) {
+            doc["circuit_meter"]["description"] = EMConfig[CircuitMeter.Type].Desc;
+            doc["circuit_meter"]["address"] = CircuitMeter.Address;
+            if (CircuitMeter.Type == EM_HOMEWIZARD) {
+                doc["circuit_meter"]["host"] = strlen(CircuitMeter.DeviceHostName) > 0 ? CircuitMeter.DeviceHostName : "Not Set";
+            }
             doc["circuit_meter"]["currents"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
             doc["circuit_meter"]["currents"]["L1"] = CircuitMeter.Irms[0];
             doc["circuit_meter"]["currents"]["L2"] = CircuitMeter.Irms[1];
