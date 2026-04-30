@@ -986,8 +986,11 @@ void compileServiceName(int type, const char *hostname, char *output, size_t out
 
     switch (type) {
         case EM_HOMEWIZARD: {
-            const size_t hostnameLength = strlen(hostname);
-            const char *start = hostnameLength <= 6 ? hostname : hostname + hostnameLength - 6;
+            const char *end = strrchr(hostname, '.');
+            if (end == nullptr || end <= hostname) {
+                end = hostname + strlen(hostname);
+            }
+            const char *start = (size_t)(end - hostname) <= 6 ? hostname : end - 6;
             strlcpy(output, start, outputSize);
             return;
         }
