@@ -1958,11 +1958,15 @@ void handleWIFImode() {
         _LOG_A("HTTP server started\n");
     }
 
-    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF) {
-        _LOG_A("Starting WiFi..\n");
-        WiFi.mode(WIFI_STA);
-        WiFi.begin();
-    }    
+    if (WIFImode == 1) {
+        if (WiFi.getMode() != WIFI_STA) {
+            _LOG_A("Starting WiFi..\n");
+            WiFi.mode(WIFI_STA);
+        }
+        if (WiFi.status() != WL_CONNECTED) {
+            WiFi.begin();
+        }
+    }
 
     if (WIFImode == 0 && WiFi.getMode() != WIFI_OFF) {
         _LOG_A("Stopping WiFi..\n");
