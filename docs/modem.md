@@ -11,7 +11,7 @@ HomePlug Green Phy standard (ISO15118) and a compatible modem.
 In a nutshell, these modems work similar to powerline ethernet adapters,
 but in this case the communication happens over the CP line between EVSE and car.
 
-![Modem features in the web ui](pictures/modem/modem_web_ui.jpg)
+![Modem features in the web ui](../pictures/modem/modem_web_ui.jpg)
 
 ## Step 1: Hardware
 
