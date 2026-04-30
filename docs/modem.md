@@ -1,8 +1,5 @@
 # Vehicle communication feature using Modem
 
-Custodian: A.J. Kramer
-Date: June 09, 2023
-
 When you connect your car to a public charger,
 in particular DC fast chargers or chargers made by Alfen,
 the charger is able to show the State of Charge on the display.
@@ -14,7 +11,7 @@ HomePlug Green Phy standard (ISO15118) and a compatible modem.
 In a nutshell, these modems work similar to powerline ethernet adapters,
 but in this case the communication happens over the CP line between EVSE and car.
 
-![Modem features in the web ui](images/modem_web_ui.jpg)
+![Modem features in the web ui](pictures/modem/modem_web_ui.jpg)
 
 ## Step 1: Hardware
 
@@ -52,7 +49,7 @@ The datasheet lays out the wiring diagram, which is the following:
 
 Your result should look like this:
 
-![Example setup of dev board](images/dev_board_wiring.jpg)
+![Example setup of dev board](pictures/modem/dev_board_wiring.jpg)
 
 On the green connector,
 make sure you branch of the CP line between the car and SmartEVSE.
@@ -74,7 +71,7 @@ This option is much cheaper than a developer board, but it requires a bit of sol
 
 The datasheet lays out the wiring diagram, which is the following:
 
-![Example setup of Yellow Beet](images/yellow_beet_wiring.jpg)
+![Example setup of Yellow Beet](pictures/modem/yellow_beet_wiring.jpg)
 
 | Yellow beet pads | Raspberry Pi 2x20 pin GPIO connector |
 |------------------|--------------------------------------|
@@ -91,7 +88,7 @@ of the SmartEVSE. Both the car, SmartEVSE and modem should be connected to the s
 
 After soldering, your product might look like this:
 
-![Example setup of yellow beet](images/yellow_beet_deployment.jpeg)
+![Example setup of yellow beet](pictures/modem/yellow_beet_deployment.jpeg)
 
 The orange wires at the top are the CP and PE lines.
 
@@ -101,10 +98,6 @@ Not tested in this project, but it is documented to work in pyPLC repo:
 https://github.com/uhi22/pyPLC/blob/master/doc/hardware.md
 
 # Software
-
-## Use the right distribution of SmartEVSE software
-You should use the serkri distribution of SmartEVSE.
-This fork has many more features than the vanilla one, and includes the modem feature.
 
 ## Enable the Raspberry PI drivers
 Edit your config.txt of your raspberry pi, and add the following at the end:
@@ -121,7 +114,7 @@ Verify if the QCA7000/5 driver probe was successful with the command:
 dmesg | grep qca
 ```
 
-![dmesg output](images/dmesg_qca.jpg)
+![dmesg output](pictures/modem/dmesg_qca.jpg)
 
 As seen in the log, it should have created a new ethernet port, eth1:
 
@@ -129,15 +122,15 @@ As seen in the log, it should have created a new ethernet port, eth1:
 ifconfig eth1
 ```
 
-![ifconfig output](images/ifconfig_eth1.jpg)
+![ifconfig output](pictures/modem/ifconfig_eth1.jpg)
 
 ## Install pyPLC
 Please follow these instructions, including the sudo-less run of pyPLC:
 
 https://github.com/uhi22/pyPLC/blob/master/doc/installation_on_raspberry.md
 
-In this case however, we're interested in running pyPLC in EVSE mode.
-Rename the `pev.service` to `pyPLC.service`, and replace with following:
+In this case, however, we're interested in running pyPLC in EVSE mode.
+Rename the `pev.service` to `pyPLC.service`, and replace with the following:
 
 ```text
 [Unit]
@@ -178,7 +171,7 @@ Edit the pyPLC.ini.
 
 Set `soc_callback_enabled` to `True`, 
 and set `soc_callback_endpoint` to the base URL of the SmartEVSE. 
-Do not leave a trailing slash. Example: `http://10.0.0.1`
+Do not leave a trailing slash. Example: `http://10.0.0.1/ev_state`
 
 Set `testsuite_enable` to `No`, this is not what you want during deployment.
 Set `eth_interface` to `eth1`.
