@@ -1010,7 +1010,14 @@ void compileServiceName(int type, const char *hostname, char *output, size_t out
                 end = hostname + strlen(hostname);
             }
             const char *start = (size_t)(end - hostname) <= 6 ? hostname : end - 6;
-            strlcpy(output, start, outputSize);
+            const size_t length = (size_t)(end - start);
+            if (length >= outputSize) {
+                memcpy(output, start, outputSize - 1);
+                output[outputSize - 1] = '\0';
+            } else {
+                memcpy(output, start, length);
+                output[length] = '\0';
+            }
             return;
         }
         default:
@@ -2151,7 +2158,7 @@ void handleWIFImode() {
         _LOG_A("HTTP server started\n");
     }
 
-    if (WIFImode == 1 && WiFi.getMode() == WIFI_OFF) {
+    if (WIFImode == 1 && !WiFi.isConnected()) {
         _LOG_A("Starting WiFi..\n");
         WiFi.mode(WIFI_STA);
         WiFi.begin();
