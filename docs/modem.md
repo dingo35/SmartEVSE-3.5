@@ -1,23 +1,17 @@
 # Vehicle communication feature using Modem
 
-When you connect your car to a public charger,
-in particular DC fast chargers or chargers made by Alfen,
-the charger is able to show the State of Charge on the display.
-Some chargers even are able to recognize the car, and authorize billing automatically;
-for example Fastned with its Autocharge feature.
+When you connect your car to a public charger, in particular DC fast chargers or chargers made by Alfen, the charger is able to show the State of Charge on the display.
+Some chargers are even able to recognize the car and authorize billing automatically, for example, Fastned with its Autocharge feature.
 
-Those chargers are able to extract this information using the
-HomePlug Green Phy standard (ISO15118) and a compatible modem.
-In a nutshell, these modems work similar to powerline ethernet adapters,
-but in this case the communication happens over the CP line between EVSE and car.
+Those chargers are able to extract this information using the HomePlug Green Phy standard (ISO15118) and a compatible modem.
+In a nutshell, these modems work similarly to powerline Ethernet adapters, but in this case, the communication happens over the CP line between EVSE and the car.
 
 ![Modem features in the web ui](../pictures/modem/modem_web_ui.jpg)
 
 ## Step 1: Hardware
 
-Without hardware there is no means to communicate.
-Currently, only a Raspberry PI (or equivalent) together with a QCA7000x modems
-have been tested, but modified HomePlug adapters can also work.
+Without hardware, there is no means to communicate.
+Currently, only a Raspberry PI (or equivalent) together with a QCA7000x modem has been tested, but modified HomePlug adapters can also work.
 
 There are two components to buy:
 
@@ -26,7 +20,7 @@ There are two components to buy:
 
 ### Modem option 1: Dev board (no soldering)
 
-This approach is the easiest, but is a fair bit more expensive than others.
+This approach is the easiest, but it is a fair bit more expensive than others.
 The hardware used is the "RED / YELLOW beet Carrier board EVB 1.1 (EVSE)".
 
 - Seller: https://www.codico.com/en/red-carrier-board-e-1-1-evse
@@ -51,14 +45,12 @@ Your result should look like this:
 
 ![Example setup of dev board](../pictures/modem/dev_board_wiring.jpg)
 
-On the green connector,
-make sure you branch of the CP line between the car and SmartEVSE.
-Both the car, SmartEVSE and modem should be connected to the same CP signal.
+On the green connector, make sure you branch off the CP line between the car and SmartEVSE.
+Both the car, SmartEVSE, and the modem should be connected to the same CP signal.
 Also, the PE pin (earth wire) needs to be connected.
-All the other lines, like AC and ZC are not needed.
+All the other lines, like AC and ZC, are not needed.
 
-The dev board also needs to be supplied with power. You can use a USB-C charging cable
-for this, connected to the PI. You can also use a normal USB-C charger.
+The dev board also needs to be supplied with power. You can use a USB-C charging cable for this, connected to the PI. You can also use a normal USB-C charger.
 
 ### Modem option 2: Yellow Beet (a bit of soldering)
 
@@ -83,8 +75,7 @@ The datasheet lays out the wiring diagram, which is the following:
 | 18 (MOSI)        | 19                                   |
 | 22 (INTR)        | 16                                   |
 
-Also, solder the CP and PE lines, and branch them into the CP and PE lines 
-of the SmartEVSE. Both the car, SmartEVSE and modem should be connected to the same CP signal.
+Also, solder the CP and PE lines, and branch them into the CP and PE lines of the SmartEVSE. Both the car, SmartEVSE, and the modem should be connected to the same CP signal.
 
 After soldering, your product might look like this:
 
@@ -94,13 +85,13 @@ The orange wires at the top are the CP and PE lines.
 
 ### Modem option 3: Modifying HomePlug Adapter
 
-Not tested in this project, but it is documented to work in pyPLC repo:
+Not tested in this project, but it is documented to work in the pyPLC repo:
 https://github.com/uhi22/pyPLC/blob/master/doc/hardware.md
 
 # Software
 
 ## Enable the Raspberry PI drivers
-Edit your config.txt of your raspberry pi, and add the following at the end:
+Edit your config.txt of your Raspberry Pi, and add the following at the end:
 You can find config.txt in the `/boot` folder.
 
 ```text
@@ -116,7 +107,7 @@ dmesg | grep qca
 
 ![dmesg output](../pictures/modem/dmesg_qca.jpg)
 
-As seen in the log, it should have created a new ethernet port, eth1:
+As seen in the log, it should have created a new Ethernet port, eth1:
 
 ```bash
 ifconfig eth1
@@ -130,7 +121,7 @@ Please follow these instructions, including the sudo-less run of pyPLC:
 https://github.com/uhi22/pyPLC/blob/master/doc/installation_on_raspberry.md
 
 In this case, however, we're interested in running pyPLC in EVSE mode.
-Rename the `pev.service` to `pyPLC.service`, and replace with the following:
+Rename the `pev.service` to `pyPLC.service`, and replace it with the following:
 
 ```text
 [Unit]
@@ -151,8 +142,8 @@ WantedBy=multi-user.target
 Alias=pyplc.service
 ```
 
-Adjust the user and group to your username. On default, `pi` and `pi`.
-Adjust the python executable path (in example `/usr/bin/python3.9` to the one found in the Sudo-less configuration).
+Adjust the user and group to your username. By default, `pi` and `pi`.
+Adjust the Python executable path (in example `/usr/bin/python3.9` to the one found in the Sudo-less configuration).
 Adjust the path of the `evseNoGui.py`, in this example it's `/home/evse/pyPLC/evseNoGui.py`
 Adjust the working directory as well.
 
@@ -194,11 +185,11 @@ journalctl -u pyplc -f --no-tail
 ```
 
 # Test it
-On the SmartEVSE, go to the menu and set `Modem` to `Experimental`.
+SmartEVSE needs to be build with platformio with -DMODEM=1 [building_flashing.md](building_flashing.md) 
 
-Now, with your eyes on the log of journalctl, plug your car in the charger.
-At some point you should see messages racing by in the log; including SoC messages.
+Now, with your eyes on the journalctl log, plug your car into the charger.
+At some point, you should see messages racing by in the log, including SoC messages.
 
-If configured appropriately, you should see the results in the web-ui of SmartEVSE.
+If configured correctly, you should see the results in the SmartEVSE web UI.
 
 Congratulations 🎉
