@@ -3766,6 +3766,7 @@ bool fwNeedsUpdate(char * version) {
     if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
+    lastCheck_homewizard = currentTime;
     if (MainsInit && MainsEnabled) {
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation. 
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
