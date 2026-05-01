@@ -56,7 +56,7 @@ The dev board also needs to be supplied with power. You can use a USB-C charging
 
 This option is much cheaper than a developer board, but it requires a bit of soldering.
 
-- Seller: https://www.codico.com/en/yellow-beet-e-1-1
+- Seller: [https://www.codico.com/en/yellow-beet-e-1-1](https://www.codico.com/en/yellow-beet-h-1-2-home-control-with-add-copper-layer)
 
 - Datasheet:
   https://www.8devices.com/media/products/redbeet/downloads/YELLOW_beet_datasheet_rev.1.17_20200703.pdf
