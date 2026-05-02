@@ -4,7 +4,7 @@ import shutil
 import hashlib
 
 # This script replaces the default mbedtls libraries with custom versions
-# that have error strings removed and max context size of 6Kb to reduce RAM and flash usage.
+# that have error strings removed and max context size of 8Kb to reduce RAM and flash usage.
 
 def file_hash(filepath):
     """Calculate MD5 hash of a file."""

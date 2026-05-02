@@ -23,10 +23,6 @@
     image-rendering: pixelated;
     padding: 20px 6px;
     filter: hue-rotate(250deg) brightness(95%);
-    background-image: url('data:image/svg+xml,<svg width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.spinner_aj0A{transform-origin:center;animation:spinner_KYSC .75s infinite linear}@keyframes spinner_KYSC{100%{transform:rotate(360deg)}}</style><path d="M12,4a8,8,0,0,1,7.89,6.7A1.53,1.53,0,0,0,21.38,12h0a1.5,1.5,0,0,0,1.48-1.75,11,11,0,0,0-21.72,0A1.5,1.5,0,0,0,2.62,12h0a1.53,1.53,0,0,0,1.49-1.3A8,8,0,0,1,12,4Z" class="spinner_aj0A"/></svg>');
-    background-size: 25%;
-    background-position: center;
-    background-repeat: no-repeat;
     background-color: #FDFDFD;
 }
 
@@ -70,49 +66,65 @@
     box-shadow: none;
 }
 
+#lcd .lcd-status {
+    max-width: 386px;
+    padding: 1em 1em 0 1em;
+}
+
 #lcd .lcd-password {
     display: flex;
     align-items: center;
     gap: 10px;
-    width: 350px;
-    margin: 10px 0 0 20px;
+}
+
+#lcd .lcd-lock-status {
+    color: var(--danger);
+    font-weight: bold;
+    margin-top: .5em;
 }
 
 #lcd #lcd-password {
-    width: 130px;
-}
-
-#lcd #lcd-lock-status {
-    margin-left: auto;
-    text-align: right;
+    width: 7em;
 }
 
 #lcd #lcd-lock-hint {
-    width: 350px;
-    margin: 8px 0 0 20px;
-    color: #6e707e;
-    font-size: .95rem;
-    line-height: 1.3;
+    margin-top: .5em;
+    color: var(--gray-dark);
 }
 
 #lcd .lcd-activate {
     position: absolute;
-    display: grid;
-    place-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 270px;
     height: 168px;
     top: 156px;
     left: 60px;
-    background-color: rgba(245, 245, 245, .7);
-    font-size: 2rem;
-    opacity: 0;
-    user-select: none;
-    cursor: pointer;
-    transition: opacity 0.3s ease;
+    z-index: 1;
+    padding: 1rem;
+    background-color: rgba(255, 255, 255, .80);
+    color: var(--gray-dark);
+    font-size: 1.33rem;
+    line-height: 1.35;
+    text-align: center;
+    white-space: pre-wrap;
+    pointer-events: none;
+    text-wrap: balance;
 }
 
-#lcd .lcd-activate:hover {
-    opacity: 1;
+#lcd .lcd-activate.is-hidden {
+    display: none;
+}
+
+#lcd .lcd-activate[data-state="warning"] {
+    color: #8a5a00;
+    background-color: rgba(253, 243, 216, .92);
+}
+
+#lcd .lcd-activate[data-state="error"] {
+    color: var(--danger);
+    background-color: rgba(250, 219, 216, .94);
 }
 
 /* Green selected button. */
