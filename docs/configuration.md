@@ -51,13 +51,16 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If MAINS MET is not **Disabled** and not **API**, these settings appear:
+If MAINS MET is not **Disabled** and not **API** and not **HomeWizrd**, these settings appear:
 
 - **MAINSADR**: Set the Modbus address for the kWh meter.
-- **MAINS HST**: Select a networked meter through a list of mDNS discovered (abbreviated) hostnames.
 - **GRID**: 3 or 4 wire (only appears when Sensorbox with CT’s is used).
   - **4Wire**: Star connection with 3 phase wires and neutral.
   - **3Wire**: Delta connection with 3 phase wires without neutral.
+
+If MAINS MET is **HomeWizrd**, this settings appears:
+
+- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## CIRCT MET
 Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
@@ -71,11 +74,13 @@ Set Type of kWh Meter (measures power and charged energy) of the circuit this Sm
 - Eastron3P is for Eastron three-phase meters.
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If CIRCT MET is not **Disabled** and not **API**, this setting appears:
+If CIRCT MET is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **CIRCT ADR**: Set the Modbus address for the Circuit Meter.
 
-- **CIRCT HST**: Select a networked meter through a list of mDNS discovered (abbreviated) hostnames.
+If CIRCT MET is **HomeWizrd**, this setting appears:
+
+- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
@@ -90,11 +95,13 @@ Set Type of EV kWh Meter (measures power and charged energy)
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If EV METER is not **Disabled** and not **API**, this setting appears:
+If EV METER is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **EV ADR**: Set the Modbus address for the EV Meter.
 
-- **EV HST**: Select a networked meter through a list of mDNS discovered (abbreviated) hostnames.
+If EV METER is **HomeWizrd**, this setting appears:
+
+- **EV HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
@@ -194,12 +201,6 @@ Note: If you have a multi AP setup, with the same SSID, you need to be connected
   - v3.6.3 or older:
   The SmartEVSE presents itself as a Wifi Acces Point with SSID "smartevse-xxxx". Connect with your phone to that access point, go to [http://192.168.4.1/](http://192.168.4.1/) and configure your Wifi SSID and key (password).
 - **Enabled**: Connect to your network via Wifi.
-
-## mDNS DISC ##
-Run an on-demand mDNS discovery for supported meters on the network
-
-- **Idle/Running**: Discovery Status
-- **Discover**: Run on-demand mDNS discovery. Discovering is completed when status returns to Idle 
 
 ## AUTOUPDAT
 Only appears when [WIFI](#wifi) is **Enabled**. Automatic update of the SmartEVSE firmware.

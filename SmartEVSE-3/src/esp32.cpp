@@ -3774,7 +3774,8 @@ bool fwNeedsUpdate(char * version) {
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation. 
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
         _LOG_A("homewizard_loop(): Migrating HomeWizard P1 implementation");
-        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true);
+        //Old implementation just picked the first p1meter entry discovered, so we do the same here 
+        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true); 
         if (service != nullptr) {
             strncpy(MainsMeter.DeviceHostName, service->HostName.c_str(), sizeof(MainsMeter.DeviceHostName));
             MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
