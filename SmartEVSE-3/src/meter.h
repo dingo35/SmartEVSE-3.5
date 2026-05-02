@@ -44,7 +44,7 @@
 #define EM_EASTRON1P 10
 #define EM_FINDER_7M 11
 #define EM_SINOTIMER 12
-#define EM_HOMEWIZARD_P1 13
+#define EM_HOMEWIZARD 13
 #define EM_SCHNEIDER 14
 #define EM_CHINT_3P 15
 #define EM_CARLO_CAVAZZI 16
@@ -83,6 +83,7 @@ class Meter {
   public:
     uint8_t Type;                                                               // previously: MainsMeter; Type of Mains electric meter (0: Disabled / Constants EM_*)
     uint8_t Address;
+    char DeviceHostName[32];                                                    // Selected hostname for networked meters
     int16_t Irms[3];                                                            // Momentary current per Phase (23 = 2.3A) (resolution 100mA)
     int16_t Imeasured;                                                          // Max of all Phases (Amps *10) of mains power
     int16_t Power[3];
@@ -125,5 +126,6 @@ class Meter {
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)
 extern Meter CircuitMeter;
+extern Meter *getMeterByHostnameMenu(uint8_t nav);
 
 #endif

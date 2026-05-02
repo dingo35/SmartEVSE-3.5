@@ -44,19 +44,23 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - **Sensorbox**: The Sensorbox sends measurement data to the SmartEVSE.
 - **API**: MAINS meter data is fed through the [REST API](REST_API.md) or [MQTT API](#mqtt-api).
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
-- **HmWzrd P1**: HomeWizard P1 meter (wifi based connection to the smart meter's P1 port).
+- **Homewizrd**: Mains meter data is polled from a network connected HomeWizard meter (P1 or kWh).
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If MAINS MET is not **Disabled** and not **API**, these settings appear:
+If MAINS MET is not **Disabled** and not **API** and not **HomeWizrd**, these settings appear:
 
 - **MAINSADR**: Set the Modbus address for the kWh meter.
 - **GRID**: 3 or 4 wire (only appears when Sensorbox with CT’s is used).
   - **4Wire**: Star connection with 3 phase wires and neutral.
   - **3Wire**: Delta connection with 3 phase wires without neutral.
+
+If MAINS MET is **HomeWizrd**, this settings appears:
+
+- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## CIRCT MET
 Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
@@ -70,9 +74,13 @@ Set Type of kWh Meter (measures power and charged energy) of the circuit this Sm
 - Eastron3P is for Eastron three-phase meters.
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If CIRCT MET is not **Disabled** and not **API**, this setting appears:
+If CIRCT MET is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **CIRCT ADR**: Set the Modbus address for the Circuit Meter.
+
+If CIRCT MET is **HomeWizrd**, this setting appears:
+
+- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
@@ -80,15 +88,20 @@ Set Type of EV kWh Meter (measures power and charged energy)
 - **Disabled**: No EV meter connected.
 - **API**: EV meter data is fed through the REST API or MQTT API.
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+- **HomeWizrd**: A Networked Homewizard meter is used.
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If EV METER is not **Disabled** and not **API**, this setting appears:
+If EV METER is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **EV ADR**: Set the Modbus address for the EV Meter.
+
+If EV METER is **HomeWizrd**, this setting appears:
+
+- **EV HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
