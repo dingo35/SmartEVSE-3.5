@@ -991,6 +991,7 @@ void SetupMQTTClient() {
     MQTTclient.announce("EV Plug State", "sensor", optional_payload);
     MQTTclient.announce("Access", "sensor", optional_payload);
     MQTTclient.announce("State", "sensor", optional_payload);
+	MQTTclient.announce("StateID", "sensor", optional_payload);
     MQTTclient.announce("RFID", "sensor", optional_payload);
     MQTTclient.announce("RFIDLastRead", "sensor", optional_payload);
     MQTTclient.announce("NrOfPhases", "sensor", optional_payload);
