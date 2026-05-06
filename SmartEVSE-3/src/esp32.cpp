@@ -3760,7 +3760,7 @@ bool fwNeedsUpdate(char * version) {
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
   */
- void homewizard_loop(bool MainsInit,bool MainsEnabled, bool EVEnabled, bool CircuitEnabled) {
+ void homewizard_loop() {
     static unsigned long lastCheck_homewizard = 0;
 
     constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
@@ -3770,7 +3770,7 @@ bool fwNeedsUpdate(char * version) {
         return;
     }
     lastCheck_homewizard = currentTime;
-    if (MainsInit && MainsEnabled) {
+    if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation. 
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
         _LOG_A("homewizard_loop(): Migrating HomeWizard P1 implementation");
@@ -3782,8 +3782,8 @@ bool fwNeedsUpdate(char * version) {
             write_settings();
         }
     }
-    if (MainsEnabled){
-        _LOG_A("homewizard_kwh_loop(): start HomeWizard Kwh reading.");
+    if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2){ 
+        _LOG_A("homewizard_loop(): start HomeWizard MainsMeter reading.");
         const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3802,8 +3802,8 @@ bool fwNeedsUpdate(char * version) {
 #endif
     }
 
-    if (CircuitEnabled){
-        _LOG_A("homewizard_kwh_loop(): start HomeWizard Kwh reading.");
+    if (CircuitMeter.Type == EM_HOMEWIZARD){
+        _LOG_A("homewizard_loop(): start HomeWizard CircuitMeter reading.");
         const auto evdata = getDataFromHomeWizard(CircuitMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3822,8 +3822,8 @@ bool fwNeedsUpdate(char * version) {
 #endif
     }
 
-    if (EVEnabled){
-        _LOG_A("homewizard_kwh_loop(): start HomeWizard Kwh reading.");
+    if (EVMeter.Type == EM_HOMEWIZARD){
+        _LOG_A("homewizard_loop(): start HomeWizard EVMeter reading.");
         const auto evdata = getDataFromHomeWizard(EVMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3846,12 +3846,7 @@ bool fwNeedsUpdate(char * version) {
 void loop() {
 
     network_loop();
-    homewizard_loop(
-        strlen(MainsMeter.DeviceHostName) == 0,
-        MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2,
-        EVMeter.Type == EM_HOMEWIZARD,
-        CircuitMeter.Type == EM_HOMEWIZARD
-    );
+    homewizard_loop();
     
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
