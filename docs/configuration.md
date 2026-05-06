@@ -339,6 +339,16 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A importing, -5 means 0.5A exporting.
 ...These should be fed at least ervery 10 seconds.
 
+OR it can be fed with:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/MainsMeter' -m L1:L2:L3:P:E
+```
+
+...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A.
+...where P is the Power in W,
+...where E is the Energy in Wh.
+
+
 Your EV kWh meter data can be fed with:
 ```
 mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/EVMeter' -m L1:L2:L3:P:E
