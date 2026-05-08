@@ -238,8 +238,6 @@ void setOverrideCurrent(uint16_t Current);
 void SetCPDuty(uint32_t DutyCycle);
 uint8_t setItemValue(uint8_t nav, uint16_t val);
 uint16_t getItemValue(uint8_t nav);
-void commitMeterHostSelection(uint8_t nav);
-void resetMeterHostSelections(void);
 void ConfigureModbusMode(uint8_t newmode);
 void setMode(uint8_t NewMode) ;
 void BuzzConfirmation(void);

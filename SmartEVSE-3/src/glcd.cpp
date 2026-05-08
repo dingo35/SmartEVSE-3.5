@@ -556,7 +556,6 @@ void GLCD(void) {
         if (LCDTimer > 120) {
             LCDNav = 0;                                                         // Exit Setup menu after 120 seconds.
             PairingPin = "";                                                    // Reset PairingPin when exiting menu.
-            resetMeterHostSelections();                                         // Drop pending host cursor on inactivity exit.
             read_settings();                                                    // don't save, but restore settings
         } else return;                                                          // disable LCD status messages when navigating LCD Menu
     } // if LCDNav
@@ -1006,6 +1005,47 @@ void GLCD(void) {
  * @param uint8_t nav
  * @return uint8_t[] MenuItemOption
  */
+static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
+    static char Str[12]; // must be declared static, since it's referenced outside of function scope
+
+    if (value == 0) {
+        if (strlen(meter.DeviceHostName) == 0) return "Not Set";
+        compileServiceName(meter.Type, meter.DeviceHostName, Str, sizeof(Str));
+        if (Str[0] == '\0') return "Not Set";
+        return Str;
+    }
+
+    const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
+    if (service && !service->HostName.isEmpty()) {
+        compileServiceName(meter.Type, service->HostName.c_str(), Str, sizeof(Str));
+        if (Str[0] != '\0') {
+            return Str;
+        }
+    }
+    return "Not Set";
+}
+
+/**
+ * Commit the selected host entry for one meter menu.
+ * This only updates the meter that was actually edited, and clears that meter's
+ * pending menu selection so the LCD menu returns to its neutral state.
+ * 
+ * @param Meter &meter
+ * @param uint8_t menu selection index (0 for "Unchanged", 1 for first mDNS entry, etc.)
+ * @return void
+ */
+static void commitMeterHostSelection(Meter &meter, uint8_t value) {
+    if (value >= 1) {
+        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
+        if (service && !service->HostName.isEmpty()) {
+            strncpy(meter.DeviceHostName, service->HostName.c_str(), sizeof(meter.DeviceHostName));
+            meter.DeviceHostName[sizeof(meter.DeviceHostName) - 1] = '\0';
+        }
+    }
+
+    meter.HostMenuSelection = 0;
+}
+
 const char * getMenuItemOption(uint8_t nav) {
     static char Str[12]; // must be declared static, since it's referenced outside of function scope
 
@@ -1023,7 +1063,6 @@ const char * getMenuItemOption(uint8_t nav) {
     const static char StrGrid[2][10] = {"4Wire", "3Wire"};
     const static char StrEnabled[] = "Enabled";
     const static char StrExitMenu[] = "MENU";
-    const static char StrNotSet[] = "Not Set";
     extern const char StrRFIDReader[7][10];
     const static char StrWiFi[3][10] = {"Disabled", "Enabled", "SetupWifi"};
     const static char StrCapMode[][9] = {"Disabled", "Fixed", "Interval", "Flanders"};
@@ -1100,25 +1139,11 @@ const char * getMenuItemOption(uint8_t nav) {
             sprintf(Str, "%04u", value);
             return Str;
         case MENU_EVMETERHOST:
+            return getMeterHostStr(EVMeter, value);
         case MENU_MAINSMETERHOST:
-        case MENU_CIRCUITMETERHOST: {
-            Meter *meter = getMeterByHostnameMenu(nav);
-            if (meter == nullptr) {
-                return StrNotSet;
-            }
-            if (value == 0) {
-                if (strlen(meter->DeviceHostName) == 0) return StrNotSet;
-                compileServiceName(meter->Type, meter->DeviceHostName, Str, sizeof(Str));
-                if (Str[0] == '\0') return StrNotSet;
-                return Str;
-            }
-            const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter->Type, value - 1);
-            if (service && !service->Name.isEmpty()) {
-                snprintf(Str, sizeof(Str), "%s", service->Name.c_str());
-                return Str;
-            }
-            return StrNotSet;
-        }
+            return getMeterHostStr(MainsMeter, value);
+        case MENU_CIRCUITMETERHOST:
+            return getMeterHostStr(CircuitMeter, value);
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
         case MENU_CIRCUITMETERADDRESS:
@@ -1343,21 +1368,25 @@ void GLCDMenu(uint8_t Buttons) {
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         setItemValue(LCDNav, value);
                         break;
-                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox, HomeWizard P1/KWH or unused slots here
-                    case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1/KWH or unused slots here
+                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox or unused slots here
+                    case MENU_EVMETER:                                          // do not display the Sensorbox or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         } while (value == EM_SENSORBOX);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_EVMETERHOST:
-                    case MENU_CIRCUITMETERHOST:
-                    case MENU_MAINSMETERHOST: {
-                        Meter *meter = getMeterByHostnameMenu(LCDNav);
-                        value = MenuNavInt(Buttons, value, 0, meter != nullptr ? getCompatiblemDNSServiceCount(meter->Type) : 0);
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(EVMeter.Type));
                         setItemValue(LCDNav, value);
                         break;
-                    }
+                    case MENU_MAINSMETERHOST:
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(MainsMeter.Type));
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_CIRCUITMETERHOST:
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(CircuitMeter.Type));
+                        setItemValue(LCDNav, value);
+                        break;
                     case MENU_WIFI:
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         setItemValue(LCDNav, value);
@@ -1423,8 +1452,14 @@ void GLCDMenu(uint8_t Buttons) {
     } else if (LCDNav > 1 && LCDNav != MENU_OFF && LCDNav != MENU_ON && Buttons == 0x5 && ButtonRelease == 0) {            // Button 2 pressed?
         ButtonRelease = 1;
         if (SubMenu) {                                                          // We are currently in Submenu
-            if (LCDNav == MENU_EVMETERHOST || LCDNav == MENU_MAINSMETERHOST || LCDNav == MENU_CIRCUITMETERHOST) {
-                commitMeterHostSelection(LCDNav);
+            if (LCDNav == MENU_EVMETERHOST){
+                commitMeterHostSelection(EVMeter, getItemValue(MENU_EVMETERHOST));
+            }
+            if (LCDNav == MENU_MAINSMETERHOST){
+                commitMeterHostSelection(MainsMeter, getItemValue(MENU_MAINSMETERHOST));
+            }
+            if (LCDNav == MENU_CIRCUITMETERHOST){
+                commitMeterHostSelection(CircuitMeter, getItemValue(MENU_CIRCUITMETERHOST));
             }
             SubMenu = 0;                                                        // Exit Submenu now
             digit = 3;

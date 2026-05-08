@@ -911,8 +911,10 @@ struct MdnsServiceQuery {
 };
 
 static constexpr MdnsServiceQuery mdnsServiceQueries[] = {
-    {"hwenergy", "tcp"}, //HomeWizard Energy Meters
-     // Add more service queries here for other brands/types if needed
+    {"hwenergy", "tcp"}, // HomeWizard Energy meters use this mDNS service
+    // Add more entries here when we support other meter brands or service types.
+    // Each brand can advertise a different mDNS service/protocol pair.
+    // For each entry, a separate mDNS discovery will be performed and cached in mDNSServices.
 };
 
 /**
@@ -924,11 +926,8 @@ static bool appendDiscoveredService(const String &hostname, uint16_t port, const
     }
 
     const String fullHostname = hostname + ".local" + (port != 80 ? ":" + String(port) : "");
-    char serviceName[16];
     mDNSServices[serviceCount].ServiceType = getmDNSServiceType(hostname);
     mDNSServices[serviceCount].HostName = fullHostname;
-    compileServiceName(mDNSServices[serviceCount].ServiceType, mDNSServices[serviceCount].HostName.c_str(), serviceName, sizeof(serviceName));
-    mDNSServices[serviceCount].Name = serviceName;
     serviceCount++;
     return true;
 }
@@ -939,7 +938,6 @@ static bool appendDiscoveredService(const String &hostname, uint16_t port, const
 static void clearmDNSServices() {
     for (auto &service : mDNSServices) {
         service.ServiceType = 0;
-        service.Name = "";
         service.HostName = "";
     }
 }
@@ -989,7 +987,10 @@ const mDNSServiceEntry *getmDNSServiceByIndex(int type, const String &hostnamePa
 }
 
 /**
- * @brief Build a short display name for a discovered hostname.
+ * @brief Build the compact name shown on the LCD for a discovered network meter.
+ *
+ * The helper trims the raw hostname into the shortest useful label that fits the LCD
+ * So the UI can show something readable instead of the full network name.
  */
 void compileServiceName(int type, const char *hostname, char *output, size_t outputSize) {
     if (output == nullptr || outputSize == 0) {
@@ -1001,6 +1002,8 @@ void compileServiceName(int type, const char *hostname, char *output, size_t out
         return;
     }
 
+    // Keep the formatting per meter type here so each service can define how its
+    // hostname should be shortened for the LCD without affecting the others.
     switch (type) {
         case EM_HOMEWIZARD: {
             const char *end = strrchr(hostname, '.');

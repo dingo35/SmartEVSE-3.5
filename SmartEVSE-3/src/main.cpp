@@ -3468,10 +3468,6 @@ void Timer1S(void * parameter) {
 }
 #endif //SMARTEVSE_VERSION
 
-static int8_t getMeterHostMenuSlot(uint8_t nav);
-extern uint8_t MeterHostMenuSelection[3];
-
-
 /**
  * Check minimum and maximum of a value and set the variable
  *
@@ -3598,15 +3594,14 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
             setAccess((AccessStatus_t) val);
             break;
         case MENU_EVMETERHOST:
-        case MENU_MAINSMETERHOST:
-        case MENU_CIRCUITMETERHOST: {
-            const int8_t slot = getMeterHostMenuSlot(nav);
-            if (slot < 0) {
-                return 0;
-            }
-            MeterHostMenuSelection[slot] = (uint8_t) val;
+            EVMeter.HostMenuSelection = (uint8_t) val;
             break;
-        }
+        case MENU_MAINSMETERHOST:
+            MainsMeter.HostMenuSelection = (uint8_t) val;
+            break;
+        case MENU_CIRCUITMETERHOST:
+            CircuitMeter.HostMenuSelection = (uint8_t) val;
+            break;
         default:
             return 0;
     }
@@ -3671,14 +3666,11 @@ uint16_t getItemValue(uint8_t nav) {
         case MENU_EVMETERADDRESS:
             return EVMeter.Address;
         case MENU_EVMETERHOST:
+            return EVMeter.HostMenuSelection;
         case MENU_MAINSMETERHOST:
-        case MENU_CIRCUITMETERHOST: {
-            const int8_t slot = getMeterHostMenuSlot(nav);
-            if (slot < 0) {
-                return 0;
-            }
-            return MeterHostMenuSelection[slot];
-        }
+            return MainsMeter.HostMenuSelection;
+        case MENU_CIRCUITMETERHOST:
+            return CircuitMeter.HostMenuSelection;
         case MENU_CIRCUITMETER:
             return CircuitMeter.Type;
         case MENU_CIRCUITMETERADDRESS:
@@ -3748,59 +3740,6 @@ uint16_t getItemValue(uint8_t nav) {
         default:
             return 0;
     }
-}
-
-Meter *getMeterByHostnameMenu(uint8_t nav) {
-    switch (nav) {
-        case MENU_EVMETERHOST:
-            return &EVMeter;
-        case MENU_MAINSMETERHOST:
-            return &MainsMeter;
-        case MENU_CIRCUITMETERHOST:
-            return &CircuitMeter;
-        default:
-            return nullptr;
-    }
-}
-
-static int8_t getMeterHostMenuSlot(uint8_t nav) {
-    switch (nav) {
-        case MENU_EVMETERHOST:
-            return 0;
-        case MENU_MAINSMETERHOST:
-            return 1;
-        case MENU_CIRCUITMETERHOST:
-            return 2;
-        default:
-            return -1;
-    }
-}
-
-uint8_t MeterHostMenuSelection[3] = {0, 0, 0};
-
-void resetMeterHostSelections(void) {
-    MeterHostMenuSelection[0] = 0;
-    MeterHostMenuSelection[1] = 0;
-    MeterHostMenuSelection[2] = 0;
-}
-
-void commitMeterHostSelection(uint8_t nav) {
-    Meter *meter = getMeterByHostnameMenu(nav);
-    const int8_t slot = getMeterHostMenuSlot(nav);
-    if (meter == nullptr || slot < 0) {
-        return;
-    }
-
-    const uint8_t value = MeterHostMenuSelection[slot];
-    if (value >= 1) {
-        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter->Type, value - 1);
-        if (service && !service->HostName.isEmpty()) {
-            strncpy(meter->DeviceHostName, service->HostName.c_str(), sizeof(meter->DeviceHostName));
-            meter->DeviceHostName[sizeof(meter->DeviceHostName) - 1] = '\0';
-        }
-    }
-
-    resetMeterHostSelections();
 }
 
 /**

@@ -55,6 +55,7 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
         Power[x] = 0;
     }
     DeviceHostName[0] = '\0';
+    HostMenuSelection = 0;
     Type = type;
     Address = address;
     Imeasured = 0;
