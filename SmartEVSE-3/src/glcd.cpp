@@ -1035,6 +1035,8 @@ static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
  * @return void
  */
 static void commitMeterHostSelection(Meter &meter, uint8_t value) {
+    // If the user selected "Unchanged", do nothing and just clear the pending menu selection
+    // Else, if they selected an mDNS entry ( value >= 1 ), update the meter's DeviceHostName to match the selected entry
     if (value >= 1) {
         const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
         if (service && !service->HostName.isEmpty()) {
