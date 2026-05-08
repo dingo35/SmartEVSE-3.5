@@ -2662,15 +2662,24 @@ void ModbusRequestLoop() {
                 ModbusRequest++;
                 // fall through
             case 21:
+                if (++energytimer >= 60) energytimer = 0;                   // ~2s tick, wraps every ~2min
                 // Request active energy if Mainsmeter is configured
-                if ((MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD && MainsMeter.Type != EM_SENSORBOX ))  // EM_API, EM_HOMEWIZARD and Sensorbox do not support energy postings
-                {
-                    energytimer++; //this ticks approx every second?!?
+
+                if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD && MainsMeter.Type != EM_SENSORBOX) { // EM_API, EM_HOMEWIZARD and Sensorbox do not support energy postings
+
                     if (energytimer == 30) {
                         _LOG_D("ModbusRequest %u: Request MainsMeter Import Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 0);
                         break;
                     }
+                    if (energytimer == 0) {
+                        _LOG_D("ModbusRequest %u: Request MainsMeter Export Active Energy Measurement\n", ModbusRequest);
+                        requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 1);
+                        break;
+                    }
+                }
+                // Request active energy if Circuitmeter is configured
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {     // EM_API is not a modbus device
                     if (energytimer == 15) {
                         _LOG_D("ModbusRequest %u: Request CircuitMeter Import Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 0);
@@ -2679,12 +2688,6 @@ void ModbusRequestLoop() {
                     if (energytimer == 45) {
                         _LOG_D("ModbusRequest %u: Request CircuitMeter Export Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 1);
-                        break;
-                    }
-                    if (energytimer >= 60) {
-                        _LOG_D("ModbusRequest %u: Request MainsMeter Export Active Energy Measurement\n", ModbusRequest);
-                        requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 1);
-                        energytimer = 0;
                         break;
                     }
                 }
