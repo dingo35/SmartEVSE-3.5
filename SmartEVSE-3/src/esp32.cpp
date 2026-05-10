@@ -3764,29 +3764,25 @@ bool fwNeedsUpdate(char * version) {
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
   */
- void homewizard_loop() {
-    static unsigned long lastCheck_homewizard = 0;
+static bool homewizardUpdateInProgress = false;
 
-    constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
-    const unsigned long currentTime = millis();
+static void homewizard_task(void *parameter) {
+    _LOG_A("homewizard_task(): started\n");
 
-    if (currentTime - lastCheck_homewizard < interval) {
-        return;
-    }
-    lastCheck_homewizard = currentTime;
     if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
-        // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation. 
+        // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
         _LOG_A("homewizard_loop(): Migrating HomeWizard P1 implementation");
-        //Old implementation just picked the first p1meter entry discovered, so we do the same here 
-        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true); 
+        //Old implementation just picked the first p1meter entry discovered, so we do the same here
+        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true);
         if (service != nullptr) {
             strncpy(MainsMeter.DeviceHostName, service->HostName.c_str(), sizeof(MainsMeter.DeviceHostName));
             MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
             write_settings();
         }
     }
-    if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2){ 
+
+    if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) {
         _LOG_A("homewizard_loop(): start HomeWizard MainsMeter reading.");
         const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
@@ -3806,7 +3802,7 @@ bool fwNeedsUpdate(char * version) {
 #endif
     }
 
-    if (CircuitMeter.Type == EM_HOMEWIZARD){
+    if (CircuitMeter.Type == EM_HOMEWIZARD) {
         _LOG_A("homewizard_loop(): start HomeWizard CircuitMeter reading.");
         const auto evdata = getDataFromHomeWizard(CircuitMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
@@ -3826,7 +3822,7 @@ bool fwNeedsUpdate(char * version) {
 #endif
     }
 
-    if (EVMeter.Type == EM_HOMEWIZARD){
+    if (EVMeter.Type == EM_HOMEWIZARD) {
         _LOG_A("homewizard_loop(): start HomeWizard EVMeter reading.");
         const auto evdata = getDataFromHomeWizard(EVMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
@@ -3844,6 +3840,37 @@ bool fwNeedsUpdate(char * version) {
 #else
         Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
+    }
+
+    homewizardUpdateInProgress = false;
+    _LOG_A("homewizard_task(): completed\n");
+    vTaskDelete(NULL);
+}
+
+ void homewizard_loop() {
+    static unsigned long lastCheck_homewizard = 0;
+
+    constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
+    const unsigned long currentTime = millis();
+
+    if (currentTime - lastCheck_homewizard < interval) {
+        return;
+    }
+    if (homewizardUpdateInProgress) {
+        return;
+    }
+    lastCheck_homewizard = currentTime;
+
+    homewizardUpdateInProgress = true;
+    if (xTaskCreate(
+            homewizard_task,
+            "HomeWizard",
+            8192,
+            NULL,
+            1,
+            NULL) != pdPASS) {
+        _LOG_A("homewizard_loop(): Failed to create HomeWizard task\n");
+        homewizardUpdateInProgress = false;
     }
 }
 
