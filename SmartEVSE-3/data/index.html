@@ -803,7 +803,9 @@
             wsErrorText = errorText;
             clearReconnectTimer();
             clearConnectTimeout();
-            setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
+            if (!document.hidden) {
+                setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
+            }
         }
 
         function clearConnectTimeout() {
@@ -1126,6 +1128,12 @@
 
         window.addEventListener('offline', () => {
             setActivateText('Offline - waiting for network...', 'warning');
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && wsStopped) {
+                restartLCDWebSocket();
+            }
         });
 
         const storedPin = getStoredPin();
