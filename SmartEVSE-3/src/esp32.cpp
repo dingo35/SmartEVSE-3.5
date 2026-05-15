@@ -1108,6 +1108,8 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
         }
         MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
+        //try evcc.io 
+		MQTTclient.publish(MQTTprefix + "/StateID", getStateName(State), true, 0);
         MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(ErrorFlags), true, 0);
         MQTTclient.publish(MQTTprefix + "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
         MQTTclient.publish(MQTTprefix + "/WiFiSSID", String(WiFi.SSID()), true, 0);
@@ -3767,12 +3769,12 @@ bool fwNeedsUpdate(char * version) {
 static bool homewizardUpdateInProgress = false;
 
 static void homewizard_task(void *parameter) {
-    _LOG_A("homewizard_task(): started\n");
+    _LOG_A("Started\n");
 
     if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
-        _LOG_A("homewizard_loop(): Migrating HomeWizard P1 implementation");
+        _LOG_A("Migrating HomeWizard P1 implementation");
         //Old implementation just picked the first p1meter entry discovered, so we do the same here
         const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true);
         if (service != nullptr) {
@@ -3783,7 +3785,7 @@ static void homewizard_task(void *parameter) {
     }
 
     if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) {
-        _LOG_A("homewizard_loop(): start HomeWizard MainsMeter reading.");
+        _LOG_A("Start HomeWizard MainsMeter reading.");
         const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3795,7 +3797,7 @@ static void homewizard_task(void *parameter) {
             MainsMeter.Export_active_energy = evdata.second[4];
             MainsMeter.PowerMeasured = evdata.second[5];
             MainsMeter.UpdateEnergies();
-            _LOG_A("homewizard_loop(): updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+            _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
         }
 #else
         Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
@@ -3803,7 +3805,7 @@ static void homewizard_task(void *parameter) {
     }
 
     if (CircuitMeter.Type == EM_HOMEWIZARD) {
-        _LOG_A("homewizard_loop(): start HomeWizard CircuitMeter reading.");
+        _LOG_A("Start HomeWizard CircuitMeter reading.");
         const auto evdata = getDataFromHomeWizard(CircuitMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3815,7 +3817,7 @@ static void homewizard_task(void *parameter) {
             CircuitMeter.Export_active_energy = evdata.second[4];
             CircuitMeter.PowerMeasured = evdata.second[5];
             CircuitMeter.UpdateEnergies();
-            _LOG_A("homewizard_loop(): updated CircuitMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+            _LOG_A("Updated CircuitMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
         }
 #else
         Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
@@ -3823,7 +3825,7 @@ static void homewizard_task(void *parameter) {
     }
 
     if (EVMeter.Type == EM_HOMEWIZARD) {
-        _LOG_A("homewizard_loop(): start HomeWizard EVMeter reading.");
+        _LOG_A("Start HomeWizard EVMeter reading.");
         const auto evdata = getDataFromHomeWizard(EVMeter.DeviceHostName);
 #if SMARTEVSE_VERSION < 40 //v3
         for (int i = 0; i < evdata.first; i++)
@@ -3835,7 +3837,7 @@ static void homewizard_task(void *parameter) {
             EVMeter.Export_active_energy = evdata.second[4];
             EVMeter.PowerMeasured = evdata.second[5];
             EVMeter.UpdateEnergies();
-            _LOG_A("homewizard_loop(): updated EVMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+            _LOG_A("Updated EVMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
         }
 #else
         Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
@@ -3843,7 +3845,7 @@ static void homewizard_task(void *parameter) {
     }
 
     homewizardUpdateInProgress = false;
-    _LOG_A("homewizard_task(): completed\n");
+    _LOG_A("Completed\n");
     vTaskDelete(NULL);
 }
 
@@ -3869,7 +3871,7 @@ static void homewizard_task(void *parameter) {
             NULL,
             1,
             NULL) != pdPASS) {
-        _LOG_A("homewizard_loop(): Failed to create HomeWizard task\n");
+        _LOG_A("Failed to create HomeWizard task\n");
         homewizardUpdateInProgress = false;
     }
 }

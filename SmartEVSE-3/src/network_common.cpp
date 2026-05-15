@@ -1,7 +1,6 @@
 #if defined(ESP32)
 
 #include <WiFi.h>
-#include <algorithm>
 #include <vector>
 #include "mbedtls/md_internal.h"
 #include "mbedtls/base64.h"
@@ -1112,11 +1111,11 @@ void mdnsDiscoveryTask(void* parameter) {
         // https://api-documentation.homewizard.com/docs/discovery/
         const int n = MDNS.queryService(query.service, query.protocol);
         if (n < 0) {
-            _LOG_A("discoverMeters(): MDNS query failed for %s.%s.\n", query.service, query.protocol);
+            _LOG_A("MDNS query failed for %s.%s.\n", query.service, query.protocol);
             continue;
         }
         if (n == 0) {
-            _LOG_A("discoverMeters(): No MDNS services found for %s.%s.\n", query.service, query.protocol);
+            _LOG_A("No MDNS services found for %s.%s.\n", query.service, query.protocol);
             continue;
         }
 
@@ -1144,7 +1143,7 @@ void mdnsDiscoveryTask(void* parameter) {
     }
 
     if (!anyServicesFound) {
-        _LOG_A("discoverMeters(): No matching mDNS services found.\n");
+        _LOG_A("No matching mDNS services found.\n");
     }
 
     mdnsDiscoveryInProgress = false;
@@ -1164,7 +1163,7 @@ void mdnsDiscoveryTask(void* parameter) {
 void discoverNetworkMeters() {
     // If discovery is already in progress, don't start another
     if (mdnsDiscoveryInProgress) {
-        _LOG_D("discoverNetworkMeters(): Discovery already in progress.\n");
+        _LOG_D("Discovery already in progress.\n");
         return;
     }
 
@@ -1178,7 +1177,7 @@ void discoverNetworkMeters() {
     
     // Start async mDNS discovery task
     mdnsDiscoveryInProgress = true;
-    _LOG_A("discoverNetworkMeters(): Starting async mDNS discovery (next retry in %lu seconds)...\n", MDNS_RETRY_INTERVAL / 1000);
+    _LOG_A("Starting async mDNS discovery (next retry in %lu seconds)...\n", MDNS_RETRY_INTERVAL / 1000);
     
     // Create task with 4KB stack, priority 1 (low), running on any core
     BaseType_t result = xTaskCreate(
@@ -1191,7 +1190,7 @@ void discoverNetworkMeters() {
     );
     
     if (result != pdPASS) {
-        _LOG_A("discoverNetworkMeters(): Failed to create mDNS discovery task!\n");
+        _LOG_A("Failed to create mDNS discovery task!\n");
         mdnsDiscoveryInProgress = false;
     }
     
@@ -1209,15 +1208,15 @@ void discoverNetworkMeters() {
  *     - An array of 6 values representing the active current in deci-amps for L1, L2, L3, total, import, and export
  */
 std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char *hostname) {
-    _LOG_A("getDataFromHomeWizard(): invocation\n");
+    _LOG_A("Invocation\n");
     if (hostname == nullptr || hostname[0] == '\0') {
-        _LOG_A("getDataFromHomeWizard(): No hostname provided.\n");
+        _LOG_A("No hostname provided.\n");
         return {false, {0, 0, 0, 0, 0, 0}};
     }
     char url[64];
     snprintf(url, sizeof(url), "http://%s/api/v1/data", hostname);
 
-    _LOG_A("getDataFromHomeWizard(): connect to URL %s\n", url);
+    _LOG_A("Connect to URL %s\n", url);
 
 
     if (!homeWizardHttpClientInitialized) {
@@ -1233,14 +1232,14 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     // Handle HTTP errors or timeout.
     const int httpCode = homeWizardHttpClient->GET();
     if (httpCode != HTTP_CODE_OK) {
-        _LOG_A("getDataFromHomeWizard(): Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url);
+        _LOG_A("Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url);
         homeWizardHttpClient->end(); // Always cleanup
         delete homeWizardHttpClient;
         homeWizardHttpClient = nullptr;
         homeWizardHttpClientInitialized = false;
         if (httpCode < 0) {
             lastMdnsQueryTime = 0; // Force immediate rediscovery on next attempt if the error was a connection failure
-            _LOG_A("getDataFromHomeWizard(): Connection failed, allowing immediate rediscovery.\n");
+            _LOG_A("Connection failed, allowing immediate rediscovery.\n");
         }
         return {false, {0, 0, 0, 0, 0, 0}};
     }
@@ -1265,7 +1264,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
 
     // Handle JSON parsing errors.
     if (error) {
-        _LOG_A("getDataFromHomeWizard(): JSON deserialization failed: %s\n", error.c_str());
+        _LOG_A("JSON deserialization failed: %s\n", error.c_str());
         return {false, {0, 0, 0, 0, 0, 0}};
     }
 
@@ -1278,7 +1277,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
 
     if (!phases) {
         // Early return on missing data.
-        _LOG_A("getDataFromHomeWizard(): required JSON fields 'active_current_a' not found\n");
+        _LOG_A("Required JSON fields 'active_current_a' not found\n");
         return {phases, {0, 0, 0, 0, 0, 0}};
     }
 
@@ -1289,13 +1288,11 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     };
 
     if (phases == 1) {
-         _LOG_A("getDataFromHomeWizard(): reading single phase data\n");
+         _LOG_A("Reading single phase data\n");
         // Single phase case: use 'active_current_a' and 'active_power_w' for correction
         int16_t rawCurrent = doc[currentKeys[3]].as<float>() * 10;
         int8_t correction = getCorrection(powerKeys[3]);
         evdata[0] = std::abs(rawCurrent) * correction;
-        evdata[1] = 0;
-        evdata[2] = 0;
     }
     else{
         // Process all three phases.

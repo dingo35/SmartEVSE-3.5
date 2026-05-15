@@ -271,7 +271,7 @@ void setPilot(bool On);
 #define MENU_IMPORT 20                                                          // 0x0207: Allow grid power when solar charging
 #define MENU_MAINSMETER 21                                                      // 0x0208: Type of Mains electric meter
 #define MENU_MAINSMETERADDRESS 22                                               // 0x0209: Address of Mains electric meter
-#define MENU_MAINSMETERHOST 23 
+#define MENU_MAINSMETERHOST 23
 #define MENU_CIRCUITMETER 24
 #define MENU_CIRCUITMETERADDRESS 25
 #define MENU_CIRCUITMETERHOST 26

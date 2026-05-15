@@ -1235,7 +1235,6 @@ uint8_t getMenuItems (void) {
             if (CircuitMeter.Type && CircuitMeter.Type == EM_HOMEWIZARD) {                           // - ? EV meter configured?
                 MenuItems[m++] = MENU_CIRCUITMETERHOST;                      // - - Device hostname selector for EV electric meter (0: current / 1-9 discovered hostnames)
             }
-            
             if (CircuitMeter.Type || LoadBl == 1)                               // old MaxCircuit behaviour without a CircuitMeter present: we will guard the max the Master gives out!
                 MenuItems[m++] = MENU_CIRCUIT;                                          // - Max current of the EVSE circuit (A)
         }
@@ -1367,14 +1366,16 @@ void GLCDMenu(uint8_t Buttons) {
                 value = getItemValue(LCDNav);
                 switch (LCDNav) {
                     case MENU_MAINSMETER:
-                        value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
+                        do {
+                            value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
+                        } while (value == EM_UNUSED_SLOT4);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_CIRCUITMETER:                                     // do not display the Sensorbox or unused slots here
                     case MENU_EVMETER:                                          // do not display the Sensorbox or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value == EM_SENSORBOX);
+                        } while (value == EM_SENSORBOX || value == EM_UNUSED_SLOT4);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_EVMETERHOST:
