@@ -3867,7 +3867,7 @@ static void homewizard_task(void *parameter) {
     if (xTaskCreate(
             homewizard_task,
             "HomeWizard",
-            8192,
+            3072,
             NULL,
             1,
             NULL) != pdPASS) {
