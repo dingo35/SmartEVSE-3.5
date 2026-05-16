@@ -1091,7 +1091,6 @@ const mDNSServiceEntry *getCompatiblemDNSServiceByIndex(uint8_t meterType, uint8
  * @brief FreeRTOS task that performs mDNS discovery in the background.
  * 
  * This task runs the blocking mDNS query without blocking the main loop.
- * When complete, it updates homeWizardP1Host and deletes itself.
  */
 void mdnsDiscoveryTask(void* parameter) {
     _LOG_A("mDNS discovery task started\n");
@@ -1156,9 +1155,8 @@ void mdnsDiscoveryTask(void* parameter) {
  *
  * This function uses mDNS to search for services advertising "_hwenergy._tcp" on the local network.
  * This function spawns a background task to perform the blocking mDNS query,
- * so the main loop remains responsive. The result is cached in homeWizardP1Host and homeWizardKwhHost.
+ * so the main loop remains responsive. 
  *
- * @return The cached hostname if available, empty string if discovery is pending or not found
  */
 void discoverNetworkMeters() {
     // If discovery is already in progress, don't start another
@@ -1282,13 +1280,14 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     }
 
     std::array<int32_t, 6> evdata{};
+    _LOG_A("Reading %u-phase data\n", phases);
+
     // Determine grid direction based on power: negative indicates feed-in, positive indicates usage.
     auto getCorrection = [&doc](const char* powerKey) -> int8_t {
         return doc[powerKey].as<int>() < 0 ? -1 : 1;
     };
 
     if (phases == 1) {
-         _LOG_A("Reading single phase data\n");
         // Single phase case: use 'active_current_a' and 'active_power_w' for correction
         int16_t rawCurrent = doc[currentKeys[3]].as<float>() * 10;
         int8_t correction = getCorrection(powerKeys[3]);
