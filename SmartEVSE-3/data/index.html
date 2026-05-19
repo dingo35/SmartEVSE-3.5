@@ -1686,12 +1686,17 @@
                             $('#ocpp_backend_url').prop("disabled",false);
                             $('#ocpp_cb_id').prop("disabled",false);
                             $('#ocpp_auth_key').prop("disabled",false);
+                            $('#ocpp_ca_cert').prop("disabled",false);
                             $('#ocpp_auto_auth').prop("disabled",false);
                             $('#ocpp_auto_auth_label').prop("disabled",false);
                             $('#ocpp_auto_auth_idtag').prop("disabled",false);
                             document.getElementById("ocpp_backend_url").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_cb_id").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_auth_key").classList.remove("ui-state-disabled");
+                            document.getElementById("ocpp_ca_cert").classList.remove("ui-state-disabled");
+                            $.get("/ocpp_ca_cert", function(certData) {
+                                $('#ocpp_ca_cert').val(certData);
+                            });
                             document.getElementById("ocpp_auto_auth").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_label").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_idtag").classList.remove("ui-state-disabled");
@@ -1701,12 +1706,14 @@
                             $('#ocpp_backend_url').prop("disabled",true);
                             $('#ocpp_cb_id').prop("disabled",true);
                             $('#ocpp_auth_key').prop("disabled",true);
+                            $('#ocpp_ca_cert').prop("disabled",true);
                             $('#ocpp_auto_auth').prop("disabled",true);
                             $('#ocpp_auto_auth_label').prop("disabled",true);
                             $('#ocpp_auto_auth_idtag').prop("disabled",true);
                             document.getElementById("ocpp_backend_url").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_cb_id").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auth_key").classList.add("ui-state-disabled");
+                            document.getElementById("ocpp_ca_cert").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_label").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_idtag").classList.add("ui-state-disabled");
@@ -1718,6 +1725,7 @@
                             ocpp_backend_url:     $('#ocpp_backend_url').val(),
                             ocpp_cb_id:           $('#ocpp_cb_id').val(),
                             ocpp_auth_key:        $('#ocpp_auth_key').val(),
+                            ocpp_ca_cert:         $('#ocpp_ca_cert').val(),
                             ocpp_auto_auth_idtag: $('#ocpp_auto_auth_idtag').val()
                         };
                         // Build query string with proper encoding
@@ -1960,6 +1968,7 @@
                                               <label>Backend URL: <input id="ocpp_backend_url" class="ui-state-disabled" title="Enter URL that your provider provided, up until the last /"></label>
                                               <label>Charge Box Id: <input id="ocpp_cb_id" class="ui-state-disabled" title="Identifies your charger; enter URL part after the last / of the URL your provider gave you"></label>
                                               <label>Password(optional): <input id="ocpp_auth_key" class="ui-state-disabled" title="Only necessary for SP2 connections"></label>
+                                              <label>CA Certificate (PEM): <textarea id="ocpp_ca_cert" rows="10" class="ui-state-disabled" style="width:100%; font-family:monospace;" title="Paste the PEM-formatted CA certificate used to verify the OCPP backend (wss://). If left empty, LetsEncrypt will be used as default"></textarea></label>
                                               <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
                                                 <div class="col-auto mb-0 mr-3" style="width: 200px">
                                                   <input type="checkbox" class="form-check-input ui-state-disabled" id="ocpp_auto_auth" onclick="toggleEnableOcppAutoAuth()">

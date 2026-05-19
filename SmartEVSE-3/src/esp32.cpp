@@ -606,6 +606,40 @@ void writeMqttCaCert(const String& cert) {
     _LOG_D("Wrote %d bytes to /mqtt_ca.pem.\n", cert.length());
 }
 
+// Read an optional user-supplied CA certificate for the OCPP backend
+// connection. Mirrors readMqttCaCert(): returns "" when not present, in
+// which case the caller falls back to the built-in Let's Encrypt root.
+String readOcppCaCert() {
+    if (!LittleFS.exists("/ocpp_ca.pem")) {
+        _LOG_A("No /ocpp_ca.pem found.\n");
+        return "";
+    }
+    File file = LittleFS.open("/ocpp_ca.pem", "r");
+    if (!file) {
+        _LOG_A("Failed to open /ocpp_ca.pem for reading.\n");
+        return "";
+    }
+    String cert = file.readString();
+    file.close();
+    return cert;
+}
+
+void writeOcppCaCert(const String& cert) {
+    if (cert.isEmpty()) {
+        LittleFS.remove("/ocpp_ca.pem");
+        _LOG_D("Removed /ocpp_ca.pem.\n");
+        return;
+    }
+    File file = LittleFS.open("/ocpp_ca.pem", "w");
+    if (!file) {
+        _LOG_A("Failed to open /ocpp_ca.pem for writing.\n");
+        return;
+    }
+    file.print(cert);
+    file.close();
+    _LOG_D("Wrote %d bytes to /ocpp_ca.pem.\n", cert.length());
+}
+
 #if MQTT
 void mqtt_receive_callback(const String topic, const String payload) {
     if (topic == MQTTprefix + "/Set/Mode") {
@@ -1784,6 +1818,9 @@ struct MgChunkPrint : public Print {
     }
     ~MgChunkPrint() { flushBuf(); mg_http_write_chunk(c, "", 0); }
 };
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
+void ocppDeinit();  // defined further down; needed to reload OCPP TLS CA
+#endif
 
 // handles URI, returns true if handled, false if not
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
@@ -1953,6 +1990,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
         doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
         doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
+        doc["ocpp"]["ca_cert_set"] = LittleFS.exists("/ocpp_ca.pem");  // cheap: avoid reading the PEM on every settings poll
 
         {
             auto freevendMode = MicroOcpp::getConfigurationPublic(MO_CONFIG_EXT_PREFIX "FreeVendActive");
@@ -2319,6 +2357,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     }
                 }
 
+                if(request->hasParam("ocpp_ca_cert")) {
+                    String cert = request->getParam("ocpp_ca_cert")->value();
+                    writeOcppCaCert(cert);                      // Save to LittleFS
+                    doc["ocpp_ca_cert_set"] = !cert.isEmpty();
+                    // The CA is bound at MOcppMongooseClient construction, so
+                    // tear down the OCPP context here; the lifecycle loop in
+                    // ocppLoop() re-runs ocppInit() and picks up the new cert.
+                    if (getOcppContext()) {
+                        ocppDeinit();
+                    }
+                }
+
                 if(request->hasParam("ocpp_auto_auth")) {
                     auto freevendMode = MicroOcpp::getConfigurationPublic(MO_CONFIG_EXT_PREFIX "FreeVendActive");
                     if (freevendMode) {
@@ -2354,6 +2404,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         request_write_settings();
         return true;
       }
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
+    } else if (mg_http_match_uri(hm, "/ocpp_ca_cert") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        String cert = readOcppCaCert();
+        mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "%s\r\n", cert.c_str());
+        return true;
+#endif
     } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
         // Stream JSON via HTTP chunked encoding to avoid the ~8 KB DynamicJsonDocument + serialized String
         time_t now = time(NULL);
@@ -2810,12 +2866,30 @@ void ocppInit() {
             MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
             );
 
+    // CA certificate for verifying the OCPP backend (wss://). Use a
+    // user-supplied cert from LittleFS if present, otherwise fall back to
+    // the Let's Encrypt ISRG Root X1 (same scheme as the MQTT TLS path).
+    // Must be static: MOcppMongooseClient keeps the pointer and the string
+    // has to outlive the WS client.
+    static String ocppCaCert;
+    ocppCaCert = readOcppCaCert();
+    if (ocppCaCert.length() < 10) {
+        ocppCaCert = root_ca_letsencrypt;
+        _LOG_A("No CA cert in LittleFS, using LetsEncrypt as default for OCPP TLS\n");
+    }
+    // mongoose's mg_load_cert() only extends the buffer length to include the
+    // trailing NUL (required by mbedTLS's PEM parser) when the first byte is
+    // '-'. Our bundled root_ca_letsencrypt raw-string literal and pasted certs
+    // can start with a newline/whitespace, which makes mbedtls_x509_crt_parse()
+    // fail with MBEDTLS_ERR_X509_INVALID_FORMAT (0x2180) and breaks OCPP TLS.
+    ocppCaCert.trim();
+
     OcppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
             nullptr,    // OCPP backend URL (factory default)
             nullptr,    // ChargeBoxId (factory default)
             nullptr,    // WebSocket Basic Auth token (factory default)
-            nullptr,    // CA cert (cert string must outlive WS client)
+            ocppCaCert.c_str(),  // CA cert (static String outlives WS client)
             filesystem);
 
     mocpp_initialize(
