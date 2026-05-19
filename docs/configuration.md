@@ -303,6 +303,35 @@ You will need a Backend Provider (BP) that supports the **OCPP 1.6j** protocol. 
 - If the backend uses **OCPP SmartCharging** the SmartEVSE internal power sharing [PWR SHARE](#pwr-share) has to be turned off.
 - **Remote firmware updates** are supported over OCPP. The SmartEVSE only accepts `http://` URLs pointing to signed firmware files.
 
+## TLS and certificate verification
+
+OCPP backends are reached over a secure WebSocket (`wss://`). The SmartEVSE
+verifies the backend's TLS certificate so the connection cannot be silently
+intercepted. It is configured in the **OCPP section** of the dashboard with the
+*CA Certificate (PEM)* field and the *Disable TLS certificate verification*
+checkbox:
+
+| Your backend | What to do |
+| --- | --- |
+| Uses a **Let's Encrypt** certificate (most providers, e.g. Tap Electric) | Nothing. It works out of the box — the Let's Encrypt root is built in. Leave the certificate field empty and the checkbox off. |
+| **Not** Let's Encrypt (incl. SNI / name-based virtual-host backends, self-hosted SteVe, private CAs) | Paste the backend's CA certificate **or** its own server certificate into *CA Certificate (PEM)*. It is used automatically — no checkbox needed. |
+| Does **not** use SNI / name-based virtual hosts **and** you cannot obtain its certificate | Tick **Disable TLS certificate verification**. Insecure — last resort only. |
+
+Notes:
+
+- A pasted certificate **takes precedence** over the built-in Let's Encrypt
+  root and is used automatically as the trust anchor. You may paste either the
+  issuing CA or the backend's own server certificate (the latter is
+  certificate pinning). Verification and SNI both stay on, so it is secure and
+  works with name-based virtual-host backends.
+- **Disable TLS certificate verification** turns off all certificate checking
+  *and* does not send SNI (the firmware can only send SNI on the verifying TLS
+  path). Backends that rely on SNI / name-based virtual hosts will **not**
+  connect in this mode — paste their certificate above instead. If a
+  certificate is pasted, verification stays on regardless of this checkbox.
+- To obtain a backend's server certificate to paste (only necessary for non let's encrypt backends):
+  `openssl s_client -connect HOST:443 -servername HOST </dev/null | openssl x509 -outform pem` - though be aware that this will work for as long as the leaf cert is valid, typically a few months. It's better to get the providers' root cert because it will remain valid for much longer.
+
 For user experiences with backend providers, see [OCPP Backends](ocpp.md).
 
 # REST API
