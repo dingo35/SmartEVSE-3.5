@@ -640,6 +640,14 @@ void writeOcppCaCert(const String& cert) {
     _LOG_D("Wrote %d bytes to /ocpp_ca.pem.\n", cert.length());
 }
 
+// Explicit opt-out: when true, the OCPP TLS connection is made WITHOUT
+// certificate verification (mongoose MBEDTLS_SSL_VERIFY_NONE). SNI is still
+// sent (set_hostname runs regardless of the verify branch), so name-based
+// virtual hosts keep working. Insecure by design - only for operators who
+// knowingly accept an unverified backend. Persisted in NVS ("settings"
+// namespace, key "OcppTlsNoVfy"), same scheme as MQTTtls.
+bool OcppTlsNoVerify = false;
+
 #if MQTT
 void mqtt_receive_callback(const String topic, const String payload) {
     if (topic == MQTTprefix + "/Set/Mode") {
@@ -1483,6 +1491,7 @@ void read_settings() {
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
+        OcppTlsNoVerify = preferences.getBool("OcppTlsNoVfy", false);
 #endif //ENABLE_OCPP
 
         preferences.end();                                  
@@ -1991,6 +2000,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
         doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
         doc["ocpp"]["ca_cert_set"] = LittleFS.exists("/ocpp_ca.pem");  // cheap: avoid reading the PEM on every settings poll
+        doc["ocpp"]["tls_noverify"] = OcppTlsNoVerify ? 1 : 0;
 
         {
             auto freevendMode = MicroOcpp::getConfigurationPublic(MO_CONFIG_EXT_PREFIX "FreeVendActive");
@@ -2364,6 +2374,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     // The CA is bound at MOcppMongooseClient construction, so
                     // tear down the OCPP context here; the lifecycle loop in
                     // ocppLoop() re-runs ocppInit() and picks up the new cert.
+                    if (getOcppContext()) {
+                        ocppDeinit();
+                    }
+                }
+
+                if(request->hasParam("ocpp_tls_noverify")) {
+                    OcppTlsNoVerify = request->getParam("ocpp_tls_noverify")->value().toInt() == 1;
+                    if (preferences.begin("settings", false)) {
+                        preferences.putBool("OcppTlsNoVfy", OcppTlsNoVerify);  // NVS, like MQTTtls
+                        preferences.end();
+                    }
+                    doc["ocpp_tls_noverify"] = OcppTlsNoVerify ? 1 : 0;
+                    // Verify mode is bound at MOcppMongooseClient construction;
+                    // reload OCPP so the change takes effect (same as the CA).
                     if (getOcppContext()) {
                         ocppDeinit();
                     }
@@ -2872,17 +2896,27 @@ void ocppInit() {
     // Must be static: MOcppMongooseClient keeps the pointer and the string
     // has to outlive the WS client.
     static String ocppCaCert;
-    ocppCaCert = readOcppCaCert();
-    if (ocppCaCert.length() < 10) {
-        ocppCaCert = root_ca_letsencrypt;
-        _LOG_A("No CA cert in LittleFS, using LetsEncrypt as default for OCPP TLS\n");
+    if (OcppTlsNoVerify) {
+        // Explicit operator opt-out: empty CA -> MicroOcppMongoose passes NULL
+        // -> mongoose selects MBEDTLS_SSL_VERIFY_NONE. SNI is still sent
+        // (mbedtls_ssl_set_hostname runs independent of the verify branch),
+        // so name-based virtual-host backends still connect.
+        ocppCaCert = "";
+        _LOG_A("OCPP TLS certificate verification DISABLED by operator (insecure)\n");
+    } else {
+        ocppCaCert = readOcppCaCert();
+        if (ocppCaCert.length() < 10) {
+            ocppCaCert = root_ca_letsencrypt;
+            _LOG_A("No CA cert in LittleFS, using LetsEncrypt as default for OCPP TLS\n");
+        }
+        // mongoose's mg_load_cert() only extends the buffer length to include
+        // the trailing NUL (required by mbedTLS's PEM parser) when the first
+        // byte is '-'. Our bundled root_ca_letsencrypt raw-string literal and
+        // pasted certs can start with a newline/whitespace, which makes
+        // mbedtls_x509_crt_parse() fail with MBEDTLS_ERR_X509_INVALID_FORMAT
+        // (0x2180) and breaks OCPP TLS.
+        ocppCaCert.trim();
     }
-    // mongoose's mg_load_cert() only extends the buffer length to include the
-    // trailing NUL (required by mbedTLS's PEM parser) when the first byte is
-    // '-'. Our bundled root_ca_letsencrypt raw-string literal and pasted certs
-    // can start with a newline/whitespace, which makes mbedtls_x509_crt_parse()
-    // fail with MBEDTLS_ERR_X509_INVALID_FORMAT (0x2180) and breaks OCPP TLS.
-    ocppCaCert.trim();
 
     OcppWsClient = new MicroOcpp::MOcppMongooseClient(
             &mgr,
