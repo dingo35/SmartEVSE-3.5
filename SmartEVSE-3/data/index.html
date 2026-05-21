@@ -481,9 +481,18 @@
               $('[id=ocpp_config_outer]').hide();
             }
 
-            setTimeout("loadData()", 5000);
+            setTimeout(loadData, 5000);
           });
       }
+
+      // When the tab becomes visible again, refresh data immediately and
+      // reconnect the LCD websocket if it was stopped while the tab was hidden.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          loadData();
+          if (window.lcdReconnectIfNeeded) window.lcdReconnectIfNeeded();
+        }
+      });
 
       // Add event listener for TLS checkbox
       $(document).on('change', '#mqtt_tls', toggleCertVisibility);
@@ -1130,11 +1139,10 @@
             setActivateText('Offline - waiting for network...', 'warning');
         });
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && wsStopped) {
-                restartLCDWebSocket();
-            }
-        });
+        // Expose reconnect hook so the outer visibilitychange listener can call it.
+        window.lcdReconnectIfNeeded = () => {
+            if (wsStopped) restartLCDWebSocket();
+        };
 
         const storedPin = getStoredPin();
         if (isValidPin(storedPin)) {
