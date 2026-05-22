@@ -3191,8 +3191,12 @@ void ocppLoop() {
     if (RFIDReader == 6 || RFIDReader == 0) {
         // RFID reader in OCPP mode or RFID fully disabled - OCPP controls Access_bit
         if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
-            _LOG_A("OCPP set Access_bit\n");
-            setAccess(ON);
+            if (DelayedStartTime.epoch2 && DelayedStartTime.diff > 0) {
+                _LOG_A("OCPP: transaction authorized, delayed charging active - suspending\n");
+            } else {
+                _LOG_A("OCPP set Access_bit\n");
+                setAccess(ON);
+            }
         } else if (AccessStatus == ON && !ocppPermitsCharge()) {
             _LOG_A("OCPP unset Access_bit\n");
             setAccess(OFF);
@@ -3200,8 +3204,10 @@ void ocppLoop() {
         OcppTrackPermitsCharge = ocppPermitsCharge();
 
         // Check if OCPP charge permission has been revoked by other module
+        // Don't end the transaction if Access is OFF due to delayed charging
         if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
-                AccessStatus == OFF) { // Access_bit is not active anymore
+                AccessStatus == OFF && // Access_bit is not active anymore
+                !(DelayedStartTime.epoch2 && DelayedStartTime.diff > 0)) { // Not suspended for delayed charging
             endTransaction(nullptr, "Other");
         }
     } else {
@@ -3218,15 +3224,18 @@ void ocppLoop() {
             }
             beginTransaction_authorized(buf);
         } else if (AccessStatus == OFF && (OcppTrackAccessBit || (getTransaction() && getTransaction()->isActive()))) {
-            OcppTrackAccessBit = false;
-            _LOG_A("OCPP detected Access_bit unset\n");
-            char buf[15];
-            if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
-            } else {
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            // Don't end the transaction if Access is OFF due to delayed charging
+            if (!(DelayedStartTime.epoch2 && DelayedStartTime.diff > 0)) {
+                OcppTrackAccessBit = false;
+                _LOG_A("OCPP detected Access_bit unset\n");
+                char buf[15];
+                if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
+                    sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                } else {
+                    sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                }
+                endTransaction_authorized(buf);
             }
-            endTransaction_authorized(buf);
         }
     }
 
