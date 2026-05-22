@@ -3726,6 +3726,14 @@ extern void Timer20ms(void * parameter);
     PILOT_CONNECTED;           // CP signal ACTIVE
 #endif
 
+#if DBG == 1
+    // redirect MicroOCPP messages to telnet server
+    mocpp_set_console_out([](const char* msg) {
+        Serial.print(msg);
+        if (Debug.isConnected()) Debug.print(msg);
+    });
+#endif
+
     firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
 }
 
