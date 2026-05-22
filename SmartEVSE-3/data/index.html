@@ -385,6 +385,12 @@
               $('.with_mainsmeter').hide();
             } else {
               $('.with_mainsmeter').show();
+              if ((data.mains_meter && data.mains_meter.host || '').trim()) {
+                $('#mainsmeter_host').text(mainsHost);
+                $('[id=with_mainsmeter_host]').show();
+              } else {
+                $('[id=with_mainsmeter_host]').hide();
+              }
             }
 
             if(data.ev_meter.description == "Disabled") {
@@ -392,6 +398,12 @@
             } else {
               $('[id=with_evmeter]').show();
               $('#evmeter_description').text(data.ev_meter.description);
+              if ((data.ev_meter.host || '').trim()) {
+                $('#evmeter_host').text(data.ev_meter.host);
+                $('[id=with_evmeter_host]').show();
+              } else {
+                $('[id=with_evmeter_host]').hide();
+              }
               $('#evmeter_power').text((data.ev_meter.import_active_power/1000).toFixed(1) + " kW");
               $('#evmeter_total_kwh').text((data.ev_meter.total_wh/1000).toFixed(1) + " kWh");
               $('#evmeter_charged_kwh').text((data.ev_meter.charged_wh/1000).toFixed(1) + " kWh");
@@ -1331,6 +1343,14 @@
                                           <div class="h5 mb-0 mr-3 text-gray-800" id="p1_data_time" style="text-align: right;"></div>
                                         </div>
                                     </div>
+                                    <div class="row no-gutters align-items-center" id="with_mainsmeter_host" style="display: none;">
+                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
+                                          Hostname:
+                                        </div>
+                                        <div class="col">
+                                          <div class="h5 mb-0 mr-3 text-gray-800" id="mainsmeter_host" style="text-align: right;"></div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="col-auto">
                                     <i class="fas fa-clipboard-list fa-2x text-gray-300">
@@ -1409,6 +1429,14 @@
                                     </div>
                                     <div class="col">
                                       <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_description" style="text-align: right;"></div>
+                                    </div>
+                                </div>
+                                <div class="row no-gutters align-items-center" id="with_evmeter_host" style="display: none;">
+                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
+                                      Hostname:
+                                    </div>
+                                    <div class="col">
+                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_host" style="text-align: right;"></div>
                                     </div>
                                 </div>
                                 <div class="row no-gutters align-items-center">

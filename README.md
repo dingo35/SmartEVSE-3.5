@@ -24,7 +24,7 @@ Communication between the SmartEVSE(s) / Sensorbox or kWh meters is done over RS
 - Automatically selects current capacity of the connected cable (13/16/32A)
 - Locking actuator support, locks the charging cable in the socket.
 - RFID reader support, restrict the use of the charging station to max 100 RFID cards.
-- An optional modbus kWh meter will measure power and energy, and display this on the LCD.
+- An optional modbus or networked kWh meter will measure power and energy, and display this on the LCD.
 - Built-in temperature sensor.
 - RGB led output for status information while charging.
 - All module parameters can be configured using the display and buttons.

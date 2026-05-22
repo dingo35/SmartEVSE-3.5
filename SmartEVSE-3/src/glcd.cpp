@@ -578,7 +578,7 @@ void GLCD(void) {
             } else if (ErrorFlags & CIRCUIT_NOCOMM) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "CIRCUIT METER");
-            } else if (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD_P1) {
+            } else if (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "MAINS METER");
             } else {
@@ -1005,6 +1005,49 @@ void GLCD(void) {
  * @param uint8_t nav
  * @return uint8_t[] MenuItemOption
  */
+static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
+    static char Str[12]; // must be declared static, since it's referenced outside of function scope
+
+    if (value == 0) {
+        if (strlen(meter.DeviceHostName) == 0) return "Not Set";
+        compileServiceName(meter.Type, meter.DeviceHostName, Str, sizeof(Str));
+        if (Str[0] == '\0') return "Not Set";
+        return Str;
+    }
+
+    const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
+    if (service && !service->HostName.isEmpty()) {
+        compileServiceName(meter.Type, service->HostName.c_str(), Str, sizeof(Str));
+        if (Str[0] != '\0') {
+            return Str;
+        }
+    }
+    return "Not Set";
+}
+
+/**
+ * Commit the selected host entry for one meter menu.
+ * This only updates the meter that was actually edited, and clears that meter's
+ * pending menu selection so the LCD menu returns to its neutral state.
+ * 
+ * @param Meter &meter
+ * @param uint8_t menu selection index (0 for "Unchanged", 1 for first mDNS entry, etc.)
+ * @return void
+ */
+static void commitMeterHostSelection(Meter &meter, uint8_t value) {
+    // If the user selected "Unchanged", do nothing and just clear the pending menu selection
+    // Else, if they selected an mDNS entry ( value >= 1 ), update the meter's DeviceHostName to match the selected entry
+    if (value >= 1) {
+        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
+        if (service && !service->HostName.isEmpty()) {
+            strncpy(meter.DeviceHostName, service->HostName.c_str(), sizeof(meter.DeviceHostName));
+            meter.DeviceHostName[sizeof(meter.DeviceHostName) - 1] = '\0';
+        }
+    }
+
+    meter.HostMenuSelection = 0;
+}
+
 const char * getMenuItemOption(uint8_t nav) {
     static char Str[12]; // must be declared static, since it's referenced outside of function scope
 
@@ -1097,6 +1140,12 @@ const char * getMenuItemOption(uint8_t nav) {
         case MENU_LCDPIN:
             sprintf(Str, "%04u", value);
             return Str;
+        case MENU_EVMETERHOST:
+            return getMeterHostStr(EVMeter, value);
+        case MENU_MAINSMETERHOST:
+            return getMeterHostStr(MainsMeter, value);
+        case MENU_CIRCUITMETERHOST:
+            return getMeterHostStr(CircuitMeter, value);
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
         case MENU_CIRCUITMETERADDRESS:
@@ -1173,19 +1222,28 @@ uint8_t getMenuItems (void) {
                 if (SB2.SoftwareVer == 0x01 || SB2.SoftwareVer == 0x03) {
                     MenuItems[m++] = MENU_SB2_WIFI;                             // Sensorbox-2 Wifi  0:Disabled / 1:Enabled / 2:Portal
                 }
-            } else if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) { // - - ? Other?
+            } else if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD) { // - - ? Other?
                 MenuItems[m++] = MENU_MAINSMETERADDRESS;                        // - - - Address of Mains electric meter (9 - 247)
+            }
+            if (MainsMeter.Type && MainsMeter.Type == EM_HOMEWIZARD) {                           // - ? EV meter configured?
+                MenuItems[m++] = MENU_MAINSMETERHOST;                      // - - Device hostname selector for EV electric meter (0: current / 1-9 discovered hostnames)
             }
             MenuItems[m++] = MENU_CIRCUITMETER;                                 // - - Type of Circuit electric meter (0: Disabled / Constants EM_*)
             if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {             // - ? Circuit meter configured?
                 MenuItems[m++] = MENU_CIRCUITMETERADDRESS;                      // - - Address of Circuit electric meter (9 - 247)
             }
+            if (CircuitMeter.Type && CircuitMeter.Type == EM_HOMEWIZARD) {                           // - ? EV meter configured?
+                MenuItems[m++] = MENU_CIRCUITMETERHOST;                      // - - Device hostname selector for EV electric meter (0: current / 1-9 discovered hostnames)
+            }
             if (CircuitMeter.Type || LoadBl == 1)                               // old MaxCircuit behaviour without a CircuitMeter present: we will guard the max the Master gives out!
                 MenuItems[m++] = MENU_CIRCUIT;                                          // - Max current of the EVSE circuit (A)
         }
         MenuItems[m++] = MENU_EVMETER;                                          // - Type of EV electric meter (0: Disabled / Constants EM_*)
-        if (EVMeter.Type && EVMeter.Type != EM_API) {                           // - ? EV meter configured?
+        if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD) {                           // - ? EV meter configured?
             MenuItems[m++] = MENU_EVMETERADDRESS;                               // - - Address of EV electric meter (9 - 247)
+        }
+        if (EVMeter.Type && EVMeter.Type == EM_HOMEWIZARD) {                           // - ? EV meter configured?
+            MenuItems[m++] = MENU_EVMETERHOST;                      // - - Device hostname selector for EV electric meter (0: current / 1-9 discovered hostnames)
         }
         if (LoadBl < 2) {                                                       // - ? Load Balancing Disabled/Master?
             if (MainsMeter.Type == EM_CUSTOM || EVMeter.Type == EM_CUSTOM || CircuitMeter.Type == EM_CUSTOM) { // ? Custom electric meter used?
@@ -1313,11 +1371,23 @@ void GLCDMenu(uint8_t Buttons) {
                         } while (value == EM_UNUSED_SLOT4);
                         setItemValue(LCDNav, value);
                         break;
-                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox, HomeWizard P1 or unused slots here
-                    case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1 or unused slots here
+                    case MENU_CIRCUITMETER:                                     // do not display the Sensorbox or unused slots here
+                    case MENU_EVMETER:                                          // do not display the Sensorbox or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value == EM_SENSORBOX || value == EM_HOMEWIZARD_P1 || value == EM_UNUSED_SLOT4);
+                        } while (value == EM_SENSORBOX || value == EM_UNUSED_SLOT4);
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_EVMETERHOST:
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(EVMeter.Type));
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_MAINSMETERHOST:
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(MainsMeter.Type));
+                        setItemValue(LCDNav, value);
+                        break;
+                    case MENU_CIRCUITMETERHOST:
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(CircuitMeter.Type));
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_WIFI:
@@ -1385,6 +1455,15 @@ void GLCDMenu(uint8_t Buttons) {
     } else if (LCDNav > 1 && LCDNav != MENU_OFF && LCDNav != MENU_ON && Buttons == 0x5 && ButtonRelease == 0) {            // Button 2 pressed?
         ButtonRelease = 1;
         if (SubMenu) {                                                          // We are currently in Submenu
+            if (LCDNav == MENU_EVMETERHOST){
+                commitMeterHostSelection(EVMeter, getItemValue(MENU_EVMETERHOST));
+            }
+            if (LCDNav == MENU_MAINSMETERHOST){
+                commitMeterHostSelection(MainsMeter, getItemValue(MENU_MAINSMETERHOST));
+            }
+            if (LCDNav == MENU_CIRCUITMETERHOST){
+                commitMeterHostSelection(CircuitMeter, getItemValue(MENU_CIRCUITMETERHOST));
+            }
             SubMenu = 0;                                                        // Exit Submenu now
             digit = 3;
             uint8_t WIFImode = getItemValue(MENU_WIFI);

@@ -144,6 +144,9 @@ struct SettingsCache {
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
     uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
+    char MainsMeterDeviceHostName[32];
+    char EVMeterDeviceHostName[32];
+    char CircuitMeterDeviceHostName[32];
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
@@ -1105,7 +1108,7 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
         }
         MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
-		//try evcc.io 
+        //try evcc.io 
 		MQTTclient.publish(MQTTprefix + "/StateID", getStateName(State), true, 0);
         MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(ErrorFlags), true, 0);
         MQTTclient.publish(MQTTprefix + "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
@@ -1243,7 +1246,7 @@ void validate_settings(void) {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     // If the address of the MainsMeter or EVmeter on a Node has changed, we must re-register the Modbus workers.
     if (LoadBl > 1) {
-        if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+        if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
     }
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
@@ -1365,10 +1368,19 @@ void read_settings() {
 
         MainsMeter.Type = preferences.getUChar("MainsMeter", MAINS_METER);
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
+        strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
+        MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
+        MainsMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
+        EVMeter.DeviceHostName[sizeof(EVMeter.DeviceHostName) - 1] = '\0';
+        EVMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
         CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
         CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
+        strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
+        CircuitMeter.DeviceHostName[sizeof(CircuitMeter.DeviceHostName) - 1] = '\0';
+        CircuitMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1433,10 +1445,16 @@ void read_settings() {
         settingsCache.RFIDReader = RFIDReader;
         settingsCache.MainsMeterType = MainsMeter.Type;
         settingsCache.MainsMeterAddress = MainsMeter.Address;
+        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
+        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
+        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
+        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
         settingsCache.CircuitMeterType = CircuitMeter.Type;
         settingsCache.CircuitMeterAddress = CircuitMeter.Address;
+        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
+        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1506,8 +1524,23 @@ void write_settings(void) {
 
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMeter", MainsMeter.Type, MainsMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
+        if (!settingsCache.valid || strcmp(MainsMeter.DeviceHostName, settingsCache.MainsMeterDeviceHostName) != 0) {
+        preferences.putString("MainsHostName", MainsMeter.DeviceHostName);
+        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
+        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
+    }
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    if (!settingsCache.valid || strcmp(EVMeter.DeviceHostName, settingsCache.EVMeterDeviceHostName) != 0) {
+        preferences.putString("EVMeterHostName", EVMeter.DeviceHostName);
+        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
+        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
+    }
+    if (!settingsCache.valid || strcmp(CircuitMeter.DeviceHostName, settingsCache.CircuitMeterDeviceHostName) != 0) {
+        preferences.putString("CircuitHostName", CircuitMeter.DeviceHostName);
+        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
+        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
+    }
     PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address, CircuitMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
@@ -1873,6 +1906,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
+        if (EVMeter.Type == EM_HOMEWIZARD) {
+            doc["ev_meter"]["host"] = strlen(EVMeter.DeviceHostName) > 0 ? EVMeter.DeviceHostName : "Not Set";
+        }
         doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured; // Watt
         doc["ev_meter"]["total_wh"] = EVMeter.Energy; // Wh
         doc["ev_meter"]["charged_wh"] = EVMeter.EnergyCharged; // Wh
@@ -1880,6 +1916,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
+
         if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
         if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
@@ -1889,15 +1926,21 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
         if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
             doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
+        if (MainsMeter.Type == EM_HOMEWIZARD) {
+            doc["mains_meter"]["host"] = strlen(MainsMeter.DeviceHostName) > 0 ? MainsMeter.DeviceHostName : "Not Set";
+        }
         if (CircuitMeter.Type) {
+            doc["circuit_meter"]["description"] = EMConfig[CircuitMeter.Type].Desc;
+            doc["circuit_meter"]["address"] = CircuitMeter.Address;
+            if (CircuitMeter.Type == EM_HOMEWIZARD) {
+                doc["circuit_meter"]["host"] = strlen(CircuitMeter.DeviceHostName) > 0 ? CircuitMeter.DeviceHostName : "Not Set";
+            }
             doc["circuit_meter"]["currents"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
             doc["circuit_meter"]["currents"]["L1"] = CircuitMeter.Irms[0];
             doc["circuit_meter"]["currents"]["L2"] = CircuitMeter.Irms[1];
             doc["circuit_meter"]["currents"]["L3"] = CircuitMeter.Irms[2];
         }
-        if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
-            doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
-        }
+
           
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
         doc["phase_currents"]["L1"] = MainsMeter.Irms[0];
@@ -3718,11 +3761,94 @@ bool fwNeedsUpdate(char * version) {
 }
 
 /**
-  * Periodically retrieves current measurements from the HomeWizard P1 energy meter
-  * and updates the main meter's currents.
+  * Periodically retrieves current measurements from networked energy meters
+  * and updates the meters' currents and energies.
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
   */
+static bool homewizardUpdateInProgress = false;
+
+static void homewizard_task(void *parameter) {
+    _LOG_A("Started\n");
+
+    if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
+        // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
+        // We can remove this code after a few releases, when we are sure most users have updated at least once.
+        _LOG_A("Migrating HomeWizard P1 implementation");
+        //Old implementation just picked the first p1meter entry discovered, so we do the same here
+        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true);
+        if (service != nullptr) {
+            strncpy(MainsMeter.DeviceHostName, service->HostName.c_str(), sizeof(MainsMeter.DeviceHostName));
+            MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
+            write_settings();
+        }
+    }
+
+    if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) {
+        _LOG_A("Start HomeWizard MainsMeter reading.");
+        const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            MainsMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            CalcIsum();
+            MainsMeter.setTimeout(COMM_TIMEOUT);
+            MainsMeter.Import_active_energy = evdata.second[3];
+            MainsMeter.Export_active_energy = evdata.second[4];
+            MainsMeter.PowerMeasured = evdata.second[5];
+            MainsMeter.UpdateEnergies();
+            _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+
+    if (CircuitMeter.Type == EM_HOMEWIZARD) {
+        _LOG_A("Start HomeWizard CircuitMeter reading.");
+        const auto evdata = getDataFromHomeWizard(CircuitMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            CircuitMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            CircuitMeter.CalcImeasured();
+            CircuitMeter.setTimeout(COMM_TIMEOUT);
+            CircuitMeter.Import_active_energy = evdata.second[3];
+            CircuitMeter.Export_active_energy = evdata.second[4];
+            CircuitMeter.PowerMeasured = evdata.second[5];
+            CircuitMeter.UpdateEnergies();
+            _LOG_A("Updated CircuitMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+
+    if (EVMeter.Type == EM_HOMEWIZARD) {
+        _LOG_A("Start HomeWizard EVMeter reading.");
+        const auto evdata = getDataFromHomeWizard(EVMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            EVMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            EVMeter.CalcImeasured();
+            EVMeter.setTimeout(COMM_TIMEOUT);
+            EVMeter.Import_active_energy = evdata.second[3];
+            EVMeter.Export_active_energy = evdata.second[4];
+            EVMeter.PowerMeasured = evdata.second[5];
+            EVMeter.UpdateEnergies();
+            _LOG_A("Updated EVMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+
+    homewizardUpdateInProgress = false;
+    _LOG_A("Completed\n");
+    vTaskDelete(NULL);
+}
+
  void homewizard_loop() {
     static unsigned long lastCheck_homewizard = 0;
 
@@ -3732,29 +3858,28 @@ bool fwNeedsUpdate(char * version) {
     if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
-
-    _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
+    if (homewizardUpdateInProgress) {
+        return;
+    }
     lastCheck_homewizard = currentTime;
 
-    const auto currents = getMainsFromHomeWizardP1();
-#if SMARTEVSE_VERSION < 40 //v3
-    for (int i = 0; i < currents.first; i++)
-        MainsMeter.Irms[i] = currents.second[i];
-    if (currents.first) {
-        CalcIsum();
-        MainsMeter.setTimeout(COMM_TIMEOUT);
+    homewizardUpdateInProgress = true;
+    if (xTaskCreate(
+            homewizard_task,
+            "HomeWizard",
+            3072,
+            NULL,
+            1,
+            NULL) != pdPASS) {
+        _LOG_A("Failed to create HomeWizard task\n");
+        homewizardUpdateInProgress = false;
     }
-#else
-    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, currents.second[0], currents.second[1], currents.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
-#endif
 }
 
 void loop() {
 
     network_loop();
-    if (MainsMeter.Type == EM_HOMEWIZARD_P1 && LoadBl < 2) {
-        homewizard_loop();
-    }
+    homewizard_loop();
     
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {

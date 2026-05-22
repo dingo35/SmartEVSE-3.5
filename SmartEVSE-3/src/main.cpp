@@ -2540,7 +2540,7 @@ void ModbusRequestLoop() {
                 ModbusRequest++;
                 // fall through
             case 2:                                                         // Sensorbox or kWh meter that measures -all- currents
-                if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
+                if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD currents
                     _LOG_D("ModbusRequest %u: Request MainsMeter Measurement\n", ModbusRequest);
                     requestCurrentMeasurement(MainsMeter.Type, MainsMeter.Address);
                     break;
@@ -2570,7 +2570,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 4:                                                         // EV kWh meter, Energy measurement (total charged kWh)
                 // Request Energy if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD) {
                     _LOG_D("ModbusRequest %u: Request Energy Node %u\n", ModbusRequest, PollEVNode);
                     requestEnergyMeasurement(Node[PollEVNode].EVMeter, Node[PollEVNode].EVAddress, 0);
                     break;
@@ -2579,7 +2579,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 5:                                                         // EV kWh meter, Power measurement (momentary power in Watt)
                 // Request Power if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD) {
                     updated = 1;
                     switch(EVMeter.Type) {
                         //these meters all have their power measured via receiveCurrentMeasurement already
@@ -2654,7 +2654,7 @@ void ModbusRequestLoop() {
                 // fall through
             case 20:                                                         // EV kWh meter, Current measurement
                 // Request Current if EV meter is configured
-                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API) {
+                if (Node[PollEVNode].EVMeter && Node[PollEVNode].EVMeter != EM_API && Node[PollEVNode].EVMeter != EM_HOMEWIZARD) {
                     _LOG_D("ModbusRequest %u: Request EVMeter Current Measurement Node %u\n", ModbusRequest, PollEVNode);
                     requestCurrentMeasurement(Node[PollEVNode].EVMeter, Node[PollEVNode].EVAddress);
                     break;
@@ -2664,7 +2664,9 @@ void ModbusRequestLoop() {
             case 21:
                 if (++energytimer >= 60) energytimer = 0;                   // ~2s tick, wraps every ~2min
                 // Request active energy if Mainsmeter is configured
-                if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1 && MainsMeter.Type != EM_SENSORBOX) { // EM_API, EM_HOMEWIZARD_P1 and Sensorbox do not support energy postings
+
+                if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD && MainsMeter.Type != EM_SENSORBOX) { // EM_API, EM_HOMEWIZARD and Sensorbox do not support energy postings
+
                     if (energytimer == 30) {
                         _LOG_D("ModbusRequest %u: Request MainsMeter Import Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 0);
@@ -2692,7 +2694,7 @@ void ModbusRequestLoop() {
                 ModbusRequest++;
                 // fall through
             case 22:                                                         // Sensorbox or kWh meter that measures -all- currents
-                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD_P1) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD currents
                     _LOG_D("ModbusRequest %u: Request CircuitMeter Current Measurement\n", ModbusRequest);
                     requestCurrentMeasurement(CircuitMeter.Type, CircuitMeter.Address);
                     break;
@@ -2701,7 +2703,7 @@ void ModbusRequestLoop() {
                 // fall through
 // CircuitMeter only reports currents right now, since that is its main function!
 /*            case 23:                                                         // Circuit kWh meter, Power measurement (momentary power in Watt)
-                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD_P1) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD_P1 currents
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD) { // we don't want modbus meter currents to conflict with EM_API and EM_HOMEWIZARD currents
                     updated = 1;
                     switch(CircuitMeter.Type) {
                         //these meters all have their power measured via receiveCurrentMeasurement already
@@ -3466,7 +3468,6 @@ void Timer1S(void * parameter) {
 }
 #endif //SMARTEVSE_VERSION
 
-
 /**
  * Check minimum and maximum of a value and set the variable
  *
@@ -3592,7 +3593,15 @@ uint8_t setItemValue(uint8_t nav, uint16_t val) {
         case STATUS_ACCESS:
             setAccess((AccessStatus_t) val);
             break;
-
+        case MENU_EVMETERHOST:
+            EVMeter.HostMenuSelection = (uint8_t) val;
+            break;
+        case MENU_MAINSMETERHOST:
+            MainsMeter.HostMenuSelection = (uint8_t) val;
+            break;
+        case MENU_CIRCUITMETERHOST:
+            CircuitMeter.HostMenuSelection = (uint8_t) val;
+            break;
         default:
             return 0;
     }
@@ -3656,6 +3665,12 @@ uint16_t getItemValue(uint8_t nav) {
             return EVMeter.Type;
         case MENU_EVMETERADDRESS:
             return EVMeter.Address;
+        case MENU_EVMETERHOST:
+            return EVMeter.HostMenuSelection;
+        case MENU_MAINSMETERHOST:
+            return MainsMeter.HostMenuSelection;
+        case MENU_CIRCUITMETERHOST:
+            return CircuitMeter.HostMenuSelection;
         case MENU_CIRCUITMETER:
             return CircuitMeter.Type;
         case MENU_CIRCUITMETERADDRESS:

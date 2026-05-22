@@ -167,6 +167,7 @@ const struct {
     {"RFID",    "RFID reader, learn/remove cards",                    0, 5 + (ENABLE_OCPP ? 1 : 0), RFID_READER},
     {"EV METER","Type of EV electric meter",                          0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_EV_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
+    {"EV HST", "Selected hostname or discovered hostname index",      0, 9, 0},
 
     // System configuration
     /* LCD,       Desc,                                                 Min, Max, Default */
@@ -180,8 +181,10 @@ const struct {
     {"IMPORT",  "Allow grid power when solar charging (sum of phase)",0, 48, IMPORT_CURRENT},
     {"MAINS MET","Type of mains electric meter",                      0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), MAINS_METER},
     {"MAINS ADR","Address of mains electric meter",                   MIN_METER_ADDRESS, MAX_METER_ADDRESS, MAINS_METER_ADDRESS},
+    {"MAINS HST", "Selected hostname or discovered hostname index",   0, 9, 0},
     {"CIRCT MET","Type of circuit electric meter",                    0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), CIRCUIT_METER},
     {"CIRCT ADR","Address of circuit electric meter",                 MIN_METER_ADDRESS, MAX_METER_ADDRESS, CIRCUIT_METER_ADDRESS},
+    {"CIRCT HST", "Selected hostname or discovered hostname index",   0, 9, 0},
     {"BYTE ORD","Byte order of custom electric meter",                0, 3, EMCUSTOM_ENDIANESS},
     {"DATA TYPE","Data type of custom electric meter",                 0, MB_DATATYPE_MAX - 1, EMCUSTOM_DATATYPE},
     {"FUNCTION","Modbus Function of custom electric meter",           3, 4, EMCUSTOM_FUNCTION},
