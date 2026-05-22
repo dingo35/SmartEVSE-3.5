@@ -1161,7 +1161,6 @@ void mdnsDiscoveryTask(void* parameter) {
 void discoverNetworkMeters() {
     // If discovery is already in progress, don't start another
     if (mdnsDiscoveryInProgress) {
-        _LOG_D("Discovery already in progress.\n");
         return;
     }
 

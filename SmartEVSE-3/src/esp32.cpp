@@ -3777,8 +3777,6 @@ bool fwNeedsUpdate(char * version) {
 static bool homewizardUpdateInProgress = false;
 
 static void homewizard_task(void *parameter) {
-    _LOG_A("Started\n");
-
     if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
@@ -3853,7 +3851,6 @@ static void homewizard_task(void *parameter) {
     }
 
     homewizardUpdateInProgress = false;
-    _LOG_A("Completed\n");
     vTaskDelete(NULL);
 }
 
