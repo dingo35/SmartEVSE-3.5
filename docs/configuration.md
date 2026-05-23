@@ -44,19 +44,23 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - **Sensorbox**: The Sensorbox sends measurement data to the SmartEVSE.
 - **API**: MAINS meter data is fed through the [REST API](REST_API.md) or [MQTT API](#mqtt-api).
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
-- **HmWzrd P1**: HomeWizard P1 meter (wifi based connection to the smart meter's P1 port).
+- **Homewizrd**: Mains meter data is polled from a network connected HomeWizard meter (P1 or kWh).
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If MAINS MET is not **Disabled** and not **API**, these settings appear:
+If MAINS MET is not **Disabled** and not **API** and not **HomeWizrd**, these settings appear:
 
 - **MAINSADR**: Set the Modbus address for the kWh meter.
 - **GRID**: 3 or 4 wire (only appears when Sensorbox with CT’s is used).
   - **4Wire**: Star connection with 3 phase wires and neutral.
   - **3Wire**: Delta connection with 3 phase wires without neutral.
+
+If MAINS MET is **HomeWizrd**, this settings appears:
+
+- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## CIRCT MET
 Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
@@ -70,9 +74,13 @@ Set Type of kWh Meter (measures power and charged energy) of the circuit this Sm
 - Eastron3P is for Eastron three-phase meters.
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If CIRCT MET is not **Disabled** and not **API**, this setting appears:
+If CIRCT MET is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **CIRCT ADR**: Set the Modbus address for the Circuit Meter.
+
+If CIRCT MET is **HomeWizrd**, this setting appears:
+
+- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
@@ -80,15 +88,20 @@ Set Type of EV kWh Meter (measures power and charged energy)
 - **Disabled**: No EV meter connected.
 - **API**: EV meter data is fed through the REST API or MQTT API.
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+- **HomeWizrd**: A Networked Homewizard meter is used.
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If EV METER is not **Disabled** and not **API**, this setting appears:
+If EV METER is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **EV ADR**: Set the Modbus address for the EV Meter.
+
+If EV METER is **HomeWizrd**, this setting appears:
+
+- **EV HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
@@ -339,6 +352,16 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A importing, -5 means 0.5A exporting.
 ...These should be fed at least ervery 10 seconds.
 
+OR it can be fed with:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/MainsMeter' -m L1:L2:L3:P:E
+```
+
+...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A.
+...where P is the Power in W,
+...where E is the Energy in Wh.
+
+
 Your EV kWh meter data can be fed with:
 ```
 mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/EVMeter' -m L1:L2:L3:P:E
@@ -388,6 +411,7 @@ For this purpose the settings endpoint allows you to pass through the battery cu
 * A positive current means the battery is charging
 * A negative current means the battery is discharging
 
+The battery current must be expressed in deci-Ampères. So 100 means charging with 10.0A, -5 means discharging with 0.5A.
 The EVSE will use the battery current to neutralize the impact of a home battery on the P1 information.
 
 **Regular updates from the consumer are required to keep this working as values cannot be older than 11 seconds.**

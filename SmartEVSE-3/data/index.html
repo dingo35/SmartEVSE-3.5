@@ -385,6 +385,12 @@
               $('.with_mainsmeter').hide();
             } else {
               $('.with_mainsmeter').show();
+              if ((data.mains_meter && data.mains_meter.host || '').trim()) {
+                $('#mainsmeter_host').text(mainsHost);
+                $('[id=with_mainsmeter_host]').show();
+              } else {
+                $('[id=with_mainsmeter_host]').hide();
+              }
             }
 
             if(data.ev_meter.description == "Disabled") {
@@ -392,6 +398,12 @@
             } else {
               $('[id=with_evmeter]').show();
               $('#evmeter_description').text(data.ev_meter.description);
+              if ((data.ev_meter.host || '').trim()) {
+                $('#evmeter_host').text(data.ev_meter.host);
+                $('[id=with_evmeter_host]').show();
+              } else {
+                $('[id=with_evmeter_host]').hide();
+              }
               $('#evmeter_power').text((data.ev_meter.import_active_power/1000).toFixed(1) + " kW");
               $('#evmeter_total_kwh').text((data.ev_meter.total_wh/1000).toFixed(1) + " kWh");
               $('#evmeter_charged_kwh').text((data.ev_meter.charged_wh/1000).toFixed(1) + " kWh");
@@ -481,9 +493,18 @@
               $('[id=ocpp_config_outer]').hide();
             }
 
-            setTimeout("loadData()", 5000);
+            setTimeout(loadData, 5000);
           });
       }
+
+      // When the tab becomes visible again, refresh data immediately and
+      // reconnect the LCD websocket if it was stopped while the tab was hidden.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          loadData();
+          if (window.lcdReconnectIfNeeded) window.lcdReconnectIfNeeded();
+        }
+      });
 
       // Add event listener for TLS checkbox
       $(document).on('change', '#mqtt_tls', toggleCertVisibility);
@@ -803,7 +824,9 @@
             wsErrorText = errorText;
             clearReconnectTimer();
             clearConnectTimeout();
-            setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
+            if (!document.hidden) {
+                setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
+            }
         }
 
         function clearConnectTimeout() {
@@ -1128,6 +1151,11 @@
             setActivateText('Offline - waiting for network...', 'warning');
         });
 
+        // Expose reconnect hook so the outer visibilitychange listener can call it.
+        window.lcdReconnectIfNeeded = () => {
+            if (wsStopped) restartLCDWebSocket();
+        };
+
         const storedPin = getStoredPin();
         if (isValidPin(storedPin)) {
             PASSWORD_FIELD.value = storedPin;
@@ -1315,6 +1343,14 @@
                                           <div class="h5 mb-0 mr-3 text-gray-800" id="p1_data_time" style="text-align: right;"></div>
                                         </div>
                                     </div>
+                                    <div class="row no-gutters align-items-center" id="with_mainsmeter_host" style="display: none;">
+                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
+                                          Hostname:
+                                        </div>
+                                        <div class="col">
+                                          <div class="h5 mb-0 mr-3 text-gray-800" id="mainsmeter_host" style="text-align: right;"></div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="col-auto">
                                     <i class="fas fa-clipboard-list fa-2x text-gray-300">
@@ -1393,6 +1429,14 @@
                                     </div>
                                     <div class="col">
                                       <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_description" style="text-align: right;"></div>
+                                    </div>
+                                </div>
+                                <div class="row no-gutters align-items-center" id="with_evmeter_host" style="display: none;">
+                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
+                                      Hostname:
+                                    </div>
+                                    <div class="col">
+                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_host" style="text-align: right;"></div>
                                     </div>
                                 </div>
                                 <div class="row no-gutters align-items-center">
