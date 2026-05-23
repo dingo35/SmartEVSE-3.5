@@ -645,10 +645,6 @@ void writeOcppCaCert(const String& cert) {
 // /ocpp_ca.pem or the bundled Let's Encrypt root as fallback. When false,
 // mongoose uses MBEDTLS_SSL_VERIFY_NONE.
 //
-// SNI is sent in both modes (mongoose was patched locally so set_hostname()
-// runs regardless of the verification branch), so name-based virtual-host
-// backends work either way.
-//
 // Default is false to preserve the original behavior; flip on once you have
 // pasted the right CA. Persisted in NVS ("settings" namespace, key
 // "OcppTlsVrfy"), same scheme as MQTTtls.
