@@ -485,7 +485,9 @@
                 $('#ocpp_cb_id').val(data.ocpp.cb_id);
                 $('#ocpp_auth_key').val(data.ocpp.auth_key);
                 $('#ocpp_auto_auth_idtag').val(data.ocpp.auto_auth_idtag);
-                $('#ocpp_tls_noverify').prop('checked', data.ocpp.tls_noverify == 1);
+                var verify = data.ocpp.tls_verify == 1;
+                $('#ocpp_tls_verify').prop('checked', verify);
+                $('#ocpp_ca_cert_row').toggle(verify);
               }
 
               $('#ocpp_ws_status').text(data.ocpp.status);
@@ -1672,6 +1674,9 @@
                       var enableOcppCheckbox = document.getElementById("enable_ocpp");
                       $.post( "/settings?ocpp_update=1&ocpp_mode=" + (enableOcppCheckbox.checked == true ? 1 : 0));
                     }
+                    function toggleOcppTlsVerify() {
+                      $('#ocpp_ca_cert_row').toggle($('#ocpp_tls_verify').is(':checked'));
+                    }
                     function toggleEnableOcppAutoAuth() {
                       var autoAuthCheckbox = document.getElementById("ocpp_auto_auth");
                       $.post( "/settings?ocpp_update=1&ocpp_auto_auth=" + (autoAuthCheckbox.checked == true ? 1 : 0));
@@ -1688,7 +1693,7 @@
                             $('#ocpp_cb_id').prop("disabled",false);
                             $('#ocpp_auth_key').prop("disabled",false);
                             $('#ocpp_ca_cert').prop("disabled",false);
-                            $('#ocpp_tls_noverify').prop("disabled",false);
+                            $('#ocpp_tls_verify').prop("disabled",false);
                             $('#ocpp_auto_auth').prop("disabled",false);
                             $('#ocpp_auto_auth_label').prop("disabled",false);
                             $('#ocpp_auto_auth_idtag').prop("disabled",false);
@@ -1696,7 +1701,8 @@
                             document.getElementById("ocpp_cb_id").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_auth_key").classList.remove("ui-state-disabled");
                             document.getElementById("ocpp_ca_cert").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_tls_noverify").classList.remove("ui-state-disabled");
+                            document.getElementById("ocpp_tls_verify").classList.remove("ui-state-disabled");
+                            document.getElementById("ocpp_tls_verify_label").classList.remove("ui-state-disabled");
                             $.get("/ocpp_ca_cert", function(certData) {
                                 $('#ocpp_ca_cert').val(certData);
                             });
@@ -1710,7 +1716,7 @@
                             $('#ocpp_cb_id').prop("disabled",true);
                             $('#ocpp_auth_key').prop("disabled",true);
                             $('#ocpp_ca_cert').prop("disabled",true);
-                            $('#ocpp_tls_noverify').prop("disabled",true);
+                            $('#ocpp_tls_verify').prop("disabled",true);
                             $('#ocpp_auto_auth').prop("disabled",true);
                             $('#ocpp_auto_auth_label').prop("disabled",true);
                             $('#ocpp_auto_auth_idtag').prop("disabled",true);
@@ -1718,7 +1724,8 @@
                             document.getElementById("ocpp_cb_id").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auth_key").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_ca_cert").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_tls_noverify").classList.add("ui-state-disabled");
+                            document.getElementById("ocpp_tls_verify").classList.add("ui-state-disabled");
+                            document.getElementById("ocpp_tls_verify_label").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_label").classList.add("ui-state-disabled");
                             document.getElementById("ocpp_auto_auth_idtag").classList.add("ui-state-disabled");
@@ -1731,7 +1738,7 @@
                             ocpp_cb_id:           $('#ocpp_cb_id').val(),
                             ocpp_auth_key:        $('#ocpp_auth_key').val(),
                             ocpp_ca_cert:         $('#ocpp_ca_cert').val(),
-                            ocpp_tls_noverify:    $('#ocpp_tls_noverify').is(':checked') ? 1 : 0,
+                            ocpp_tls_verify:      $('#ocpp_tls_verify').is(':checked') ? 1 : 0,
                             ocpp_auto_auth_idtag: $('#ocpp_auto_auth_idtag').val()
                         };
                         // Build query string with proper encoding
@@ -1974,8 +1981,9 @@
                                               <label>Backend URL: <input id="ocpp_backend_url" class="ui-state-disabled" title="Enter URL that your provider provided, up until the last /"></label>
                                               <label>Charge Box Id: <input id="ocpp_cb_id" class="ui-state-disabled" title="Identifies your charger; enter URL part after the last / of the URL your provider gave you"></label>
                                               <label>Password(optional): <input id="ocpp_auth_key" class="ui-state-disabled" title="Only necessary for SP2 connections"></label>
-                                              <label>CA Certificate (PEM): <textarea id="ocpp_ca_cert" rows="10" class="ui-state-disabled" style="width:100%; font-family:monospace;" title="For a non-Let's-Encrypt backend, paste the backend's CA certificate OR its own server certificate here; it is used automatically as the trust anchor (verification + SNI stay on, so SNI / name-based virtual-host backends work). Leave empty for Let's-Encrypt backends (built-in default)."></textarea></label>
-                                              <label class="ui-state-disabled"><input type="checkbox" id="ocpp_tls_noverify" class="ui-state-disabled" disabled title="INSECURE: skip TLS certificate verification of the OCPP backend. No SNI is sent in this mode, so it only works with backends that do NOT use SNI / name-based virtual hosts. For an SNI backend, paste its certificate above instead."> Disable TLS certificate verification (insecure, no SNI)</label>
+                                              <input type="checkbox" class="form-check-input ui-state-disabled" id="ocpp_tls_verify" onclick="toggleOcppTlsVerify()" title="Verify the OCPP backend's TLS certificate. When off, the wss:// connection is encrypted but the cert is not checked (insecure). SNI is sent in both modes.">
+                                              <label class="form-check-label ui-state-disabled" for="ocpp_tls_verify" id="ocpp_tls_verify_label">Verify TLS Certificate</label>
+                                              <label id="ocpp_ca_cert_row" style="display:none">CA Certificate (PEM): <textarea id="ocpp_ca_cert" rows="10" class="ui-state-disabled" style="width:100%; font-family:monospace;" title="Optional. Paste the backend's CA certificate OR its own server certificate to use as the trust anchor (works for non-Let's-Encrypt backends including private CAs). Leave empty to use the bundled Let's Encrypt root."></textarea></label>
                                               <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
                                                 <div class="col-auto mb-0 mr-3" style="width: 200px">
                                                   <input type="checkbox" class="form-check-input ui-state-disabled" id="ocpp_auto_auth" onclick="toggleEnableOcppAutoAuth()">

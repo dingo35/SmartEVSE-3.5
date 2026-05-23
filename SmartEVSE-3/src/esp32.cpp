@@ -640,17 +640,19 @@ void writeOcppCaCert(const String& cert) {
     _LOG_D("Wrote %d bytes to /ocpp_ca.pem.\n", cert.length());
 }
 
-// Explicit opt-out: when true, the OCPP TLS connection is made WITHOUT
-// certificate verification (mongoose MBEDTLS_SSL_VERIFY_NONE).
+// Opt-in: when true, the OCPP TLS connection verifies the backend cert
+// (mongoose MBEDTLS_SSL_VERIFY_REQUIRED) using a user-pasted CA from
+// /ocpp_ca.pem or the bundled Let's Encrypt root as fallback. When false,
+// mongoose uses MBEDTLS_SSL_VERIFY_NONE.
 //
-// Important: mongoose only calls mbedtls_ssl_set_hostname() in its verifying
-// branch, so in this mode NO SNI is sent. Backends that rely on SNI /
-// name-based virtual hosts will NOT connect with this enabled - for those,
-// paste the backend's CA (or its server cert) in /ocpp_ca.pem instead, which
-// keeps both verification and SNI on. Insecure by design - only for operators
-// who knowingly accept an unverified, non-SNI backend. Persisted in NVS
-// ("settings" namespace, key "OcppTlsNoVfy"), same scheme as MQTTtls.
-bool OcppTlsNoVerify = false;
+// SNI is sent in both modes (mongoose was patched locally so set_hostname()
+// runs regardless of the verification branch), so name-based virtual-host
+// backends work either way.
+//
+// Default is false to preserve the original behavior; flip on once you have
+// pasted the right CA. Persisted in NVS ("settings" namespace, key
+// "OcppTlsVrfy"), same scheme as MQTTtls.
+bool OcppTlsVerify = false;
 
 #if MQTT
 void mqtt_receive_callback(const String topic, const String payload) {
@@ -1495,7 +1497,7 @@ void read_settings() {
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
-        OcppTlsNoVerify = preferences.getBool("OcppTlsNoVfy", false);
+        OcppTlsVerify = preferences.getBool("OcppTlsVrfy", false);
 #endif //ENABLE_OCPP
 
         preferences.end();                                  
@@ -2004,7 +2006,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
         doc["ocpp"]["auth_key"] = OcppWsClient ? OcppWsClient->getAuthKey() : "";
         doc["ocpp"]["ca_cert_set"] = LittleFS.exists("/ocpp_ca.pem");  // cheap: avoid reading the PEM on every settings poll
-        doc["ocpp"]["tls_noverify"] = OcppTlsNoVerify ? 1 : 0;
+        doc["ocpp"]["tls_verify"] = OcppTlsVerify ? 1 : 0;
 
         {
             auto freevendMode = MicroOcpp::getConfigurationPublic(MO_CONFIG_EXT_PREFIX "FreeVendActive");
@@ -2014,7 +2016,11 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
 
         if (OcppWsClient && OcppWsClient->isConnected()) {
-            doc["ocpp"]["status"] = "Connected";
+            // If verify was on and we got connected, the TLS handshake (and
+            // therefore cert verification) succeeded. If verify is off, the
+            // connection is encrypted but the cert was not checked.
+            doc["ocpp"]["status"] = OcppTlsVerify ? "Connected (TLS verified)"
+                                                  : "Connected (TLS not verified)";
         } else {
             doc["ocpp"]["status"] = "Disconnected";
         }
@@ -2383,13 +2389,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     }
                 }
 
-                if(request->hasParam("ocpp_tls_noverify")) {
-                    OcppTlsNoVerify = request->getParam("ocpp_tls_noverify")->value().toInt() == 1;
+                if(request->hasParam("ocpp_tls_verify")) {
+                    OcppTlsVerify = request->getParam("ocpp_tls_verify")->value().toInt() == 1;
                     if (preferences.begin("settings", false)) {
-                        preferences.putBool("OcppTlsNoVfy", OcppTlsNoVerify);  // NVS, like MQTTtls
+                        preferences.putBool("OcppTlsVrfy", OcppTlsVerify);  // NVS, like MQTTtls
                         preferences.end();
                     }
-                    doc["ocpp_tls_noverify"] = OcppTlsNoVerify ? 1 : 0;
+                    doc["ocpp_tls_verify"] = OcppTlsVerify ? 1 : 0;
                     // Verify mode is bound at MOcppMongooseClient construction;
                     // reload OCPP so the change takes effect (same as the CA).
                     if (getOcppContext()) {
@@ -2894,22 +2900,22 @@ void ocppInit() {
             MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
             );
 
-    // CA certificate for verifying the OCPP backend (wss://). A user-pasted
-    // cert in /ocpp_ca.pem takes precedence (used as the trust anchor - works
-    // for non-Let's-Encrypt backends, incl. SNI / name-based virtual hosts,
-    // since this is mongoose's verifying + SNI branch). Otherwise fall back to
-    // the bundled Let's Encrypt ISRG Root X1 (same scheme as the MQTT TLS
-    // path). Must be static: MOcppMongooseClient keeps the pointer and the
-    // string has to outlive the WS client.
+    // CA certificate for verifying the OCPP backend (wss://). When TLS verify
+    // is OFF (default), an empty CA is passed -> MicroOcppMongoose passes NULL
+    // -> mongoose selects MBEDTLS_SSL_VERIFY_NONE. SNI is still sent (mongoose
+    // patched locally), so name-based virtual-host backends still work.
+    //
+    // When TLS verify is ON, a user-pasted cert in /ocpp_ca.pem takes
+    // precedence as the trust anchor (works for non-Let's-Encrypt backends
+    // including private CAs). Otherwise fall back to the bundled Let's
+    // Encrypt ISRG Root X1 (same scheme as the MQTT TLS path).
+    //
+    // Must be static: MOcppMongooseClient keeps the pointer and the string
+    // has to outlive the WS client.
     static String ocppCaCert;
-    if (OcppTlsNoVerify) {
-        // Explicit operator opt-out: empty CA -> MicroOcppMongoose passes NULL
-        // -> mongoose selects MBEDTLS_SSL_VERIFY_NONE. mongoose only calls
-        // mbedtls_ssl_set_hostname() in the verifying branch, so NO SNI is
-        // sent here - only usable by backends that do not rely on SNI /
-        // name-based virtual hosts.
+    if (!OcppTlsVerify) {
         ocppCaCert = "";
-        _LOG_A("OCPP TLS certificate verification DISABLED by operator (insecure, no SNI)\n");
+        _LOG_A("OCPP TLS certificate verification disabled (default).\n");
     } else {
         ocppCaCert = readOcppCaCert();
         if (ocppCaCert.length() < 10) {
