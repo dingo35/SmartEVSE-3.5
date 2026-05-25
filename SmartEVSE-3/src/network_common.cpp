@@ -935,13 +935,17 @@ static bool appendDiscoveredService(const String &hostname, uint16_t port, const
 /**
  * @brief Clear the cached mDNS discovery table.
  */
-static void clearmDNSServices() {
+void clearmDNSServices() {
     for (auto &service : mDNSServices) {
         service.ServiceType = 0;
         service.HostName = "";
     }
     mdnsDiscoveryHasRun = false;
     lastMdnsQueryTime = 0;
+}
+
+bool isMDNSDiscoveryInProgress(void) {
+    return mdnsDiscoveryInProgress;
 }
 
 /**

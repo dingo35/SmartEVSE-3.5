@@ -1007,7 +1007,7 @@ void GLCD(void) {
  */
 static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
     static char Str[12]; // must be declared static, since it's referenced outside of function scope
-    if (mdnsDiscoveryInProgress) { // If mDNS discovery is in progress, show "Discovering" for all options in the menu
+    if (isMDNSDiscoveryInProgress()) { // If mDNS discovery is in progress, show "Discovering" for all options in the menu
         return "Discovering";
     }
     if (value == 0) { //Manual discovery option selected, show "Discover" if discovery is not in progress, otherwise show "Discovering"
