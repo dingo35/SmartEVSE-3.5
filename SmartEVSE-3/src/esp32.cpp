@@ -3869,6 +3869,12 @@ static void homewizard_task(void *parameter) {
     constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
     const unsigned long currentTime = millis();
 
+    if (MainsMeter.Type != EM_HOMEWIZARD &&
+            EVMeter.Type != EM_HOMEWIZARD &&
+            CircuitMeter.Type != EM_HOMEWIZARD) {
+        return;
+     }
+
     if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
