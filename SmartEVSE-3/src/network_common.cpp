@@ -2377,7 +2377,10 @@ void network_loop() {
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
 
-    if (NetworkConnected() && !mdnsDiscoveryHasRun) {
+    if (NetworkConnected() && !mdnsDiscoveryHasRun &&
+            (MainsMeter.Type == EM_HOMEWIZARD ||
+             EVMeter.Type == EM_HOMEWIZARD ||
+             CircuitMeter.Type == EM_HOMEWIZARD)) {
         discoverNetworkMeters();
     }
 
