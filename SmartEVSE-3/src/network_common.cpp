@@ -1238,10 +1238,6 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         delete homeWizardHttpClient;
         homeWizardHttpClient = nullptr;
         homeWizardHttpClientInitialized = false;
-        if (httpCode < 0) {
-            lastMdnsQueryTime = 0; // Force immediate rediscovery on next attempt if the error was a connection failure
-            _LOG_A("Connection failed, allowing immediate rediscovery.\n");
-        }
         return {false, {0, 0, 0, 0, 0, 0}};
     }
 
