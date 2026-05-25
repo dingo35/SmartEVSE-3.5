@@ -901,6 +901,7 @@ std::array<mDNSServiceEntry, 8> mDNSServices = {};
 HTTPClient* homeWizardHttpClient=nullptr;
 bool homeWizardHttpClientInitialized = false;
 static bool mdnsDiscoveryInProgress = false;            // True when async mDNS task is running
+static bool mdnsDiscoveryHasRun = false;                // True after mDNS discovery has been executed for the current network state
 static unsigned long lastMdnsQueryTime = 0;             // Last time mDNS query was attempted
 static const unsigned long MDNS_RETRY_INTERVAL = 30000; // Retry mDNS discovery every 30 seconds if not found
 
@@ -939,6 +940,8 @@ static void clearmDNSServices() {
         service.ServiceType = 0;
         service.HostName = "";
     }
+    mdnsDiscoveryHasRun = false;
+    lastMdnsQueryTime = 0;
 }
 
 /**
@@ -1145,6 +1148,7 @@ void mdnsDiscoveryTask(void* parameter) {
         _LOG_A("No matching mDNS services found.\n");
     }
 
+    mdnsDiscoveryHasRun = true;
     mdnsDiscoveryInProgress = false;
     _LOG_A("mDNS discovery task completed\n");
     vTaskDelete(NULL);
@@ -2073,7 +2077,6 @@ static void startNetworkServices(void) {
 // Can be called from both WiFi and Ethernet got-IP events.
 void onGotIP(const char *dns_ip) {
     clearmDNSServices();
-    lastMdnsQueryTime = 0;
 
     // Load DHCP DNS into mongoose
     static char dns4url[] = "udp://123.123.123.123:53";
@@ -2378,7 +2381,7 @@ void network_loop() {
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
 
-    if (NetworkConnected() && getmDNSServiceCount() == 0) {
+    if (NetworkConnected() && !mdnsDiscoveryHasRun) {
         discoverNetworkMeters();
     }
 
