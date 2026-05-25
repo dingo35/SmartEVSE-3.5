@@ -1042,19 +1042,22 @@ static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
  * @return void
  */
 static void commitMeterHostSelection(Meter &meter, uint8_t value) {
-    // If the user selected "Unchanged", do nothing and just clear the pending menu selection
-    // Else, if they selected an mDNS entry ( value >= 2 ), update the meter's DeviceHostName to match the selected entry
+    // If discovery is in progress, ignore any selection and just clear the pending menu selection, since the user should wait until discovery is finished to make a selection
+    if (isMDNSDiscoveryInProgress()) {
+        meter.HostMenuSelection = 1;
+        return;
+    }
+    // If the user selected an mDNS entry (value >= 2) attempt to update the meter's DeviceHostName
     if (value >= 2) {
         const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 2);
         if (service && !service->HostName.isEmpty()) {
             strncpy(meter.DeviceHostName, service->HostName.c_str(), sizeof(meter.DeviceHostName));
-            meter.DeviceHostName[sizeof(meter.DeviceHostName) - 2] = '\0';
+            meter.DeviceHostName[sizeof(meter.DeviceHostName) - 1] = '\0';
         }
     }
-    // User selected "Discover", start mDNS discovery
-    else if (value == 0) {
+    // If the user selected "Discover" (value == 0), start mDNS discovery
+    if (value == 0) {
         clearmDNSServices();
-
     }
 
     meter.HostMenuSelection = 1;
