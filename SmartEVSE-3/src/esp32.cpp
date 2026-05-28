@@ -2288,28 +2288,30 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         return true;
       }
     } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(8000);
-        JsonArray dayHistory = doc.createNestedArray("power_day");
+        // Stream JSON via HTTP chunked encoding to avoid the ~8 KB DynamicJsonDocument + serialized String
         time_t now = time(NULL);
         struct tm *tm_info = localtime(&now);
         uint8_t i, idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
         idx++; //go to the next time period; since PowerMeasured_Period is circular, this would be the oldest entry
+
+        mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                     "Content-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        mg_http_printf_chunk(c, "{\"power_day\":[");
         for (int x = idx; x < DAY_POINTS + idx; x++) {
             if (x < DAY_POINTS)
                 i = x;
             else
                 i = x - DAY_POINTS;
 
-            JsonObject sample = dayHistory.createNestedObject();
-            char buf[20]; //buffer needs to be this large to prevent compiler warning
-            sprintf(buf, "%02d:%02d", (i * CapacityPeriodSeconds) / 3600, (i * CapacityPeriodSeconds/60) % 60);
-            sample["time"] = String(buf);
-            sample["power"] = MainsMeter.PowerMeasured_Period[i];
+            mg_http_printf_chunk(c, "%s{\"time\":\"%02d:%02d\",\"power\":%d}",
+                (x == idx) ? "" : ",",
+                (i * CapacityPeriodSeconds) / 3600,
+                (i * CapacityPeriodSeconds/60) % 60,
+                (int)MainsMeter.PowerMeasured_Period[i]);
         }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_printf_chunk(c, "]}\r\n");
+        mg_http_printf_chunk(c, "");  // terminating empty chunk
         return true;
     } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
