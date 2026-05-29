@@ -2442,8 +2442,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
                     for (int x = 0; x < 3; x++) {
-                        doc["original"]["L" + x] = IrmsOriginal[x];
-                        doc["L" + x] = MainsMeter.Irms[x];
+                        char key[4]; snprintf(key, sizeof(key), "L%d", x + 1);
+                        doc["original"][key] = IrmsOriginal[x];
+                        doc[key] = MainsMeter.Irms[x];
                     }
                     doc["TOTAL"] = Isum;
 
@@ -2470,8 +2471,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #else //v4
                 Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
-                for (int x = 0; x < 3; x++)
-                    doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
+                for (int x = 0; x < 3; x++) {
+                    char key[4]; snprintf(key, sizeof(key), "L%d", x + 1);
+                    doc["ev_meter"]["currents"][key] = EVMeter.Irms[x];
+                }
                 doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
             }
 
