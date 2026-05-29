@@ -2558,9 +2558,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             serializeJson(doc, json);
             mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         } else {
-            // Generate BMP image from LCD buffer.
-    		const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-		    const size_t bmpImageSize = bmpImage.size();
+            // Generate BMP image from LCD buffer (into a static buffer; no heap activity).
+            size_t bmpImageSize = 0;
+            const uint8_t *bmpImage = createImageFromGLCDBuffer(bmpImageSize);
 
             // Start the HTTP response with chunked encoding
             mg_printf(c,
@@ -2572,7 +2572,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                       "\r\n");
 
             // Using chunked transfer encoding to get rid of content-len + keep-alive problems.
-            mg_http_write_chunk(c, reinterpret_cast<const char *>(bmpImage.data()), bmpImageSize);
+            mg_http_write_chunk(c, reinterpret_cast<const char *>(bmpImage), bmpImageSize);
 
             // Send an empty chunk to signal the end of the response.
             mg_http_write_chunk(c, "", 0);

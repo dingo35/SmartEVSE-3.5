@@ -1595,44 +1595,40 @@ void GLCD_init(void) {
 #endif
 }
 
-/**
- * Write header for BMP 1-bit image.
- *
- * @param width Width of the BMP image in pixels
- * @param height Height of the BMP image in pixels
- */
-std::vector<uint8_t> createBMPHeader(const int width, const int height) {
-    const uint32_t rowSize = (width + 31) / 32 * 4;  // Each row must be a multiple of 4 bytes
-    const uint32_t fileSize = 62 /* header bytes*/ + (rowSize * height / 8);
+// 62-byte BMP header for a 1-bit monochrome image of BMP_WIDTH x BMP_HEIGHT.
+// All multi-byte fields are computed from the constants in glcd.h at compile time
+// (the array initializer is fully constexpr), so the resulting bytes live in flash.
+static constexpr uint8_t BMP_HEADER[62] = {
+    'B', 'M',                                          // 'BM' signature
+    (uint8_t)( BMP_IMAGE_SIZE        & 0xFF),          // File size (LE, 4 bytes)
+    (uint8_t)((BMP_IMAGE_SIZE >>  8) & 0xFF),
+    (uint8_t)((BMP_IMAGE_SIZE >> 16) & 0xFF),
+    (uint8_t)((BMP_IMAGE_SIZE >> 24) & 0xFF),
+    0, 0, 0, 0,                                        // Reserved
+    0x3E, 0, 0, 0,                                     // Pixel-data offset = 14 + 40 + 8 = 62
 
-    std::vector<uint8_t> headerVector(fileSize);
-    headerVector = {
-        'B', 'M',                     // 'BM' Signature
-        static_cast<uint8_t>(fileSize & 0xFF),      // Byte 1 (Least Significant Byte)
-        static_cast<uint8_t>(fileSize >> 8 & 0xFF), // Byte 2
-        0x00,                         // Byte 3
-        0x00,                         // Byte 4 (Most Significant Byte)
-        0x00, 0x00, 0x00, 0x00,       // Reserved
-        0x3E, 0x00, 0x00, 0x00,       // Data offset - Header (14) + DIB (40) + Palette (8) 
+    40, 0, 0, 0,                                       // DIB header size
+    (uint8_t)( BMP_WIDTH        & 0xFF),               // Width  (LE, 4 bytes)
+    (uint8_t)((BMP_WIDTH  >>  8) & 0xFF),
+    (uint8_t)((BMP_WIDTH  >> 16) & 0xFF),
+    (uint8_t)((BMP_WIDTH  >> 24) & 0xFF),
+    (uint8_t)( BMP_HEIGHT        & 0xFF),              // Height (LE, 4 bytes)
+    (uint8_t)((BMP_HEIGHT >>  8) & 0xFF),
+    (uint8_t)((BMP_HEIGHT >> 16) & 0xFF),
+    (uint8_t)((BMP_HEIGHT >> 24) & 0xFF),
+    1, 0,                                              // Planes
+    1, 0,                                              // Bits per pixel (1-bit monochrome)
+    0, 0, 0, 0,                                        // No compression
+    0, 0, 0, 0,                                        // Image size (0 OK for uncompressed)
+    0, 0, 0, 0,                                        // X pixels per meter (unused)
+    0, 0, 0, 0,                                        // Y pixels per meter (unused)
+    2, 0, 0, 0,                                        // Number of colors in the palette
+    0, 0, 0, 0,                                        // Important colors
 
-        40, 0, 0, 0,                  // DIB header size 
-        static_cast<uint8_t>(width), 0, 0, 0,       // Width (max 255)
-        static_cast<uint8_t>(height), 0, 0, 0,      // Height (max 255)
-        1, 0,                         // Planes
-        1, 0,                         // Bits per pixel (1-bit monochrome)
-        0, 0, 0, 0,                   // No compression
-        0, 0, 0, 0,                   // Image size (can be 0 for uncompressed)
-        0, 0, 0, 0,                   // X pixels per meter (unused)
-        0, 0, 0, 0,                   // Y pixels per meter (unused)
-        2, 0, 0, 0,                   // Number of colors in the palette (black & white)
-        0, 0, 0, 0,                   // Important colors
-        
-        // Write color palette
-        0xFF, 0xFF, 0xFF, 0x00,       // White (0)
-        0x00, 0x00, 0xFF, 0x00,       // Red (1)
-    };
-    return headerVector;
-}
+    // Color palette
+    0xFF, 0xFF, 0xFF, 0x00,                            // White (0)
+    0x00, 0x00, 0xFF, 0x00,                            // Red   (1)
+};
 
 /**
  * Transposes a 8x8 bit matrix stored in a byte array.
@@ -1659,50 +1655,46 @@ void transpose8x8(const std::array<uint8_t, 8>& input, std::array<uint8_t, 8>& o
 /**
  * Processes GLCD buffer data and converts it into a BMP-formatted image.
  *
- * This function takes a graphical LCD (GLCD) buffer, processes it by transposing
- * 8x8 pixel blocks, and formats the output as a BMP image. The function reads
- * the buffer in chunks of 128 bytes, rearranges the bits for correct rendering,
- * and appends the processed data to a BMP header.
+ * Writes the BMP into a single 1086-byte static buffer (62 B header + 1024 B pixels).
+ * The buffer is reused across calls, so no heap allocations happen per frame --
+ * important because this function runs once per second, per connected LCD-preview websocket client.
  *
- * @return A vector of `uint8_t` containing the BMP-formatted image data.
+ * @param[out] outSize  Set to the total size of the BMP image in bytes (always BMP_IMAGE_SIZE).
+ * @return Pointer to the static buffer holding the BMP image.
  */
-std::vector<uint8_t> createImageFromGLCDBuffer() {
-    constexpr int WIDTH = 128;        // Image width in pixels
-    constexpr int HEIGHT = 64;        // Image height in pixels
+const uint8_t* createImageFromGLCDBuffer(size_t &outSize) {
     constexpr int CHUNK_SIZE = 128;
     constexpr int BLOCK_SIZE = 8;
 
-    // Initialize with BMP header and pre-allocate memory inn the vector.
-    std::vector<uint8_t> imageData = createBMPHeader(WIDTH, HEIGHT);
+    static uint8_t bmpBuf[BMP_IMAGE_SIZE];
+    // Header is constant and lives in flash -- copy once into the working buffer.
+    memcpy(bmpBuf, BMP_HEADER, sizeof(BMP_HEADER));
 
+    uint8_t *out = bmpBuf + sizeof(BMP_HEADER);
+
+    // Walk GLCDbuf2 from end to start in 128-byte chunks, transposing each 8x8 block.
     for (size_t chunkOffset = sizeof(GLCDbuf2); chunkOffset > 0; chunkOffset -= CHUNK_SIZE) {
-        // Calculate chunk boundaries.
-        const size_t start = chunkOffset >= CHUNK_SIZE ? chunkOffset - CHUNK_SIZE : 0;
-        const size_t end = chunkOffset;
+        const uint8_t *chunk = GLCDbuf2 + (chunkOffset - CHUNK_SIZE);
 
-        // Extract chunk.
-        const std::vector<uint8_t> chunk(GLCDbuf2 + start, GLCDbuf2 + end);
-        std::vector<uint8_t> processed(CHUNK_SIZE);
-
-        // Process the 128-byte chunk in groups of 8.
+        // Process the 128-byte chunk in groups of 8 directly into `out`.
         for (int byteIndex = 0; byteIndex < CHUNK_SIZE; byteIndex += BLOCK_SIZE) {
             std::array<uint8_t, BLOCK_SIZE> input{};
             std::array<uint8_t, BLOCK_SIZE> output{};
-            std::copy_n(chunk.begin() + byteIndex, BLOCK_SIZE, input.begin());
+            std::copy_n(chunk + byteIndex, BLOCK_SIZE, input.begin());
 
             transpose8x8(input, output);
 
-            // Distribute transposed bytes into the processed buffer
+            // Distribute transposed bytes interleaved across the 128-byte row.
             const int newByteIndex = byteIndex / BLOCK_SIZE;
             for (int j = 0; j < BLOCK_SIZE; ++j) {
-                processed[newByteIndex + j * (CHUNK_SIZE / BLOCK_SIZE)] = output[j];
+                out[newByteIndex + j * (CHUNK_SIZE / BLOCK_SIZE)] = output[j];
             }
         }
-
-        // Append processed chunk to image data.
-        imageData.insert(imageData.end(), processed.begin(), processed.end());
+        out += CHUNK_SIZE;
     }
-    return imageData;
+
+    outSize = BMP_IMAGE_SIZE;
+    return bmpBuf;
 }
 
 #endif

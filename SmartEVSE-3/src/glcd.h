@@ -38,7 +38,13 @@ extern void GLCD(void);
 extern void GLCDMenu(unsigned char Buttons);
 extern void GLCD_init(void);
 extern bool GridRelayOpen;
-extern std::vector<uint8_t> createImageFromGLCDBuffer();
+// BMP rendered by createImageFromGLCDBuffer()
+// 1-bit monochrome BMP, 62-byte header + pixel data.
+static constexpr int      BMP_WIDTH     = 128;
+static constexpr int      BMP_HEIGHT    = 64;
+static constexpr uint32_t BMP_ROW_SIZE  = ((BMP_WIDTH + 31) / 32) * 4;       // rows padded to a multiple of 4 bytes
+static constexpr size_t   BMP_IMAGE_SIZE = 62 + (BMP_ROW_SIZE * BMP_HEIGHT); // header + pixels
+extern const uint8_t* createImageFromGLCDBuffer(size_t &outSize);
 
 #if SMARTEVSE_VERSION >= 40
 #include <SPI.h>
