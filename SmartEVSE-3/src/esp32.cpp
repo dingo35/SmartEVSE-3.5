@@ -3784,10 +3784,18 @@ bool fwNeedsUpdate(char * version) {
   * and updates the meters' currents and energies.
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
+  *
+  * Implementation note: the worker runs as a persistent task that blocks on a
+  * binary semaphore. homewizard_loop() just gives the semaphore every 1.95 s.
+  * This avoids ~3 KB of heap churn every 2 s from xTaskCreate/vTaskDelete.
   */
-static bool homewizardUpdateInProgress = false;
+static SemaphoreHandle_t homewizardWakeSem = nullptr;
 
 static void homewizard_task(void *parameter) {
+    for (;;) {
+        // Block until homewizard_loop() signals it's time for another poll cycle.
+        xSemaphoreTake(homewizardWakeSem, portMAX_DELAY);
+
     if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
         // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
         // We can remove this code after a few releases, when we are sure most users have updated at least once.
@@ -3860,9 +3868,7 @@ static void homewizard_task(void *parameter) {
         Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
     }
-
-    homewizardUpdateInProgress = false;
-    vTaskDelete(NULL);
+    } // end for(;;)
 }
 
  void homewizard_loop() {
@@ -3880,22 +3886,26 @@ static void homewizard_task(void *parameter) {
     if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
-    if (homewizardUpdateInProgress) {
-        return;
-    }
     lastCheck_homewizard = currentTime;
 
-    homewizardUpdateInProgress = true;
-    if (xTaskCreate(
-            homewizard_task,
-            "HomeWizard",
-            3072,
-            NULL,
-            1,
-            NULL) != pdPASS) {
+    // Lazy first-time setup: create the wake semaphore and the persistent worker task.
+    // Done lazily so users without a HomeWizard meter never pay for the task at all.
+    if (homewizardWakeSem == nullptr) {
+        homewizardWakeSem = xSemaphoreCreateBinary();
+        if (homewizardWakeSem == nullptr) {
+            _LOG_A("Failed to create HomeWizard semaphore\n");
+            return;
+        }
+        if (xTaskCreate(homewizard_task, "HomeWizard", 3072, NULL, 1, NULL) != pdPASS) {
         _LOG_A("Failed to create HomeWizard task\n");
-        homewizardUpdateInProgress = false;
+            vSemaphoreDelete(homewizardWakeSem);
+            homewizardWakeSem = nullptr;
+            return;
     }
+    }
+
+    // Wake the worker; if it's still busy from the previous cycle the give is a no-op.
+    xSemaphoreGive(homewizardWakeSem);
 }
 
 void loop() {
