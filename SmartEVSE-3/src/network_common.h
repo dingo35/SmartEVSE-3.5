@@ -96,8 +96,10 @@ public:
     String jsna(const String& key, T value) { return ", " + jsn(key, value); }
     void publish(const String &topic, const int32_t &payload, bool retained, int qos) { publish(topic, String(payload), retained, qos); };
     void publish(const String &topic, const String &payload, bool retained, int qos);
+    void publish(const char *topic, const char *payload, size_t payload_len, bool retained, int qos);
     void subscribe(const String &topic, int qos);
     void announce(const String& entity_name, const String& domain, const String& optional_payload);
+    void announce(const char *entity_name, const char *domain, const char *optional_payload);
     bool connected;
 };
 
