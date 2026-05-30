@@ -44,7 +44,7 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - **Sensorbox**: The Sensorbox sends measurement data to the SmartEVSE.
 - **API**: MAINS meter data is fed through the [REST API](REST_API.md) or [MQTT API](#mqtt-api).
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
-- **Homewizrd**: Mains meter data is polled from a network connected HomeWizard meter (P1 or kWh).
+- **HomeWizard**: Mains meter data is polled from a network connected HomeWizard meter (P1 or kWh).
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
