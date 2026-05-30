@@ -79,11 +79,9 @@ static bool isTrackedLcdWsConnection(const mg_connection *connection) {
 }
 
 static void sendWsError(struct mg_connection *c, const char *reason) {
-    DynamicJsonDocument response(96);
-    response["error"] = reason;
-    String json;
-    serializeJson(response, json);
-    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+    char buf[96];
+    int n = snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", reason);
+    if (n > 0) mg_ws_send(c, buf, (size_t)n, WEBSOCKET_OP_TEXT);
 }
 
 mg_connection *HttpListener80, *HttpListener443;
@@ -217,6 +215,22 @@ void MQTTclient_t::publish(const String &topic, const String &payload, bool reta
 #endif
 }
 
+void MQTTclient_t::publish(const char *topic, const char *payload, size_t payload_len, bool retained, int qos) {
+#if MQTT_ESP == 0
+    if (s_conn && connected) {
+        struct mg_mqtt_opts opts = default_opts;
+        opts.topic = mg_str(topic);
+        opts.message = mg_str_n(payload, payload_len);
+        opts.qos = qos;
+        opts.retain = retained;
+        mg_mqtt_pub(s_conn, &opts);
+    }
+#else
+    if (connected && client)
+        esp_mqtt_client_publish(client, topic, payload, (int)payload_len, qos, retained);
+#endif
+}
+
 void MQTTclient_t::subscribe(const String &topic, int qos) {
 #if MQTT_ESP == 0
     if (s_conn && connected) {
@@ -233,32 +247,71 @@ void MQTTclient_t::subscribe(const String &topic, int qos) {
 
 
 void MQTTclient_t::announce(const String& entity_name, const String& domain, const String& optional_payload) {
-    String entity_suffix = entity_name;
-    entity_suffix.replace(" ", "");
-    String topic = "homeassistant/" + domain + "/" + MQTTprefix + "-" + entity_suffix + "/config";
+    announce(entity_name.c_str(), domain.c_str(), optional_payload.c_str());
+}
 
-    // Build default_entity_id: must be lowercase, only [a-z0-9_] allowed. See: https://www.home-assistant.io/docs/configuration/customizing-devices/
-    String default_entity_id = domain + "." + MQTTprefix + "_" + entity_suffix;
-    default_entity_id.toLowerCase();
-    default_entity_id.replace("-", "_");
+void MQTTclient_t::announce(const char *entity_name, const char *domain, const char *optional_payload) {
+    // Build entity_suffix (entity_name with spaces removed) on the stack.
+    char suffix[64];
+    { size_t j = 0; const char *s = entity_name;
+      while (*s && j + 1 < sizeof(suffix)) { if (*s != ' ') suffix[j++] = *s; s++; }
+      suffix[j] = 0; }
 
-    const String config_url = "http://" + WiFi.localIP().toString();
+    const char *prefix = MQTTprefix.c_str();
+    const char *dom = domain;
+
+    // default_entity_id: <domain>.<prefix>_<suffix>, lowercased, '-' -> '_'.
+    char did[128];
+    int dn = snprintf(did, sizeof(did), "%s.%s_%s", dom, prefix, suffix);
+    if (dn > 0) {
+        for (int i = 0; i < dn && i < (int)sizeof(did) - 1; i++) {
+            char c = did[i];
+            if (c >= 'A' && c <= 'Z') did[i] = c + ('a' - 'A');
+            else if (c == '-') did[i] = '_';
+        }
+    }
+
+    char topic[160];
+    snprintf(topic, sizeof(topic), "homeassistant/%s/%s-%s/config", dom, prefix, suffix);
+
 #ifndef SENSORBOX_VERSION
-    const String device_payload = String(R"("device": {)") + jsn("model","SmartEVSE v3") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+    const char *model = "SmartEVSE v3";
 #else
-    const String device_payload = String(R"("device": {)") + jsn("model","Sensorbox v2") + jsna("identifiers", MQTTprefix) + jsna("name", MQTTprefix) + jsna("manufacturer","Stegen") + jsna("configuration_url", config_url) + jsna("sw_version", String(VERSION)) + "}";
+    const char *model = "Sensorbox v2";
 #endif
-    String payload = "{"
-        + jsn("name", entity_name)
-        + jsna("object_id", String(MQTTprefix + "-" + entity_suffix))  // Deprecated for HA 2026.4 - still setting for backwards compatibility. Will not raise error if new default_entity_id is also set: https://github.com/home-assistant/core/pull/151996
-        + jsna("default_entity_id", default_entity_id)  // HA 2025.10 and up: must include domain prefix (e.g. sensor.smartevse_chargecurrent). See: https://community.home-assistant.io/t/mqtt-discovery-wrong-entity-id-names-unnamed-device/945927
-        + jsna("unique_id", String(MQTTprefix + "-" + entity_suffix))
-        + jsna("state_topic", String(MQTTprefix + "/" + entity_suffix))
-        + jsna("availability_topic", String(MQTTprefix + "/connected"))
-        + ", " + device_payload + optional_payload
-        + "}";
 
-    MQTTclient.publish(topic.c_str(), payload.c_str(), true, 0);  // Retain + QoS 0
+    char payload[1024];
+    IPAddress ip = WiFi.localIP();
+    int n = snprintf(payload, sizeof(payload),
+        "{\"name\":\"%s\","
+        "\"object_id\":\"%s-%s\","        // Deprecated for HA 2026.4, kept for back-compat.
+        "\"default_entity_id\":\"%s\","    // HA 2025.10+: must include domain prefix.
+        "\"unique_id\":\"%s-%s\","
+        "\"state_topic\":\"%s/%s\","
+        "\"availability_topic\":\"%s/connected\","
+        "\"device\":{\"model\":\"%s\",\"identifiers\":\"%s\",\"name\":\"%s\","
+        "\"manufacturer\":\"Stegen\",\"configuration_url\":\"http://%u.%u.%u.%u\","
+        "\"sw_version\":\"%s\"}",
+        entity_name,
+        prefix, suffix,
+        did,
+        prefix, suffix,
+        prefix, suffix,
+        prefix,
+        model, prefix, prefix,
+        ip[0], ip[1], ip[2], ip[3],
+        VERSION);
+    if (n < 0 || n >= (int)sizeof(payload)) return;
+
+    // optional_payload always starts with ", " (jsna prefix) and goes inside the
+    // top-level object, before the closing '}'. NULL or "" is allowed.
+    size_t opt_len = (optional_payload ? strlen(optional_payload) : 0);
+    if (n + opt_len + 2 >= sizeof(payload)) return;
+    if (opt_len) { memcpy(payload + n, optional_payload, opt_len); n += opt_len; }
+    payload[n++] = '}';
+    payload[n]   = 0;
+
+    publish(topic, payload, (size_t)n, true, 0);  // Retain + QoS 0
 }
 
 MQTTclient_t MQTTclient;
@@ -1227,6 +1280,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     if (!homeWizardHttpClientInitialized) {
         homeWizardHttpClient = new HTTPClient();
         homeWizardHttpClient->setTimeout(1500);
+        homeWizardHttpClient->setReuse(true);  // Persistent TCP across polls.
         homeWizardHttpClient->addHeader("User-Agent", "SmartEVSE-v3");
         homeWizardHttpClient->addHeader("Accept", "application/json");
         homeWizardHttpClientInitialized = true;
@@ -1252,14 +1306,18 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     const char* powerKeys[] = { "active_power_l1_w", "active_power_l2_w", "active_power_l3_w","active_power_w"};
     const char* totalsKeys[] = {"total_power_import_kwh", "total_power_export_kwh"};
 
-    // Create a filter to parse only specific fields.
-    StaticJsonDocument<256> filter;
-    for (const auto* key : currentKeys) filter[key] = true;
-    for (const auto* key : powerKeys) filter[key] = true;
-    for (const auto* key : totalsKeys) filter[key] = true;
+    // Filter is constant; build it once and reuse forever.
+    static StaticJsonDocument<256> filter;
+    static bool filterInit = false;
+    if (!filterInit) {
+        for (const auto* key : currentKeys) filter[key] = true;
+        for (const auto* key : powerKeys)   filter[key] = true;
+        for (const auto* key : totalsKeys)  filter[key] = true;
+        filterInit = true;
+    }
 
-    // Create a filtered JSON document to hold the parsed data.
-    DynamicJsonDocument doc(256);
+    // Stack-allocated JSON document for the parsed response.
+    StaticJsonDocument<256> doc;
     const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
     homeWizardHttpClient->end();
 
@@ -1377,8 +1435,9 @@ static void timer_fn(void *arg) {
     memset(&opts, 0, sizeof(opts));
     opts.clean = false;
     // set will topic
-    String temp = MQTTprefix + "/connected";
-    opts.topic = mg_str(temp.c_str());
+    char willTopic[96];
+    snprintf(willTopic, sizeof(willTopic), "%s/connected", MQTTprefix.c_str());
+    opts.topic = mg_str(willTopic);
     opts.message = mg_str("offline");
     opts.retain = true;
     opts.keepalive = 15;                                                          // so we will timeout after 15s
@@ -1418,12 +1477,13 @@ static void lcd_image_timer_fn(void *arg) {
         return;
     }
 
-    // Generate BMP image from LCD buffer
-    const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+    // Generate BMP image from LCD buffer (into a static buffer; no heap activity).
+    size_t bmpSize = 0;
+    const uint8_t *bmpImage = createImageFromGLCDBuffer(bmpSize);
 
     // Send to all connected websocket clients
     for (auto *c : wsLcdConnections) {
-        mg_ws_send(c, bmpImage.data(), bmpImage.size(), WEBSOCKET_OP_BINARY);
+        mg_ws_send(c, bmpImage, bmpSize, WEBSOCKET_OP_BINARY);
     }
 }
 
@@ -1508,11 +1568,9 @@ static void handleButtonCommand(struct mg_connection *c, const char* data, size_
     _LOG_V("WebSocket button command: %s = %s\n", btnName, btnDown ? "down" : "up");
 
     // Send acknowledgment back to client
-    DynamicJsonDocument response(128);
-    response["button"][btnName] = btnDown ? "down" : "up";
-    String json;
-    serializeJson(response, json);
-    mg_ws_send(c, json.c_str(), json.length(), WEBSOCKET_OP_TEXT);
+    char ack[64];
+    int n = snprintf(ack, sizeof(ack), "{\"button\":{\"%s\":\"%s\"}}", btnName, btnDown ? "down" : "up");
+    if (n > 0) mg_ws_send(c, ack, (size_t)n, WEBSOCKET_OP_TEXT);
 
     // Schedule LCD image update after a short delay to allow button processing
     // The timer will fire ~100ms after button press, giving the device time to update the LCD
@@ -2377,6 +2435,7 @@ void network_loop() {
         if (!LocalTimeSet && (WIFImode == 1 || EthHasIP)) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
+        _LOG_D("free heap: %u largest free block: %u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
