@@ -458,13 +458,48 @@ void GLCDHelp(void)                                                             
 }
 
 
+// print starting time when delayed charging
+#define STRLEN 26
+void printStartingTime(char *Str) {
+    GLCD_print_buf2(2, (const char *) "STARTING @");
+#define _24H 24*60*60
+#define _WEEK 7*_24H
+    String StrFormat;
+    if (DelayedStartTime.diff <= _24H)
+        //if it starts in the next 24 hours, just print hours : minutes
+        StrFormat = "%R";
+    else {
+        //if it starts in the next week, print day of week, day of month, hours: minutes
+        if (DelayedStartTime.diff <= _WEEK)
+            StrFormat = "%a %e %R";
+        else
+        //if it starts later, print day of week, day of month, month, year perhaps scrolling hours/minutes?
+            StrFormat = "%a %e %b";
+            //StrFormat = "%a %e %b '%C %R";
+    }
+    if (DelayedStartTime.epoch2 && LocalTimeSet && DelayedStartTime.epoch2 != DelayedStartTime_Old) {
+        time_t epoch = DelayedStartTime.epoch2 + EPOCH2_OFFSET;
+        DelayedStartTimeTM = *localtime(&epoch);
+    }
+    if (!strftime(Str, STRLEN, StrFormat.c_str(), &DelayedStartTimeTM))
+        sprintf(Str, "later...");
+    GLCD_print_buf2(4, Str);
+    //print current time
+    if (LocalTimeSet) {
+        GLCD_buffer_clr();
+        if (strftime(Str, STRLEN, "%a %e %b '%y %R", &timeinfo))
+            GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+        GLCD_sendbuf(7, 1);
+    }
+}
+
 // called once a second
 void GLCD(void) {
     unsigned char x;
     unsigned int seconds, minutes;
     static unsigned char energy_mains = 20; // X position
     static unsigned char energy_ev = 74; // X position
-    char Str[26];
+    char Str[STRLEN];
     LCDTimer++;
     
     if (LCDNav) {
@@ -743,9 +778,12 @@ void GLCD(void) {
                         case ChargePointStatus_Charging:
                         case ChargePointStatus_SuspendedEVSE:
                         case ChargePointStatus_SuspendedEV:
-                            // Should not be reached (Access_bit or STATE_C above prevail)
-                            GLCD_print_buf2(2, (const char *) "CHARGING");
-                            GLCD_print_buf2(4, (const char *) "IN PROGRESS");
+                            if (DelayedStartTime.epoch2) {
+                                printStartingTime(Str);
+                            } else {
+                                GLCD_print_buf2(2, (const char *) "CHARGING");
+                                GLCD_print_buf2(4, (const char *) "IN PROGRESS");
+                            }
                             break;
                         case ChargePointStatus_Finishing:
                             if (ocppLockingTxDefined()) {
@@ -783,36 +821,7 @@ void GLCD(void) {
                     }
                 } else {
                     if (DelayedStartTime.epoch2) {
-                        GLCD_print_buf2(2, (const char *) "STARTING @");
-#define _24H 24*60*60
-#define _WEEK 7*_24H
-                        String StrFormat;
-                        if (DelayedStartTime.diff <= _24H)
-                            //if it starts in the next 24 hours, just print hours : minutes
-                            StrFormat = "%R";
-                        else {
-                            //if it starts in the next week, print day of week, day of month, hours: minutes
-                            if (DelayedStartTime.diff <= _WEEK)
-                                StrFormat = "%a %e %R";
-                            else
-                            //if it starts later, print day of week, day of month, month, year perhaps scrolling hours/minutes?
-                                StrFormat = "%a %e %b";
-                                //StrFormat = "%a %e %b '%C %R";
-                        }
-                        if (DelayedStartTime.epoch2 && LocalTimeSet && DelayedStartTime.epoch2 != DelayedStartTime_Old) {
-                            time_t epoch = DelayedStartTime.epoch2 + EPOCH2_OFFSET;
-                            DelayedStartTimeTM = *localtime(&epoch);
-                        }
-                        if (!strftime(Str, sizeof(Str), StrFormat.c_str(), &DelayedStartTimeTM))
-                            sprintf(Str, "later...");
-                        GLCD_print_buf2(4, Str);
-                        //print current time
-                        if (LocalTimeSet) {
-                            GLCD_buffer_clr();
-                            if (strftime(Str, 26, "%a %e %b '%y %R", &timeinfo))
-                                GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
-                            GLCD_sendbuf(7, 1);
-                        }
+                        printStartingTime(Str);
                     } else {
                         GLCD_print_buf2(2, (const char *) "ACCESS");
                         GLCD_print_buf2(4, (const char *) "DENIED");
