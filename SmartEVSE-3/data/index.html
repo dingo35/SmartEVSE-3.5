@@ -487,6 +487,16 @@
                 $('#ocpp_auto_auth_idtag').val(data.ocpp.auto_auth_idtag);
                 var verify = data.ocpp.tls_verify == 1;
                 $('#ocpp_tls_verify').prop('checked', verify);
+                // Keep the jQuery Mobile widget visual in sync with the native
+                // input, like enable_ocpp/auto_auth do. Without this the rendered
+                // checkbox shows a stale state and looks unticked on edit.
+                if (verify) {
+                  document.getElementById("ocpp_tls_verify_label").classList.remove("ui-checkbox-off");
+                  document.getElementById("ocpp_tls_verify_label").classList.add("ui-checkbox-on");
+                } else {
+                  document.getElementById("ocpp_tls_verify_label").classList.remove("ui-checkbox-on");
+                  document.getElementById("ocpp_tls_verify_label").classList.add("ui-checkbox-off");
+                }
                 $('#ocpp_ca_cert_row').toggle(verify);
               }
 
