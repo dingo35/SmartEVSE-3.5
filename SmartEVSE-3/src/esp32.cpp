@@ -1032,7 +1032,7 @@ void SetupMQTTClient() {
     MQTTclient.announce("WiFi RSSI",  "sensor",
         ", \"entity_category\":\"diagnostic\", \"device_class\":\"signal_strength\", \"unit_of_measurement\":\"dBm\", \"state_class\":\"measurement\"");
     MQTTclient.announce("ESP Temp",   "sensor",
-        ", \"entity_category\":\"diagnostic\", \"device_class\":\"temperature\", \"unit_of_measurement\":\"Â°C\", \"state_class\":\"measurement\"");
+        ", \"entity_category\":\"diagnostic\", \"device_class\":\"temperature\", \"unit_of_measurement\":\"°C\", \"state_class\":\"measurement\"");
     MQTTclient.announce("ESP Uptime", "sensor",
         ", \"entity_category\":\"diagnostic\", \"device_class\":\"duration\", \"unit_of_measurement\":\"s\", \"state_class\":\"measurement\", \"entity_registry_enabled_default\":\"False\"");
 
