@@ -1317,7 +1317,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     }
 
     // Stack-allocated JSON document for the parsed response.
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
     homeWizardHttpClient->end();
 
