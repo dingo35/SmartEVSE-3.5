@@ -114,7 +114,11 @@ void etherlcd_init(void) {
 
 uint8_t etherlcd_reg_read(uint8_t reg) {
     // Acquire the bus so no CH390/LCD transaction can overlap.
-    spi_device_acquire_bus(s_ch32_spi, portMAX_DELAY);
+    esp_err_t lock = spi_device_acquire_bus(s_ch32_spi, portMAX_DELAY);
+    if (lock != ESP_OK) {
+        _LOG_A("SPI bus acquire failed\n");
+        return 0xFF;    
+    }
 
     // Byte 1: magic. Byte 2: read command (0x80 | reg).
     spi_transaction_t t1 = {};
@@ -135,7 +139,11 @@ uint8_t etherlcd_reg_read(uint8_t reg) {
 }
 
 void etherlcd_reg_write(uint8_t reg, uint8_t value) {
-    spi_device_acquire_bus(s_ch32_spi, portMAX_DELAY);
+    esp_err_t lock = spi_device_acquire_bus(s_ch32_spi, portMAX_DELAY);
+    if (lock != ESP_OK) {
+        _LOG_A("SPI bus acquire failed\n");
+        return;
+    }
 
     // Magic + register address + value in one 3-byte TX-only transaction.
     spi_transaction_t t = {};
