@@ -9,3 +9,15 @@ sdkconfig.*
 .DS_Store
 */.DS_Store
 .idea
+
+# Vue UI (feature branch) — leftover working-tree files when on master
+SmartEVSE-3/app/
+
+# Vue UI build outputs copied into data/ (generated, not tracked)
+SmartEVSE-3/data/app.html
+SmartEVSE-3/data/app-sw.js
+SmartEVSE-3/data/manifest.json
+SmartEVSE-3/data/pwa-192.png
+SmartEVSE-3/data/pwa-512.png
+SmartEVSE-3/data/apple-touch-icon.png
+

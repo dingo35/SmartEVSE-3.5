@@ -145,6 +145,9 @@ public:
 };
 
 extern bool shouldReboot;
+extern bool FlashMode;                  // true when running in dedicated flash (recovery) mode
+extern bool getFlashModeFlag(void);     // read persisted flash-mode flag from NVS
+extern void setFlashModeFlag(bool flag);// persist/clear flash-mode flag in NVS
 extern void network_loop(void);
 extern String APhostname;
 extern webServerRequest* request;

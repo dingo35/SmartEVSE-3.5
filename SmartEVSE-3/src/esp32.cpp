@@ -3581,6 +3581,30 @@ extern void Timer20ms(void * parameter);
     // Read all settings from non volatile memory; MQTTprefix will be overwritten if stored in NVS
     read_settings();                                                            // initialize with default data when starting for the first time
     validate_settings();
+
+    // ---- Dedicated flash (recovery) mode ----------------------------------
+    // If the flash-mode flag was persisted in NVS (via the "Reboot in flash
+    // mode" button), bring up ONLY WiFi and the web/OTA endpoint and skip
+    // everything else: no RFID, no LittleFS/OCPP, no MQTT, no Modbus polling,
+    // no control timers, no LCD. Because none of those subsystems are started,
+    // there is nothing to tear down or leak and the heap is left pristine and
+    // contiguous, so the OTA buffer allocation that fails on a long-running
+    // device has the whole pool to draw from. The contactor stays open and the
+    // CP/pilot stays disconnected (set in the GPIO init above) — entry into
+    // this mode is gated on no vehicle being connected.
+    FlashMode = getFlashModeFlag();
+    if (FlashMode) {
+        _LOG_A("*** FLASH MODE: WiFi + OTA only, skipping RFID/LittleFS/OCPP/MQTT/Modbus/LCD/timers ***\n");
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
+        ledcWrite(RED_CHANNEL, 0);
+        ledcWrite(GREEN_CHANNEL, 0);
+        ledcWrite(BLUE_CHANNEL, 255);                                          // steady blue LED = flash mode
+#endif
+        WiFiSetup();                                                           // only WiFi + web/OTA endpoint
+        return;                                                                // do not start any tasks or charging logic
+    }
+    // -----------------------------------------------------------------------
+
     ReadRFIDlist();                                                             // Read all stored RFID's from storage
 
     // Note that LittleFS is also used by OCPP
@@ -3704,6 +3728,13 @@ extern void Timer20ms(void * parameter);
 #endif
 
     firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
+
+    // We reached the end of a normal boot: the running image is good. Confirm it
+    // so the bootloader cancels any pending rollback. This is the safety net for
+    // the flash-mode reboot path — if a freshly flashed image were bad and never
+    // got here, a rollback-enabled bootloader would auto-revert to the previous
+    // partition. Harmless (no-op) when bootloader rollback is not enabled.
+    esp_ota_mark_app_valid_cancel_rollback();
 }
 
 
@@ -3869,8 +3900,8 @@ static void homewizard_task(void *parameter) {
 void loop() {
 
     network_loop();
-    homewizard_loop();
-    
+    if (!FlashMode) homewizard_loop();          // no meter polling in flash mode
+
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
         lastCheck = millis();
@@ -3968,15 +3999,18 @@ void loop() {
     }
 
     //OCPP lifecycle management
+    // Never start OCPP in flash mode — it must stay off to keep the heap pristine.
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    if (OcppMode && !getOcppContext() && NetworkConnected()) {
-        ocppInit();
-    } else if (!OcppMode && getOcppContext()) {
-        ocppDeinit();
-    }
+    if (!FlashMode) {
+        if (OcppMode && !getOcppContext() && NetworkConnected()) {
+            ocppInit();
+        } else if (!OcppMode && getOcppContext()) {
+            ocppDeinit();
+        }
 
-    if (OcppMode && getOcppContext()) {
-        ocppLoop();
+        if (OcppMode && getOcppContext()) {
+            ocppLoop();
+        }
     }
 #endif //ENABLE_OCPP
 

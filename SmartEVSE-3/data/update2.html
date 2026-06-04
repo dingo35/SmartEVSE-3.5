@@ -55,12 +55,69 @@ var setStatus = function(text) {
               console.error('Error: ', err)
             })
         }
+
+        // ---- Dedicated flash (recovery) mode --------------------------------
+        function fmtBytes(n) {
+          if (n === undefined || n === null) return '?';
+          return n.toLocaleString() + ' (' + (n / 1024).toFixed(1) + ' KiB)';
+        }
+
+        function renderFlashInfo(d) {
+          var html = '';
+          if (d.flash_mode) {
+            html += '<div style="background:#ffe6b3;border:2px solid #e08020;border-radius:.5em;padding:1em;margin-bottom:1em">'
+                  + '<b>&#9889; FLASH MODE ACTIVE</b><br>'
+                  + 'Only WiFi and the update endpoint are running &mdash; the whole heap is reserved for flashing. '
+                  + 'Upload firmware below, or '
+                  + '<button onclick="exitFlashMode()">Exit flash mode (reboot normally)</button>'
+                  + '</div>';
+          } else {
+            var dis = d.vehicle_connected ? ' disabled' : '';
+            html += '<button onclick="enterFlashMode()"' + dis + '>Reboot in Flash Mode</button> ';
+            html += d.vehicle_connected
+                  ? '<span style="color:#b00000">(unavailable: a vehicle is connected &mdash; unplug the EV first)</span>'
+                  : '<span>(reboots into a minimal recovery mode for reliable flashing)</span>';
+          }
+          html += '<table style="text-align:left;margin-top:1em">';
+          html += '<tr><th colspan="2">Memory</th></tr>';
+          html += '<tr><td>Free heap</td><td>' + fmtBytes(d.heap_free) + '</td></tr>';
+          html += '<tr><td>Largest free block</td><td>' + fmtBytes(d.heap_max_block) + '</td></tr>';
+          html += '<tr><td>Min free heap (since boot)</td><td>' + fmtBytes(d.heap_min_free) + '</td></tr>';
+          html += '<tr><td>Total heap</td><td>' + fmtBytes(d.heap_total) + '</td></tr>';
+          html += '<tr><th colspan="2">Flash</th></tr>';
+          html += '<tr><td>Flash chip size</td><td>' + fmtBytes(d.flash_chip_size) + '</td></tr>';
+          html += '<tr><td>Sketch size (current)</td><td>' + fmtBytes(d.sketch_size) + '</td></tr>';
+          html += '<tr><td>Free sketch space</td><td>' + fmtBytes(d.free_sketch_space) + '</td></tr>';
+          html += '<tr><th colspan="2">OTA partitions</th></tr>';
+          if (d.running) html += '<tr><td>Running (' + d.running.label + ')</td><td>@0x' + d.running.address.toString(16) + ', ' + fmtBytes(d.running.size) + '</td></tr>';
+          if (d.target)  html += '<tr><td><b>Target &mdash; next flash writes here (' + d.target.label + ')</b></td><td>@0x' + d.target.address.toString(16) + ', ' + fmtBytes(d.target.size) + '</td></tr>';
+          html += '</table>';
+          document.getElementById('flashpanel').innerHTML = html;
+        }
+
+        function updateFlashInfo() {
+          fetch('/flashinfo').then(r => r.json()).then(renderFlashInfo).catch(e => console.error(e));
+        }
+
+        function enterFlashMode() {
+          if (!confirm('Reboot into flash mode?\n\nThe charger goes offline briefly and only this update page is available until you flash firmware or exit flash mode.')) return;
+          fetch('/flashmode').then(r => r.text()).then(t => setStatus(t)).catch(e => console.error(e));
+        }
+
+        function exitFlashMode() {
+          fetch('/reboot').then(r => r.text()).then(t => setStatus(t)).catch(e => console.error(e));
+        }
     </script>
   </head>
   <body onload="loadData()">
     <div id="container">
       <div id="info">
           Current version: <span id="version"></span><br>
+          =========================================================================================<br>
+          FLASH MODE &amp; DIAGNOSTICS
+          <br><br>
+          <div id="flashpanel">Loading diagnostics&hellip;</div>
+          <br>
           =========================================================================================<br>
           UPDATE FIRMWARE
           <br><br>
@@ -121,6 +178,8 @@ function loadData() {
     document.getElementById("version").innerHTML = sessionStorage.getItem("version");
     getLatestVersion(OWNER_FACT, REPO_FACT, 'latest_fact');
     getLatestVersion(OWNER_COMM, REPO_COMM, 'latest_comm');
+    updateFlashInfo();                  // flash-mode banner + heap/partition diagnostics
+    setInterval(updateFlashInfo, 2000);
 }
 
 async function getLatestVersion(owner, repo, element) {

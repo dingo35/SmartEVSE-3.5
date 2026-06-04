@@ -88,6 +88,38 @@ mg_connection *HttpListener80, *HttpListener443;
 
 bool shouldReboot = false;
 
+// Dedicated "flash mode" (recovery / safe-mode boot). When the flag below is
+// persisted in NVS and the device reboots, setup() brings up only WiFi and the
+// web/OTA endpoint and skips OCPP, MQTT, RFID, Modbus polling and the control
+// timers. Nothing else is started, so the heap stays pristine and contiguous
+// and the OTA buffer allocation cannot fail for lack of a large free block.
+bool FlashMode = false;
+
+// The flag lives in its own NVS namespace so it can be read/written
+// independently of the much larger "settings" blob, very early in boot.
+#define FLASHMODE_NVS_NAMESPACE "flashmode"
+#define FLASHMODE_NVS_KEY       "flag"
+
+// Read the persisted flash-mode flag. Safe to call before read_settings().
+bool getFlashModeFlag(void) {
+    bool flag = false;
+    if (preferences.begin(FLASHMODE_NVS_NAMESPACE, true)) {                  // true = readonly
+        flag = preferences.getBool(FLASHMODE_NVS_KEY, false);
+        preferences.end();
+    }
+    return flag;
+}
+
+// Persist (or clear) the flash-mode flag. Cleared after a successful flash, or
+// when the user reboots out of flash mode, so a normal reboot returns to normal.
+void setFlashModeFlag(bool flag) {
+    if (preferences.begin(FLASHMODE_NVS_NAMESPACE, false)) {
+        if (flag) preferences.putBool(FLASHMODE_NVS_KEY, true);
+        else      preferences.remove(FLASHMODE_NVS_KEY);
+        preferences.end();
+    }
+}
+
 extern void write_settings(void);
 extern void StopwebServer(void); //TODO or move over to network.cpp?
 extern void StartwebServer(void); //TODO or move over to network.cpp?
@@ -1833,6 +1865,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     if (offset + hm->body.len >= size) {                                           //EOF
                         if(Update.end(true)) {
                             _LOG_A("\nUpdate Success\n");
+                            setFlashModeFlag(false);            // flash done: next boot is normal mode
                             delay(1000);
                             ESP.restart();
                         } else {
@@ -1884,6 +1917,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                                 _LOG_A("Signature is valid!\n");
                                 esp_ota_set_boot_partition( target_partition );
                                 _LOG_A("\nUpdate Success\n");
+                                setFlashModeFlag(false);        // flash done: next boot is normal mode
                                 shouldReboot = true;
                                 //ESP.restart(); does not finish the call to fn_http_server, so the last POST of apps.js gets no response....
                                 //which results in a "verify failed" message on the /update screen AFTER the reboot :-)
@@ -1951,6 +1985,9 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 mg_http_reply(c, 200, "", "%ld", res);
             }
         } else if (mg_http_match_uri(hm, "/reboot")) {
+            // A normal reboot always returns to normal mode: clear the flash-mode
+            // flag so this doubles as the "exit flash mode" escape hatch.
+            setFlashModeFlag(false);
             shouldReboot = true;
 #ifndef SMARTEVSE_VERSION //sensorbox
             mg_http_reply(c, 200, "", "Rebooting after 5s...");
@@ -1958,9 +1995,53 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             if (State == STATE_C) {
                 mg_http_reply(c, 202, "", "Reboot scheduled: Device will reboot 5 seconds after the EV stops charging...");
             } else {
-                mg_http_reply(c, 200, "", "Device will reboot in 5 seconds...");
+                mg_http_reply(c, 200, "", FlashMode ? "Leaving flash mode, rebooting in 5 seconds..." : "Device will reboot in 5 seconds...");
             }
 #endif
+        } else if (mg_http_match_uri(hm, "/flashmode")) {
+            // Request a reboot into the dedicated flash (recovery) mode.
+            // Gated on no vehicle being connected (STATE_A) — never tear the
+            // device down or reboot in the middle of a charging session.
+#ifdef SMARTEVSE_VERSION
+            if (State != STATE_A) {
+                mg_http_reply(c, 409, "", "Cannot enter flash mode while a vehicle is connected. Unplug the EV first.");
+            } else {
+#endif
+                setFlashModeFlag(true);
+                shouldReboot = true;
+                mg_http_reply(c, 200, "", "Rebooting into flash mode in 5 seconds...");
+#ifdef SMARTEVSE_VERSION
+            }
+#endif
+        } else if (mg_http_match_uri(hm, "/flashinfo")) {
+            // Report heap/flash/partition diagnostics as JSON, polled by the
+            // update page so the user can see the pristine contiguous heap and
+            // which OTA partition the next flash will be written to.
+            const esp_partition_t* running = esp_ota_get_running_partition();
+            const esp_partition_t* target  = esp_ota_get_next_update_partition(NULL);
+            DynamicJsonDocument doc(512);
+            doc["flash_mode"]       = FlashMode;
+            doc["vehicle_connected"] = (State != STATE_A);
+            doc["heap_total"]       = ESP.getHeapSize();
+            doc["heap_free"]        = ESP.getFreeHeap();
+            doc["heap_min_free"]    = ESP.getMinFreeHeap();
+            doc["heap_max_block"]   = ESP.getMaxAllocHeap();             // largest contiguous block
+            doc["flash_chip_size"]  = ESP.getFlashChipSize();
+            doc["sketch_size"]      = ESP.getSketchSize();
+            doc["free_sketch_space"] = ESP.getFreeSketchSpace();
+            if (running) {
+                doc["running"]["label"]   = running->label;
+                doc["running"]["address"] = running->address;
+                doc["running"]["size"]    = running->size;
+            }
+            if (target) {
+                doc["target"]["label"]    = target->label;              // partition the next flash writes to
+                doc["target"]["address"]  = target->address;
+                doc["target"]["size"]     = target->size;
+            }
+            String json;
+            serializeJson(doc, json);
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
             DynamicJsonDocument doc(64);
 #if MQTT
@@ -2393,7 +2474,7 @@ void WiFiSetup(void) {
     handleWIFImode();                                                           //go into the mode that was saved in nonvolatile memory
 
 #if MQTT && MQTT_ESP
-    MQTTclient.connect();
+    if (!FlashMode) MQTTclient.connect();                                       // keep the heap pristine in flash mode
 #endif
 
 }
