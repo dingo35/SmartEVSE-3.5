@@ -749,7 +749,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
         // We expect 3 values
         if ((n == 3) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-#if SMARTCircuitSE_VERSION < 40 //v3
+#if SMARTEVSE_VERSION < 40 //v3
                 // RMS currents
                 CircuitMeter.Irms[0] = L1;
                 CircuitMeter.Irms[1] = L2;
