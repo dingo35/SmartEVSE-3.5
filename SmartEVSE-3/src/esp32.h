@@ -67,6 +67,8 @@
 #define SPI_SCK 26
 #define SPI_SS -1
 
+#include "etherlcd.h"                                                           // CH32V003 Ethernet+LCD board interface
+
 #define CP_CHANNEL 0
 #define RED_CHANNEL 2                                                           // PWM channel 2 (0 and 1 are used by CP signal)
 #define GREEN_CHANNEL 3
@@ -87,10 +89,12 @@
 #define PIN_EXT_V31 13
 #define PIN_BUZZER_V31 18
 
-#define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
-#define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
-#define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
-#define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
+// LCD control line macros — route through CH32V003 when Ethernet board is present,
+// otherwise fall back to direct GPIO.
+#define _RSTB_0 do { if (EthPresent) etherlcd_lcd_rst(false); else digitalWrite(PIN_LCD_RST, LOW); } while(0)
+#define _RSTB_1 do { if (EthPresent) etherlcd_lcd_rst(true);  else digitalWrite(PIN_LCD_RST, HIGH); } while(0)
+#define _A0_0   do { if (EthPresent) etherlcd_lcd_a0(false);  else digitalWrite(PIN_LCD_A0_B2, LOW); } while(0)
+#define _A0_1   do { if (EthPresent) etherlcd_lcd_a0(true);   else digitalWrite(PIN_LCD_A0_B2, HIGH); } while(0)
 
 extern portMUX_TYPE rtc_spinlock;   //TODO: Will be placed in the appropriate position after the rtc module is finished.
 
@@ -130,6 +134,7 @@ extern uint16_t SolarStopTimer;
 extern uint16_t MaxSumMainsTimer;
 extern uint8_t RFIDstatus;
 extern uint8_t OcppMode;
+extern uint8_t LedMode;
 extern bool LocalTimeSet;
 extern uint32_t serialnr;
 extern String PairingPin;
@@ -162,6 +167,7 @@ const struct {
     {"RFID",    "RFID reader, learn/remove cards",                    0, 5 + (ENABLE_OCPP ? 1 : 0), RFID_READER},
     {"EV METER","Type of EV electric meter",                          0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_EV_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
+    {"EV HST", "Selected hostname or discovered hostname index",      0, 9, 0},
 
     // System configuration
     /* LCD,       Desc,                                                 Min, Max, Default */
@@ -173,8 +179,12 @@ const struct {
     {"START",   "Surplus energy start Current (sum of phases)",       0, 48, START_CURRENT},
     {"STOP",    "Stop solar charging at 6A after this time",          0, 60, STOP_TIME},
     {"IMPORT",  "Allow grid power when solar charging (sum of phase)",0, 48, IMPORT_CURRENT},
-    {"MAINS MET","Type of mains electric meter",                       0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), MAINS_METER},
-    {"MAINS ADR","Address of mains electric meter",                    MIN_METER_ADDRESS, MAX_METER_ADDRESS, MAINS_METER_ADDRESS},
+    {"MAINS MET","Type of mains electric meter",                      0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), MAINS_METER},
+    {"MAINS ADR","Address of mains electric meter",                   MIN_METER_ADDRESS, MAX_METER_ADDRESS, MAINS_METER_ADDRESS},
+    {"MAINS HST", "Selected hostname or discovered hostname index",   0, 9, 0},
+    {"CIRCT MET","Type of circuit electric meter",                    0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), CIRCUIT_METER},
+    {"CIRCT ADR","Address of circuit electric meter",                 MIN_METER_ADDRESS, MAX_METER_ADDRESS, CIRCUIT_METER_ADDRESS},
+    {"CIRCT HST", "Selected hostname or discovered hostname index",   0, 9, 0},
     {"BYTE ORD","Byte order of custom electric meter",                0, 3, EMCUSTOM_ENDIANESS},
     {"DATA TYPE","Data type of custom electric meter",                 0, MB_DATATYPE_MAX - 1, EMCUSTOM_DATATYPE},
     {"FUNCTION","Modbus Function of custom electric meter",           3, 4, EMCUSTOM_FUNCTION},
@@ -191,11 +201,13 @@ const struct {
     {"AUTOUPDAT","Automatic Firmware Update",                         0, 1, AUTOUPDATE},
     {"CONTACT 2","Contactor2 (C2) behaviour",                          0, sizeof(StrEnableC2) / sizeof(StrEnableC2[0])-1, ENABLE_C2},
     {"MAX TEMP","Maximum temperature for the EVSE module",            40, 75, MAX_TEMPERATURE},
+    {"CAP MODE","Capacity Rate limit mode",                           0, 3, 0},
     {"CAPACITY","Capacity Rate limit on sum of MAINS Current (A)",    0, 600, MAX_SUMMAINS},
     {"CAP STOP","Stop Capacity Rate limit charging after X minutes",    0, 60, MAX_SUMMAINSTIME},
     {"LCD PIN", "Pin code to operate LCD from web interface",         0, 9999, 0},
     {"APP PIN", "Generate Pairing PIN for SmartEVSE App",             0, 1, PAIRING_PIN},
     {"APP SERVR","Cloud connection for SmartEVSE App features",       0, 1, APPSERVER},
+    {"LED MODE","LED color scheme: Standard or Public",               0, 1, 0},
     {"", "Hold 2 sec to stop charging", 0, 0, 0},
     {"", "Hold 2 sec to start charging", 0, 0, 0},
 

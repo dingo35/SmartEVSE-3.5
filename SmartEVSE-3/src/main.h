@@ -102,6 +102,8 @@
 #define MAINS_METER_ADDRESS 10
 #define EV_METER 0
 #define EV_METER_ADDRESS 12
+#define CIRCUIT_METER 0
+#define CIRCUIT_METER_ADDRESS 13
 #define MIN_METER_ADDRESS 10
 #define MIN_EV_METER_ADDRESS 11
 #define MAX_METER_ADDRESS 247
@@ -154,10 +156,12 @@
 #define PILOT_NOK   0
 #define PILOT_SHORT 255
 
+#ifndef SMARTEVSE_VERSION
 #define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
 #define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
 #define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
 #define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
+#endif
 
 #define STATE_A_LED_BRIGHTNESS 40
 #define STATE_B_LED_BRIGHTNESS 255
@@ -254,44 +258,51 @@ void setPilot(bool On);
 #define MENU_RFIDREADER 9                                                       // 0x0107: Use RFID reader
 #define MENU_EVMETER 10                                                         // 0x0108: Type of EV electric meter
 #define MENU_EVMETERADDRESS 11                                                  // 0x0109: Address of EV electric meter
+#define MENU_EVMETERHOST 12 
 
 // System configuration (same on all SmartEVSE in a LoadBalancing setup)
-#define MENU_MODE 12                                                            // 0x0200: EVSE mode
-#define MENU_CIRCUIT 13                                                         // 0x0201: EVSE Circuit max Current
-#define MENU_GRID 14                                                            // 0x0202: Grid type to which the Sensorbox is connected
-#define MENU_SB2_WIFI 15                                                        // 0x0203: WiFi mode of the Sensorbox 2
-#define MENU_MAINS 16                                                           // 0x0204: Max Mains Current
-#define MENU_START 17                                                           // 0x0205: Surplus energy start Current
-#define MENU_STOP 18                                                            // 0x0206: Stop solar charging at 6A after this time
-#define MENU_IMPORT 19                                                          // 0x0207: Allow grid power when solar charging
-#define MENU_MAINSMETER 20                                                      // 0x0208: Type of Mains electric meter
-#define MENU_MAINSMETERADDRESS 21                                               // 0x0209: Address of Mains electric meter
-#define MENU_EMCUSTOM_ENDIANESS 22                                              // 0x020D: Byte order of custom electric meter
-#define MENU_EMCUSTOM_DATATYPE 23                                               // 0x020E: Data type of custom electric meter
-#define MENU_EMCUSTOM_FUNCTION 24                                               // 0x020F: Modbus Function (3/4) of custom electric meter
-#define MENU_EMCUSTOM_UREGISTER 25                                              // 0x0210: Register for Voltage (V) of custom electric meter
-#define MENU_EMCUSTOM_UDIVISOR 26                                               // 0x0211: Divisor for Voltage (V) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_IREGISTER 27                                              // 0x0212: Register for Current (A) of custom electric meter
-#define MENU_EMCUSTOM_IDIVISOR 28                                               // 0x0213: Divisor for Current (A) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_PREGISTER 29                                              // 0x0214: Register for Power (W) of custom electric meter
-#define MENU_EMCUSTOM_PDIVISOR 30                                               // 0x0215: Divisor for Power (W) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_EREGISTER 31                                              // 0x0216: Register for Energy (kWh) of custom electric meter
-#define MENU_EMCUSTOM_EDIVISOR 32                                               // 0x0217: Divisor for Energy (kWh) of custom electric meter (10^x)
-#define MENU_EMCUSTOM_READMAX 33                                                // 0x0218: Maximum register read (ToDo)
-#define MENU_WIFI 34                                                            // 0x0219: WiFi mode
-#define MENU_AUTOUPDATE 35
-#define MENU_C2 36
-#define MENU_MAX_TEMP 37
-#define MENU_SUMMAINS 38
-#define MENU_SUMMAINSTIME 39
-#define MENU_LCDPIN 40
-#define MENU_PAIRING 41
-#define MENU_APPSERVER 42
-#define MENU_OFF 43                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
-#define MENU_ON 44                                                              // so access bit is set and charging starts when pressing > button 2 seconds
-#define MENU_EXIT 45
+#define MENU_MODE 13                                                            // 0x0200: EVSE mode
+#define MENU_CIRCUIT 14                                                         // 0x0201: EVSE Circuit max Current
+#define MENU_GRID 15                                                            // 0x0202: Grid type to which the Sensorbox is connected
+#define MENU_SB2_WIFI 16                                                        // 0x0203: WiFi mode of the Sensorbox 2
+#define MENU_MAINS 17                                                           // 0x0204: Max Mains Current
+#define MENU_START 18                                                           // 0x0205: Surplus energy start Current
+#define MENU_STOP 19                                                            // 0x0206: Stop solar charging at 6A after this time
+#define MENU_IMPORT 20                                                          // 0x0207: Allow grid power when solar charging
+#define MENU_MAINSMETER 21                                                      // 0x0208: Type of Mains electric meter
+#define MENU_MAINSMETERADDRESS 22                                               // 0x0209: Address of Mains electric meter
+#define MENU_MAINSMETERHOST 23
+#define MENU_CIRCUITMETER 24
+#define MENU_CIRCUITMETERADDRESS 25
+#define MENU_CIRCUITMETERHOST 26
+#define MENU_EMCUSTOM_ENDIANESS 27                                              // 0x020D: Byte order of custom electric meter
+#define MENU_EMCUSTOM_DATATYPE 28                                               // 0x020E: Data type of custom electric meter
+#define MENU_EMCUSTOM_FUNCTION 29                                               // 0x020F: Modbus Function (3/4) of custom electric meter
+#define MENU_EMCUSTOM_UREGISTER 30                                              // 0x0210: Register for Voltage (V) of custom electric meter
+#define MENU_EMCUSTOM_UDIVISOR 31                                               // 0x0211: Divisor for Voltage (V) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_IREGISTER 32                                              // 0x0212: Register for Current (A) of custom electric meter
+#define MENU_EMCUSTOM_IDIVISOR 33                                               // 0x0213: Divisor for Current (A) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_PREGISTER 34                                              // 0x0214: Register for Power (W) of custom electric meter
+#define MENU_EMCUSTOM_PDIVISOR 35                                               // 0x0215: Divisor for Power (W) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_EREGISTER 36                                              // 0x0216: Register for Energy (kWh) of custom electric meter
+#define MENU_EMCUSTOM_EDIVISOR 37                                               // 0x0217: Divisor for Energy (kWh) of custom electric meter (10^x)
+#define MENU_EMCUSTOM_READMAX 38                                                // 0x0218: Maximum register read (ToDo)
+#define MENU_WIFI 39                                                            // 0x0219: WiFi mode
+#define MENU_AUTOUPDATE 40
+#define MENU_C2 41
+#define MENU_MAX_TEMP 42
+#define MENU_CAPACITY_MODE 43
+#define MENU_SUMMAINS 44
+#define MENU_SUMMAINSTIME 45
+#define MENU_LCDPIN 46
+#define MENU_PAIRING 47
+#define MENU_APPSERVER 48
+#define MENU_LEDMODE 49
+#define MENU_OFF 50                                                             // so access bit is reset and charging stops when pressing < button 2 seconds
+#define MENU_ON 51                                                              // so access bit is set and charging starts when pressing > button 2 seconds
+#define MENU_EXIT 52
 
-#define MENU_STATE 50
+#define MENU_STATE 53
 
 class Button {
   public:
@@ -315,6 +326,7 @@ extern void Timer100ms(void * parameter);
 extern void Timer1S(void * parameter);
 extern void BlinkLed(void * parameter);
 extern void getButtonState();
+extern void setLCDbacklight(uint8_t pwm);
 extern void PowerPanicESP();
 
 extern uint8_t LCDlock;
@@ -342,6 +354,13 @@ uint16_t getItemValue(uint8_t nav);
 
 enum EnableC2_t { NOT_PRESENT, ALWAYS_OFF, SOLAR_OFF, ALWAYS_ON, AUTO };
 extern EnableC2_t EnableC2;
+enum CapacityMode_t { CAP_DISABLED, FIXED, INTERVAL, FLANDERS };
+extern CapacityMode_t CapacityMode;
+typedef struct CapacityNode {
+    uint16_t     start_minutes;     // Minutes since midnight (0–1439)
+    int32_t      max_power_watts;   // Allowed power in watts
+    struct CapacityNode* next;
+} CapacityNode;
 
 struct Node_t {
     uint8_t Online;

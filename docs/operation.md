@@ -101,10 +101,7 @@ A European Union directive allows electricity providers to charge consumers base
 
 For more information, visit [this link](https://github.com/serkri/SmartEVSE-3/issues/215).
 
-* A new menu option, "SumMains," has been added with a default setting of 600A.
-* This setting applies in Smart or Solar mode only.
-* In addition to other limits (Mains, MaxCircuit), the charging current will be restricted to ensure that the total current across all phases does not exceed the SumMains setting.
-* If you are unsure how to configure this, it is recommended to leave the setting at its default value.
+A menu option, "Capacity Mode," has been added; more information in the [Menu Options](docs/configuration.md#all-menu-options-on-the-lcd-screen)<br>
 
 # Locking the keys below the LCD screen
 

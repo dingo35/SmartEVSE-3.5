@@ -57,6 +57,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
+#include <MicroOcpp/Model/FirmwareManagement/FirmwareService.h>
 #endif //ENABLE_OCPP
 
 #if SMARTEVSE_VERSION >= 40
@@ -142,11 +143,16 @@ struct SettingsCache {
     uint8_t Switch, RCmon;
     uint16_t StartCurrent, StopTime, ImportCurrent;
     uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress;
+    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
+    char MainsMeterDeviceHostName[32];
+    char EVMeterDeviceHostName[32];
+    char CircuitMeterDeviceHostName[32];
     uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
     uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
     uint8_t WIFImode;
+    uint8_t CapacityMode;
     uint16_t EnableC2;
+    char intervals_json[128];
 #if MODEM
     char RequiredEVCCID[32];
 #endif
@@ -154,6 +160,7 @@ struct SettingsCache {
     uint8_t AutoUpdate, LCDlock, CableLock;
     uint16_t LCDPin;
     bool MQTTSmartServer;
+    uint8_t LedMode;
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
     uint8_t OcppMode;
 #endif
@@ -272,7 +279,6 @@ uint32_t LastBtnOverrideTime = 0;                                           // A
 bool LCDPasswordOK = false;                                                 // LCD web control PIN verification state
 extern uint8_t ChargeDelay;
 extern uint8_t NoCurrent;
-extern uint8_t ModbusRequest;
 extern uint16_t CardOffset;
 
 extern uint8_t ConfigChanged;
@@ -309,31 +315,35 @@ extern uint16_t firmwareUpdateTimer;
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
 extern OneWire32& ds();
+extern CapacityNode* first_interval;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-extern unsigned char OcppRfidUuid [7];
-extern size_t OcppRfidUuidLen;
-extern unsigned long OcppLastRfidUpdate;
-extern unsigned long OcppTrackLastRfidUpdate;
+uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
 
-extern bool OcppForcesLock;
-extern std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
-extern std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
+unsigned char OcppRfidUuid [7];
+size_t OcppRfidUuidLen;
+unsigned long OcppLastRfidUpdate;
+unsigned long OcppTrackLastRfidUpdate;
 
-extern bool OcppTrackPermitsCharge;
-extern bool OcppTrackAccessBit;
-extern uint8_t OcppTrackCPvoltage;
-extern MicroOcpp::MOcppMongooseClient *OcppWsClient;
+bool OcppForcesLock = false;
+std::shared_ptr<MicroOcpp::Configuration> OcppUnlockConnectorOnEVSideDisconnect; // OCPP Config for RFID-based transactions: if false, demand same RFID card again to unlock connector
+std::shared_ptr<MicroOcpp::Transaction> OcppLockingTx; // Transaction which locks connector until same RFID card is presented again
 
-extern float OcppCurrentLimit;
+bool OcppTrackPermitsCharge = false;
+bool OcppTrackAccessBit = false;
+uint8_t OcppTrackCPvoltage = PILOT_NOK; //track positive part of CP signal for OCPP transaction logic
+MicroOcpp::MOcppMongooseClient *OcppWsClient;
 
-extern unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
+float OcppCurrentLimit = -1.f; // Negative value: no OCPP limit defined
 
-extern bool OcppDefinedTxNotification;
-extern MicroOcpp::TxNotification OcppTrackTxNotification;
-extern unsigned long OcppLastTxNotification;
+unsigned long OcppStopReadingSyncTime; // Stop value synchronization: delay StopTransaction by a few seconds so it reports an accurate energy reading
+
+bool OcppDefinedTxNotification;
+MicroOcpp::TxNotification OcppTrackTxNotification;
+unsigned long OcppLastTxNotification;
+
+unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
 #endif //ENABLE_OCPP
-
 
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -517,6 +527,15 @@ const char * getErrorNameWeb(uint8_t ErrorCode) {
 }
 
 
+void setLCDbacklight(uint8_t pwm) {
+    if (EthPresent) {
+        etherlcd_set_backlight(pwm);
+    } else {
+        ledcWrite(LCD_CHANNEL, pwm);
+    }
+}
+
+
 void getButtonState() {
     // Sample the three < o > buttons.
     // As the buttons are shared with the SPI lines going to the LCD,
@@ -527,24 +546,30 @@ void getButtonState() {
         ButtonState = ButtonStateOverride;
     else {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
-        pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
-        pinMode(PIN_LCD_SDO_B3, INPUT);
-        pinMode(PIN_LCD_A0_B2, INPUT);
+        if (EthPresent) {
+            // Buttons are read from CH32V003 via SPI register
+            ButtonState = etherlcd_read_buttons() & 0x07;
+        } else {
+            pinMatrixOutDetach(PIN_LCD_SDO_B3, false, false);       // disconnect MOSI pin
+            pinMode(PIN_LCD_SDO_B3, INPUT);
+            pinMode(PIN_LCD_A0_B2, INPUT);
 
-        // sample buttons                                                         < o >
-        ButtonState = (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |  // > (right)
-                      (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
-                      (digitalRead(PIN_IO0_B1)     ? 1 : 0);   // < (left)
+            // sample buttons                                                         < o >
+            ButtonState = (digitalRead(PIN_LCD_SDO_B3) ? 4 : 0) |  // > (right)
+                          (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
+                          (digitalRead(PIN_IO0_B1)     ? 1 : 0);   // < (left)
 
-        pinMode(PIN_LCD_SDO_B3, OUTPUT);
-        pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
+            pinMode(PIN_LCD_SDO_B3, OUTPUT);
+            pinMatrixOutAttach(PIN_LCD_SDO_B3, VSPID_IN_IDX, false, false); // re-attach MOSI pin
+            pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
+        }
 #else
         pinMode(PIN_LCD_A0_B2, INPUT_PULLUP);                  // Switch the shared pin for the middle button to input
         ButtonState = (digitalRead(BUTTON3)        ? 4 : 0) |  // > (right)
                       (digitalRead(PIN_LCD_A0_B2)  ? 2 : 0) |  // o (middle)
                       (digitalRead(BUTTON1)        ? 1 : 0);   // < (left)
-#endif
         pinMode(PIN_LCD_A0_B2, OUTPUT);                        // switch pin back to output
+#endif
     }
     xSemaphoreGive(buttonMutex);
 }
@@ -640,18 +665,38 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (MainsMeter.Type != EM_API || LoadBl >= 2)
             return;
 
-        int32_t L1, L2, L3;
-        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+        int32_t L1, L2, L3, W, WH;
+        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
 
         // MainsMeter can measure -200A to +200A per phase
-        if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+        if ((n == 3 || n == 5) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
 #if SMARTEVSE_VERSION < 40 //v3
+            // We expect 5 values (and accept -1 for unknown values)
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
                 MainsMeter.Irms[0] = L1;
                 MainsMeter.Irms[1] = L2;
                 MainsMeter.Irms[2] = L3;
                 CalcIsum();
+            }
+            if (n == 5) {
+                if (W > -1) {
+                    // Power measurement
+    #if SMARTEVSE_VERSION < 40 //v3
+                    MainsMeter.PowerMeasured = W;
+    #else //v4
+                    Serial1.printf("@PowerMeasured:%03u,%d\n", MainsMeter.Address, W);
+    #endif
+                }
+
+                if (WH > -1) {
+                    // Energy measurement;  //we dont send the energies to CH32 because they are not used there
+                    MainsMeter.Import_active_energy = WH;
+                    MainsMeter.Export_active_energy = 0;
+                    MainsMeter.UpdateEnergies();
+                    MainsMeter.UpdateCapacity();
+                    MainsMeter.UpdatePower();
+                }
             }
 #else //v4
             Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
@@ -694,6 +739,26 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 EVMeter.Export_active_energy = 0;
                 EVMeter.UpdateEnergies();
             }
+        }
+    } else if (topic == MQTTprefix + "/Set/CircuitMeter") {
+        if (CircuitMeter.Type != EM_API)
+            return;
+
+        int32_t L1, L2, L3;
+        int n = sscanf(payload.c_str(), "%d:%d:%d", &L1, &L2, &L3);
+
+        // We expect 3 values
+        if ((n == 3) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+#if SMARTEVSE_VERSION < 40 //v3
+                // RMS currents
+                CircuitMeter.Irms[0] = L1;
+                CircuitMeter.Irms[1] = L2;
+                CircuitMeter.Irms[2] = L3;
+                CircuitMeter.CalcImeasured();
+                CircuitMeter.Timeout = COMM_TIMEOUT;
+#else //v4
+                Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
         }
     } else if (topic == MQTTprefix + "/Set/HomeBatteryCurrent") {
         if (LoadBl >= 2)
@@ -860,209 +925,265 @@ void SetupMQTTClient() {
     MQTTclient.subscribe(MQTTprefix + "/Set/#",1);
     MQTTclient.publish(MQTTprefix+"/connected", "online", true, 0);
 
-    //set the parameters for and announce sensors with device class 'current':
-    String optional_payload = MQTTclient.jsna("device_class","current") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("unit_of_measurement","A") + MQTTclient.jsna("value_template", R"({{ value | int / 10 }})");
-    MQTTclient.announce("Charge Current", "sensor", optional_payload);
-    MQTTclient.announce("Max Current", "sensor", optional_payload);
+    // Local helper: build a per-call payload buffer when state_topic /
+    // command_topic / option lists need MQTTprefix or runtime values.
+    char opt[256];
+    const char *p = MQTTprefix.c_str();
+
+    // sensors with device class 'current' share a static payload literal.
+    const char *CURRENT = ", \"device_class\":\"current\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"A\", \"value_template\":\"{{ value | int / 10 }}\"";
+    MQTTclient.announce("Charge Current", "sensor", CURRENT);
+    MQTTclient.announce("Max Current",    "sensor", CURRENT);
     if (MainsMeter.Type) {
-        MQTTclient.announce("Mains Current L1", "sensor", optional_payload);
-        MQTTclient.announce("Mains Current L2", "sensor", optional_payload);
-        MQTTclient.announce("Mains Current L3", "sensor", optional_payload);
+        MQTTclient.announce("Mains Current L1", "sensor", CURRENT);
+        MQTTclient.announce("Mains Current L2", "sensor", CURRENT);
+        MQTTclient.announce("Mains Current L3", "sensor", CURRENT);
     }
     if (EVMeter.Type) {
-        MQTTclient.announce("EV Current L1", "sensor", optional_payload);
-        MQTTclient.announce("EV Current L2", "sensor", optional_payload);
-        MQTTclient.announce("EV Current L3", "sensor", optional_payload);
+        MQTTclient.announce("EV Current L1", "sensor", CURRENT);
+        MQTTclient.announce("EV Current L2", "sensor", CURRENT);
+        MQTTclient.announce("EV Current L3", "sensor", CURRENT);
+    }
+    if (CircuitMeter.Type) {
+        MQTTclient.announce("Circuit Current L1", "sensor", CURRENT);
+        MQTTclient.announce("Circuit Current L2", "sensor", CURRENT);
+        MQTTclient.announce("Circuit Current L3", "sensor", CURRENT);
     }
     if (homeBatteryLastUpdate) {
-        MQTTclient.announce("Home Battery Current", "sensor", optional_payload);
+        MQTTclient.announce("Home Battery Current", "sensor", CURRENT);
     }
+    MQTTclient.announce("Max Sum Mains", "sensor", ", \"device_class\":\"current\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"A\"");
 
 #if MODEM
-        //set the parameters for modem/SoC sensor entities:
-        optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
-        MQTTclient.announce("EV Initial SoC", "sensor", optional_payload);
-        MQTTclient.announce("EV Full SoC", "sensor", optional_payload);
-        MQTTclient.announce("EV Computed SoC", "sensor", optional_payload);
-        MQTTclient.announce("EV Remaining SoC", "sensor", optional_payload);
-
-        optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","m") + MQTTclient.jsna("value_template", R"({{ none if (value | int == -1) else (value | int / 60) | round }})");
-        MQTTclient.announce("EV Time Until Full", "sensor", optional_payload);
-
-        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("value_template", R"({{ none if (value | int == -1) else (value | int) }})");
-        MQTTclient.announce("EV Energy Capacity", "sensor", optional_payload);
-        MQTTclient.announce("EV Energy Request", "sensor", optional_payload);
-
-        optional_payload = MQTTclient.jsna("value_template", R"({{ none if (value == '') else value }})");
-        MQTTclient.announce("EVCCID", "sensor", optional_payload);
-        optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/RequiredEVCCID")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/RequiredEVCCID"));
-        MQTTclient.announce("Required EVCCID", "text", optional_payload);
+    {
+        const char *SOC_PCT = ", \"unit_of_measurement\":\"%\", \"value_template\":\"{{ none if (value | int == -1) else (value | int) }}\"";
+        MQTTclient.announce("EV Initial SoC",   "sensor", SOC_PCT);
+        MQTTclient.announce("EV Full SoC",      "sensor", SOC_PCT);
+        MQTTclient.announce("EV Computed SoC",  "sensor", SOC_PCT);
+        MQTTclient.announce("EV Remaining SoC", "sensor", SOC_PCT);
+    }
+    MQTTclient.announce("EV Time Until Full", "sensor",
+        ", \"device_class\":\"duration\", \"unit_of_measurement\":\"m\", \"value_template\":\"{{ none if (value | int == -1) else (value | int / 60) | round }}\"");
+    {
+        const char *EN_OR_NONE = ", \"device_class\":\"energy\", \"unit_of_measurement\":\"Wh\", \"value_template\":\"{{ none if (value | int == -1) else (value | int) }}\"";
+        MQTTclient.announce("EV Energy Capacity", "sensor", EN_OR_NONE);
+        MQTTclient.announce("EV Energy Request",  "sensor", EN_OR_NONE);
+    }
+    MQTTclient.announce("EVCCID", "sensor", ", \"value_template\":\"{{ none if (value == '') else value }}\"");
+    snprintf(opt, sizeof(opt),
+        ", \"state_topic\":\"%s/RequiredEVCCID\", \"command_topic\":\"%s/Set/RequiredEVCCID\"", p, p);
+    MQTTclient.announce("Required EVCCID", "text", opt);
 #endif
 
-    optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
-    if (MainsMeter.Type) {
-        MQTTclient.announce("Mains Import Active Energy", "sensor", optional_payload);
-        MQTTclient.announce("Mains Export Active Energy", "sensor", optional_payload);
+    {
+        const char *EN_TOTAL = ", \"device_class\":\"energy\", \"unit_of_measurement\":\"Wh\", \"state_class\":\"total_increasing\"";
+        if (MainsMeter.Type) {
+            MQTTclient.announce("Mains Import Active Energy", "sensor", EN_TOTAL);
+            MQTTclient.announce("Mains Export Active Energy", "sensor", EN_TOTAL);
+        }
+        if (EVMeter.Type) {
+            MQTTclient.announce("EV Import Active Energy", "sensor", EN_TOTAL);
+            MQTTclient.announce("EV Export Active Energy", "sensor", EN_TOTAL);
+            MQTTclient.announce("EV Charge Power", "sensor",
+                ", \"device_class\":\"power\", \"unit_of_measurement\":\"W\", \"state_class\":\"measurement\"");
+            MQTTclient.announce("EV Energy Charged",       "sensor", EN_TOTAL);
+            MQTTclient.announce("EV Total Energy Charged", "sensor", EN_TOTAL);
+        }
     }
 
-    if (EVMeter.Type) {
-        MQTTclient.announce("EV Import Active Energy", "sensor", optional_payload);
-        MQTTclient.announce("EV Export Active Energy", "sensor", optional_payload);
-        //set the parameters for and MQTTclient.announce other sensor entities:
-        optional_payload = MQTTclient.jsna("device_class","power") + MQTTclient.jsna("unit_of_measurement","W") + MQTTclient.jsna("state_class","measurement");
-        MQTTclient.announce("EV Charge Power", "sensor", optional_payload);
-        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
-        MQTTclient.announce("EV Energy Charged", "sensor", optional_payload);
-        optional_payload = MQTTclient.jsna("device_class","energy") + MQTTclient.jsna("unit_of_measurement","Wh") + MQTTclient.jsna("state_class","total_increasing");
-        MQTTclient.announce("EV Total Energy Charged", "sensor", optional_payload);
-    }
-
-    //set the parameters for and MQTTclient.announce sensor entities without device_class or unit_of_measurement:
-    optional_payload = "";
-    MQTTclient.announce("EV Plug State", "sensor", optional_payload);
-    MQTTclient.announce("Access", "sensor", optional_payload);
-    MQTTclient.announce("State", "sensor", optional_payload);
-    MQTTclient.announce("RFID", "sensor", optional_payload);
-    MQTTclient.announce("RFIDLastRead", "sensor", optional_payload);
-    MQTTclient.announce("NrOfPhases", "sensor", optional_payload);
+    // sensor entities without device_class or unit_of_measurement
+    MQTTclient.announce("EV Plug State", "sensor", "");
+    MQTTclient.announce("Access",        "sensor", "");
+    MQTTclient.announce("State",         "sensor", "");
+    MQTTclient.announce("StateID",       "sensor", "");
+    MQTTclient.announce("RFID",          "sensor", "");
+    MQTTclient.announce("RFIDLastRead",  "sensor", "");
+    MQTTclient.announce("NrOfPhases",    "sensor", "");
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    MQTTclient.announce("OCPP", "sensor", optional_payload);
-    MQTTclient.announce("OCPPConnection", "sensor", optional_payload);
+    MQTTclient.announce("OCPP",           "sensor", "");
+    MQTTclient.announce("OCPPConnection", "sensor", "");
 #endif //ENABLE_OCPP
 
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/LEDColorOff")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/ColorOff"));
-    MQTTclient.announce("LED Color Off", "text", optional_payload);
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/LEDColorNormal")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/ColorNormal"));
-    MQTTclient.announce("LED Color Normal", "text", optional_payload);
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/LEDColorSmart")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/ColorSmart"));
-    MQTTclient.announce("LED Color Smart", "text", optional_payload);
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/LEDColorSolar")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/ColorSolar"));
-    MQTTclient.announce("LED Color Solar", "text", optional_payload);
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/LEDColorCustom")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/ColorCustom"));
-    MQTTclient.announce("LED Color Custom", "text", optional_payload);
-    
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/CustomButton")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CustomButton"));
-    optional_payload += String(R"(, "options" : ["On", "Off"])");
-    MQTTclient.announce("Custom Button", "select", optional_payload);
+    // LED color text entities: build state_topic/command_topic with snprintf.
+    #define ANN_LED(label, slug) do { \
+        snprintf(opt, sizeof(opt), \
+            ", \"state_topic\":\"%s/LEDColor" slug "\", \"command_topic\":\"%s/Set/Color" slug "\"", p, p); \
+        MQTTclient.announce("LED Color " label, "text", opt); \
+    } while (0)
+    ANN_LED("Off",    "Off");
+    ANN_LED("Normal", "Normal");
+    ANN_LED("Smart",  "Smart");
+    ANN_LED("Solar",  "Solar");
+    ANN_LED("Custom", "Custom");
+    #undef ANN_LED
 
-    optional_payload = MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s");
-    MQTTclient.announce("SolarStopTimer", "sensor", optional_payload);
-    //set the parameters for and MQTTclient.announce diagnostic sensor entities:
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic");
-    MQTTclient.announce("Error", "sensor", optional_payload);
-    MQTTclient.announce("WiFi SSID", "sensor", optional_payload);
-    MQTTclient.announce("WiFi BSSID", "sensor", optional_payload);
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","signal_strength") + MQTTclient.jsna("unit_of_measurement","dBm") + MQTTclient.jsna("state_class","measurement");
-    MQTTclient.announce("WiFi RSSI", "sensor", optional_payload);
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","temperature") + MQTTclient.jsna("unit_of_measurement","°C") + MQTTclient.jsna("state_class","measurement");
-    MQTTclient.announce("ESP Temp", "sensor", optional_payload);
-    optional_payload = MQTTclient.jsna("entity_category","diagnostic") + MQTTclient.jsna("device_class","duration") + MQTTclient.jsna("unit_of_measurement","s") + MQTTclient.jsna("state_class","measurement") + MQTTclient.jsna("entity_registry_enabled_default","False");
-    MQTTclient.announce("ESP Uptime", "sensor", optional_payload);
+    snprintf(opt, sizeof(opt),
+        ", \"state_topic\":\"%s/CustomButton\", \"command_topic\":\"%s/Set/CustomButton\", \"options\":[\"On\", \"Off\"]", p, p);
+    MQTTclient.announce("Custom Button", "select", opt);
+
+    MQTTclient.announce("SolarStopTimer",    "sensor", ", \"device_class\":\"duration\", \"unit_of_measurement\":\"s\"");
+    MQTTclient.announce("Max Sum Mains Time","sensor", ", \"device_class\":\"duration\", \"unit_of_measurement\":\"min\"");
+
+    // diagnostic sensors
+    MQTTclient.announce("Error",      "sensor", ", \"entity_category\":\"diagnostic\"");
+    MQTTclient.announce("WiFi SSID",  "sensor", ", \"entity_category\":\"diagnostic\"");
+    MQTTclient.announce("WiFi BSSID", "sensor", ", \"entity_category\":\"diagnostic\"");
+    MQTTclient.announce("WiFi RSSI",  "sensor",
+        ", \"entity_category\":\"diagnostic\", \"device_class\":\"signal_strength\", \"unit_of_measurement\":\"dBm\", \"state_class\":\"measurement\"");
+    MQTTclient.announce("ESP Temp",   "sensor",
+        ", \"entity_category\":\"diagnostic\", \"device_class\":\"temperature\", \"unit_of_measurement\":\"°C\", \"state_class\":\"measurement\"");
+    MQTTclient.announce("ESP Uptime", "sensor",
+        ", \"entity_category\":\"diagnostic\", \"device_class\":\"duration\", \"unit_of_measurement\":\"s\", \"state_class\":\"measurement\", \"entity_registry_enabled_default\":\"False\"");
 
 #if MODEM
-        optional_payload = MQTTclient.jsna("unit_of_measurement","%") + MQTTclient.jsna("value_template", R"({{ (value | int / 1024 * 100) | round(0) }})");
-        MQTTclient.announce("CP PWM", "sensor", optional_payload);
-
-        optional_payload = MQTTclient.jsna("value_template", R"({{ none if (value | int == -1) else (value | int / 1024 * 100) | round }})");
-        optional_payload += MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CPPWMOverride")) + MQTTclient.jsna("min", "-1") + MQTTclient.jsna("max", "100") + MQTTclient.jsna("mode","slider");
-        optional_payload += MQTTclient.jsna("command_template", R"({{ (value | int * 1024 / 100) | round }})");
-        MQTTclient.announce("CP PWM Override", "number", optional_payload);
+    MQTTclient.announce("CP PWM", "sensor",
+        ", \"unit_of_measurement\":\"%\", \"value_template\":\"{{ (value | int / 1024 * 100) | round(0) }}\"");
+    snprintf(opt, sizeof(opt),
+        ", \"value_template\":\"{{ none if (value | int == -1) else (value | int / 1024 * 100) | round }}\""
+        ", \"command_topic\":\"%s/Set/CPPWMOverride\", \"min\":\"-1\", \"max\":\"100\", \"mode\":\"slider\""
+        ", \"command_template\":\"{{ (value | int * 1024 / 100) | round }}\"", p);
+    MQTTclient.announce("CP PWM Override", "number", opt);
 #endif
-    //set the parameters for and MQTTclient.announce select entities, overriding automatic state_topic:
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/Mode")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/Mode"));
-    optional_payload += String(R"(, "options" : ["Off", "Normal", "Smart", "Solar", "Pause"])");
-    MQTTclient.announce("Mode", "select", optional_payload);
 
-    optional_payload = MQTTclient.jsna("state_topic", String(MQTTprefix + "/EnableC2")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/EnableC2"));
-    optional_payload += String(R"(, "options" : ["Not present", "Always Off", "Solar Off", "Always On", "Auto"])");
-    MQTTclient.announce("EnableC2", "select", optional_payload);
+    // select entities, overriding automatic state_topic:
+    snprintf(opt, sizeof(opt),
+        ", \"state_topic\":\"%s/Mode\", \"command_topic\":\"%s/Set/Mode\""
+        ", \"options\":[\"Off\", \"Normal\", \"Smart\", \"Solar\", \"Pause\"]", p, p);
+    MQTTclient.announce("Mode", "select", opt);
 
-    //set the parameters for and MQTTclient.announce number entities:
-    optional_payload = MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CurrentOverride")) + MQTTclient.jsna("min", "0") + MQTTclient.jsna("max", MaxCurrent ) + MQTTclient.jsna("mode","slider");
-    optional_payload += MQTTclient.jsna("value_template", R"({{ value | int / 10 if value | is_number else none }})") + MQTTclient.jsna("command_template", R"({{ value | int * 10 }})");
-    MQTTclient.announce("Charge Current Override", "number", optional_payload);
+    snprintf(opt, sizeof(opt),
+        ", \"state_topic\":\"%s/EnableC2\", \"command_topic\":\"%s/Set/EnableC2\""
+        ", \"options\":[\"Not present\", \"Always Off\", \"Solar Off\", \"Always On\", \"Auto\"]", p, p);
+    MQTTclient.announce("EnableC2", "select", opt);
 
-    //set the parameters for and MQTTclient.announce Cable Lock:
-    optional_payload = MQTTclient.jsna("cablelock_topic", String(MQTTprefix + "/CableLock")) + MQTTclient.jsna("command_topic", String(MQTTprefix + "/Set/CableLock"));
-    optional_payload += String(R"(, "options" : ["0", "1"])");
-    MQTTclient.announce("Cable Lock", "select", optional_payload);
+    // number entities:
+    snprintf(opt, sizeof(opt),
+        ", \"command_topic\":\"%s/Set/CurrentOverride\", \"min\":\"0\", \"max\":\"%u\", \"mode\":\"slider\""
+        ", \"value_template\":\"{{ value | int / 10 if value | is_number else none }}\""
+        ", \"command_template\":\"{{ value | int * 10 }}\"", p, (unsigned)MaxCurrent);
+    MQTTclient.announce("Charge Current Override", "number", opt);
+
+    // Cable Lock:
+    snprintf(opt, sizeof(opt),
+        ", \"cablelock_topic\":\"%s/CableLock\", \"command_topic\":\"%s/Set/CableLock\""
+        ", \"options\":[\"0\", \"1\"]", p, p);
+    MQTTclient.announce("Cable Lock", "select", opt);
 }
 
 void mqttPublishData() {
     lastMqttUpdate = 0;
 
+    // Local helpers: build the prefixed topic on the stack so we don't burn
+    // ~50 String reallocations every MQTT publish cycle. Topic length is
+    // bounded by MQTTprefix (small) + a literal suffix; 96 bytes is plenty.
+    auto mqPub  = [](const char *suffix, const char *value, size_t vlen, bool retain, int qos) {
+        char t[96];
+        int n = snprintf(t, sizeof(t), "%s%s", MQTTprefix.c_str(), suffix);
+        if (n > 0 && n < (int)sizeof(t)) MQTTclient.publish(t, value, vlen, retain, qos);
+    };
+    auto mqPubI = [&](const char *suffix, int32_t v, bool retain, int qos) {
+        char b[12]; int n = snprintf(b, sizeof(b), "%ld", (long)v);
+        if (n > 0) mqPub(suffix, b, (size_t)n, retain, qos);
+    };
+    auto mqPubS = [&](const char *suffix, const char *v, bool retain, int qos) {
+        mqPub(suffix, v, strlen(v), retain, qos);
+    };
+
         if (MainsMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
+            mqPubI("/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
+            mqPubI("/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
+            mqPubI("/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
+            if (MainsMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+                mqPubI("/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
+            if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+                mqPubI("/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
         }
         if (EVMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
+            mqPubI("/EVCurrentL1", EVMeter.Irms[0], false, 0);
+            mqPubI("/EVCurrentL2", EVMeter.Irms[1], false, 0);
+            mqPubI("/EVCurrentL3", EVMeter.Irms[2], false, 0);
+            if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+                mqPubI("/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
+            if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+                mqPubI("/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
         }
-        MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
-        MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
-        MQTTclient.publish(MQTTprefix + "/MaxCurrent", MaxCurrent * 10, true, 0);
-        MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
-        MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
-        MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
-        MQTTclient.publish(MQTTprefix + "/NrOfPhases", Nr_Of_Phases_Charging, true, 0);
-        MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
-        MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
-        MQTTclient.publish(MQTTprefix + "/EnableC2", StrEnableC2[EnableC2], true, 0);
+        if (CircuitMeter.Type) {
+            mqPubI("/CircuitCurrentL1", CircuitMeter.Irms[0], false, 0);
+            mqPubI("/CircuitCurrentL2", CircuitMeter.Irms[1], false, 0);
+            mqPubI("/CircuitCurrentL3", CircuitMeter.Irms[2], false, 0);
+        }
+        mqPubI("/ESPTemp", TempEVSE, false, 0);
+        mqPubS("/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
+        mqPubI("/MaxCurrent", MaxCurrent * 10, true, 0);
+        mqPubI("/MaxSumMains", MaxSumMains, true, 0);
+        mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
+        mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
+        mqPubI("/ChargeCurrent", Balanced[0], true, 0);
+        mqPubI("/ChargeCurrentOverride", OverrideCurrent, true, 0);
+        mqPubI("/NrOfPhases", Nr_Of_Phases_Charging, true, 0);
+        mqPubS("/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
+        mqPubS("/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
+        mqPubS("/EnableC2", StrEnableC2[EnableC2], true, 0);
         if (RFIDReader) {
             char buf[15];
             printRFID(buf);
-            MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
+            mqPubS("/RFIDLastRead", buf, true, 0);
         }
-        MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
-        MQTTclient.publish(MQTTprefix + "/Error", getErrorNameWeb(ErrorFlags), true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiSSID", String(WiFi.SSID()), true, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiBSSID", String(WiFi.BSSIDstr()), true, 0);
+        mqPubS("/State", getStateNameWeb(State), true, 0);
+        //try evcc.io
+        mqPubS("/StateID", getStateName(State), true, 0);
+        mqPubS("/Error", getErrorNameWeb(ErrorFlags), true, 0);
+        mqPubS("/EVPlugState", (pilot != PILOT_12V) ? "Connected" : "Disconnected", true, 0);
+        mqPubS("/WiFiSSID", WiFi.SSID().c_str(), true, 0);
+        mqPubS("/WiFiBSSID", WiFi.BSSIDstr().c_str(), true, 0);
 #if MODEM
-        MQTTclient.publish(MQTTprefix + "/CPPWM", CurrentPWM, false, 0);
-        MQTTclient.publish(MQTTprefix + "/CPPWMOverride", CPDutyOverride ? String(CurrentPWM) : "-1", true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVInitialSoC", InitialSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVFullSoC", FullSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVComputedSoC", ComputedSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVRemainingSoC", RemainingSoC, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVTimeUntilFull", TimeUntilFull, false, 0);
-        MQTTclient.publish(MQTTprefix + "/EVEnergyCapacity", EnergyCapacity, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVEnergyRequest", EnergyRequest, true, 0);
-        MQTTclient.publish(MQTTprefix + "/EVCCID", EVCCID, true, 0);
-        MQTTclient.publish(MQTTprefix + "/RequiredEVCCID", RequiredEVCCID, true, 0);
+        mqPubI("/CPPWM", CurrentPWM, false, 0);
+        if (CPDutyOverride) mqPubI("/CPPWMOverride", CurrentPWM, true, 0);
+        else                mqPubS("/CPPWMOverride", "-1", true, 0);
+        mqPubI("/EVInitialSoC", InitialSoC, true, 0);
+        mqPubI("/EVFullSoC", FullSoC, true, 0);
+        mqPubI("/EVComputedSoC", ComputedSoC, true, 0);
+        mqPubI("/EVRemainingSoC", RemainingSoC, true, 0);
+        mqPubI("/EVTimeUntilFull", TimeUntilFull, false, 0);
+        mqPubI("/EVEnergyCapacity", EnergyCapacity, true, 0);
+        mqPubI("/EVEnergyRequest", EnergyRequest, true, 0);
+        mqPubS("/EVCCID", EVCCID, true, 0);
+        mqPubS("/RequiredEVCCID", RequiredEVCCID, true, 0);
 #endif
         if (EVMeter.Type) {
-            MQTTclient.publish(MQTTprefix + "/EVChargePower", EVMeter.PowerMeasured, false, 0);
-            MQTTclient.publish(MQTTprefix + "/EVEnergyCharged", EVMeter.EnergyCharged, true, 0);
-            MQTTclient.publish(MQTTprefix + "/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
+            mqPubI("/EVChargePower", EVMeter.PowerMeasured, false, 0);
+            mqPubI("/EVEnergyCharged", EVMeter.EnergyCharged, true, 0);
+            mqPubI("/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
         }
         if (homeBatteryLastUpdate)
-            MQTTclient.publish(MQTTprefix + "/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
+            mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-        MQTTclient.publish(MQTTprefix + "/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
-        MQTTclient.publish(MQTTprefix + "/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
+        mqPubS("/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
+        mqPubS("/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
 #endif //ENABLE_OCPP
-        MQTTclient.publish(MQTTprefix + "/LEDColorOff", String(ColorOff[0])+","+String(ColorOff[1])+","+String(ColorOff[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorNormal", String(ColorNormal[0])+","+String(ColorNormal[1])+","+String(ColorNormal[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorSmart", String(ColorSmart[0])+","+String(ColorSmart[1])+","+String(ColorSmart[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorSolar", String(ColorSolar[0])+","+String(ColorSolar[1])+","+String(ColorSolar[2]), true, 0);
-        MQTTclient.publish(MQTTprefix + "/LEDColorCustom", String(ColorCustom[0])+","+String(ColorCustom[1])+","+String(ColorCustom[2]), true, 0);
-        if (Lock != 0) {
-            MQTTclient.publish(MQTTprefix + "/CableLock", CableLock, true, 0);
+        {
+            // RGB values: build "R,G,B" on the stack.
+            char vbuf[16];
+            #define PUB_RGB(name, arr) do { \
+                int vl = snprintf(vbuf, sizeof(vbuf), "%u,%u,%u", arr[0], arr[1], arr[2]); \
+                mqPub(name, vbuf, (size_t)vl, true, 0); \
+            } while (0)
+            PUB_RGB("/LEDColorOff",    ColorOff);
+            PUB_RGB("/LEDColorNormal", ColorNormal);
+            PUB_RGB("/LEDColorSmart",  ColorSmart);
+            PUB_RGB("/LEDColorSolar",  ColorSolar);
+            PUB_RGB("/LEDColorCustom", ColorCustom);
+            #undef PUB_RGB
         }
-        MQTTclient.publish(MQTTprefix + "/ESPUptime", esp_timer_get_time() / 1000000, false, 0);
-        MQTTclient.publish(MQTTprefix + "/WiFiRSSI", String(WiFi.RSSI()), false, 0);
-        MQTTclient.publish(MQTTprefix + "/LoadBl", LoadBl, true, 0);
-        MQTTclient.publish(MQTTprefix + "/PairingPin", PairingPin, true, 0);
-        MQTTclient.publish(MQTTprefix + "/SolarStopTimer", SolarStopTimer, false, 0);
+        if (Lock != 0) {
+            mqPubI("/CableLock", CableLock, true, 0);
+        }
+        mqPubI("/ESPUptime", (int32_t)(esp_timer_get_time() / 1000000), false, 0);
+        mqPubI("/WiFiRSSI", WiFi.RSSI(), false, 0);
+        mqPubI("/LoadBl", LoadBl, true, 0);
+        mqPubS("/PairingPin", PairingPin.c_str(), true, 0);
+        mqPubI("/SolarStopTimer", SolarStopTimer, false, 0);
 }
 
 // SmartEVSE server MQTT client setup - subscribe to Set topics
@@ -1075,7 +1196,7 @@ void SetupMQTTClientSmartEVSE() {
     mqttSmartEVSEPublishData();
 }
 
-// SmartEVSE server MQTT publish data
+// SmartEVSE server MQTT publish data; this is for the APP
 void mqttSmartEVSEPublishData() {
     if (!MQTTclientSmartEVSE.connected) return;
     
@@ -1158,13 +1279,84 @@ void validate_settings(void) {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     // If the address of the MainsMeter or EVmeter on a Node has changed, we must re-register the Modbus workers.
     if (LoadBl > 1) {
-        if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+        if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
     }
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
     EVMeter.setTimeout(COMM_TIMEOUT);                                             // Short Delay, to clear the error message for ~10 seconds.
-
+    CircuitMeter.setTimeout(COMM_TIMEOUT);
 }
+
+
+// Returns the "intervals" part as a JSON string (array only)
+// Example output: [{"start":300,"power":11000},{"start":960,"power":3680}]
+String GetIntervalString(void) {
+    // intervals_json cache is 128 bytes; 512 of ArduinoJson pool fits ~8 entries (plenty).
+    StaticJsonDocument<512> tempDoc;            // Stack-allocated
+    JsonArray arr = tempDoc.to<JsonArray>();    // Root is directly an array
+
+    CapacityNode* n = first_interval;
+    while (n) {
+        JsonObject obj = arr.createNestedObject();
+        obj["start"] = n->start_minutes;
+        obj["power"] = n->max_power_watts;
+        n = n->next;
+    }
+
+    String jsonResult;
+    serializeJson(arr, jsonResult);             // Compact serialization
+
+    return jsonResult;
+}
+
+
+// Puts a JSON string into the capacitynode structure
+void SetIntervalString(String jsonStr) {
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    if (error) {
+        _LOG_A("DeserializeJson() failed: %s.\n", error.c_str());
+    } else if (doc.is<JsonArray>()) {
+        // free_intervals();
+        int count = 0;
+        CapacityNode* current = first_interval;
+        while (current) {
+            CapacityNode* temp = current;
+            current = current->next;
+            free(temp);
+            count++;
+        }
+        first_interval = nullptr;
+        _LOG_V("Freed %d interval nodes\n", count);
+        CapacityNode* tail = nullptr;
+        JsonArray arr = doc.as<JsonArray>();
+        // parse commandline
+        for (JsonVariant v : arr) {
+            JsonObject obj = v.as<JsonObject>();
+            if (!obj["start"].is<uint16_t>() || !obj["power"].is<int32_t>()) continue;
+            uint16_t start = obj["start"].as<uint16_t>();
+            int32_t  power = obj["power"].as<int32_t>();
+
+            if (start > 1439) continue;
+
+            CapacityNode* node = (CapacityNode*)malloc(sizeof(CapacityNode));
+            if (!node) break;
+
+            node->start_minutes   = start;
+            node->max_power_watts = power;
+            node->next            = nullptr;
+
+            if (!first_interval) {
+                first_interval = node;
+            } else {
+                tail->next = node;
+            }
+            tail = node;
+        }
+
+    }
+}
+
 
 void read_settings() {
     
@@ -1187,6 +1379,14 @@ void read_settings() {
         LoadBl = preferences.getUChar("LoadBl", LOADBL); 
         MaxMains = preferences.getUShort("MaxMains", MAX_MAINS); 
         MaxSumMains = preferences.getUShort("MaxSumMains", MAX_SUMMAINS);
+        if (!preferences.isKey("CapacityMode")) {
+            //old firmware has not yet introduced CapacityMode, so do it here:
+            if (MaxSumMains) //enabled, so CapacityMode FIXED
+                preferences.putUShort("CapacityMode", FIXED);
+            else //disabled so CapacityMode CAP_DISABLED
+                preferences.putUShort("CapacityMode", CAP_DISABLED);
+        }
+        CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
@@ -1202,8 +1402,19 @@ void read_settings() {
 
         MainsMeter.Type = preferences.getUChar("MainsMeter", MAINS_METER);
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
+        strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
+        MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
+        MainsMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
+        strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
+        EVMeter.DeviceHostName[sizeof(EVMeter.DeviceHostName) - 1] = '\0';
+        EVMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
+        CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
+        strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
+        CircuitMeter.DeviceHostName[sizeof(CircuitMeter.DeviceHostName) - 1] = '\0';
+        CircuitMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1226,10 +1437,15 @@ void read_settings() {
         MQTTSmartServer = preferences.getBool("MQTTSmartServer", APPSERVER);
 
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
+        String Interval = preferences.getString("intervals_json", "");
+        SetIntervalString(Interval);
+        strncpy(settingsCache.intervals_json, Interval.c_str(), sizeof(settingsCache.intervals_json));
 #if MODEM
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
+        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
+        LedMode = preferences.getUChar("LedMode", 0);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
@@ -1263,8 +1479,16 @@ void read_settings() {
         settingsCache.RFIDReader = RFIDReader;
         settingsCache.MainsMeterType = MainsMeter.Type;
         settingsCache.MainsMeterAddress = MainsMeter.Address;
+        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
+        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
         settingsCache.EVMeterType = EVMeter.Type;
         settingsCache.EVMeterAddress = EVMeter.Address;
+        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
+        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
+        settingsCache.CircuitMeterType = CircuitMeter.Type;
+        settingsCache.CircuitMeterAddress = CircuitMeter.Address;
+        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
+        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
         settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
         settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
         settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
@@ -1278,15 +1502,15 @@ void read_settings() {
         settingsCache.EMFunction = EMConfig[EM_CUSTOM].Function;
         settingsCache.WIFImode = WIFImode;
         settingsCache.EnableC2 = EnableC2;
-#if MODEM
-        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
-#endif
+        settingsCache.CapacityMode = CapacityMode;
+        strncpy(settingsCache.intervals_json, GetIntervalString().c_str(), sizeof(settingsCache.intervals_json));
         settingsCache.maxTemp = maxTemp;
         settingsCache.AutoUpdate = AutoUpdate;
         settingsCache.LCDlock = LCDlock;
         settingsCache.CableLock = CableLock;
         settingsCache.LCDPin = LCDPin;
         settingsCache.MQTTSmartServer = MQTTSmartServer;
+        settingsCache.LedMode = LedMode;
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
         settingsCache.OcppMode = OcppMode;
 #endif
@@ -1334,8 +1558,25 @@ void write_settings(void) {
 
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMeter", MainsMeter.Type, MainsMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
+        if (!settingsCache.valid || strcmp(MainsMeter.DeviceHostName, settingsCache.MainsMeterDeviceHostName) != 0) {
+        preferences.putString("MainsHostName", MainsMeter.DeviceHostName);
+        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
+        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
+    }
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
     PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
+    if (!settingsCache.valid || strcmp(EVMeter.DeviceHostName, settingsCache.EVMeterDeviceHostName) != 0) {
+        preferences.putString("EVMeterHostName", EVMeter.DeviceHostName);
+        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
+        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
+    }
+    if (!settingsCache.valid || strcmp(CircuitMeter.DeviceHostName, settingsCache.CircuitMeterDeviceHostName) != 0) {
+        preferences.putString("CircuitHostName", CircuitMeter.DeviceHostName);
+        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
+        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
+    }
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address, CircuitMeterAddress);
     PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
     PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister, EMIRegister);
     PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor, EMIDivisor);
@@ -1349,6 +1590,14 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("EMFunction", EMConfig[EM_CUSTOM].Function, EMFunction);
     PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode, WIFImode);
     PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2, EnableC2);
+    PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode, CapacityMode);
+    {
+        String intervals = GetIntervalString();  // Build once, reuse.
+        if (!settingsCache.valid || strcmp(intervals.c_str(), settingsCache.intervals_json) != 0) {
+            preferences.putString("intervals_json", intervals);
+            strncpy(settingsCache.intervals_json, intervals.c_str(), sizeof(settingsCache.intervals_json));
+        }
+    }
 #if MODEM
     if (!settingsCache.valid || strcmp(RequiredEVCCID, settingsCache.RequiredEVCCID) != 0) {
         preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
@@ -1361,6 +1610,7 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
     PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin, LCDPin);
     PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer, MQTTSmartServer);
+    PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode, LedMode);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
@@ -1508,6 +1758,33 @@ void DisconnectEvent(void){
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
 
+// Print adapter that streams ArduinoJson output as HTTP chunks, avoiding the
+// intermediate `String json; serializeJson(doc, json);` allocation which
+// otherwise peaks at ~2x the serialized size on the heap.
+struct MgChunkPrint : public Print {
+    struct mg_connection *c;
+    uint8_t buf[256];
+    size_t n = 0;
+    MgChunkPrint(struct mg_connection *cc) : c(cc) {}
+    void flushBuf() { if (n) { mg_http_write_chunk(c, (const char*)buf, n); n = 0; } }
+    size_t write(uint8_t b) override {
+        buf[n++] = b;
+        if (n == sizeof(buf)) flushBuf();
+        return 1;
+    }
+    size_t write(const uint8_t *p, size_t l) override {
+        size_t orig = l;
+        while (l) {
+            size_t s = sizeof(buf) - n;
+            if (s > l) s = l;
+            memcpy(buf + n, p, s); n += s; p += s; l -= s;
+            if (n == sizeof(buf)) flushBuf();
+        }
+        return orig;
+    }
+    ~MgChunkPrint() { flushBuf(); mg_http_write_chunk(c, "", 0); }
+};
+
 // handles URI, returns true if handled, false if not
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
@@ -1549,7 +1826,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
-        DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
+        // Static doc: allocated once on first /settings GET, reused forever.
+        // Avoids ~3 KB heap churn every few seconds when the web statuspage polls.
+        static DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
+        doc.clear();
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
         doc["mode"] = mode;
@@ -1573,6 +1853,23 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["wifi"]["rssi"] = WiFi.RSSI();    
             doc["wifi"]["bssid"] = WiFi.BSSIDstr();  
         }
+
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
+        doc["eth"]["present"] = EthPresent;
+        doc["eth"]["connected"] = EthConnected;
+        doc["eth"]["has_ip"] = EthHasIP;
+        if (EthHasIP) {
+            doc["eth"]["ip"] = ch390_get_ip();
+        }
+        if (EthPresent) {
+            uint8_t eth_mac[6];
+            esp_read_mac(eth_mac, ESP_MAC_ETH);
+            char mac_str[18];
+            snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]);
+            doc["eth"]["mac"] = mac_str;
+        }
+#endif
         
         doc["evse"]["temp"] = TempEVSE;
         doc["evse"]["temp_max"] = maxTemp;
@@ -1615,6 +1912,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["lcdlock"] = LCDlock;
         doc["settings"]["lock"] = Lock;
         doc["settings"]["cablelock"] = CableLock;
+        doc["settings"]["ledmode"] = LedMode;
+        doc["settings"]["capacity_mode"] = CapacityMode;
+        String intervalsStr = GetIntervalString();
+        doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
             doc["settings"]["required_evccid"] = RequiredEVCCID;
 #if SMARTEVSE_VERSION < 40
@@ -1672,6 +1973,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
+        if (EVMeter.Type == EM_HOMEWIZARD) {
+            doc["ev_meter"]["host"] = strlen(EVMeter.DeviceHostName) > 0 ? EVMeter.DeviceHostName : "Not Set";
+        }
         doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured; // Watt
         doc["ev_meter"]["total_wh"] = EVMeter.Energy; // Wh
         doc["ev_meter"]["charged_wh"] = EVMeter.EnergyCharged; // Wh
@@ -1679,14 +1983,31 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
-        doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
-        doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy; // Wh
 
-        doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
-        doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
-        if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
-            doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
+        if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy; // Wh
+        if (EVMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy; // Wh
+
+        if (MainsMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["mains_meter"]["import_active_energy"] = MainsMeter.Import_active_energy; // Wh
+        if (MainsMeter.Export_active_energy) //only export when not zero, because after boot it is zero = empty value
+            doc["mains_meter"]["export_active_energy"] = MainsMeter.Export_active_energy; // Wh
+        if (MainsMeter.Type == EM_HOMEWIZARD) {
+            doc["mains_meter"]["host"] = strlen(MainsMeter.DeviceHostName) > 0 ? MainsMeter.DeviceHostName : "Not Set";
         }
+        if (CircuitMeter.Type) {
+            doc["circuit_meter"]["description"] = EMConfig[CircuitMeter.Type].Desc;
+            doc["circuit_meter"]["address"] = CircuitMeter.Address;
+            if (CircuitMeter.Type == EM_HOMEWIZARD) {
+                doc["circuit_meter"]["host"] = strlen(CircuitMeter.DeviceHostName) > 0 ? CircuitMeter.DeviceHostName : "Not Set";
+            }
+            doc["circuit_meter"]["currents"]["TOTAL"] = CircuitMeter.Irms[0] + CircuitMeter.Irms[1] + CircuitMeter.Irms[2];
+            doc["circuit_meter"]["currents"]["L1"] = CircuitMeter.Irms[0];
+            doc["circuit_meter"]["currents"]["L2"] = CircuitMeter.Irms[1];
+            doc["circuit_meter"]["currents"]["L3"] = CircuitMeter.Irms[2];
+        }
+
           
         doc["phase_currents"]["TOTAL"] = MainsMeter.Irms[0] + MainsMeter.Irms[1] + MainsMeter.Irms[2];
         doc["phase_currents"]["L1"] = MainsMeter.Irms[0];
@@ -1717,9 +2038,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["color"]["custom"]["G"] = ColorCustom[1];
         doc["color"]["custom"]["B"] = ColorCustom[2];
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         return true;
       } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {                     // if POST
         if(request->hasParam("mqtt_update")) {
@@ -1741,6 +2062,19 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             } else {
                 doc["current_min"] = "Value not allowed!";
             }
+        }
+
+        if(request->hasParam("capacity_mode")) {
+            int val = request->getParam("capacity_mode")->value().toInt();
+            if (val >= 0 && val <= 3) {
+                CapacityMode = (CapacityMode_t)val;
+                doc["capacity_mode"] = val;
+            }
+        }
+
+        if (request->hasParam("intervals")) {
+            String jsonStr = request->getParam("intervals")->value();
+            SetIntervalString(jsonStr);
         }
 
         if(request->hasParam("current_max_sum_mains")) {
@@ -2014,126 +2348,73 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
 #endif //ENABLE_OCPP
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         request_write_settings();
         return true;
       }
-    } else if (mg_http_match_uri(hm, "/color_off") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-        
-        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
+    } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
+        // Stream JSON via HTTP chunked encoding to avoid the ~8 KB DynamicJsonDocument + serialized String
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&now);
+        uint8_t i, idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
+        idx++; //go to the next time period; since PowerMeasured_Period is circular, this would be the oldest entry
 
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorOff[0] = R;
-                ColorOff[1] = G;
-                ColorOff[2] = B;
-                doc["color"]["off"]["R"] = ColorOff[0];
-                doc["color"]["off"]["G"] = ColorOff[1];
-                doc["color"]["off"]["B"] = ColorOff[2];
-            }
+        mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                     "Content-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        mg_http_printf_chunk(c, "{\"power_day\":[");
+        for (int x = idx; x < DAY_POINTS + idx; x++) {
+            if (x < DAY_POINTS)
+                i = x;
+            else
+                i = x - DAY_POINTS;
+
+            mg_http_printf_chunk(c, "%s{\"time\":\"%02d:%02d\",\"power\":%d}",
+                (x == idx) ? "" : ",",
+                (i * CapacityPeriodSeconds) / 3600,
+                (i * CapacityPeriodSeconds/60) % 60,
+                (int)MainsMeter.PowerMeasured_Period[i]);
         }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_http_printf_chunk(c, "]}\r\n");
+        mg_http_printf_chunk(c, "");  // terminating empty chunk
         return true;
-    } else if (mg_http_match_uri(hm, "/color_normal") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-        
+    } else if (!memcmp("POST", hm->method.buf, hm->method.len) && (
+                  mg_http_match_uri(hm, "/color_off")    ||
+                  mg_http_match_uri(hm, "/color_normal") ||
+                  mg_http_match_uri(hm, "/color_smart")  ||
+                  mg_http_match_uri(hm, "/color_solar")  ||
+                  mg_http_match_uri(hm, "/color_custom"))) {
+        // Unified handler for 5 /color_* POST endpoints. Replaces 5 copies of
+        // the same DynamicJsonDocument(200) + String + serializeJson + reply
+        // boilerplate; saves both flash and a heap alloc per click.
+        static const struct { const char *uri, *key; uint8_t *arr; } cmap[] = {
+            { "/color_off",    "off",    ColorOff },
+            { "/color_normal", "normal", ColorNormal },
+            { "/color_smart",  "smart",  ColorSmart },
+            { "/color_solar",  "solar",  ColorSolar },
+            { "/color_custom", "custom", ColorCustom },
+        };
+        const char *key = nullptr; uint8_t *arr = nullptr;
+        for (auto &m : cmap) if (mg_http_match_uri(hm, m.uri)) { key = m.key; arr = m.arr; break; }
+
+        bool ok = false;
         if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
             int32_t R = request->getParam("R")->value().toInt();
             int32_t G = request->getParam("G")->value().toInt();
             int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
             if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorNormal[0] = R;
-                ColorNormal[1] = G;
-                ColorNormal[2] = B;
-                doc["color"]["normal"]["R"] = ColorNormal[0];
-                doc["color"]["normal"]["G"] = ColorNormal[1];
-                doc["color"]["normal"]["B"] = ColorNormal[2];
+                arr[0] = R; arr[1] = G; arr[2] = B; ok = true;
             }
         }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
-        return true;
-    } else if (mg_http_match_uri(hm, "/color_smart") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-        
-        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorSmart[0] = R;
-                ColorSmart[1] = G;
-                ColorSmart[2] = B;
-                doc["color"]["smart"]["R"] = ColorSmart[0];
-                doc["color"]["smart"]["G"] = ColorSmart[1];
-                doc["color"]["smart"]["B"] = ColorSmart[2];
-            }
+        if (ok) {
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                "{\"color\":{\"%s\":{\"R\":%u,\"G\":%u,\"B\":%u}}}\r\n",
+                key, arr[0], arr[1], arr[2]);
+        } else {
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "{}\r\n");
         }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
-        return true;
-    } else if (mg_http_match_uri(hm, "/color_solar") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-        
-        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorSolar[0] = R;
-                ColorSolar[1] = G;
-                ColorSolar[2] = B;
-                doc["color"]["solar"]["R"] = ColorSolar[0];
-                doc["color"]["solar"]["G"] = ColorSolar[1];
-                doc["color"]["solar"]["B"] = ColorSolar[2];
-            }
-        }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
-        return true;
-    } else if (mg_http_match_uri(hm, "/color_custom") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-        
-        if (request->hasParam("R") && request->hasParam("G") && request->hasParam("B")) {
-            int32_t R = request->getParam("R")->value().toInt();
-            int32_t G = request->getParam("G")->value().toInt();
-            int32_t B = request->getParam("B")->value().toInt();
-
-            // R,G,B is between 0..255
-            if ((R >= 0 && R < 256) && (G >= 0 && G < 256) && (B >= 0 && B < 256)) {
-                ColorCustom[0] = R;
-                ColorCustom[1] = G;
-                ColorCustom[2] = B;
-                doc["color"]["custom"]["R"] = ColorCustom[0];
-                doc["color"]["custom"]["G"] = ColorCustom[1];
-                doc["color"]["custom"]["B"] = ColorCustom[2];
-            }
-        }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
     } else if (mg_http_match_uri(hm, "/currents") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -2161,8 +2442,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
                     for (int x = 0; x < 3; x++) {
-                        doc["original"]["L" + x] = IrmsOriginal[x];
-                        doc["L" + x] = MainsMeter.Irms[x];
+                        char key[4]; snprintf(key, sizeof(key), "L%d", x + 1);
+                        doc["original"][key] = IrmsOriginal[x];
+                        doc[key] = MainsMeter.Irms[x];
                     }
                     doc["TOTAL"] = Isum;
 
@@ -2171,9 +2453,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         return true;
     } else if (mg_http_match_uri(hm, "/ev_meter") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
@@ -2189,8 +2471,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #else //v4
                 Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
-                for (int x = 0; x < 3; x++)
-                    doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
+                for (int x = 0; x < 3; x++) {
+                    char key[4]; snprintf(key, sizeof(key), "L%d", x + 1);
+                    doc["ev_meter"]["currents"][key] = EVMeter.Irms[x];
+                }
                 doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
             }
 
@@ -2212,14 +2496,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         return true;
 
     } else if (mg_http_match_uri(hm, "/lcd")) {
         if (strncmp("POST", hm->method.buf, hm->method.len) == 0) {
-            DynamicJsonDocument doc(100);
             if (LCDPasswordOK) {
                 const String btnName = request->getParam("button")->value();
                 const bool btnDown = request->getParam("state")->value() == "1";
@@ -2250,24 +2533,20 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 }
                 xSemaphoreGive(buttonMutex);
 
-                // Create JSON response
-                doc["button"]["right"] = ButtonStateOverride & 4 ? "up" : "down";
-                doc["button"]["middle"] = ButtonStateOverride & 2 ? "up" : "down";
-                doc["button"]["left"] = ButtonStateOverride & 1 ? "up" : "down";
-            } else { //LCDPasswordOK is false
-                // Create JSON response; buttons are not pressed if we don't have the right password!
-                doc["button"]["right"] = "down";
-                doc["button"]["middle"] = "down";
-                doc["button"]["left"] = "down";
+                mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                    "{\"button\":{\"right\":\"%s\",\"middle\":\"%s\",\"left\":\"%s\"}}\r\n",
+                    (ButtonStateOverride & 4) ? "up" : "down",
+                    (ButtonStateOverride & 2) ? "up" : "down",
+                    (ButtonStateOverride & 1) ? "up" : "down");
+            } else {
+                // Without password all buttons appear "down" (not pressed).
+                mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                    "{\"button\":{\"right\":\"down\",\"middle\":\"down\",\"left\":\"down\"}}\r\n");
             }
-            // Serialize and send response
-            String json;
-            serializeJson(doc, json);
-            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
         } else {
-            // Generate BMP image from LCD buffer.
-    		const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
-		    const size_t bmpImageSize = bmpImage.size();
+            // Generate BMP image from LCD buffer (into a static buffer; no heap activity).
+            size_t bmpImageSize = 0;
+            const uint8_t *bmpImage = createImageFromGLCDBuffer(bmpImageSize);
 
             // Start the HTTP response with chunked encoding
             mg_printf(c,
@@ -2279,7 +2558,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                       "\r\n");
 
             // Using chunked transfer encoding to get rid of content-len + keep-alive problems.
-            mg_http_write_chunk(c, reinterpret_cast<const char *>(bmpImage.data()), bmpImageSize);
+            mg_http_write_chunk(c, reinterpret_cast<const char *>(bmpImage), bmpImageSize);
 
             // Send an empty chunk to signal the end of the response.
             mg_http_write_chunk(c, "", 0);
@@ -2289,35 +2568,16 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     } else if (mg_http_match_uri(hm, "/lcd-verify-password") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         char password[32];
         mg_http_get_var(&hm->body, "password", password, sizeof(password));
-        DynamicJsonDocument doc(256);
-
         LCDPasswordOK = (atoi(password) == LCDPin);
-        if (LCDPasswordOK) {
-            doc["success"] = true;
-        } else {
-            doc["success"] = false;
-        }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+            "{\"success\":%s}\r\n", LCDPasswordOK ? "true" : "false");
         return true;
 
 
     } else if (mg_http_match_uri(hm, "/cablelock") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-        DynamicJsonDocument doc(200);
-
-        if(request->hasParam("1")) {
-            CableLock = 1;
-            doc["cablelock"] = CableLock;
-        } else {
-            CableLock = 0;
-            doc["cablelock"] = CableLock;
-        }
-
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        CableLock = request->hasParam("1") ? 1 : 0;
+        mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+            "{\"cablelock\":%u}\r\n", CableLock);
         return true;
 
     } else if (mg_http_match_uri(hm, "/rfid") && !memcmp("POST", hm->method.buf, hm->method.len)) {
@@ -2377,9 +2637,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["rfid_status"] = "Missing rfid parameter";
         }
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         return true;
 
 #if MODEM && SMARTEVSE_VERSION < 40
@@ -2434,9 +2694,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["energy_capacity"] = energy_capacity;
         doc["energy_request"] = energy_request;
 
-        String json;
-        serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
+        mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n");
+        { MgChunkPrint out(c); serializeJson(doc, out); }
         return true;
 #endif
 #if MODEM && SMARTEVSE_VERSION >= 40
@@ -2653,6 +2913,15 @@ void ocppInit() {
     });
 
     addErrorDataInput([] () -> MicroOcpp::ErrorData {
+        if (ErrorFlags & CIRCUIT_NOCOMM) {
+            MicroOcpp::ErrorData error = "CircuitMeterFailure";
+            error.info = "Communication with circuit meter lost";
+            return error;
+        }
+        return nullptr;
+    });
+
+    addErrorDataInput([] () -> MicroOcpp::ErrorData {
         if (ErrorFlags & EV_NOCOMM) {
             MicroOcpp::ErrorData error = "PowerMeterFailure";
             error.info = "Communication with EV meter lost";
@@ -2701,7 +2970,17 @@ void ocppInit() {
 
     setOccupiedInput([] () -> bool {
         // Keep Finishing state while LockingTx effectively blocks new transactions
-        return OcppLockingTx != nullptr;
+        if (OcppLockingTx != nullptr) return true;
+
+        // Keep connector in Finishing state briefly after transaction ends so
+        // StatusNotification "Finishing" is sent before "Available"
+        if (OcppDefinedTxNotification &&
+                OcppTrackTxNotification == MicroOcpp::TxNotification::StopTx &&
+                millis() - OcppLastTxNotification < 2000) {
+            return true;
+        }
+
+        return false;
     });
 
     setStopTxReadyInput([] () {
@@ -2725,6 +3004,66 @@ void ocppInit() {
     meterValuesSampledData->setString("Energy.Active.Import.Register,Power.Active.Import,Current.Import,Temperature");
 
     OcppUnlockConnectorOnEVSideDisconnect = MicroOcpp::declareConfiguration<bool>("UnlockConnectorOnEVSideDisconnect", true);
+
+    // OCPP Firmware Update: register download and install callbacks
+    auto fwService = getFirmwareService();
+    if (fwService) {
+        static volatile int OcppFwStatus; // 0=idle, 1=downloading, 2=downloaded ok, -1=download failed
+        OcppFwStatus = 0;
+
+        fwService->setOnDownload([] (const char *location) -> bool {
+            if (downloadProgress > 0) {
+                _LOG_A("OCPP FW: rejected, another update is in progress\n");
+                return false;
+            }
+            OcppFwStatus = 1;
+            _LOG_A("OCPP FW: download requested from %s\n", location);
+
+            char *url = strdup(location);
+            if (!url) {
+                OcppFwStatus = -1;
+                return false;
+            }
+
+            xTaskCreate([] (void *param) {
+                char *fwUrl = (char *)param;
+                if (forceUpdate(fwUrl, true)) {
+                    _LOG_A("OCPP FW: download and flash successful\n");
+                    OcppFwStatus = 2;
+                } else {
+                    _LOG_A("OCPP FW: download or flash failed\n");
+                    OcppFwStatus = -1;
+                }
+                free(fwUrl);
+                vTaskDelete(NULL);
+            }, "OcppFwUpdate", 4096, url, 3, NULL);
+
+            return true;
+        });
+
+        fwService->setDownloadStatusInput([] () -> MicroOcpp::DownloadStatus {
+            switch (OcppFwStatus) {
+                case 2:  return MicroOcpp::DownloadStatus::Downloaded;
+                case -1: return MicroOcpp::DownloadStatus::DownloadFailed;
+                default: return MicroOcpp::DownloadStatus::NotDownloaded;
+            }
+        });
+
+        fwService->setOnInstall([] (const char *location) -> bool {
+            _LOG_A("OCPP FW: install phase, scheduling reboot\n");
+            shouldReboot = true;
+            return true;
+        });
+
+        fwService->setInstallationStatusInput([] () -> MicroOcpp::InstallationStatus {
+            if (shouldReboot) {
+                return MicroOcpp::InstallationStatus::Installed;
+            }
+            return MicroOcpp::InstallationStatus::NotInstalled;
+        });
+    }
+
+    OcppLastOcppResponse = millis(); // Initialize OCPP-level response tracker
 
     endTransaction(nullptr, "PowerLoss"); // If a transaction from previous power cycle is still running, abort it here
 }
@@ -2762,6 +3101,9 @@ void ocppDeinit() {
     OcppWsClient = nullptr;
 }
 
+#define OCPP_PROBE_INTERVAL   90000UL  // Send OCPP Heartbeat probe every 90 seconds
+#define OCPP_SILENCE_TIMEOUT 300000UL  // Force WS reconnect after 5 minutes without OCPP response
+
 void ocppLoop() {
 
     if (pilot >= PILOT_3V && pilot <= PILOT_12V) {
@@ -2769,6 +3111,32 @@ void ocppLoop() {
     }
 
     mocpp_loop();
+
+    // OCPP-level silence detection: send periodic Heartbeat probes and track responses.
+    // WS pings/pongs keep the transport alive but don't prove OCPP message flow.
+    // If the backend stops responding to OCPP messages, force a WebSocket reconnect.
+    static unsigned long lastProbe = 0;
+    if (OcppWsClient && OcppWsClient->isConnected() && millis() - lastProbe >= OCPP_PROBE_INTERVAL) {
+        lastProbe = millis();
+        sendRequest("Heartbeat",
+            [] () -> std::unique_ptr<MicroOcpp::JsonDoc> {
+                auto doc = std::unique_ptr<MicroOcpp::JsonDoc>(new MicroOcpp::JsonDoc(JSON_OBJECT_SIZE(0)));
+                doc->to<JsonObject>();
+                return doc;
+            },
+            [] (JsonObject response) {
+                OcppLastOcppResponse = millis();
+            }
+        );
+    }
+
+    if (OcppWsClient && OcppWsClient->isConnected() && OcppLastOcppResponse &&
+            millis() - OcppLastOcppResponse >= OCPP_SILENCE_TIMEOUT) {
+        _LOG_A("OCPP backend unresponsive for %lus, forcing WebSocket reconnect\n",
+                (millis() - OcppLastOcppResponse) / 1000UL);
+        OcppLastOcppResponse = millis(); // Reset to avoid repeated rapid reconnects
+        OcppWsClient->reloadConfigs();
+    }
 
     // handle Configuration updates
 
@@ -2883,16 +3251,18 @@ void ocppLoop() {
         } // There may be further edge cases
     }
 
-    OcppForcesLock = false;
+    bool ocppLock = false;
 
     if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
             (OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_9V)) { // Connector plugged
-        OcppForcesLock = true;
+        ocppLock = true;
     }
 
     if (OcppLockingTx && OcppLockingTx->getStartSync().isRequested()) { // LockingTx goes beyond tx completion
-        OcppForcesLock = true;
+        ocppLock = true;
     }
+
+    OcppForcesLock = ocppLock;
 
 }
 #endif //ENABLE_OCPP
@@ -2975,11 +3345,11 @@ void setup() {
     pinMode(PIN_SSR2, OUTPUT);              // SSR2 output
     pinMode(PIN_RCM_FAULT, INPUT_PULLUP);   
 
-    pinMode(PIN_LCD_LED, OUTPUT);           // LCD backlight
-    pinMode(PIN_LCD_RST, OUTPUT);           // LCD reset
+    // LCD pins (14, 25, 26, 33) are NOT configured yet — they are shared with
+    // the CH390D Ethernet add-on board. Probe for CH390D first, then set up
+    // the appropriate SPI device (Ethernet or LCD).
+    pinMode(PIN_LCD_RST, INPUT);           // LCD reset now INT pin
     pinMode(PIN_IO0_B1, INPUT);             // < button
-    pinMode(PIN_LCD_A0_B2, OUTPUT);         // o Select button + A0 LCD
-    pinMode(PIN_LCD_SDO_B3, OUTPUT);        // > button + SDA/MOSI pin
 
     pinMode(PIN_LOCK_IN, INPUT);            // Locking Solenoid input
     pinMode(PIN_LEDR, OUTPUT);              // Red LED output
@@ -2999,7 +3369,6 @@ void setup() {
     digitalWrite(PIN_ACTB, LOW);        
     digitalWrite(PIN_SSR, LOW);             // SSR1 OFF
     digitalWrite(PIN_SSR2, LOW);            // SSR2 OFF
-    digitalWrite(PIN_LCD_LED, HIGH);        // LCD Backlight ON
     PILOT_DISCONNECTED;                     // CP signal OFF
 
  
@@ -3008,13 +3377,30 @@ void setup() {
     while (!Serial);
     _LOG_A("SmartEVSE v3 powerup\n");
 
-    // configure SPI connection to LCD
-    // only the SPI_SCK and SPI_MOSI pins are used
-    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_SS);
-    // the ST7567's max SPI Clock frequency is 20Mhz at 3.3V/25C
-    // We choose 10Mhz here, to reserve some room for error.
-    // SPI mode is MODE3 (Idle = HIGH, clock in on rising edge)
-    SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE3));
+    // Probe for CH390D Ethernet add-on board.
+    // Must run before any LCD pin setup — the shared SPI pins (14, 25, 26, 33)
+    // must be free for the IDF SPI driver to claim via the GPIO matrix.
+    if (ch390_detect()) {
+        _LOG_A("CH390D Ethernet detected\n");
+        ch390_eth_init();
+        // Ethernet+LCD board has a CH32V003 that controlls A0/RST/backlight/buttons
+        etherlcd_init();
+    } else {
+        // No Ethernet add-on — configure shared pins for LCD use
+        pinMode(PIN_LCD_RST, OUTPUT);           // LCD reset (GPIO 5)
+        pinMode(PIN_LCD_LED, OUTPUT);           // LCD backlight (GPIO 14)
+        digitalWrite(PIN_LCD_LED, HIGH);        // LCD Backlight ON
+        pinMode(PIN_LCD_A0_B2, OUTPUT);         // o Select button + A0 LCD (GPIO 25)
+        pinMode(PIN_LCD_SDO_B3, OUTPUT);        // > button + SDA/MOSI pin (GPIO 33)
+
+        // configure SPI connection to LCD
+        // only the SPI_SCK and SPI_MOSI pins are used
+        SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_SS);
+        // the ST7567's max SPI Clock frequency is 20Mhz at 3.3V/25C
+        // We choose 10Mhz here, to reserve some room for error.
+        // SPI mode is MODE3 (Idle = HIGH, clock in on rising edge)
+        SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE3));
+    }
     
 
     // The CP (control pilot) output is a fixed 1khz square-wave (+6..9v / -12v).
@@ -3055,7 +3441,9 @@ void setup() {
     ledcSetup(RED_CHANNEL, 5000, 8);            // R channel 2, 5kHz, 8 bit
     ledcSetup(GREEN_CHANNEL, 5000, 8);          // G channel 3, 5kHz, 8 bit
     ledcSetup(BLUE_CHANNEL, 5000, 8);           // B channel 4, 5kHz, 8 bit
-    ledcSetup(LCD_CHANNEL, 5000, 8);            // LCD channel 5, 5kHz, 8 bit
+    if (!EthPresent) {
+        ledcSetup(LCD_CHANNEL, 5000, 8);        // LCD channel 5, 5kHz, 8 bit
+    }  // When EthPresent, backlight PWM is handled by CH32V003
 
     // attach the channels to the GPIO to be controlled
     ledcAttachPin(PIN_CP_OUT, CP_CHANNEL);      
@@ -3065,13 +3453,15 @@ void setup() {
     ledcAttachPin(PIN_LEDR, RED_CHANNEL);
     ledcAttachPin(PIN_LEDG, GREEN_CHANNEL);
     ledcAttachPin(PIN_LEDB, BLUE_CHANNEL);
-    ledcAttachPin(PIN_LCD_LED, LCD_CHANNEL);
+    if (!EthPresent) {
+        ledcAttachPin(PIN_LCD_LED, LCD_CHANNEL);
+    }  // When EthPresent, PIN_LCD_LED is used as ETH_CS
 
     SetCPDuty(1024);                            // channel 0, duty cycle 100%
     ledcWrite(RED_CHANNEL, 255);
     ledcWrite(GREEN_CHANNEL, 0);
     ledcWrite(BLUE_CHANNEL, 255);
-    ledcWrite(LCD_CHANNEL, 0);
+    setLCDbacklight(0);
 
     // Setup PIN interrupt on rising edge
     // the timer interrupt will be reset in the ISR.
@@ -3210,6 +3600,7 @@ extern void Timer20ms(void * parameter);
 
     BacklightTimer = BACKLIGHT;
     GLCD_init();
+ 
 
 #if SMARTEVSE_VERSION >=40 //v4
 
@@ -3304,6 +3695,14 @@ extern void Timer20ms(void * parameter);
     PILOT_CONNECTED;           // CP signal ACTIVE
 #endif
 
+#if DBG == 1
+    // redirect MicroOCPP messages to telnet server
+    mocpp_set_console_out([](const char* msg) {
+        Serial.print(msg);
+        if (Debug.isConnected()) Debug.print(msg);
+    });
+#endif
+
     firmwareUpdateTimer = random(FW_UPDATE_DELAY, 0xffff);
 }
 
@@ -3339,43 +3738,138 @@ bool fwNeedsUpdate(char * version) {
 }
 
 /**
-  * Periodically retrieves current measurements from the HomeWizard P1 energy meter
-  * and updates the main meter's currents.
+  * Periodically retrieves current measurements from networked energy meters
+  * and updates the meters' currents and energies.
   *
   * This function ensures a delay of at least 1.95 seconds between consecutive data retrieval attempts.
+  *
+  * Implementation note: the worker runs as a persistent task that blocks on a
+  * binary semaphore. homewizard_loop() just gives the semaphore every 1.95 s.
+  * This avoids ~3 KB of heap churn every 2 s from xTaskCreate/vTaskDelete.
   */
+static SemaphoreHandle_t homewizardWakeSem = nullptr;
+
+static void homewizard_task(void *parameter) {
+    for (;;) {
+        // Block until homewizard_loop() signals it's time for another poll cycle.
+        xSemaphoreTake(homewizardWakeSem, portMAX_DELAY);
+
+    if (strlen(MainsMeter.DeviceHostName) == 0 && MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) { //Mains Initialize
+        // Prevent existing HomeWizard P1 users from having to reconfigure their meter after updating to a version with the new HomeWizard Kwh implementation.
+        // We can remove this code after a few releases, when we are sure most users have updated at least once.
+        _LOG_A("Migrating HomeWizard P1 implementation");
+        //Old implementation just picked the first p1meter entry discovered, so we do the same here
+        const mDNSServiceEntry *service = getmDNSServiceByIndex(EM_HOMEWIZARD, String("p1meter-"), 0, true);
+        if (service != nullptr) {
+            strncpy(MainsMeter.DeviceHostName, service->HostName.c_str(), sizeof(MainsMeter.DeviceHostName));
+            MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
+            write_settings();
+        }
+    }
+
+    if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) {
+        _LOG_A("Start HomeWizard MainsMeter reading.");
+        const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            MainsMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            CalcIsum();
+            MainsMeter.setTimeout(COMM_TIMEOUT);
+            MainsMeter.Import_active_energy = evdata.second[3];
+            MainsMeter.Export_active_energy = evdata.second[4];
+            MainsMeter.PowerMeasured = evdata.second[5];
+            MainsMeter.UpdateEnergies();
+            _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+
+    if (CircuitMeter.Type == EM_HOMEWIZARD) {
+        _LOG_A("Start HomeWizard CircuitMeter reading.");
+        const auto evdata = getDataFromHomeWizard(CircuitMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            CircuitMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            CircuitMeter.CalcImeasured();
+            CircuitMeter.setTimeout(COMM_TIMEOUT);
+            CircuitMeter.Import_active_energy = evdata.second[3];
+            CircuitMeter.Export_active_energy = evdata.second[4];
+            CircuitMeter.PowerMeasured = evdata.second[5];
+            CircuitMeter.UpdateEnergies();
+            _LOG_A("Updated CircuitMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+
+    if (EVMeter.Type == EM_HOMEWIZARD) {
+        _LOG_A("Start HomeWizard EVMeter reading.");
+        const auto evdata = getDataFromHomeWizard(EVMeter.DeviceHostName);
+#if SMARTEVSE_VERSION < 40 //v3
+        for (int i = 0; i < evdata.first; i++)
+            EVMeter.Irms[i] = evdata.second[i];
+        if (evdata.first) {
+            EVMeter.CalcImeasured();
+            EVMeter.setTimeout(COMM_TIMEOUT);
+            EVMeter.Import_active_energy = evdata.second[3];
+            EVMeter.Export_active_energy = evdata.second[4];
+            EVMeter.PowerMeasured = evdata.second[5];
+            EVMeter.UpdateEnergies();
+            _LOG_A("Updated EVMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
+        }
+#else
+        Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, evdata.second[0], evdata.second[1], evdata.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
+    }
+    } // end for(;;)
+}
+
  void homewizard_loop() {
     static unsigned long lastCheck_homewizard = 0;
 
     constexpr unsigned long interval = 1950; // 1.95 seconds - With this setting there can be 5 attempts for updating the data before the 10 second Mains Meter timeout.
     const unsigned long currentTime = millis();
 
+    if (MainsMeter.Type != EM_HOMEWIZARD &&
+            EVMeter.Type != EM_HOMEWIZARD &&
+            CircuitMeter.Type != EM_HOMEWIZARD) {
+        return;
+     }
+
     if (currentTime - lastCheck_homewizard < interval) {
         return;
     }
-
-    _LOG_A("homewizard_loop(): start HomeWizrd P1 reading.");
     lastCheck_homewizard = currentTime;
 
-    const auto currents = getMainsFromHomeWizardP1();
-#if SMARTEVSE_VERSION < 40 //v3
-    for (int i = 0; i < currents.first; i++)
-        MainsMeter.Irms[i] = currents.second[i];
-    if (currents.first) {
-        CalcIsum();
-        MainsMeter.setTimeout(COMM_TIMEOUT);
+    // Lazy first-time setup: create the wake semaphore and the persistent worker task.
+    // Done lazily so users without a HomeWizard meter never pay for the task at all.
+    if (homewizardWakeSem == nullptr) {
+        homewizardWakeSem = xSemaphoreCreateBinary();
+        if (homewizardWakeSem == nullptr) {
+            _LOG_A("Failed to create HomeWizard semaphore\n");
+            return;
+        }
+        if (xTaskCreate(homewizard_task, "HomeWizard", 3072, NULL, 1, NULL) != pdPASS) {
+            _LOG_A("Failed to create HomeWizard task\n");
+            vSemaphoreDelete(homewizardWakeSem);
+            homewizardWakeSem = nullptr;
+            return;
+        }
     }
-#else
-    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, currents.second[0], currents.second[1], currents.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
-#endif
+
+    // Wake the worker; if it's still busy from the previous cycle the give is a no-op.
+    xSemaphoreGive(homewizardWakeSem);
 }
 
 void loop() {
 
     network_loop();
-    if (MainsMeter.Type == EM_HOMEWIZARD_P1 && LoadBl < 2) {
-        homewizard_loop();
-    }
+    homewizard_loop();
     
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= 1000) {
@@ -3383,7 +3877,7 @@ void loop() {
         //this block is for non-time critical stuff that needs to run approx 1 / second
 #if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
         //printStatus:
-        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A, MainsMeter.Timeout=%u, EVMeter.Timeout=%u.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10, MainsMeter.Timeout, EVMeter.Timeout);
+        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A, MainsMeter.Timeout=%u, CircuitMeter.Timeout=%u, EVMeter.Timeout=%u.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10, MainsMeter.Timeout, CircuitMeter.Timeout, EVMeter.Timeout);
 #else
         _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10);
 #endif
@@ -3475,7 +3969,7 @@ void loop() {
 
     //OCPP lifecycle management
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    if (OcppMode && !getOcppContext() && WiFi.isConnected()) {
+    if (OcppMode && !getOcppContext() && NetworkConnected()) {
         ocppInit();
     } else if (!OcppMode && getOcppContext()) {
         ocppDeinit();

@@ -7,6 +7,11 @@ extern unsigned long pow_10[10];
 extern void CalcIsum(void);
 extern void RecomputeSoC(void);
 extern void request_write_settings(void);
+extern bool LocalTimeSet;
+extern CapacityMode_t CapacityMode;
+
+// Global pointer to the first interval in the sorted list
+CapacityNode* first_interval = NULL;
 
 #define ENDIANESS_LBF_LWF 0
 #define ENDIANESS_LBF_HWF 1
@@ -25,14 +30,14 @@ struct EMstruct EMConfig[] = {
     {"ABB B23",   ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 2,0x5004, 2}, // ABB B23 212-100 (0.1V / 0.01A / 0.01W / 0.01kWh) RS485 wiring reversed / max read count 125
     {"SolarEdge", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT16,    40196, 0,  40191, 0,  40206, 0,  40234, 3, 40226, 3}, // SolarEdge SunSpec (0.01V (16bit) / 0.1A (16bit) / 1W  (16bit) / 1 Wh (32bit))
     {"WAGO",      ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012,-3, 0x600C, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)//TODO maar WAGO heeft ook totaal
-    {"API",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, 3, 0x6000, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)
+    {"API",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, 3, 0x6000, 0,0x6018, 0}, // API
     {"Eastron1P", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x0C, 0,  0x48 , 0,0x4A  , 0}, // Eastron SDM630 (V / A / W / kWh) max read count 80
     {"Finder 7M", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,   2500, 0,   2516, 0,   2536, 0,   2638, 3,     0, 0}, // Finder 7M.38.8.400.0212 (V / A / W / Wh) / Backlight 10173
     {"Sinotimer", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_INT16,      0x0, 1,    0x3, 2,    0x8, 0, 0x0027, 2,0x0031, 2}, // Sinotimer DTS6619 (0.1V (16bit) / 0.01A (16bit) / 1W  (16bit) / 1 Wh (32bit))
-    {"HmWzrd P1", ENDIANESS_HBF_HWF, 0, MB_DATATYPE_INT16,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // Homewizard P1 - network connected
+    {"Homewizrd", ENDIANESS_HBF_HWF, 0, MB_DATATYPE_INT16,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // Homewizard network connected meters
 
     {"Schneider", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x0BD3, 0, 0x0BB7, 0, 0x0BF3,-3, 0xB02B, 0,0xB02D, 0}, // Schneider iEM3x5x series (V / A / kW / kWh) iEM3x50 counts only Energy Import, no Export
-    {"Chint",     ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh)
+    {"Chint 3P",  ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh)
     {"C.Gavazzi", ENDIANESS_HBF_LWF, 4, MB_DATATYPE_INT32,      0x0, 1,    0xC, 3,   0x28, 1,   0x34, 1,  0x4E, 1}, // Carlo Gavazzi EM340 (0.1V / mA / 0.1W / 0.1kWh) 
     {"ABB EV3",   ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 4,0x5004, 4}, // ABB EV3 (0.1V / 0.01A / 0.01W / 0.0001kWh) Note that adresses on the EV3 are numeric hex values only (so Addr 19 on EV3 is 0x19 ( Decimal 25 ))
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
@@ -49,6 +54,8 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
         Irms[x] = 0;
         Power[x] = 0;
     }
+    DeviceHostName[0] = '\0';
+    HostMenuSelection = 0;
     Type = type;
     Address = address;
     Imeasured = 0;
@@ -266,6 +273,13 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
             }
             break;
         }
+        case EM_CHINT_1P:
+        {
+            var[0] = decodeMeasurement(buf, 0, EMConfig[Type].IDivisor - 3);
+            var[1] = 0;
+            var[2] = 0;
+        }
+        break;
         default:
             for (x = 0; x < 3; x++) {
                 var[x] = decodeMeasurement(buf, x, EMConfig[Type].IDivisor - 3);
@@ -294,12 +308,18 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
         case EM_SCHNEIDER:
             offset = 27u;
             break;
-        case EM_CHINT:
+        case EM_CHINT_3P:
             offset = 4u;
             break;
             
     }
-    if (offset) {                                                               // this is one of the meters that has to measure power to determine current direction
+    if (Type == EM_CHINT_1P) {                                                  // single-phase meter, current and power are returned in one response
+        Power[0] = decodeMeasurement(buf, 1, EMConfig[Type].PDivisor);
+        Power[1] = 0;
+        Power[2] = 0;
+        PowerMeasured = Power[0];
+        if (Power[0] < 0) var[0] = -var[0];
+    } else if (offset) {                                                        // this is one of the meters that has to measure power to determine current direction
         PowerMeasured = 0;                                                      // so we calculate PowerMeasured so we dont have to poll for this again
         for (x = 0; x < 3; x++) {
             Power[x] = decodeMeasurement(buf, x + offset, EMConfig[Type].PDivisor);
@@ -409,12 +429,144 @@ void Meter::UpdateEnergies() {
 #endif //SMARTEVSE_VERSION
 }
 
+
+#define CapacitySafety 100         // stay 100W under the Capacity ceiling
+#define AssumedVoltage 230         // TODO take this from the meter measurements
+void Meter::UpdateCapacity() {
+    extern uint16_t MaxSumMains;
+    time_t now;
+    time(&now);
+    // only process if time is valid
+    if (LocalTimeSet && now != 0 && Address == MainsMeter.Address) {
+        if (CapacityMode == FLANDERS) {
+    //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
+    #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+    //#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
+                                       // so you better use it by changing the power limit to the new ceiling
+            static time_t LastPeriod = 0;
+            static int8_t LastMonth = 0;
+            static int32_t CurrentPeriodStartEnergy = Import_active_energy;
+            time_t CurrentPeriod = now / CapacityPeriodSeconds;
+            if (CurrentPeriod != LastPeriod) {
+                // fires once per period utc interval, now configured 15 minutes
+
+                // check if previous period was this months record, and if so, register it
+                LastPeriod = CurrentPeriod;
+                int32_t PreviousPeriodEnergy = Import_active_energy - CurrentPeriodStartEnergy; //Wh
+                uint16_t AveragePower = PreviousPeriodEnergy * 3600 / CapacityPeriodSeconds; // average Power use in previous period in W
+                CurrentPeriodStartEnergy = Import_active_energy;
+
+                tm* t = localtime(&now);
+                int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
+                if (LastMonth != CurrentMonth) {      // we started a new month
+                    Peak_Period_Power_Month = CapacityMinimumPower;
+                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / AssumedVoltage;
+                } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
+                    Peak_Period_Power_Month = AveragePower;
+                    //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
+                    //TODO for now we wait until the next measurement comes in
+                }
+                _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power_Month is %i.\n", AveragePower, Peak_Period_Power_Month);
+            } else {
+                //we are in the middle of a period
+                //calculate time remaining
+                time_t TimeRemaining = CapacityPeriodSeconds - (now % CapacityPeriodSeconds); //in seconds
+                int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
+                int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
+                int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
+                int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
+                MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
+                if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
+                    MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
+                _LOG_D("Import_active_energy: %iWh CurrentPeriodStartEnergy: %iWh.\n", Import_active_energy, CurrentPeriodStartEnergy);
+                _LOG_D("TimeRemaining: %lu Energy_Used_This_Period: %iWh, Energy_Capacity_This_Period: %iWh, Energy_Available_This_Period: %iWh.\n", TimeRemaining, Energy_Used_This_Period, Energy_Capacity_This_Period, Energy_Available_This_Period);
+                _LOG_V("Capacity: setting MaxSumMains to %uA; average power available rest of this period: %iW.\n", MaxSumMains, Average_Power_Available_This_Period);
+
+    /*            //calculate current power
+                int16_t Total_Power = 0; //TODO get this from measurement from the meter
+                for (int i=0; i < 3; i++) {
+                    Total_Power = Total_Power + (Irms[i] * AssumedVoltage / 10); // Irms in dA
+                }
+                int16_t Surplus_Power_Per_Phase = (Average_Power_Available_This_Period - Total_Power) / Nr_Of_Phases_Charging;
+                int32_t Surplus_Current_Per_Phase = 10 * Surplus_Power_Per_Phase / AssumedVoltage; // in dA
+                //shamelessly copied from main.cpp, this should be optimized TODO
+                int Baseload, TotalCurrent = 0;
+                for (n = 0; n < NR_EVSES; n++) if (BalancedState[n] == STATE_C)             // must be in STATE_C
+                {
+                    ActiveEVSE++;                                                           // Count nr of active (charging) EVSE's
+                    TotalCurrent += Balanced[n];                                            // Calculate total of all set charge currents
+                }
+
+                Baseload = MainsMeter.Imeasured - TotalCurrent;                         // Calculate Baseload (load without any active EVSE)
+    */
+            }
+        } else if (CapacityMode == INTERVAL) {
+            tm* t = localtime(&now);
+
+            // ────────────────────────────────────────────────────────────────
+            // Inline lookup + safety margin + direct current calculation
+            // ────────────────────────────────────────────────────────────────
+            if (first_interval) {
+                uint16_t now_minutes = t->tm_hour * 60u + t->tm_min;
+
+                const CapacityNode* prev = NULL;
+                const CapacityNode* curr = first_interval;
+
+                while (curr != NULL) {
+                    if (curr->start_minutes <= now_minutes) {
+                        prev = curr;
+                        curr = curr->next;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (prev != NULL) {
+                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / AssumedVoltage;
+                } else {
+                    // Before first interval → use last rule minus safety
+                    const CapacityNode* last = first_interval;
+                    while (last->next) {
+                        last = last->next;
+                    }
+                    MaxSumMains = (last->max_power_watts - CapacitySafety) / AssumedVoltage;
+                }
+            } else {
+                // No schedule → silently skip (MaxSumMains unchanged)
+                return;
+            }
+            // ────────────────────────────────────────────────────────────────
+
+            _LOG_V("INTERVAL mode: time %02u:%02u → MaxSumMains = %u A\n", t->tm_hour, t->tm_min, MaxSumMains);
+        }
+    }    // If time is invalid → silently skip update (MaxSumMains keeps previous value)
+}
+
+
+void Meter::UpdatePower() {
+    // store daily history
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    static uint8_t prev_idx = 255;
+    uint8_t idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
+    if (idx == prev_idx) { //still in same period
+        if (PowerMeasured > PowerMeasured_Period[idx])
+            PowerMeasured_Period[idx] = PowerMeasured; //Wh
+    } else { //new period started
+            PowerMeasured_Period[idx] = PowerMeasured; //Wh
+            prev_idx = idx;
+    }
+}
+
+    
 void Meter::setTimeout(uint8_t NewTimeout) {
 #if SMARTEVSE_VERSION >= 40 //v4 ESP32
     if (Address == MainsMeter.Address) {
         Serial1.printf("@MainsMeterTimeout:%u\n", NewTimeout);
     } else if (Address == EVMeter.Address) {
         Serial1.printf("@EVMeterTimeout:%u\n", NewTimeout);
+    } else if (Address == CircuitMeter.Address) {
+        Serial1.printf("@CircuitMeterTimeout:%u\n", NewTimeout);
     }
 #else
     Timeout = NewTimeout;
@@ -430,6 +582,11 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                     setTimeout(COMM_TIMEOUT);
                 }
                 CalcIsum();
+            } else if (Address == CircuitMeter.Address) {
+                if (receiveCurrentMeasurement(MB)) {
+                    setTimeout(COMM_TIMEOUT);
+                }
+                CalcImeasured();
             } else if (Address == EVMeter.Address) {
                 if (receiveCurrentMeasurement(MB)) {
                     setTimeout(COMM_EVTIMEOUT);
@@ -438,6 +595,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             }
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
+            UpdatePower();
 #ifndef SMARTEVSE_VERSION //CH32
             printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
 #endif
@@ -445,14 +603,17 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             //import active energy
             if (Type == EM_EASTRON3P_INV)
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
-            else
+            else {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
+                if (Address == MainsMeter.Address) UpdateCapacity();
+            }
             UpdateEnergies();
         } else if (MB.Register == EMConfig[Type].ERegister_Exp) {
             //export active energy
-            if (Type == EM_EASTRON3P_INV)
+            if (Type == EM_EASTRON3P_INV) {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
-            else
+                if (Address == MainsMeter.Address) UpdateCapacity();
+            } else
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             UpdateEnergies();
         }

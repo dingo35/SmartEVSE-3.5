@@ -1,4 +1,4 @@
-FEED="MainsMeter"
+FEED="CircuitMeter"
 
 if [ $# -eq 0 ]; then
     echo "Usage: $0 4-digit-topic-nr-of-your-smartevse."
@@ -9,8 +9,6 @@ echo "Enter your current in deci-Ampères:"
 OLD_CURRENT=20
 #energy in Wh:
 ENERGY=0
-#power in W:
-POWER=0
 while true; do
     read -t 5 CURRENT
     if [ $CURRENT"x" == "x" ]; then
@@ -19,7 +17,6 @@ while true; do
         OLD_CURRENT=$CURRENT
     fi
     echo $FEED-CURRENT=$CURRENT.
-    mosquitto_pub  -h 127.0.0.1 -t "SmartEVSE/$1/Set/$FEED" -m $CURRENT:$CURRENT:$CURRENT:$POWER:$ENERGY
-    ENERGY=$((ENERGY + 15))
-    POWER=$((POWER + 10))
+    mosquitto_pub  -h 127.0.0.1 -t "SmartEVSE/$1/Set/$FEED" -m $CURRENT:$CURRENT:$CURRENT
+    ENERGY=$((ENERGY + 100))
 done

@@ -44,9 +44,9 @@
 #define EM_EASTRON1P 10
 #define EM_FINDER_7M 11
 #define EM_SINOTIMER 12
-#define EM_HOMEWIZARD_P1 13
+#define EM_HOMEWIZARD 13
 #define EM_SCHNEIDER 14
-#define EM_CHINT 15
+#define EM_CHINT_3P 15
 #define EM_CARLO_CAVAZZI 16
 #define EM_ABB_EV3 17
 #define EM_UNUSED_SLOT4 18
@@ -83,6 +83,8 @@ class Meter {
   public:
     uint8_t Type;                                                               // previously: MainsMeter; Type of Mains electric meter (0: Disabled / Constants EM_*)
     uint8_t Address;
+    char DeviceHostName[32];                                                    // Selected hostname for networked meters
+        uint8_t HostMenuSelection;                                                  // Pending host menu selection for this meter
     int16_t Irms[3];                                                            // Momentary current per Phase (23 = 2.3A) (resolution 100mA)
     int16_t Imeasured;                                                          // Max of all Phases (Amps *10) of mains power
     int16_t Power[3];
@@ -97,9 +99,19 @@ class Meter {
     int32_t EnergyMeterStart;                                                   // kWh meter value is stored once EV is connected to EVSE (Wh)
     uint8_t ResetKwh;                                                           // if set, reset kwh meter at state transition B->C
                                                                                 // cleared when charging, reset to 1 when disconnected (state A)
+    // capacity variables
+    int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
+    int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month, in Wh
+#define CapacityPeriodSeconds 900  // 15 minutes
+#define DAY_POINTS 24*3600/CapacityPeriodSeconds
+    int16_t PowerMeasured_Period[DAY_POINTS];                                   // the peak of the power per period(15min)
+
     // constructor
     Meter(uint8_t type, uint8_t address, uint8_t timeout);
+
     void UpdateEnergies();
+    void UpdateCapacity();
+    void UpdatePower();
     void ResponseToMeasurement(struct ModBus MB);
     void CalcImeasured(void);
     void setTimeout(uint8_t Timeout);
@@ -114,5 +126,6 @@ class Meter {
 
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)
+extern Meter CircuitMeter;
 
 #endif

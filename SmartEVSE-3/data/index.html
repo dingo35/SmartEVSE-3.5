@@ -14,33 +14,6 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
   <link href="styling.css" rel="stylesheet">
-  <style>
-    .tooltip {
-      position: relative;
-      display: inline-block;
-      border-bottom: 1px dotted black;
-      opacity: unset;
-      font-size: inherit;
-    }
-    .tooltip .tooltiptext {
-      visibility: hidden;
-      width: 220px;
-      background-color: black;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 5px 0;
-      position: absolute;
-      z-index: 1;
-      bottom: 100%;
-      left: 50%;
-      margin-left: -110px;
-      font-size: .875rem;
-    }
-    .tooltip:hover .tooltiptext {
-      visibility: visible;
-    }
-  </style>
 </head>
 
 <body>
@@ -48,14 +21,21 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
 
   <script>
-      let endpoint = document.location + 'settings';
+      let endpoint = '/settings';
       // let endpoint = 'http://10.0.0.36/settings';
       let initiated=false;
       let mqttEditMode = false;
       let ocppEditMode = false;
       let last_evse_state_id=0;
+      let latestRawSettingsJson = "";
+      const isRawDataPage = new URLSearchParams(window.location.search).get('raw') === '1';
+      window.isRawDataPage = isRawDataPage;
 
-      $(document).ready(loadData());
+      if (isRawDataPage) {
+        document.addEventListener('DOMContentLoaded', initRawDataPage);
+      } else {
+        $(document).ready(loadData());
+      }
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
@@ -70,6 +50,132 @@
        * Helper function to query the DOM for a single element.
        */
       const $qs = (selector) => document.querySelector(selector);
+
+      function escapeHtml(text) {
+        return text.replace(/[&<>"']/g, function (char) {
+          return ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+            "'": "&#39;"
+          })[char];
+        });
+      }
+
+      function highlightJson(jsonText) {
+        let out = "";
+        let i = 0;
+        while (i < jsonText.length) {
+          const ch = jsonText[i];
+
+          if (ch === "\"") {
+            let j = i + 1;
+            let escaped = false;
+            while (j < jsonText.length) {
+              const next = jsonText[j];
+              if (escaped) {
+                escaped = false;
+              } else if (next === "\\") {
+                escaped = true;
+              } else if (next === "\"") {
+                j++;
+                break;
+              }
+              j++;
+            }
+            out += '<span class="json-string">' + escapeHtml(jsonText.slice(i, j)) + "</span>";
+            i = j;
+            continue;
+          }
+
+          if (ch === "-" || (ch >= "0" && ch <= "9")) {
+            const match = jsonText.slice(i).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+\-]?\d+)?/);
+            if (match) {
+              out += '<span class="json-number">' + match[0] + "</span>";
+              i += match[0].length;
+              continue;
+            }
+          }
+
+          out += escapeHtml(ch);
+          i++;
+        }
+        return out;
+      }
+
+      async function loadRawSettings() {
+        const status = document.getElementById("raw_data_status");
+        const jsonBox = document.getElementById("raw_data_json");
+        const downloadBtn = document.getElementById("raw_download");
+        status.textContent = "Loading settings...";
+        jsonBox.textContent = "";
+        downloadBtn.disabled = true;
+
+        try {
+          const response = await fetch("/settings", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          latestRawSettingsJson = await response.text();
+          let formattedJson = latestRawSettingsJson;
+          try {
+            formattedJson = JSON.stringify(JSON.parse(latestRawSettingsJson), null, 2);
+          } catch (parseError) {
+            formattedJson = latestRawSettingsJson;
+          }
+          jsonBox.innerHTML = highlightJson(formattedJson);
+          downloadBtn.disabled = false;
+          status.textContent = "";
+        } catch (error) {
+          latestRawSettingsJson = "";
+          status.textContent = "Error loading /settings: " + error.message;
+          jsonBox.textContent = "Failed to load /settings.";
+        }
+      }
+
+      function downloadRawSettings() {
+        if (!latestRawSettingsJson) return;
+        const now = new Date();
+        const pad = function (n) { return String(n).padStart(2, "0"); };
+        const timestamp = now.getFullYear() +
+          pad(now.getMonth() + 1) +
+          pad(now.getDate()) + "-" +
+          pad(now.getHours()) +
+          pad(now.getMinutes()) +
+          pad(now.getSeconds());
+
+        const blob = new Blob([latestRawSettingsJson], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "settings-" + timestamp + ".json";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      function initRawDataPage() {
+        document.body.classList.add("raw-data-page");
+        document.body.innerHTML = `
+          <div class="raw-data-page-wrap">
+            <form class="form-inline raw-btns">
+              <button class="raw-btn" id="raw_back" type="button">Back</button>
+              <button class="raw-btn" id="raw_refresh" type="button">Refresh</button>
+              <button class="raw-btn" id="raw_download" type="button" disabled>Download</button>
+            </form>
+            <div id="raw_data_status">Loading settings...</div>
+            <pre id="raw_data_json"></pre>
+          </div>
+        `;
+        document.getElementById("raw_back").addEventListener("click", function () {
+          window.location.href = "/";
+        });
+        document.getElementById("raw_refresh").addEventListener("click", loadRawSettings);
+        document.getElementById("raw_download").addEventListener("click", downloadRawSettings);
+        loadRawSettings();
+      }
 
       function loadData(){
         $.ajax({
@@ -279,6 +385,12 @@
               $('.with_mainsmeter').hide();
             } else {
               $('.with_mainsmeter').show();
+              if ((data.mains_meter && data.mains_meter.host || '').trim()) {
+                $('#mainsmeter_host').text(mainsHost);
+                $('[id=with_mainsmeter_host]').show();
+              } else {
+                $('[id=with_mainsmeter_host]').hide();
+              }
             }
 
             if(data.ev_meter.description == "Disabled") {
@@ -286,6 +398,12 @@
             } else {
               $('[id=with_evmeter]').show();
               $('#evmeter_description').text(data.ev_meter.description);
+              if ((data.ev_meter.host || '').trim()) {
+                $('#evmeter_host').text(data.ev_meter.host);
+                $('[id=with_evmeter_host]').show();
+              } else {
+                $('[id=with_evmeter_host]').hide();
+              }
               $('#evmeter_power').text((data.ev_meter.import_active_power/1000).toFixed(1) + " kW");
               $('#evmeter_total_kwh').text((data.ev_meter.total_wh/1000).toFixed(1) + " kWh");
               $('#evmeter_charged_kwh').text((data.ev_meter.charged_wh/1000).toFixed(1) + " kWh");
@@ -375,9 +493,18 @@
               $('[id=ocpp_config_outer]').hide();
             }
 
-            setTimeout("loadData()", 5000);
+            setTimeout(loadData, 5000);
           });
       }
+
+      // When the tab becomes visible again, refresh data immediately and
+      // reconnect the LCD websocket if it was stopped while the tab was hidden.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          loadData();
+          if (window.lcdReconnectIfNeeded) window.lcdReconnectIfNeeded();
+        }
+      });
 
       // Add event listener for TLS checkbox
       $(document).on('change', '#mqtt_tls', toggleCertVisibility);
@@ -544,7 +671,8 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen is-hidden" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt="" />
+                                          <div class="lcd-activate" data-state="info">Starting websocket...</div>
                                           <div class="lcd-display-buttons">
                                               <button type="button" data-name="left">Left</button>
                                               <button type="button" data-name="middle">Middle</button>
@@ -555,20 +683,30 @@
                                               <button type="button" data-name="middle">Middle</button>
                                               <button type="button" data-name="right">Right</button>
                                           </div>
+
+                                        <div class="lcd-status">
                                           <form class="lcd-password" id="lcd-password-form">
-                                              <input type="password" id="lcd-password" class="form-control" placeholder="Enter PIN" style="width: 5em;">
-                                              <button type="submit" id="lcd-password-submit">Unlock</button>
-                                              <span id="lcd-lock-status" style="color: #e74a3b; font-weight: 700; white-space: nowrap;" title="Button lock status">Locked - Enter PIN</span>
+                                            <input type="password" id="lcd-password" class="form-control"
+                                                                                     placeholder="Enter PIN"
+                                                                                     inputmode="numeric"
+                                                                                     autocomplete="off"
+                                                                                     maxlength="4"
+                                                                                     pattern="[0-9]{4}">
+                                            <button type="submit" id="lcd-password-submit">Unlock</button>
                                           </form>
-                                          <div id="lcd-lock-hint">
-                                              LCD buttons are locked. Enter your PIN to unlock them.
+                                          <div class="lcd-lock-status" id="lcd-lock-status">
+                                            Locked - Enter PIN
                                           </div>
+                                          <div id="lcd-lock-hint">
+                                            LCD buttons are locked. Enter your PIN to unlock them.
+                                          </div>
+                                        </div>
                                       </div>
 <script>
     (() => {
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
         const LCD_BUTTON_CONTAINERS = document.querySelectorAll('#lcd .lcd-buttons, #lcd .lcd-display-buttons');
-        let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
+        const LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
         const PASSWORD_FIELD = document.querySelector('#lcd-password');
         const PASSWORD_FORM = document.querySelector('#lcd-password-form');
         const LOCK_STATUS = document.querySelector('#lcd-lock-status');
@@ -576,27 +714,118 @@
         const SESSION_STORAGE_PIN_KEY = 'lcdPinCode';
         const LOCKED_PRESS_ALERT_THRESHOLD = 3;
         const MIN_BUTTON_PRESS_MS = 300;
-        const WS_RECONNECT_BASE_MS = 1000;
-        const WS_RECONNECT_MAX_MS = 10000;
-        const WS_RECONNECT_JITTER_MS = 400;
-        const WS_INITIAL_RETRY_MS = 750;
-        const WS_INITIAL_RETRY_JITTER_MS = 250;
-        const WS_CONNECT_TIMEOUT_MS = 5000;
+        const WS_MAX_CONNECT_ATTEMPTS = 3;
+        const WS_CONNECTED_STATUS_MS = 2000;
+        const WS_RETRY_DELAY_MS = 2000;
+        const WS_CONNECT_TIMEOUT_MS = 8000;
         const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/lcd`;
         let passwordVerified = false;
         let blockedButtonPressCount = 0;
         let lcdSocket = null;
         let reconnectTimer = null;
         let connectTimeoutTimer = null;
-        let reconnectAttempts = 0;
-        let hasConnectedOnce = false;
-        let wsPausedByVisibility = false;
+        let activateOverlayHideTimer = null;
         let activeFrameUrl = null;
+        let wsAttemptCount = 0;
+        let wsStopped = false;
+        let wsErrorText = '';
         const activePointers = new Map();
 
-        function setActivateText(text) {
+        /**
+         * Update the LCD overlay text and make sure it is visible.
+         *
+         * @param {string} text Overlay text to display.
+         * @param {'info'|'warning'|'error'} [state='info'] Visual state for the overlay.
+         * @returns {void}
+         */
+        function setActivateText(text, state = 'info') {
+            clearActivateOverlayHideTimer();
             if (LCD_ACTIVATE) {
                 LCD_ACTIVATE.textContent = text;
+                LCD_ACTIVATE.dataset.state = state;
+                LCD_ACTIVATE.classList.remove('is-hidden');
+            }
+        }
+
+        /**
+         * Cancel any pending timer that would hide the LCD overlay.
+         *
+         * @returns {void}
+         */
+        function clearActivateOverlayHideTimer() {
+            if (activateOverlayHideTimer !== null) {
+                window.clearTimeout(activateOverlayHideTimer);
+                activateOverlayHideTimer = null;
+            }
+        }
+
+        /**
+         * Hide the LCD overlay after a delay once the websocket is healthy.
+         *
+         * @param {number} delayMs Delay in milliseconds before hiding the overlay.
+         * @returns {void}
+         */
+        function hideActivateOverlayAfterDelay(delayMs) {
+            clearActivateOverlayHideTimer();
+            activateOverlayHideTimer = window.setTimeout(() => {
+                activateOverlayHideTimer = null;
+                hideActivateOverlay();
+            }, delayMs);
+        }
+
+        /**
+         * Hide the LCD overlay immediately.
+         *
+         * @returns {void}
+         */
+        function hideActivateOverlay() {
+            clearActivateOverlayHideTimer();
+            if (LCD_ACTIVATE) {
+                LCD_ACTIVATE.classList.add('is-hidden');
+            }
+        }
+
+        /**
+         * Show the current websocket state together with retry details.
+         *
+         * @param {string} prefix Status text to display before retry details.
+         * @param {'info'|'warning'|'error'} [state='info'] Visual state for the overlay.
+         * @returns {void}
+         */
+        function setWsStatus(prefix, state = 'info') {
+          const attemptNumber = Math.min(wsAttemptCount + 1, WS_MAX_CONNECT_ATTEMPTS);
+          const details = wsErrorText ? `\n${wsErrorText}` : '';
+          if (attemptNumber > 1) {
+            setActivateText(`${prefix}\nAttempt ${attemptNumber}/${WS_MAX_CONNECT_ATTEMPTS}${details}`, state);
+          } else {
+            setActivateText(prefix, state);
+          }
+        }
+
+        /**
+         * Reset websocket retry bookkeeping before a fresh connection cycle.
+         *
+         * @returns {void}
+         */
+        function resetWsRetryState() {
+            wsAttemptCount = 0;
+            wsStopped = false;
+            wsErrorText = '';
+        }
+
+        /**
+         * Stop reconnect attempts and show the final websocket error.
+         *
+         * @param {string} errorText Final error message shown to the user.
+         * @returns {void}
+         */
+        function stopReconnectWithFinalError(errorText) {
+            wsStopped = true;
+            wsErrorText = errorText;
+            clearReconnectTimer();
+            clearConnectTimeout();
+            if (!document.hidden) {
+                setActivateText(`WebSocket failed after ${WS_MAX_CONNECT_ATTEMPTS} attempts.\n${errorText}`, 'error');
             }
         }
 
@@ -614,55 +843,31 @@
             }
         }
 
-        function shouldKeepWsActive() {
-            return !wsPausedByVisibility;
-        }
-
-        function requestImmediateReconnect() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
-            reconnectAttempts = 0;
+        /**
+         * Restart the LCD websocket from a clean retry state.
+         *
+         * @returns {void}
+         */
+        function restartLCDWebSocket() {
+            resetWsRetryState();
             clearReconnectTimer();
             connectLCDWebSocket();
         }
 
-        function disconnectLCDWebSocket() {
-            clearConnectTimeout();
-            clearReconnectTimer();
-            if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
-                lcdSocket.close();
-            }
-        }
-
+        /**
+         * Queue the next websocket reconnect attempt if retries are still allowed.
+         *
+         * @returns {void}
+         */
         function scheduleReconnect() {
-            if (!shouldKeepWsActive()) {
+            if (wsStopped || reconnectTimer !== null) {
                 return;
             }
-            if (reconnectTimer !== null) {
-                return;
-            }
-            const backoffMs = hasConnectedOnce
-                ? Math.min(WS_RECONNECT_BASE_MS * (2 ** reconnectAttempts), WS_RECONNECT_MAX_MS)
-                : WS_INITIAL_RETRY_MS;
-            const jitterMs = hasConnectedOnce
-                ? Math.floor(Math.random() * WS_RECONNECT_JITTER_MS)
-                : Math.floor(Math.random() * WS_INITIAL_RETRY_JITTER_MS);
-            const reconnectDelayMs = backoffMs + jitterMs;
-            reconnectAttempts += 1;
-            setActivateText(`Reconnecting in ${Math.ceil(reconnectDelayMs / 1000)}s...`);
+            setWsStatus('Reconnecting in 2s...', 'warning');
             reconnectTimer = window.setTimeout(() => {
                 reconnectTimer = null;
                 connectLCDWebSocket();
-            }, reconnectDelayMs);
-        }
-
-        function activateLCD() {
-            if (!LCD_ACTIVATE) {
-                return;
-            }
-            LCD_ACTIVATE.remove();
-            LCD_ACTIVATE = null;
+            }, WS_RETRY_DELAY_MS);
         }
 
         function getStoredPin() {
@@ -689,6 +894,26 @@
             }
         }
 
+        /**
+         * Normalize a PIN value so validation always works on trimmed text.
+         *
+         * @param {unknown} pin PIN candidate from storage or user input.
+         * @returns {string} Trimmed PIN text or an empty string for invalid input types.
+         */
+        function normalizePin(pin) {
+            return typeof pin === 'string' ? pin.trim() : '';
+        }
+
+        /**
+         * Check whether a PIN is exactly four numeric digits.
+         *
+         * @param {string} pin PIN text to validate.
+         * @returns {boolean} True when the PIN contains exactly four digits.
+         */
+        function isValidPin(pin) {
+            return /^\d{4}$/.test(pin);
+        }
+
         function updateLockUi(isUnlocked) {
             if (isUnlocked) {
                 LOCK_STATUS.textContent = 'Unlocked';
@@ -701,31 +926,52 @@
             }
         }
 
+        /**
+         * Open the LCD websocket and manage retries, errors, and UI state.
+         *
+         * @returns {void}
+         */
         function connectLCDWebSocket() {
-            if (!shouldKeepWsActive()) {
-                return;
-            }
             if (lcdSocket && (lcdSocket.readyState === WebSocket.OPEN || lcdSocket.readyState === WebSocket.CONNECTING)) {
                 return;
             }
 
-            setActivateText('Connecting...');
-            const socket = new WebSocket(WS_URL);
+            if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+              wsErrorText = `connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms`
+                stopReconnectWithFinalError(wsErrorText || 'connection failed');
+                return;
+            }
+            setWsStatus('Connecting to LCD...', 'info');
+
+            let socket;
+            try {
+                socket = new WebSocket(WS_URL);
+            } catch (error) {
+                wsAttemptCount += 1;
+                wsErrorText = `constructor error: ${error.message}`;
+                if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+                    stopReconnectWithFinalError(wsErrorText);
+                    return;
+                }
+                scheduleReconnect();
+                return;
+            }
+
             lcdSocket = socket;
             socket.binaryType = 'arraybuffer';
 
             clearConnectTimeout();
             connectTimeoutTimer = window.setTimeout(() => {
                 if (socket.readyState === WebSocket.CONNECTING) {
+                    wsErrorText = `connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms`;
                     socket.close();
                 }
             }, WS_CONNECT_TIMEOUT_MS);
 
             socket.onopen = () => {
                 clearConnectTimeout();
-                reconnectAttempts = 0;
-                hasConnectedOnce = true;
-                activateLCD();
+                resetWsRetryState();
+                hideActivateOverlayAfterDelay(WS_CONNECTED_STATUS_MS);
             };
 
             socket.onmessage = (event) => {
@@ -738,25 +984,45 @@
                 }
                 activeFrameUrl = frameUrl;
                 LCD_SCREEN.src = frameUrl;
+                LCD_SCREEN.classList.remove('is-hidden');
             };
 
             socket.onerror = () => {
+                wsErrorText = 'connection error';
                 if (socket.readyState !== WebSocket.CLOSED) {
                     socket.close();
                 }
             };
 
-            socket.onclose = () => {
+            socket.onclose = (event) => {
                 clearConnectTimeout();
                 if (lcdSocket === socket) {
                     lcdSocket = null;
                 }
-                if (shouldKeepWsActive()) {
-                    scheduleReconnect();
+                if (event.code === 1000) {
+                    return;
                 }
+                wsAttemptCount += 1;
+                if (event.code === 1006) {
+                    wsErrorText = wsErrorText || 'connection lost';
+                } else if (!wsErrorText) {
+                    wsErrorText = `close code ${event.code}`;
+                }
+                if (wsAttemptCount >= WS_MAX_CONNECT_ATTEMPTS) {
+                    stopReconnectWithFinalError(wsErrorText);
+                    return;
+                }
+                scheduleReconnect();
             };
         }
 
+        /**
+         * Send a button press or release event to the LCD websocket.
+         *
+         * @param {string} btnName Logical LCD button name.
+         * @param {boolean} stateDown True when the button is pressed, false when released.
+         * @returns {void}
+         */
         function sendButtonState(btnName, stateDown) {
             if (!passwordVerified) {
                 blockedButtonPressCount += 1;
@@ -771,7 +1037,7 @@
             }
 
             if (!lcdSocket || lcdSocket.readyState !== WebSocket.OPEN) {
-                requestImmediateReconnect();
+                restartLCDWebSocket();
                 return;
             }
 
@@ -801,10 +1067,28 @@
             }
         }
 
+        /**
+         * Verify the configured LCD PIN and optionally persist it for this session.
+         *
+         * @param {{password?: string, showErrorAlert?: boolean, rememberPin?: boolean}} [options={}] Verification overrides.
+         * @returns {void}
+         */
         function verifyPassword(options = {}) {
-            const enteredPassword = options.password ?? PASSWORD_FIELD.value;
+            const enteredPassword = normalizePin(options.password ?? PASSWORD_FIELD.value);
             const showErrorAlert = options.showErrorAlert ?? true;
             const rememberPin = options.rememberPin ?? true;
+            if (!isValidPin(enteredPassword)) {
+                passwordVerified = false;
+                updateLockUi(false);
+                if (rememberPin) {
+                    clearStoredPin();
+                }
+                if (showErrorAlert) {
+                    alert("Enter the 4-digit PIN.");
+                }
+                return;
+            }
+
             $.post('/lcd-verify-password', { password: enteredPassword })
             .done(function(data) {
                 if (data.success) {
@@ -821,6 +1105,13 @@
                     if (showErrorAlert) {
                         alert("Incorrect PIN. Please try again.");
                     }
+                }
+            })
+            .fail(function() {
+                passwordVerified = false;
+                updateLockUi(false);
+                if (showErrorAlert) {
+                    alert("PIN verification failed. Please try again.");
                 }
             });
         }
@@ -853,40 +1144,28 @@
         });
 
         window.addEventListener('online', () => {
-            requestImmediateReconnect();
+            restartLCDWebSocket();
         });
 
         window.addEventListener('offline', () => {
-            setActivateText('Offline - waiting for network...');
+            setActivateText('Offline - waiting for network...', 'warning');
         });
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                wsPausedByVisibility = true;
-                setActivateText('Paused in background');
-                disconnectLCDWebSocket();
-                return;
-            }
-
-            wsPausedByVisibility = false;
-            setActivateText('Reconnecting...');
-            requestImmediateReconnect();
-        });
+        // Expose reconnect hook so the outer visibilitychange listener can call it.
+        window.lcdReconnectIfNeeded = () => {
+            if (wsStopped) restartLCDWebSocket();
+        };
 
         const storedPin = getStoredPin();
-        if (storedPin) {
+        if (isValidPin(storedPin)) {
             PASSWORD_FIELD.value = storedPin;
             verifyPassword({ password: storedPin, showErrorAlert: false, rememberPin: false });
         } else {
+            clearStoredPin();
             updateLockUi(false);
         }
 
-        if (document.hidden) {
-            wsPausedByVisibility = true;
-            setActivateText('Paused in background');
-        } else {
-            requestImmediateReconnect();
-        }
+        restartLCDWebSocket();
     })();
 </script>
                                   </div>
@@ -1064,6 +1343,14 @@
                                           <div class="h5 mb-0 mr-3 text-gray-800" id="p1_data_time" style="text-align: right;"></div>
                                         </div>
                                     </div>
+                                    <div class="row no-gutters align-items-center" id="with_mainsmeter_host" style="display: none;">
+                                      <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 100px;">
+                                          Hostname:
+                                        </div>
+                                        <div class="col">
+                                          <div class="h5 mb-0 mr-3 text-gray-800" id="mainsmeter_host" style="text-align: right;"></div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="col-auto">
                                     <i class="fas fa-clipboard-list fa-2x text-gray-300">
@@ -1142,6 +1429,14 @@
                                     </div>
                                     <div class="col">
                                       <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_description" style="text-align: right;"></div>
+                                    </div>
+                                </div>
+                                <div class="row no-gutters align-items-center" id="with_evmeter_host" style="display: none;">
+                                  <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
+                                      Hostname:
+                                    </div>
+                                    <div class="col">
+                                      <div class="h5 mb-0 mr-3 text-gray-800" id="evmeter_host" style="text-align: right;"></div>
                                     </div>
                                 </div>
                                 <div class="row no-gutters align-items-center">
@@ -1497,10 +1792,13 @@
                                     </div>
 -->                                    
                                     <div class="row no-gutters align-items-center">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;">
-                                          <div class="tooltip font-weight-bold text-gray-800">
-                                            Mode:
-                                            <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">NORMAL: basic charging<br>SOLAR: Use Solar surplus power<br>SMART: Take home consumers into account</span>
+                                        <div class="col-auto h5 mb-0 mr-3" style="width:120px;">
+                                          <div class="tooltip tooltip--align-start font-weight-bold text-gray-800"
+                                               aria-describedby="tip-mode" tabindex="0">Mode:
+                                            <span id="tip-mode" class="tooltiptext" role="tooltip">
+                                              NORMAL: basic charging<br>
+                                              SOLAR: Use Solar surplus power<br>
+                                              SMART: Take home consumers into account</span>
                                           </div>
                                         </div>
                                         <div class="col">
@@ -1513,14 +1811,14 @@
                                             <button id="mode_3" type="button" class="with_mainsmeter" onclick="activate(3)">SMART</button>
 
                                             <div class="form-group">
-                                              <label for="starttime" class="tooltip">...STARTING:
-                                                <span class="tooltiptext">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+                                              <label for="starttime" class="tooltip" aria-describedby="tip-starttime" tabindex="0">...STARTING:
+                                                <span id="tip-starttime" class="tooltiptext" role="tooltip">For delayed start, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                               </label>
                                               <input type="datetime-local" id="starttime" name="starttime" class="form-control">
                                             </div>
                                             <div class="form-group" id="stoptime_group">
-                                              <label for="stoptime" class="tooltip">...ENDING:
-                                                <span class="tooltiptext">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
+                                              <label for="stoptime" class="tooltip" aria-describedby="tip-stoptime" tabindex="0">...ENDING:
+                                                <span id="tip-stoptime" class="tooltiptext" role="tooltip">For programmed stop, fill START and END date and time, then press NORMAL/SOLAR/SMART button to initiate.</span>
                                               </label>
                                               <input type="datetime-local" id="stoptime" name="stoptime" class="form-control">
                                             </div>
@@ -1543,9 +1841,9 @@
                                     </div>
                                     <div class="row no-gutters align-items-center">
                                       <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;" id="override_current_box">
-                                        <div class="tooltip font-weight-bold text-gray-800">
-                                          Override:
-                                          <span class="tooltiptext" style="margin-left:-50%;font-weight:normal;text-align:left;">Override (limit) output current.<br>Select one and press NORMAL / SMART to set.</span>
+                                        <div class="tooltip tooltip--align-start font-weight-bold text-gray-800"
+                                             aria-describedby="tip-override" tabindex="0">Override:
+                                          <span id="tip-override" class="tooltiptext" role="tooltip">Override (limit) output current.<br>Select one and press NORMAL / SMART to set.</span>
                                         </div>
                                       </div>
                                         <div class="col" id="override_current_box2" style="max-width:425px;">
@@ -1561,7 +1859,8 @@
                                         <div class="col form-inline">
                                           <a class="ui-btn ui-shadow ui-corner-all" href="/reboot" onclick="reboot(event)" data-ajax="false" title="Reboot your device">Reboot</a>
                                           <a class="ui-btn ui-shadow ui-corner-all" href="/update" data-ajax="false" title="Update your firmware">Update</a>
-                                          <a class="ui-btn ui-shadow ui-corner-all" href="/settings" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
+                                          <a class="ui-btn ui-shadow ui-corner-all" href="/?raw=1" data-ajax="false" title="Display your settings in JSON format">Raw Data</a>
+                                          <a class="ui-btn ui-shadow ui-corner-all" href="capacity.html" data-ajax="false" title="Advanced users only: adapt Capacity settings">Capacity</a>
                                           <a class="ui-btn ui-shadow ui-corner-all" href="#" onclick="gotoDoc(event)" title="Show the online documentation">Help</a>
                                         </div>
                                     </div>
@@ -1687,26 +1986,28 @@
       </div>
   </div>
   <script>
-    // Get the current date and time
-    var now = new Date();
-    $('[id=stoptime_group]').hide();
-    $('[id=daily_repeat_group]').hide();
+    if (!window.isRawDataPage) {
+      // Get the current date and time
+      var now = new Date();
+      $('[id=stoptime_group]').hide();
+      $('[id=daily_repeat_group]').hide();
 
-    // Format the date and time as a string that can be used as the value of the input field
-    var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
-    var dateTimeString = dateString + 'T' + timeString;
+      // Format the date and time as a string that can be used as the value of the input field
+      var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+      var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+      var dateTimeString = dateString + 'T' + timeString;
 
-    // Set the value of the input field to the current date and time
-    document.getElementById('starttime').value = dateTimeString;
-    document.getElementById('stoptime').value = dateTimeString;
-    document.getElementById('starttime').onchange = function () {
-        $('[id=stoptime_group]').show();
+      // Set the value of the input field to the current date and time
+      document.getElementById('starttime').value = dateTimeString;
+      document.getElementById('stoptime').value = dateTimeString;
+      document.getElementById('starttime').onchange = function () {
+          $('[id=stoptime_group]').show();
+      }
+      document.getElementById('stoptime').onchange = function () {
+          $('[id=daily_repeat_group]').show();
+      }
+      $('daily_repeat').prop('checked', false);
     }
-    document.getElementById('stoptime').onchange = function () {
-        $('[id=daily_repeat_group]').show();
-    }
-    $('daily_repeat').prop('checked', false);
   </script>
 </body>
 </html>

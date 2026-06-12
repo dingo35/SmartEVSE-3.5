@@ -1,3 +1,4 @@
 .pio
 .vscode
 packed_fs.c
+cmake-build-*/

@@ -44,19 +44,43 @@ Only appears if [MODE](#mode) is **Smart** or **Solar**. Set the type of MAINS k
 - **Sensorbox**: The Sensorbox sends measurement data to the SmartEVSE.
 - **API**: MAINS meter data is fed through the [REST API](REST_API.md) or [MQTT API](#mqtt-api).
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
-- **HmWzrd P1**: HomeWizard P1 meter (wifi based connection to the smart meter's P1 port).
+- **Homewizrd**: Mains meter data is polled from a network connected HomeWizard meter (P1 or kWh).
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron three-phase meters fed from below (inverted).
 
-If MAINS MET is not **Disabled** and not **API**, these settings appear:
+If MAINS MET is not **Disabled** and not **API** and not **HomeWizrd**, these settings appear:
 
 - **MAINSADR**: Set the Modbus address for the kWh meter.
 - **GRID**: 3 or 4 wire (only appears when Sensorbox with CT’s is used).
   - **4Wire**: Star connection with 3 phase wires and neutral.
   - **3Wire**: Delta connection with 3 phase wires without neutral.
+
+If MAINS MET is **HomeWizrd**, this settings appears:
+
+- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts.
+
+## CIRCT MET
+Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
+
+- **Disabled**: No EV meter connected.
+- **API**: EV meter data is fed through the REST API or MQTT API.
+- **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+
+**Note**:
+- Eastron1P is for single-phase Eastron meters.
+- Eastron3P is for Eastron three-phase meters.
+- InvEastron is for Eastron’s three-phase meter fed from below (inverted).
+
+If CIRCT MET is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
+
+- **CIRCT ADR**: Set the Modbus address for the Circuit Meter.
+
+If CIRCT MET is **HomeWizrd**, this setting appears:
+
+- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
@@ -64,15 +88,20 @@ Set Type of EV kWh Meter (measures power and charged energy)
 - **Disabled**: No EV meter connected.
 - **API**: EV meter data is fed through the REST API or MQTT API.
 - **Phoenix C** / **Finder** / **...** / **Custom**: A Modbus kWh meter is used.
+- **HomeWizrd**: A Networked Homewizard meter is used.
 
 **Note**:  
 - Eastron1P is for single-phase Eastron meters.  
 - Eastron3P is for Eastron three-phase meters.  
 - InvEastron is for Eastron’s three-phase meter fed from below (inverted).
 
-If EV METER is not **Disabled** and not **API**, this setting appears:
+If EV METER is not **Disabled** and not **API** and not **Homewizrd**, this setting appears:
 
 - **EV ADR**: Set the Modbus address for the EV Meter.
+
+If EV METER is **HomeWizrd**, this setting appears:
+
+- **EV HST**: Select a networked meter through a list of mDNS discovered hosts.
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.
@@ -84,7 +113,7 @@ Only appears when a [MAINS MET](#mains-met) is configured. Set the min charge cu
 Set the MAX charge current for the EV: (10-80A) per phase. If [CONFIG](#config) is set to **Fixed**, configure MAX to be lower than or equal to the maximum current that your fixed cable can carry.
 
 ## CIRCUIT
-Only appears when an [EV METER](#ev-meter) is configured, in **Smart** or **Solar** mode. Set the max current the EVSE circuit can handle (power sharing): 10-200A.  
+Only appears when [PWR SHARE](#pwr-share) is set to **Master** or a [CIRCT MET](#circuit-met) is configured, in **Smart** or **Solar** mode. Set the max current the EVSE circuit can handle (power sharing): 10-200A. When no [CIRCT MET](#circuit-met) is configured, it will only limit the total current the **Master** is using for itself and other connected SmartEVSEs.
 
 ## START
 Only shown when [MODE](#mode) is set to **Solar** and [PWR SHARE](#pwr-share) is set to **Disabled** or **Master**. Set the current at which the EV should start solar charging: -0 to -48A (sum of all phases).
@@ -110,8 +139,14 @@ Set the Function of an External Switch (Pin SW or Connector P2).
 - **Custom B**: A momentary push button can be used for external integrations.
 - **Custom S**: A toggle switch can be used for external integrations.
 
+## LED MODE
+Select the LED color scheme for the SmartEVSE.
+
+- **Standard**: The default green/red color scheme. Green = Normal or Smart mode, Yellow = Solar mode. Red indicates errors or waiting. Custom LED colors can be set via MQTT.
+- **Public**: The color scheme used for public charging stations. Green = available, Blue (static) = EV connected / charging finished, Blue (fading) = charging, Yellow = reserved / waiting, Red = error / fault. Note that the blue LED output is only available on the 6 pin Button connector.
+
 ## RCMON
-Residual Current Monitor (RCM14-03) plugged into connector P1.
+Residual Current Monitor (RCM14) plugged into connector RCM14 / P1.
 
 - **Disabled**: The RCD option is not used.
 - **Enabled**: When a fault current is detected, the contactor will be opened.
@@ -198,8 +233,25 @@ This feature uses a unique per-device key stored in the controller. If you someh
 Maximum allowed temperature for your SmartEVSE: 40-75°C (default 65°C).  
 Charging will stop once the internal temperature reaches this threshold and resume once it drops to 55°C.
 
+## CAPACITY MODE
+In line with a EU directive, electricity providers can implement a "capacity rate" for consumers, encouraging more balanced energy consumption. This approach aims to smooth out usage patterns and reduce peak demand.
+If you are unsure how to configure this, it is recommended to leave the setting at its default value, "Disabled".
+
+Only appears when a [MAINSMET](#mains-met) is configured; it only applies to Smart or Solar mode.
+In addition to other limits (Mains, MaxCircuit), the charging current will be restricted to ensure that the total current across all phases does not exceed the maximum current (Fixed) or power (Interval, Flanders) setting.
+
+These settings can also be set at the `http://<your-smartevse>/capacity.html` webpage, that can also be reached through the "Capacity" button on the web dashboard.
+The possible settings are:
+- **Disabled**: No capacity rate limiting is exercised. For most users this is the normal setting.
+- **Fixed**: In addition to other limits (Mains, MaxCircuit), the charging current will be restricted to ensure that the total current across all phases does not exceed the maximum current, as specified in the [CAPACITY](#capacity) setting.
+- **Interval**: The power summed over all three phases will be limited according to the interval settings, which you can specify on the `http://<your-smartevse>/capacity.html` webpage.
+- **Flanders**: The power summed over all three phases will be limited to stay under 2500W ceiling, but if other users "up" the ceiling, SmartEVSE will obey the new ceiling; SmartEVSE tries to minimize cost obeying these rules, currently used in Flanders (Belgium), as specified [here](https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief).
+
+For debugging and monitoring purposes you can navigate to `http://<your-smartevse>/power_day` , which will show you the recorded power usage of the MAINSMeter for the last 24 hours, in 15 minute intervals. For this to work your MainsMeter has to report its total power of the phases to the SmartEVSE, either by MQTT or modbus.
+Please note this is the power as reported by your MAINSMeter, so it is not the power given out by your SmartEVSE !!
+
 ## CAPACITY
-Only appears when a [MAINSMET](#mains-met) is configured. Maximum allowed mains current summed over all phases: 10-600A. Used for the EU Capacity rate limiting.
+Only appears when a [CAPACITYMODE](#capacity-mode) is configured to "Fixed". Maximum allowed mains current summed over all phases: 10-600A. Used for the EU Capacity rate limiting.
 
 ## CAP STOP
 Only appears when [CAPACITY](#capacity) is configured. Timer in minutes. If CAPACITY is exceeded, charging will not immediately stop but will wait until the timer expires.  
@@ -234,15 +286,24 @@ Currently the most reliable way to get the correct behaviour at Solar mode is:
 
 If you are at Smart mode you just set CONTACT2 to the appropriate setting as documented above.
 
-# OCPP (you want your company to pay for your electricity charges, or you want to exploit your SmartEVSE as a public charger)
-To charge a company or a user for your electricity cost, you need a Backend Provider (BP). The BP will monitor your charger usage and will bill the appropriate user and/or company, and will pay you your part.
-Your SmartEVSE can be connected to any BP by the OCPP protocol.
-See the OCPP section in the SmartEVSE dashboard for setting up identifiers and configuring the OCPP interface.
-Connect to the OCPP server using the credentials set up in the SmartEVSE dashboard. To use
-the RFID reader with OCPP, set the mode Rmt/OCPP in the RFID menu. Note that the other
-RFID modes overrule the OCPP access control. OCPP SmartCharging requires the SmartEVSE
-internal load balancing needs to be turned off.
-For user experiences with back-end providers, see [OCPP Backends](ocpp.md)
+# OCPP (Open Charge Point Protocol)
+
+Connect your charge point to a backend server. This allows you to use the SmartEVSE as a public charging station, or to bill a company or user for electricity costs.
+
+## Setup
+
+You will need a Backend Provider (BP) that supports the **OCPP 1.6j** protocol. The BP monitors your charger usage, bills the appropriate user and/or company, and pays you your share.
+
+1. Configure the OCPP connection in the **OCPP section** of the SmartEVSE dashboard (identifiers, server URL, credentials).
+2. Configure an [EV METER](#ev-meter) to measure the energy supplied to the car.
+3. To use the **RFID reader** with OCPP, set the [RFID](#rfid) mode to **Rmt/OCPP**. Note that other RFID modes override OCPP access control.
+
+## Requirements and limitations
+
+- If the backend uses **OCPP SmartCharging** the SmartEVSE internal power sharing [PWR SHARE](#pwr-share) has to be turned off.
+- **Remote firmware updates** are supported over OCPP. The SmartEVSE only accepts `http://` URLs pointing to signed firmware files.
+
+For user experiences with backend providers, see [OCPP Backends](ocpp.md).
 
 # REST API
 
@@ -290,6 +351,16 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ```
 ...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A importing, -5 means 0.5A exporting.
 ...These should be fed at least ervery 10 seconds.
+
+OR it can be fed with:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/MainsMeter' -m L1:L2:L3:P:E
+```
+
+...where L1 - L3 are the currents in deci-Ampères. So 100 means 10.0A.
+...where P is the Power in W,
+...where E is the Energy in Wh.
+
 
 Your EV kWh meter data can be fed with:
 ```
@@ -340,6 +411,7 @@ For this purpose the settings endpoint allows you to pass through the battery cu
 * A positive current means the battery is charging
 * A negative current means the battery is discharging
 
+The battery current must be expressed in deci-Ampères. So 100 means charging with 10.0A, -5 means discharging with 0.5A.
 The EVSE will use the battery current to neutralize the impact of a home battery on the P1 information.
 
 **Regular updates from the consumer are required to keep this working as values cannot be older than 11 seconds.**
@@ -376,19 +448,3 @@ If you cannot (or do not want to) use MQTT to integrate your SmartEVSE with Home
 ## By manually configuring your configuration.yaml
 
 It's a lot of work, but you can have everything exactly your way. See examples in the integrations directory of our GitHub repository.
-
-
-
-# EU Capacity Rate Limiting
-
-In line with a EU directive, electricity providers can implement a "capacity rate" for consumers, encouraging more balanced energy consumption. This approach aims to smooth out usage patterns and reduce peak demand.
-
-For further details, please refer to [serkri#215](https://github.com/serkri/SmartEVSE-3/issues/215).
-
-
-
-* The menu item "Capacity" can be set from 10-600A. (sum of all phases)
-* This setting applies only in Smart or Solar mode.
-* Beyond existing limits (Mains, MaxCircuit), the charging current will be controlled to ensure that the total of all Mains phase currents does not exceed the Capacity setting.
-* If you are unfamiliar with this setting or do not fall under the applicable regulations, it is advisable to keep the setting at its default setting. (disabled)
-

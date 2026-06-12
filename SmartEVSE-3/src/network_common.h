@@ -27,6 +27,7 @@
 
 #include "main.h" //so SENSORBOX_VERSION is read in Sensorbox
 #include "mongoose.h"
+#include "ch390.h"
 #include <ArduinoJson.h>
 
 #ifndef MQTT
@@ -59,6 +60,7 @@ extern uint8_t lastMqttUpdate;
 extern bool MQTTtls;
 extern bool MQTTSmartServer;
 extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from network_loop()
+extern bool WIFImodeChanged;               // Flag to trigger handleWIFImode() from network_loop()
 extern String MQTTprivatePassword;   
 
 class MQTTclient_t {
@@ -94,8 +96,10 @@ public:
     String jsna(const String& key, T value) { return ", " + jsn(key, value); }
     void publish(const String &topic, const int32_t &payload, bool retained, int qos) { publish(topic, String(payload), retained, qos); };
     void publish(const String &topic, const String &payload, bool retained, int qos);
+    void publish(const char *topic, const char *payload, size_t payload_len, bool retained, int qos);
     void subscribe(const String &topic, int qos);
     void announce(const String& entity_name, const String& domain, const String& optional_payload);
+    void announce(const char *entity_name, const char *domain, const char *optional_payload);
     bool connected;
 };
 
@@ -149,13 +153,33 @@ extern uint8_t WIFImode;
 extern char *downloadUrl;
 extern uint32_t serialnr;
 extern void RunFirmwareUpdate(void);
+extern bool forceUpdate(const char* firmwareURL, bool validate);
+extern int downloadProgress;
 extern void WiFiSetup(void);
 extern void handleWIFImode(void);
 extern bool getLatestVersion(String owner_repo, String asset_name, char *version);
+extern bool NetworkConnected(void);                                             // true if WiFi or Ethernet has IP
+extern void onGotIP(const char *dns_ip);                                        // shared IP-acquired handler
 #ifndef SENSORBOX_VERSION
-extern std::pair<int8_t, std::array<std::int16_t, 3>> getMainsFromHomeWizardP1();
-extern String homeWizardHost;
+struct mDNSServiceEntry {
+    int ServiceType;
+    String HostName;
+};
+
+extern std::pair<int8_t, std::array<std::int32_t, 6>> getDataFromHomeWizard(const char *hostname);
+extern std::array<mDNSServiceEntry, 8> mDNSServices;                            // Allow discovery of up to 8 mDNS services for now
+                                                                                // if there is a use case for more we can always increase this
 #endif
+
+extern void discoverNetworkMeters();
+extern void compileServiceName(int type, const char *hostname, char *output, size_t outputSize);
+extern uint8_t getmDNSServiceCount(int type);
+extern uint8_t getmDNSServiceCount();
+extern uint8_t getCompatiblemDNSServiceCount(uint8_t meterType);
+extern const mDNSServiceEntry *getmDNSServiceByIndex(int type, uint8_t index);
+extern const mDNSServiceEntry *getmDNSServiceByIndex(int type, const String &hostnamePattern, uint8_t index, bool strict = false);
+extern const mDNSServiceEntry *getCompatiblemDNSServiceByIndex(uint8_t meterType, uint8_t index);
+extern int getmDNSServiceType(const String &hostname);
 
 #define FW_DOWNLOAD_PATH "http://smartevse-3.s3.eu-west-2.amazonaws.com"
 

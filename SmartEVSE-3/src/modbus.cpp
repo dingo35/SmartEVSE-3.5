@@ -488,7 +488,7 @@ void requestMeasurement(uint8_t Meter, uint8_t Address, uint16_t Register, uint8
 void requestCurrentMeasurement(uint8_t Meter, uint8_t Address) {
     switch(Meter) {
         case EM_API:
-        case EM_HOMEWIZARD_P1:
+        case EM_HOMEWIZARD:
             break;
         case EM_SENSORBOX:
             if (SB2.SoftwareVer >= 1) {
@@ -521,10 +521,15 @@ void requestCurrentMeasurement(uint8_t Meter, uint8_t Address) {
             // Phase 1-3 power:   Register 0x0BED - 0x0BF2 (signed)
             ModbusReadInputRequest(Address, 3, 0x0BB7, 60);
             break;
-        case EM_CHINT:
+        case EM_CHINT_3P:
             // Phase 1-3 current: Register 0x200C - 0x2011 (unsigned)
             // Phase 1-3 power:   Register 0x2014 - 0x2019 (signed)
             ModbusReadInputRequest(Address, 3, 0x200C, 14);
+            break;
+        case EM_CHINT_1P:
+            // Phase 1 current: Register 0x2002 - 0x2003 (unsigned)
+            // Phase 1 power:   Register 0x2004 - 0x2005 (signed)
+            ModbusReadInputRequest(Address, 3, 0x2002, 4);
             break;
         default:
             // Read 3 Current values
@@ -735,7 +740,9 @@ void HandleModbusResponse(void) {
         case 0x04: // (Read input register)
             if (MainsMeter.Type && MainsMeter.Type!=EM_API && MB.Address == MainsMeter.Address) {
                 MainsMeter.ResponseToMeasurement(MB);
-            } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
+            } else if (CircuitMeter.Type && MB.Address == CircuitMeter.Address) {
+                CircuitMeter.ResponseToMeasurement(MB);
+            } else if (EVMeter.Type && EVMeter.Type != EM_HOMEWIZARD && MB.Address == EVMeter.Address) {
                 EVMeter.ResponseToMeasurement(MB);
             } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
                 // Packet from a Node EVSE, only for Master!
@@ -786,6 +793,19 @@ ModbusMessage MBEVMeterResponse(ModbusMessage request) {
 }
 
 
+// Monitor Circuit EV Meter responses, and update Enery and Power and Current measurements
+// Both the Master and Nodes will receive their own EV meter measurements here.
+// Does not send any data back.
+//
+ModbusMessage MBCircuitMeterResponse(ModbusMessage request) {
+    ModbusDecode( (uint8_t*)request.data(), request.size());
+    CircuitMeter.ResponseToMeasurement(MB);
+    // As this is a response to an earlier request, do not send response.
+
+    return NIL_RESPONSE;
+}
+
+
 // The Node/Server receives a broadcast message from the Master
 // Does not send any data back.
 ModbusMessage MBbroadcast(ModbusMessage request) {
@@ -826,7 +846,8 @@ void MBhandleError(Error error, uint32_t token)
   else {
     _LOG_A("Error response: %02X - %s, address: %02x, function: %02x, reg: %04x.\n", error, (const char *)me,  address, function, reg);
   }
-  if (ModbusRequest) ModbusRequestLoop();  // continue with the next request.
+  // Do not advance the request loop on broadcast timeouts. 
+  if (address != BROADCAST_ADR && ModbusRequest) ModbusRequestLoop();  // continue with the next request.
 }
 
 
@@ -851,7 +872,8 @@ void ConfigureModbusMode(uint8_t newmode) {
             // Also add handler for all broadcast messages from Master.
             MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
 
-            if (EVMeter.Type && EVMeter.Type != EM_API) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+            if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
+            if (CircuitMeter.Type && CircuitMeter.Type != EM_API) MBserver.registerWorker(CircuitMeter.Address, ANY_FUNCTION_CODE, &MBCircuitMeterResponse);
 
             // Start ModbusRTU Node background task
             MBserver.begin(Serial1);
