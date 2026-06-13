@@ -290,7 +290,8 @@ extern uint8_t LoadBl;
 extern AccessStatus_t AccessStatus;
 extern uint8_t Nr_Of_Phases_Charging;
 
-extern uint8_t ActivationMode, ActivationTimer;
+extern uint8_t ActivationMode, ActivationTimer;                             // ActivationMode 255=inactive, x = nr of seconds we wait from B->C to go into ActivationMode
+                                                                            // ActivationTimer: nr of seconds we activate
 extern volatile uint16_t adcsample;
 extern volatile uint16_t ADCsamples[25];                                           // declared volatile, as they are used in a ISR
 extern volatile uint8_t sampleidx;
