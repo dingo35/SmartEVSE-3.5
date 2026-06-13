@@ -1016,22 +1016,29 @@ void GLCD(void) {
  */
 static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
     static char Str[12]; // must be declared static, since it's referenced outside of function scope
+    if (isMDNSDiscoveryInProgress()) { // If mDNS discovery is in progress, show "Discovering" for all options in the menu
+        return "Discovering";
+    }
+    if (value == 0) { //Manual discovery option selected, show "Discover" if discovery is not in progress, otherwise show "Discovering"
+        return "Discover";
 
-    if (value == 0) {
+    }
+    else if (value == 1) { //Currently stored host entry selected, show the host name stored for this meter, or "Not Set" if it's empty
         if (strlen(meter.DeviceHostName) == 0) return "Not Set";
         compileServiceName(meter.Type, meter.DeviceHostName, Str, sizeof(Str));
         if (Str[0] == '\0') return "Not Set";
         return Str;
     }
-
-    const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
-    if (service && !service->HostName.isEmpty()) {
-        compileServiceName(meter.Type, service->HostName.c_str(), Str, sizeof(Str));
-        if (Str[0] != '\0') {
-            return Str;
+    else{   //Discovered mDNS service selected ( value >= 2 ), show the host name of the selected mDNS entry
+        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 2);
+        if (service && !service->HostName.isEmpty()) {
+            compileServiceName(meter.Type, service->HostName.c_str(), Str, sizeof(Str));
+            if (Str[0] != '\0') {
+                return Str;
+            }
         }
+        return "Not Set";
     }
-    return "Not Set";
 }
 
 /**
@@ -1040,21 +1047,29 @@ static const char *getMeterHostStr(const Meter &meter, uint8_t value) {
  * pending menu selection so the LCD menu returns to its neutral state.
  * 
  * @param Meter &meter
- * @param uint8_t menu selection index (0 for "Unchanged", 1 for first mDNS entry, etc.)
+ * @param uint8_t menu selection index (0 for "Discover",1 for "Unchanged", 2 for first mDNS entry, etc.)
  * @return void
  */
 static void commitMeterHostSelection(Meter &meter, uint8_t value) {
-    // If the user selected "Unchanged", do nothing and just clear the pending menu selection
-    // Else, if they selected an mDNS entry ( value >= 1 ), update the meter's DeviceHostName to match the selected entry
-    if (value >= 1) {
-        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 1);
+    // If discovery is in progress, ignore any selection and just clear the pending menu selection, since the user should wait until discovery is finished to make a selection
+    if (isMDNSDiscoveryInProgress()) {
+        meter.HostMenuSelection = 1;
+        return;
+    }
+    // If the user selected an mDNS entry (value >= 2) attempt to update the meter's DeviceHostName
+    if (value >= 2) {
+        const mDNSServiceEntry *service = getCompatiblemDNSServiceByIndex(meter.Type, value - 2);
         if (service && !service->HostName.isEmpty()) {
             strncpy(meter.DeviceHostName, service->HostName.c_str(), sizeof(meter.DeviceHostName));
             meter.DeviceHostName[sizeof(meter.DeviceHostName) - 1] = '\0';
         }
     }
+    // If the user selected "Discover" (value == 0), start mDNS discovery
+    if (value == 0) {
+        clearmDNSServices();
+    }
 
-    meter.HostMenuSelection = 0;
+    meter.HostMenuSelection = 1;
 }
 
 const char * getMenuItemOption(uint8_t nav) {
@@ -1388,15 +1403,15 @@ void GLCDMenu(uint8_t Buttons) {
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_EVMETERHOST:
-                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(EVMeter.Type));
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(EVMeter.Type) + 1);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_MAINSMETERHOST:
-                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(MainsMeter.Type));
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(MainsMeter.Type) + 1);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_CIRCUITMETERHOST:
-                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(CircuitMeter.Type));
+                        value = MenuNavInt(Buttons, value, 0, getCompatiblemDNSServiceCount(CircuitMeter.Type) + 1);
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_WIFI:

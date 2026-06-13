@@ -60,7 +60,7 @@ If MAINS MET is not **Disabled** and not **API** and not **HomeWizrd**, these se
 
 If MAINS MET is **HomeWizrd**, this settings appears:
 
-- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts.
+- **MAINS HST**: Select a networked meter through a list of mDNS discovered hosts. Select 'Discover' to manually re-scan for meters.
 
 ## CIRCT MET
 Set Type of kWh Meter (measures power and charged energy) of the circuit this SmartEVSE is on; only configure this when you are in "subpanel configuration", see [Installation](installation.md).
@@ -80,7 +80,7 @@ If CIRCT MET is not **Disabled** and not **API** and not **Homewizrd**, this set
 
 If CIRCT MET is **HomeWizrd**, this setting appears:
 
-- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts.
+- **CIRCT HST**: Select a networked meter through a list of mDNS discovered hosts. Select 'Discover' to manually re-scan for meters.
 
 ## EV METER
 Set Type of EV kWh Meter (measures power and charged energy)
@@ -101,7 +101,7 @@ If EV METER is not **Disabled** and not **API** and not **Homewizrd**, this sett
 
 If EV METER is **HomeWizrd**, this setting appears:
 
-- **EV HST**: Select a networked meter through a list of mDNS discovered hosts.
+- **EV HST**: Select a networked meter through a list of mDNS discovered hosts. Select 'Discover' to manually re-scan for meters.
 
 ## MAINS
 Only appears when a [MAINS MET](#mains-met) is configured. Set max mains current (10-200A) per phase.

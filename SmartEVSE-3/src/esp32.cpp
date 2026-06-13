@@ -1404,17 +1404,17 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
         MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
-        MainsMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        MainsMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
         strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
         EVMeter.DeviceHostName[sizeof(EVMeter.DeviceHostName) - 1] = '\0';
-        EVMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        EVMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
         CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
         strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
         CircuitMeter.DeviceHostName[sizeof(CircuitMeter.DeviceHostName) - 1] = '\0';
-        CircuitMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        CircuitMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
