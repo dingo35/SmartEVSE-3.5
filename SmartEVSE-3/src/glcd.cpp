@@ -479,7 +479,8 @@ void printStartingTime(char *Str) {
     }
     if (DelayedStartTime.epoch2 && LocalTimeSet && DelayedStartTime.epoch2 != DelayedStartTime_Old) {
         time_t epoch = DelayedStartTime.epoch2 + EPOCH2_OFFSET;
-        DelayedStartTimeTM = *localtime(&epoch);
+        struct tm epoch_tm;
+        DelayedStartTimeTM = *localtime_r(&epoch, &epoch_tm);
     }
     if (!strftime(Str, STRLEN, StrFormat.c_str(), &DelayedStartTimeTM))
         sprintf(Str, "later...");

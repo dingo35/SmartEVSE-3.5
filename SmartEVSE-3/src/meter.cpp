@@ -451,7 +451,8 @@ void Meter::UpdateCapacity() {
                 uint16_t AveragePower = PreviousPeriodEnergy * 3600 / CapacityPeriodSeconds; // average Power use in previous period in W
                 CurrentPeriodStartEnergy = Import_active_energy;
 
-                tm* t = localtime(&now);
+                struct tm t_buf;
+                tm* t = localtime_r(&now, &t_buf);
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
                 if (LastMonth != CurrentMonth) {      // we started a new month
                     Peak_Period_Power_Month = CapacityMinimumPower;
@@ -496,7 +497,8 @@ void Meter::UpdateCapacity() {
     */
             }
         } else if (CapacityMode == INTERVAL) {
-            tm* t = localtime(&now);
+            struct tm t_int_buf;
+            tm* t = localtime_r(&now, &t_int_buf);
 
             // ────────────────────────────────────────────────────────────────
             // Inline lookup + safety margin + direct current calculation
@@ -540,8 +542,11 @@ void Meter::UpdateCapacity() {
 
 void Meter::UpdatePower() {
     // store daily history
+    if (!LocalTimeSet) return;  // Skip until NTP has synced
+
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    struct tm tm_update_buf;
+    struct tm *tm_info = localtime_r(&now, &tm_update_buf);
     static uint8_t prev_idx = 255;
     uint8_t idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
     if (idx == prev_idx) { //still in same period

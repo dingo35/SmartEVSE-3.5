@@ -1669,7 +1669,8 @@ int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime) {
         DelayedTime->epoch2 = mktime(&delayedtime_tm) - EPOCH2_OFFSET;
         // Compare the times
         time_t now = time(nullptr);             //get current local time
-        DelayedTime->diff = DelayedTime->epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+        struct tm tm_now;
+        DelayedTime->diff = DelayedTime->epoch2 - (mktime(localtime_r(&now, &tm_now)) - EPOCH2_OFFSET);
         return 0;
     }
     //error TODO not sure whether we keep the old time or reset it to zero?
@@ -2358,7 +2359,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
     } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
         // Stream JSON via HTTP chunked encoding to avoid the ~8 KB DynamicJsonDocument + serialized String
         time_t now = time(NULL);
-        struct tm *tm_info = localtime(&now);
+        struct tm tm_info_buf;
+        struct tm *tm_info = localtime_r(&now, &tm_info_buf);
         uint8_t i, idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
         idx++; //go to the next time period; since PowerMeasured_Period is circular, this would be the oldest entry
 
@@ -3909,7 +3911,8 @@ void loop() {
         if (DelayedStartTime.epoch2 && LocalTimeSet) {
             // Compare the times
             time_t now = time(nullptr);             //get current local time
-            DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            struct tm tm_start;
+            DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime_r(&now, &tm_start)) - EPOCH2_OFFSET);
             if (DelayedStartTime.diff > 0) {
                 if (AccessStatus != OFF && (DelayedStopTime.epoch2 == 0 || DelayedStopTime.epoch2 > DelayedStartTime.epoch2))
                     setAccess(OFF);                         //switch to OFF, we are Delayed Charging
@@ -3927,7 +3930,8 @@ void loop() {
         if (DelayedStopTime.epoch2 && LocalTimeSet) {
             // Compare the times
             time_t now = time(nullptr);             //get current local time
-            DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            struct tm tm_stop;
+            DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime_r(&now, &tm_stop)) - EPOCH2_OFFSET);
             if (DelayedStopTime.diff <= 0) {
                 //DelayedStopTime has passed
                 if (DelayedRepeat == 1)                                         //we are on a daily repetition schedule
