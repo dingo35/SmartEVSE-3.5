@@ -131,14 +131,6 @@ Preferences preferences;
 
 class ShadowPreferences {
 public:
-    bool begin(const char* name, bool readOnly=false) {
-        bool ok = prefs.begin(name, readOnly);
-        if (ok)
-            lastFlush = millis();
-        return ok;
-    }
-    void end() { prefs.end(); }
-
     // register a live variable; its current value is read at flush time
     template<typename T> void markUChar (const char* key, T* p) { reg(key, p, &flushUChar<T>);  }
     template<typename T> void markUShort(const char* key, T* p) { reg(key, p, &flushUShort<T>); }
@@ -150,15 +142,17 @@ public:
     void loop() {
         if ((uint32_t)(millis() - lastFlush) >= SETTINGS_WRITE_INTERVAL * 1000UL) {
             flush();
-            lastFlush = millis();
         }
     }
 
     void flush() {                              // write each dirty key, but only if it changed in NVS
+        prefs.begin("settings", false);
         for (auto& kv : entries) {
             Entry& e = kv.second;
             if (e.dirty) { e.fn(prefs, kv.first.c_str(), e.ptr); e.dirty = false; }
         }
+        prefs.end();
+        lastFlush = millis();
     }
 
 private:
@@ -1483,8 +1477,6 @@ void write_settings(void) {
 
     validate_settings();
 
- if (shadowPrefs.begin("settings", false) ) {
-
     // Only write values that have actually changed from cached values
     PREFS_PUT_UCHAR_IF_CHANGED("Config", Config);
     PREFS_PUT_UCHAR_IF_CHANGED("Lock", Lock);
@@ -1550,16 +1542,10 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode);
 #endif //ENABLE_OCPP
 
-    shadowPrefs.end();
-
     _LOG_I("settings saved\n");
 #if SMARTEVSE_VERSION >= 40
     SendConfigToCH32();
 #endif
-
- } else {
-     _LOG_A("Can not open preferences!\n");
- }
 
 
     if (LoadBl == 1) {                                                          // Master mode
