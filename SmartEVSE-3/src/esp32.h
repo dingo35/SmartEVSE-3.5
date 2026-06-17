@@ -30,6 +30,8 @@
 #include "main.h"
 #include "glcd.h"
 #include "meter.h"
+#include <map>
+#include <Preferences.h>
 
 // Pin definitions left side ESP32
 #define PIN_TEMP 36
@@ -230,7 +232,6 @@ extern struct DelayedTimeStruct DelayedStartTime;
 
 void read_settings();
 void write_settings(void);
-void request_write_settings(void);
 void setSolarStopTimer(uint16_t Timer);
 void setState(uint8_t NewState);
 void setAccess(AccessStatus_t Access);
@@ -242,6 +243,75 @@ void ConfigureModbusMode(uint8_t newmode);
 void setMode(uint8_t NewMode) ;
 void BuzzConfirmation(void);
 void BuzzError(void);
+
+extern Preferences preferences;
+
+class ShadowPreferences {
+public:
+    // register a live variable; its current value is read at flush time
+    template<typename T> void markUChar (const char* key, T* p) { reg(key, p, &flushUChar<T>);  }
+    template<typename T> void markUShort(const char* key, T* p) { reg(key, p, &flushUShort<T>); }
+    template<typename T> void markULong (const char* key, T* p) { reg(key, p, &flushULong<T>);  }
+    template<typename T> void markBool  (const char* key, T* p) { reg(key, p, &flushBool<T>);   }
+    template<size_t N>   void markString(const char* key, char (*p)[N]) { reg(key, p, &flushCharArray); }
+    void                 markString(const char* key, String* p)         { reg(key, p, &flushString);    }
+
+    void loop() {
+        if ((uint32_t)(millis() - lastFlush) >= SETTINGS_WRITE_INTERVAL * 1000UL) {
+            flush();
+        }
+    }
+
+    void flush() {                              // write each dirty key, but only if it changed in NVS
+        prefs.begin("settings", false);
+        for (auto& kv : entries) {
+            Entry& e = kv.second;
+            if (e.dirty) { e.fn(prefs, kv.first.c_str(), e.ptr); e.dirty = false; }
+        }
+        prefs.end();
+        lastFlush = millis();
+    }
+
+private:
+    typedef void (*FlushFn)(Preferences&, const char*, const void*);
+    struct Entry { const void* ptr = nullptr; FlushFn fn = nullptr; bool dirty = false; };
+
+    void reg(const char* key, const void* p, FlushFn fn) {
+        Entry& e = entries[key];
+        e.ptr = p; e.fn = fn; e.dirty = true;
+    }
+
+    template<typename T> static void flushUChar(Preferences& p, const char* k, const void* v) {
+        uint8_t x = (uint8_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getUChar(k) != x) p.putUChar(k, x);
+    }
+    template<typename T> static void flushUShort(Preferences& p, const char* k, const void* v) {
+        uint16_t x = (uint16_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getUShort(k) != x) p.putUShort(k, x);
+    }
+    template<typename T> static void flushULong(Preferences& p, const char* k, const void* v) {
+        uint32_t x = (uint32_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getULong(k) != x) p.putULong(k, x);
+    }
+    template<typename T> static void flushBool(Preferences& p, const char* k, const void* v) {
+        bool x = (bool)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getBool(k) != x) p.putBool(k, x);
+    }
+    static void flushString(Preferences& p, const char* k, const void* v) {
+        const String& x = *static_cast<const String*>(v);
+        if (!p.isKey(k) || p.getString(k) != x) p.putString(k, x);
+    }
+    static void flushCharArray(Preferences& p, const char* k, const void* v) {
+        const char* x = static_cast<const char*>(v);
+        if (!p.isKey(k) || p.getString(k) != x) p.putString(k, x);
+    }
+
+    Preferences prefs;
+    std::map<String, Entry> entries;
+    uint32_t lastFlush  = 0;
+};
+
+extern ShadowPreferences shadowPrefs;
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);

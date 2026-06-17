@@ -93,7 +93,6 @@ extern void StopwebServer(void); //TODO or move over to network.cpp?
 extern void StartwebServer(void); //TODO or move over to network.cpp?
 extern bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request);
 extern uint8_t AutoUpdate;
-extern Preferences preferences;
 extern uint16_t firmwareUpdateTimer;
 
 uint32_t serialnr = 0;

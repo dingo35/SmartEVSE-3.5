@@ -54,7 +54,6 @@
 #include <MicroOcpp/Core/Context.h>
 #endif //ENABLE_OCPP
 
-extern Preferences preferences;
 struct DelayedTimeStruct DelayedStartTime;
 struct DelayedTimeStruct DelayedStopTime;
 extern unsigned char RFID[8];
@@ -632,7 +631,7 @@ void setMode(uint8_t NewMode) {
 
 
     //make mode and start/stoptimes persistent on reboot
-    request_write_settings();
+    write_settings();
 #else //CH32
     printf("@Mode:%u.\n", NewMode); //a
     _LOG_V("[<-] Mode:%u\n", NewMode);
@@ -966,7 +965,8 @@ void setAccess(AccessStatus_t Access) { //c
     }
 
     //make AccessStatus and CardOffset persistent on reboot
-    request_write_settings();
+    shadowPrefs.markUChar("Access", &AccessStatus);
+    shadowPrefs.markUShort("CardOffs16", &CardOffset);
 
 #if MQTT
     // Update MQTT faster

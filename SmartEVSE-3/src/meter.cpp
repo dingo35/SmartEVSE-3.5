@@ -2,11 +2,11 @@
 
 #include <meter.h>
 #include <modbus.h>
+#include "esp32.h"
 
 extern unsigned long pow_10[10];
 extern void CalcIsum(void);
 extern void RecomputeSoC(void);
-extern void request_write_settings(void);
 extern bool LocalTimeSet;
 extern CapacityMode_t CapacityMode;
 
@@ -228,7 +228,8 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
                     if (SB2.WIFImode != SB2_WIFImode) {
                         SB2_WIFImode = SB2.WIFImode;
 #ifdef SMARTEVSE_VERSION //ESP32
-                        request_write_settings();
+                        shadowPrefs.markUChar("SB2WIFImode", &SB2_WIFImode);
+
 #else //CH32
                         printf("@write_settings\n");
 #endif
@@ -238,7 +239,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
                 if (SB2_WIFImode == 2 && SB2.WiFiConnected && !SubMenu) {
                     SB2_WIFImode = 1;                                       // Portal active and connected? Switch back to Enabled.
 #ifdef SMARTEVSE_VERSION //ESP32
-                    request_write_settings();
+                    shadowPrefs.markUChar("SB2WIFImode", &SB2_WIFImode);
 #else //CH32
                     printf("@write_settings\n");
 #endif
