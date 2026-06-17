@@ -3062,7 +3062,7 @@ void ocppLoop() {
         // Check against max and min currents, only write settings when value changes
         if ((current >= 6) && (current <= 80) && (MaxCurrent != current)) {
             MaxCurrent = current;
-            request_write_settings();
+            shadowPrefs.markUShort("MaxCurrent", &MaxCurrent);
             // set to invalid value, so it only sets MaxCurrent once.
             config->setInt(0);
             MicroOcpp::configuration_save();
