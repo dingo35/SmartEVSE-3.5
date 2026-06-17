@@ -1459,7 +1459,8 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode);
     PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2);
     PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode);
-    String intervals = GetIntervalString();  // Build once, reuse.
+    static String intervals;
+    intervals = GetIntervalString();  // Build once, reuse.
     PREFS_PUT_STRING_IF_CHANGED("intervals_json", intervals);
 #if MODEM
     PREFS_PUT_STRING_IF_CHANGED("RequiredEVCCID", RequiredEVCCID);
@@ -1889,6 +1890,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(request->hasParam("backlight")) {
             int backlight = request->getParam("backlight")->value().toInt();
             BacklightTimer = backlight * BACKLIGHT;
+            //not saved in NVS
             doc["Backlight"] = backlight;
         }
 
@@ -1896,6 +1898,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("current_min")->value().toInt();
             if(current >= MIN_CURRENT && current <= 16 && LoadBl < 2) {
                 MinCurrent = current;
+                shadowPrefs.markUShort("MinCurrent", &MinCurrent);
                 doc["current_min"] = MinCurrent;
             } else {
                 doc["current_min"] = "Value not allowed!";
@@ -1906,12 +1909,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int val = request->getParam("capacity_mode")->value().toInt();
             if (val >= 0 && val <= 3) {
                 CapacityMode = (CapacityMode_t)val;
+                shadowPrefs.markUShort("CapacityMode", &CapacityMode);
                 doc["capacity_mode"] = val;
             }
         }
 
         if (request->hasParam("intervals")) {
-            String jsonStr = request->getParam("intervals")->value();
+            static String jsonStr;
+            jsonStr = request->getParam("intervals")->value();
+            shadowPrefs.markString("intervals_json", &jsonStr);
             SetIntervalString(jsonStr);
         }
 
@@ -1919,6 +1925,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("current_max_sum_mains")->value().toInt();
             if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
                 MaxSumMains = current;
+                shadowPrefs.markUShort("MaxMains", &MaxMains);
                 doc["current_max_sum_mains"] = MaxSumMains;
             } else {
                 doc["current_max_sum_mains"] = "Value not allowed!";
@@ -1929,6 +1936,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int time = request->getParam("max_sum_mains_timer")->value().toInt();
             if(time >= 0 && time <= 60 && LoadBl < 2) {
                 MaxSumMainsTime = time;
+                shadowPrefs.markUShort("MaxSumMainsTime", &MaxSumMainsTime);
                 doc["max_sum_mains_time"] = MaxSumMainsTime;
             } else {
                 doc["max_sum_mains_time"] = "Value not allowed!";
@@ -1937,11 +1945,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("disable_override_current")) {
             setOverrideCurrent(0);
+            //not saved in NVS
             doc["disable_override_current"] = "OK";
         }
 
         if(request->hasParam("custombutton")) {
             CustomButton = request->getParam("custombutton")->value().toInt() > 0;
+            //not saved in NVS
             doc["custombutton"] = CustomButton;
         }
 
@@ -1999,7 +2009,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             } else
                 DelayedStartTime.epoch2 = DELAYEDSTARTTIME;
 
-
+            //setMode will save all settings, so no need to save mode or delayed times here
             switch(mode.toInt()) {
                 case 0: // OFF
 #if SMARTEVSE_VERSION >=40 //v4                
@@ -2027,6 +2037,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("enable_C2")) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
+            shadowPrefs.markUShort("EnableC2", &EnableC2);
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
         }
 
@@ -2035,6 +2046,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
             if(stop_timer >= 0 && stop_timer <= 60) {
                 StopTime = stop_timer;
+                shadowPrefs.markUShort("StopTime", &StopTime);
                 doc["stop_timer"] = true;
             } else {
                 doc["stop_timer"] = false;
@@ -2058,6 +2070,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("solar_start_current")->value().toInt();
             if(current >= 0 && current <= 48) {
                 StartCurrent = current;
+                shadowPrefs.markUShort("StartCurrent", &StartCurrent);
                 doc["solar_start_current"] = StartCurrent;
             } else {
                 doc["solar_start_current"] = "Value not allowed!";
@@ -2068,6 +2081,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("solar_max_import")->value().toInt();
             if(current >= 0 && current <= 48) {
                 ImportCurrent = current;
+                shadowPrefs.markUShort("ImportCurrent", &ImportCurrent);
                 doc["solar_max_import"] = ImportCurrent;
             } else {
                 doc["solar_max_import"] = "Value not allowed!";
@@ -2110,6 +2124,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int lock = request->getParam("lcdlock")->value().toInt();
             if (lock >= 0 && lock <= 1) {                                   //boundary check
                 LCDlock = lock;
+                shadowPrefs.markUChar("LCDlock", &LCDlock);
                 doc["lcdlock"] = lock;
             }
         }
@@ -2118,6 +2133,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int c_lock = request->getParam("cablelock")->value().toInt();
             if (c_lock >= 0 && c_lock <= 1) {                               //boundary check
                 CableLock = c_lock;
+                shadowPrefs.markUChar("CableLock", &CableLock);
                 doc["cablelock"] = c_lock;
             }
         }
@@ -2128,6 +2144,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
                 if(request->hasParam("ocpp_mode")) {
                     OcppMode = request->getParam("ocpp_mode")->value().toInt();
+                    shadowPrefs.markUChar("OcppMode", &OcppMode);
                     doc["ocpp_mode"] = OcppMode;
                 }
 
@@ -2190,7 +2207,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n");
         { MgChunkPrint out(c); serializeJson(doc, out); }
-        write_settings();
         return true;
       }
     } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
