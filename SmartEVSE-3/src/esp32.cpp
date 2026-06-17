@@ -786,7 +786,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
         Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
-        request_write_settings();
+        shadowPrefs.markString("RequiredEVCCID", &RequiredEVCCID);
 #endif
     } else if (topic == MQTTprefix + "/Set/ColorOff") {
         int32_t R, G, B;
@@ -1528,7 +1528,7 @@ void write_settings(void) {
     String intervals = GetIntervalString();  // Build once, reuse.
     PREFS_PUT_STRING_IF_CHANGED("intervals_json", intervals);
 #if MODEM
-    PREFS_PUT_STRING_IF_CHANGED("RequiredEVCCID", String(RequiredEVCCID));
+    PREFS_PUT_STRING_IF_CHANGED("RequiredEVCCID", RequiredEVCCID);
 #endif
     PREFS_PUT_USHORT_IF_CHANGED("maxTemp", maxTemp);
     PREFS_PUT_UCHAR_IF_CHANGED("AutoUpdate", AutoUpdate);
@@ -2176,6 +2176,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 strncpy(RequiredEVCCID, request->getParam("required_evccid")->value().c_str(), sizeof(RequiredEVCCID));
                 doc["required_evccid"] = RequiredEVCCID;
                 Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
+                shadowPrefs.markString("RequiredEVCCID", &RequiredEVCCID);
             } else {
                 doc["required_evccid"] = "EVCCID too long (max 32 char)";
             }
