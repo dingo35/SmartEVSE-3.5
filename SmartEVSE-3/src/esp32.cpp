@@ -128,33 +128,89 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 hw_timer_t * timerA = NULL;
 Preferences preferences;
 
-// delayed write settings - reduces flash wear by combining multiple writes into one
-static bool SettingsDirty = false;                      // Flag indicating settings need to be written
-static unsigned long LastSettingsWriteTime = 0;         // millis() timestamp of last write
+
+class ShadowPreferences {
+public:
+    bool begin(const char* name, bool readOnly=false) {
+        bool ok = prefs.begin(name, readOnly);
+        if (ok)
+            lastFlush = millis();
+        return ok;
+    }
+    void end() { prefs.end(); }
+
+    // register a live variable; its current value is read at flush time
+    template<typename T> void markUChar (const char* key, T* p) { reg(key, p, &flushUChar<T>);  }
+    template<typename T> void markUShort(const char* key, T* p) { reg(key, p, &flushUShort<T>); }
+    template<typename T> void markULong (const char* key, T* p) { reg(key, p, &flushULong<T>);  }
+    template<typename T> void markBool  (const char* key, T* p) { reg(key, p, &flushBool<T>);   }
+    template<size_t N>   void markString(const char* key, char (*p)[N]) { reg(key, p, &flushCharArray); }
+    void                 markString(const char* key, String* p)         { reg(key, p, &flushString);    }
+
+    void loop() {
+        if ((uint32_t)(millis() - lastFlush) >= SETTINGS_WRITE_INTERVAL * 1000UL) {
+            flush();
+            lastFlush = millis();
+        }
+    }
+
+    void flush() {                              // write each dirty key, but only if it changed in NVS
+        for (auto& kv : entries) {
+            Entry& e = kv.second;
+            if (e.dirty) { e.fn(prefs, kv.first.c_str(), e.ptr); e.dirty = false; }
+        }
+    }
+
+private:
+    typedef void (*FlushFn)(Preferences&, const char*, const void*);
+    struct Entry { const void* ptr = nullptr; FlushFn fn = nullptr; bool dirty = false; };
+
+    void reg(const char* key, const void* p, FlushFn fn) {
+        Entry& e = entries[key];
+        e.ptr = p; e.fn = fn; e.dirty = true;
+    }
+
+    template<typename T> static void flushUChar(Preferences& p, const char* k, const void* v) {
+        uint8_t x = (uint8_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getUChar(k) != x) p.putUChar(k, x);
+    }
+    template<typename T> static void flushUShort(Preferences& p, const char* k, const void* v) {
+        uint16_t x = (uint16_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getUShort(k) != x) p.putUShort(k, x);
+    }
+    template<typename T> static void flushULong(Preferences& p, const char* k, const void* v) {
+        uint32_t x = (uint32_t)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getULong(k) != x) p.putULong(k, x);
+    }
+    template<typename T> static void flushBool(Preferences& p, const char* k, const void* v) {
+        bool x = (bool)*static_cast<const T*>(v);
+        if (!p.isKey(k) || p.getBool(k) != x) p.putBool(k, x);
+    }
+    static void flushString(Preferences& p, const char* k, const void* v) {
+        const String& x = *static_cast<const String*>(v);
+        if (!p.isKey(k) || p.getString(k) != x) p.putString(k, x);
+    }
+    static void flushCharArray(Preferences& p, const char* k, const void* v) {
+        const char* x = static_cast<const char*>(v);
+        if (!p.isKey(k) || p.getString(k) != x) p.putString(k, x);
+    }
+
+    Preferences prefs;
+    std::map<String, Entry> entries;
+    uint32_t lastFlush  = 0;
+};
+
 
 // Macros to only write if value changed
 // Note: arguments cannot have side effects (eg. i++) since they are evaluated multiple times
 // Also when called after an else, wrap it in {}
+ShadowPreferences shadowPrefs;
 
-#define PREFS_PUT_UCHAR_IF_CHANGED(key, value) \
-    if (!preferences.isKey(key) || preferences.getUChar(key) != (value)) \
-        preferences.putUChar(key, (value));
-
-#define PREFS_PUT_USHORT_IF_CHANGED(key, value) \
-    if (!preferences.isKey(key) || preferences.getUShort(key) != (value)) \
-        preferences.putUShort(key, (value));
-
-#define PREFS_PUT_ULONG_IF_CHANGED(key, value) \
-    if (!preferences.isKey(key) || preferences.getULong(key) != (value)) \
-        preferences.putULong(key, (value));
-
-#define PREFS_PUT_BOOL_IF_CHANGED(key, value) \
-    if (!preferences.isKey(key) || preferences.getBool(key) != (value)) \
-        preferences.putBool(key, (value));
-
-#define PREFS_PUT_STRING_IF_CHANGED(key, value) \
-    if (!preferences.isKey(key) || preferences.getString(key) != (value)) \
-        preferences.putString(key, (value));
+#define PREFS_PUT_UCHAR_IF_CHANGED(key, var)  shadowPrefs.markUChar (key, &(var))
+#define PREFS_PUT_USHORT_IF_CHANGED(key, var) shadowPrefs.markUShort(key, &(var))
+#define PREFS_PUT_ULONG_IF_CHANGED(key, var)  shadowPrefs.markULong (key, &(var))
+#define PREFS_PUT_BOOL_IF_CHANGED(key, var)   shadowPrefs.markBool  (key, &(var))
+#define PREFS_PUT_STRING_IF_CHANGED(key, var) shadowPrefs.markString(key, &(var))
 
 uint16_t LCDPin = 0;                                                        // PINcode to operate LCD keys from web-interface
 uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT, PIN_RS485_RX; //these pins have to be assigned dynamically because of hw version v3.1
@@ -1427,7 +1483,7 @@ void write_settings(void) {
 
     validate_settings();
 
- if (preferences.begin("settings", false) ) {
+ if (shadowPrefs.begin("settings", false) ) {
 
     // Only write values that have actually changed from cached values
     PREFS_PUT_UCHAR_IF_CHANGED("Config", Config);
@@ -1494,7 +1550,7 @@ void write_settings(void) {
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode);
 #endif //ENABLE_OCPP
 
-    preferences.end();
+    shadowPrefs.end();
 
     _LOG_I("settings saved\n");
 #if SMARTEVSE_VERSION >= 40
@@ -1513,10 +1569,6 @@ void write_settings(void) {
 
     ConfigChanged = 1;                                                          // FIXME this variable never reset to 0?
     SEND_TO_CH32(ConfigChanged);
-
-    // Update timestamp after successful write
-    LastSettingsWriteTime = millis();
-    SettingsDirty = false;
 }
 
 
@@ -1525,8 +1577,8 @@ void write_settings(void) {
  * The actual write happens in the main loop when 60 secs have passed since last write
 */ 
 void request_write_settings(void) {
-    SettingsDirty = true;
-    _LOG_D("Settings write requested\n");
+    //the macros called in write_settings guard the 60s limit
+    write_settings();
 }
 
 
@@ -3772,20 +3824,14 @@ void loop() {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3
         // check if settings need to be written
         // and only write when enough time has passed
-        if (SettingsDirty) {
-            if ((lastCheck - LastSettingsWriteTime) >= (SETTINGS_WRITE_INTERVAL * 1000UL) || 
-                (LastSettingsWriteTime == 0)) {  // First write after boot
-                _LOG_A("Writing settings to flash\n");
-                write_settings();
-            }
-        }
+        shadowPrefs.loop();
 #endif
 
          // a reboot is requested, but we kindly wait until EV is not charging
         static uint8_t RebootDelay = 5;      
         if (shouldReboot && State != STATE_C) {                                 //slaves in STATE_C continue charging when Master reboots
             if (RebootDelay-- == 0) {                                           //give user some time to read any message on the webserver
-                if (SettingsDirty) write_settings();                            //write any pending settings before reboot
+                shadowPrefs.flush();
                 ESP.restart();                                                  //use non-blocking code so network_loop() keeps working.
             }
         }
