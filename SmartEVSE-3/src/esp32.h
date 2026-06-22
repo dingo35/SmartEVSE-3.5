@@ -256,29 +256,45 @@ public:
     template<size_t N>   void markString(const char* key, char (*p)[N]) { reg(key, p, &flushCharArray); }
     void                 markString(const char* key, String* p)         { reg(key, p, &flushString);    }
 
-    void loop() {
-        if ((uint32_t)(millis() - lastFlush) >= SETTINGS_WRITE_INTERVAL * 1000UL) {
-            flush();
-        }
-    }
-
-    void flush() {                              // write each dirty key, but only if it changed in NVS
-        prefs.begin("settings", false);
+    void loop(bool force = false) {             // write dirty keys: force=true writes all, else only those past their window
+        uint32_t now = millis();
+        bool opened = false;
         for (auto& kv : entries) {
             Entry& e = kv.second;
-            if (e.dirty) { e.fn(prefs, kv.first.c_str(), e.ptr); e.dirty = false; }
+            if (e.dirty && (force || (uint32_t)(now - e.lastWrite) >= SETTINGS_WRITE_INTERVAL * 1000UL)) {
+                if (!opened) { prefs.begin("settings", false); opened = true; }
+                e.fn(prefs, kv.first.c_str(), e.ptr);
+                e.lastWrite = now;
+                e.dirty     = false;
+            }
         }
-        prefs.end();
-        lastFlush = millis();
+        if (opened) prefs.end();
     }
 
 private:
     typedef void (*FlushFn)(Preferences&, const char*, const void*);
-    struct Entry { const void* ptr = nullptr; FlushFn fn = nullptr; bool dirty = false; };
+    struct Entry {
+        const void* ptr       = nullptr;
+        FlushFn     fn        = nullptr;
+        uint32_t    lastWrite = (uint32_t)0 - SETTINGS_WRITE_INTERVAL * 1000UL;  // "one interval ago" -> a new key writes immediately
+        bool        dirty     = false;          // a write is pending until the window elapses
+    };
 
     void reg(const char* key, const void* p, FlushFn fn) {
         Entry& e = entries[key];
-        e.ptr = p; e.fn = fn; e.dirty = true;
+        e.ptr = p; e.fn = fn;
+        uint32_t now = millis();
+        // Write immediately, unless this key was already written within the last interval.
+        if ((uint32_t)(now - e.lastWrite) >= SETTINGS_WRITE_INTERVAL * 1000UL) {
+            Preferences local;                  // local handle: reg() may run in the web-server task,
+            local.begin("settings", false);     // separate from loop() in the main task
+            e.fn(local, key, e.ptr);
+            local.end();
+            e.lastWrite = now;
+            e.dirty     = false;
+        } else {
+            e.dirty = true;                   // rate-limited: defer to loop()
+        }
     }
 
     template<typename T> static void flushUChar(Preferences& p, const char* k, const void* v) {
@@ -308,7 +324,6 @@ private:
 
     Preferences prefs;
     std::map<String, Entry> entries;
-    uint32_t lastFlush  = 0;
 };
 
 extern ShadowPreferences shadowPrefs;

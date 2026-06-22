@@ -3758,7 +3758,7 @@ void loop() {
         static uint8_t RebootDelay = 5;      
         if (shouldReboot && State != STATE_C) {                                 //slaves in STATE_C continue charging when Master reboots
             if (RebootDelay-- == 0) {                                           //give user some time to read any message on the webserver
-                shadowPrefs.flush();
+                shadowPrefs.loop(true);                                         //force write of pending NVS keys
                 ESP.restart();                                                  //use non-blocking code so network_loop() keeps working.
             }
         }
