@@ -166,7 +166,7 @@ uint16_t maxTemp = MAX_TEMPERATURE;
 
 Meter MainsMeter(MAINS_METER, MAINS_METER_ADDRESS, COMM_TIMEOUT);
 Meter EVMeter(EV_METER, EV_METER_ADDRESS, COMM_EVTIMEOUT);
-Meter CircuitMeter(CIRCUIT_METER, CIRCUIT_METER_ADDRESS, COMM_TIMEOUT);
+Meter CircuitMeter(CIRCUIT_METER, CIRCUIT_METER_ADDRESS, COMM_CIRCTIMEOUT);
 
 uint8_t Nr_Of_Phases_Charging = 3;                                          // Nr of phases we are charging with. Set to 1 or 3, depending on the CONTACT 2 setting, and the MODE we are in.
 Switch_Phase_t Switching_Phases_C2 = NO_SWITCH;                             // Switching between 1P and 3P with the second contactor output, depends on the CONTACT 2 setting, and the MODE.
@@ -1772,7 +1772,7 @@ printf("@MSG: DINGO State=%d, pilot=%d, AccessTimer=%d, PilotDisconnected=%d.\n"
             if (CircuitMeter.Timeout) CircuitMeter.Timeout--;
         }
     } else
-        CircuitMeter.setTimeout(COMM_TIMEOUT);
+        CircuitMeter.setTimeout(COMM_CIRCTIMEOUT);
 
     // Clear communication error, if present
     if ((ErrorFlags & CT_NOCOMM) && MainsMeter.Timeout) clearErrorFlags(CT_NOCOMM);
@@ -2269,7 +2269,7 @@ bool ReadIrms(char *SerialBuf) {
             } else if (Address == CircuitMeter.Address) {
                 for (int x = 0; x < 3; x++)
                     CircuitMeter.Irms[x] = Irms[x];
-                CircuitMeter.setTimeout(COMM_TIMEOUT);
+                CircuitMeter.setTimeout(COMM_CIRCTIMEOUT);
                 CircuitMeter.CalcImeasured();
             }
             return true; //success

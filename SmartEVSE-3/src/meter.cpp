@@ -585,7 +585,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                 CalcIsum();
             } else if (Address == CircuitMeter.Address) {
                 if (receiveCurrentMeasurement(MB)) {
-                    setTimeout(COMM_TIMEOUT);
+                    setTimeout(COMM_CIRCTIMEOUT);
                 }
                 CalcImeasured();
             } else if (Address == EVMeter.Address) {

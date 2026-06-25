@@ -146,6 +146,7 @@
 #define NR_EVSES 8
 #define BROADCAST_ADR 0x09
 #define COMM_TIMEOUT 11                                                         // Timeout for MainsMeter
+#define COMM_CIRCTIMEOUT 20                                                     // Timeout for CircuitMeter
 #define COMM_EVTIMEOUT 8*NR_EVSES                                               // Timeout for EV Energy Meters
 
 #define PILOT_12V   12                                                          // State A - vehicle disconnected

@@ -703,7 +703,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 CircuitMeter.Irms[1] = L2;
                 CircuitMeter.Irms[2] = L3;
                 CircuitMeter.CalcImeasured();
-                CircuitMeter.Timeout = COMM_TIMEOUT;
+                CircuitMeter.Timeout = COMM_CIRCTIMEOUT;
 #else //v4
                 Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
@@ -1232,7 +1232,7 @@ void validate_settings(void) {
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
     EVMeter.setTimeout(COMM_TIMEOUT);                                             // Short Delay, to clear the error message for ~10 seconds.
-    CircuitMeter.setTimeout(COMM_TIMEOUT);
+    CircuitMeter.setTimeout(COMM_CIRCTIMEOUT);
 }
 
 
