@@ -1910,6 +1910,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if (val >= 0 && val <= 3) {
                 CapacityMode = (CapacityMode_t)val;
                 shadowPrefs.markUShort("CapacityMode", &CapacityMode);
+                if (CapacityMode == CAP_DISABLED) {
+                    MaxSumMains = 0;
+                    shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
+                }
                 doc["capacity_mode"] = val;
             }
         }
