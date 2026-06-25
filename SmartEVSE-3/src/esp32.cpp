@@ -1929,7 +1929,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("current_max_sum_mains")->value().toInt();
             if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
                 MaxSumMains = current;
-                shadowPrefs.markUShort("MaxMains", &MaxMains);
+                shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 doc["current_max_sum_mains"] = MaxSumMains;
             } else {
                 doc["current_max_sum_mains"] = "Value not allowed!";
