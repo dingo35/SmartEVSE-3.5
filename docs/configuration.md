@@ -303,6 +303,39 @@ You will need a Backend Provider (BP) that supports the **OCPP 1.6j** protocol. 
 - If the backend uses **OCPP SmartCharging** the SmartEVSE internal power sharing [PWR SHARE](#pwr-share) has to be turned off.
 - **Remote firmware updates** are supported over OCPP. The SmartEVSE only accepts `http://` URLs pointing to signed firmware files.
 
+## TLS and certificate verification (OCPP)
+
+OCPP backends are reached over a secure WebSocket (`wss://`). The connection
+is always encrypted, but certificate verification is **opt-in** and is
+controlled in the **OCPP section** of the dashboard via the *Verify TLS
+Certificate* checkbox:
+
+####  When using wss://, take the following things into account
+
+| Your backend | What to do |
+| --- | --- |
+| You just want it to work, MITM risk acceptable | Leave *Verify TLS Certificate* off (default). The connection is encrypted but the cert is not validated. Note: this doesn't work with Joulo, see below. |
+| Uses a **Let's Encrypt** certificate | Tick *Verify TLS Certificate* and leave the *CA Certificate (PEM)* field empty — the Let's Encrypt root is built in. |
+| **Not** Let's Encrypt (self-hosted SteVe, private CAs, internal PKI) | Tick *Verify TLS Certificate* and paste the backend's CA certificate **or** its own server certificate into *CA Certificate (PEM)*. |
+
+The OCPP status line shows the verification state once connected:
+*Connected (TLS verified)* or *Connected (TLS not verified)*.
+
+Notes:
+
+- Some providers use **SNI** / name-based virtual hosts (for example **Joulo**)
+  and will only connect over `wss://` when *Verify TLS Certificate* is ticked
+  — the firmware only sends SNI on the verifying TLS path. When the provider
+  uses a Let's Encrypt certificate (Joulo does), you do **not** need to upload
+  a PEM: the built-in Let's Encrypt root is used automatically.
+- A pasted certificate takes precedence over the built-in Let's Encrypt root.
+  You may paste either the issuing CA or the backend's own server certificate
+  (the latter is certificate pinning — it stops working when that leaf cert
+  expires, typically a few months).
+- To obtain a backend's server certificate to paste:
+  `openssl s_client -connect HOST:443 -servername HOST </dev/null | openssl x509 -outform pem`
+  — but the provider's root CA is preferable since it remains valid much longer.
+
 For user experiences with backend providers, see [OCPP Backends](ocpp.md).
 
 # REST API
