@@ -34,12 +34,10 @@
 #include <esp_adc_cal.h>
 
 //OCPP includes
-#if ENABLE_OCPP
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
-#endif //ENABLE_OCPP
 
 struct DelayedTimeStruct DelayedStartTime;
 struct DelayedTimeStruct DelayedStopTime;
@@ -198,13 +196,11 @@ uint16_t firmwareUpdateTimer = 0;                                               
                                                                                 // FW_UPDATE_DELAY <= timer <= 0xffff means we are in countdown for checking
                                                                                 //                                              whether an update is necessary
 
-#if ENABLE_OCPP
 extern unsigned long OcppLastRfidUpdate;
 extern bool OcppForcesLock;
 extern float OcppCurrentLimit; // Negative value: no OCPP limit defined
 extern unsigned long OcppLastTxNotification;
 extern MicroOcpp::TxNotification OcppTrackTxNotification;
-#endif //ENABLE_OCPP
 
 EXT uint32_t elapsedmax, elapsedtime;
 
@@ -850,7 +846,6 @@ char IsCurrentAvailable(void) {
     }
 
 // Use OCPP Smart Charging if Load Balancing is turned off
-#if ENABLE_OCPP
     if (OcppMode &&                            // OCPP enabled
             !LoadBl &&                         // Internal LB disabled
             OcppCurrentLimit >= 0.f &&         // OCPP limit defined
@@ -858,7 +853,6 @@ char IsCurrentAvailable(void) {
         printf("@MSG: OCPP Smart Charging suspends EVSE\n");
         return 0;
     }
-#endif //ENABLE_OCPP
 
     //printf("@MSG: Current available checkpoint D. ActiveEVSE increased by one=%u, TotalCurrent=%d.%dA, StartCurrent=%uA, Isum=%d.%dA, ImportCurrent=%uA.\n", ActiveEVSE, TotalCurrent/10, abs(TotalCurrent%10), StartCurrent, Isum/10, abs(Isum%10), ImportCurrent);
     return 1;
@@ -884,7 +878,6 @@ void CalcBalancedCurrent(char mod) {
         ChargeCurrent = MaxCurrent * 10;                                        // Instead use new variable ChargeCurrent.
 
 // Use OCPP Smart Charging if Load Balancing is turned off
-#if ENABLE_OCPP
     if (OcppMode &&                      // OCPP enabled
             !LoadBl &&                   // Internal LB disabled
             OcppCurrentLimit >= 0.f) {   // OCPP limit defined
@@ -895,7 +888,6 @@ void CalcBalancedCurrent(char mod) {
             ChargeCurrent = std::min(ChargeCurrent, (uint16_t) (10.f * OcppCurrentLimit));
         }
     }
-#endif //ENABLE_OCPP
 
     // Override current temporary if set
     if (OverrideCurrent)
@@ -1981,11 +1973,8 @@ static unsigned int locktimer = 0, unlocktimer = 0;
     // Check if the cable lock is used
     if (!Config && Lock) {                                      // Socket used and Cable lock enabled?
         // UnlockCable takes precedence over LockCable
-        if ((RFIDReader == 2 && AccessStatus == OFF) ||        // One RFID card can Lock/Unlock the charging socket (like a public charging station)
-#if ENABLE_OCPP
-        (OcppMode &&!OcppForcesLock) ||
-#endif
-            State == STATE_A) {                                 // The charging socket is unlocked when unplugged from the EV
+        if ((RFIDReader == 2 && AccessStatus == OFF) ||         // One RFID card can Lock/Unlock the charging socket (like a public charging station)
+        (OcppMode &&!OcppForcesLock) || State == STATE_A) {     // The charging socket is unlocked when unplugged from the EV
             if (CableLock != 1 && Lock != 0) {                  // CableLock is Enabled, do not unlock
                 if (unlocktimer == 0) {                         // 600ms pulse
                     ACTUATOR_UNLOCK;
@@ -2001,11 +1990,7 @@ static unsigned int locktimer = 0, unlocktimer = 0;
                 locktimer = 0;
             }
         // Lock Cable    
-        } else if (State != STATE_A                            // Lock cable when connected to the EV
-#if ENABLE_OCPP
-        || (OcppMode && OcppForcesLock)
-#endif
-        ) {
+        } else if (State != STATE_A || (OcppMode && OcppForcesLock) ) { // Lock cable when connected to the EV
             if (locktimer == 0) {                               // 600ms pulse
                 ACTUATOR_LOCK;
             } else if (locktimer == 6) {
@@ -2279,11 +2264,7 @@ static unsigned int LedPwm = 0;                                                /
         RedPwm = ColorCustom[0];
         GreenPwm = ColorCustom[1];
         BluePwm = ColorCustom[2];
-#if ENABLE_OCPP
     } else if (!LedMode && (AccessStatus == OFF || State == STATE_MODEM_DENIED)) {
-#else
-    } else if (AccessStatus == OFF || State == STATE_MODEM_DENIED) {
-#endif
         RedPwm = ColorOff[0];
         GreenPwm = ColorOff[1];
         BluePwm = ColorOff[2];
@@ -2309,8 +2290,6 @@ static unsigned int LedPwm = 0;                                                /
                 GreenPwm = LedPwm * ColorNormal[1] / 255;
                 BluePwm = LedPwm * ColorNormal[2] / 255;
             }    
-
-#if ENABLE_OCPP
     } else if (LedMode) {
         // Public LED color scheme
         unsigned long now = millis();
@@ -2367,7 +2346,6 @@ static unsigned int LedPwm = 0;                                                /
             GreenPwm = 0;
             BluePwm = LedPwm;
         }
-#endif //ENABLE_OCPP
     } else {                                                                // State A, B or C
 
         if (State == STATE_A) {

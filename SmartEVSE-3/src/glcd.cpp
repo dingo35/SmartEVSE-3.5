@@ -33,10 +33,7 @@
 #include "network_common.h"
 #include "font.cpp"
 #include "font2.cpp"
-
-#if ENABLE_OCPP
 #include <MicroOcpp.h>
-#endif
 
 const unsigned char LCD_Flow [] = {
 0x00, 0x00, 0x98, 0xCC, 0x66, 0x22, 0x22, 0x22, 0xF2, 0xAA, 0x26, 0x2A, 0xF2, 0x22, 0x22, 0x22, 
@@ -634,8 +631,7 @@ void GLCD(void) {
         glcd_clrln(6, 0x10);                                                    // horizontal line
         glcd_clrln(7, 0x00);
 
-#if ENABLE_OCPP
-        if (OcppMode &&                                          // OCPP enabled
+        if (OcppMode && 
                 (getItemValue(MENU_RFIDREADER) == 6 || getItemValue(MENU_RFIDREADER) == 0) && // RFID in OCPP mode or disabled
                 ocppHasTxNotification()) {                                      // There is an OCPP event to display
             BacklightTimer = BACKLIGHT;
@@ -678,9 +674,7 @@ void GLCD(void) {
                 default:
                     break;
             }
-        } else
-#endif //ENABLE_OCPP
-        if (ErrorFlags & LESS_6A && AccessStatus == ON) {
+        } else if (ErrorFlags & LESS_6A && AccessStatus == ON) {
             GLCD_print_buf2(2, (const char *) "WAITING");
             GLCD_print_buf2(4, (const char *) "FOR POWER");
 #if MODEM
@@ -718,7 +712,6 @@ void GLCD(void) {
             } else if (AccessStatus == PAUSE) {
                 GLCD_print_buf2(2, (const char *) "PAUSE");
             } else {
-#if ENABLE_OCPP
                 if (OcppMode &&                                  // OCPP enabled
                         (getItemValue(MENU_RFIDREADER) == 6 || getItemValue(MENU_RFIDREADER) == 0)) { // RFID in OCPP mode or disabled
                     switch (getChargePointStatus()) {
@@ -769,9 +762,7 @@ void GLCD(void) {
                         default:
                             break;
                     }
-                } else
-#endif //ENABLE_OCPP
-                if (getItemValue(MENU_RFIDREADER)) {
+                } else if (getItemValue(MENU_RFIDREADER)) {
                     if (RFIDstatus == 7) {
                         GLCD_print_buf2(2, (const char *) "INVALID");
                         GLCD_print_buf2(4, (const char *) "RFID CARD");

@@ -56,17 +56,10 @@
 #define INJECT_CURRENT_L3 0
 #endif
 
-#ifndef ENABLE_OCPP
-#define ENABLE_OCPP 0
-#endif
-
 #include "debug.h"
 #include "stdint.h"
 #include "main_c.h"
 
-#if ENABLE_OCPP //TODO perhaps move to esp32.h
-#include <MicroOcpp/Model/ConnectorBase/Notification.h>
-#endif
 
 #ifndef MODEM //TODO perhaps move to esp32.h
 //the wifi-debugger is available by telnetting to your SmartEVSE device

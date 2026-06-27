@@ -32,6 +32,7 @@
 #include "meter.h"
 #include <map>
 #include <Preferences.h>
+#include <MicroOcpp/Model/ConnectorBase/Notification.h>
 
 // Pin definitions left side ESP32
 #define PIN_TEMP 36
@@ -160,7 +161,7 @@ const struct {
     {"PWR SHARE", "Share Power between multiple SmartEVSEs (2-8)",    0, NR_EVSES, LOADBL},
     {"SWITCH",  "Switch function control on pin SW",                  0, 7, SWITCH},
     {"RCMON",   "Residual Current Monitor on pin RCM",                0, 1, RC_MON},
-    {"RFID",    "RFID reader, learn/remove cards",                    0, 5 + (ENABLE_OCPP ? 1 : 0), RFID_READER},
+    {"RFID",    "RFID reader, learn/remove cards",                    0, 6, RFID_READER},
     {"EV METER","Type of EV electric meter",                          0, (uint16_t) (EMConfigSize / sizeof(EMConfig[0])-1), EV_METER},
     {"EV ADDR", "Address of EV electric meter",                       MIN_EV_METER_ADDRESS, MAX_METER_ADDRESS, EV_METER_ADDRESS},
     {"EV HST", "Partial mDNS hostname of EV electric meter",          0, 9, 1},
@@ -322,7 +323,6 @@ private:
 
 extern ShadowPreferences shadowPrefs;
 
-#if ENABLE_OCPP
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
 bool ocppIsConnectorPlugged();
 
@@ -330,7 +330,5 @@ bool ocppHasTxNotification();
 MicroOcpp::TxNotification ocppGetTxNotification();
 
 bool ocppLockingTxDefined();
-#endif //ENABLE_OCPP
-
 
 #endif

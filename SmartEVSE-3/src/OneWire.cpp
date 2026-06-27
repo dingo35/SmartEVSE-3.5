@@ -256,7 +256,6 @@ void CheckRFID(void) {
     uint16_t x;
     // When RFID is enabled, a OneWire RFID reader is expected on the SW input
     uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
-#if ENABLE_OCPP
             if (OcppMode && RFIDReader == 6) {                                      // Remote authorization via OCPP?
                 // Use OCPP
                 if (!RFIDstatus) {
@@ -275,9 +274,7 @@ void CheckRFID(void) {
                     }
                 }
                 RFIDstatus = 1;
-            } else
-#endif
-            {
+            } else {
                 // Use local whitelist
 
                 switch (RFIDReader) {

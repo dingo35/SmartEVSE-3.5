@@ -51,13 +51,11 @@ char RequiredEVCCID[32] = "";                                               // R
 #include "meter.h"
 
 //OCPP includes
-#if ENABLE_OCPP
 #include <MicroOcpp.h>
 #include <MicroOcppMongooseClient.h>
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
 #include <MicroOcpp/Model/FirmwareManagement/FirmwareService.h>
-#endif //ENABLE_OCPP
 
 
 // Create a ModbusRTU server, client and bridge instance on Serial1
@@ -205,7 +203,6 @@ extern uint16_t firmwareUpdateTimer;
 extern OneWire32& ds();
 extern CapacityNode* first_interval;
 
-#if ENABLE_OCPP
 uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
 
 unsigned char OcppRfidUuid [7];
@@ -231,7 +228,6 @@ MicroOcpp::TxNotification OcppTrackTxNotification;
 unsigned long OcppLastTxNotification;
 
 unsigned long OcppLastOcppResponse = 0; // Timestamp of last OCPP-level response (not WS pings)
-#endif //ENABLE_OCPP
 
 
 // Some low level stuff here to setup the ADC, and perform the conversion.
@@ -305,8 +301,7 @@ void IRAM_ATTR onTimerA() {
 
 // --------------------------- END of ISR's -----------------------------------------------------
 
-#if ENABLE_OCPP
-// Inverse function of SetCurrent (for monitoring and debugging purposes)
+// Inverse function of SetCurrent (for monitoring and debugging purposes); used by OCPP
 uint16_t GetCurrent() {
     uint32_t DutyCycle = CurrentPWM;
 
@@ -320,7 +315,6 @@ uint16_t GetCurrent() {
         return 0; //constant +12V
     }
 }
-#endif //ENABLE_OCPP
 
 
 // Sample the Temperature sensor.
@@ -847,11 +841,8 @@ void SetupMQTTClient() {
     MQTTclient.announce("RFID",          "sensor", "");
     MQTTclient.announce("RFIDLastRead",  "sensor", "");
     MQTTclient.announce("NrOfPhases",    "sensor", "");
-
-#if ENABLE_OCPP
     MQTTclient.announce("OCPP",           "sensor", "");
     MQTTclient.announce("OCPPConnection", "sensor", "");
-#endif //ENABLE_OCPP
 
     // LED color text entities: build state_topic/command_topic with snprintf.
     #define ANN_LED(label, slug) do { \
@@ -1006,10 +997,8 @@ void mqttPublishData() {
         }
         if (homeBatteryLastUpdate)
             mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
-#if ENABLE_OCPP
         mqPubS("/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
         mqPubS("/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
-#endif //ENABLE_OCPP
         {
             // RGB values: build "R,G,B" on the stack.
             char vbuf[16];
@@ -1288,10 +1277,7 @@ void read_settings() {
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
         LedMode = preferences.getUChar("LedMode", 0);
-
-#if ENABLE_OCPP
         OcppMode = preferences.getUChar("OcppMode", OCPP_MODE);
-#endif //ENABLE_OCPP
 
         preferences.end();                                  
 
@@ -1368,10 +1354,7 @@ void write_settings(void) {
     PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin);
     PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer);
     PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode);
-
-#if ENABLE_OCPP
     PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode);
-#endif //ENABLE_OCPP
 
     _LOG_I("settings saved\n");
 
@@ -1670,8 +1653,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
         doc["mqtt"]["smartevse_server"] = MQTTSmartServer;
 #endif
-
-#if ENABLE_OCPP
         doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
         doc["ocpp"]["backend_url"] = OcppWsClient ? OcppWsClient->getBackendUrl() : "";
         doc["ocpp"]["cb_id"] = OcppWsClient ? OcppWsClient->getChargeBoxId() : "";
@@ -1689,7 +1670,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         } else {
             doc["ocpp"]["status"] = "Disconnected";
         }
-#endif //ENABLE_OCPP
 
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
@@ -2022,7 +2002,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
-#if ENABLE_OCPP
         if(request->hasParam("ocpp_update")) {
             if (request->getParam("ocpp_update")->value().toInt() == 1) {
 
@@ -2086,7 +2065,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 MicroOcpp::configuration_save();
             }
         }
-#endif //ENABLE_OCPP
 
         mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n");
@@ -2493,7 +2471,6 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 /*
  * OCPP-related function definitions
  */
-#if ENABLE_OCPP
 
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
     if (!uuid || uuidLen > sizeof(OcppRfidUuid)) {
@@ -2993,7 +2970,6 @@ void ocppLoop() {
     OcppForcesLock = ocppLock;
 
 }
-#endif //ENABLE_OCPP
 
 
 void BuzzConfirmation (void) {
@@ -3506,7 +3482,6 @@ void loop() {
     }
 
     //OCPP lifecycle management
-#if ENABLE_OCPP
     if (OcppMode && !getOcppContext() && NetworkConnected()) {
         ocppInit();
     } else if (!OcppMode && getOcppContext()) {
@@ -3516,6 +3491,4 @@ void loop() {
     if (OcppMode && getOcppContext()) {
         ocppLoop();
     }
-#endif //ENABLE_OCPP
-
 }
