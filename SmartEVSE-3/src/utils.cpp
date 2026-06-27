@@ -83,7 +83,6 @@ uint8_t ease8InOutQuad(uint8_t i) {
     return jj2;
 }
 
-#ifdef SMARTEVSE_VERSION //ESP32
 #include "esp32.h"
 #include "utils.h"
 
@@ -122,38 +121,3 @@ void sprintfl(char *str, const char *Format, signed long Value, unsigned char Di
     else sprintf(str, Format, (signed int) val);
 }
 
-#else //CH32
-#include "ch32v003fun.h"
-#include "ch32.h"
-#include "evse.h"
-#include "utils.h"
-
-
-/**
- * Calculates 16-bit CRC of given data
- * used for Frame Check Sequence on data frame
- *
- * @param unsigned char pointer to buffer
- * @param unsigned char length of buffer
- * @return unsigned int CRC
- */
-uint16_t crc16(uint8_t *buf, uint8_t len) {
-    uint16_t pos, crc = 0xffff;
-    uint8_t i;
-
-    // Poly used is x^16+x^15+x^2+x
-    for (pos = 0; pos < len; pos++) {
-        crc ^= (uint16_t)buf[pos];                  // XOR byte into least sig. byte of crc
-
-        for (i = 8; i != 0; i--) {                  // Loop over each bit
-            if ((crc & 0x0001) != 0) {              // If the LSB is set
-                crc >>= 1;                          // Shift right and XOR 0xA001
-                crc ^= 0xA001;
-            } else                                  // Else LSB is not set
-                crc >>= 1;                          // Just shift right
-        }
-    }
-
-    return crc;
-}
-#endif

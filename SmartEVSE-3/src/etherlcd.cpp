@@ -47,8 +47,6 @@
 
 #include <Arduino.h>
 
-#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
-
 #include "debug.h"
 #include "etherlcd.h"
 #include "driver/spi_master.h"
@@ -214,4 +212,3 @@ void etherlcd_lcd_data(uint8_t data) {
 void etherlcd_eth_rst(bool active) {
     etherlcd_reg_write(ELCD_REG_ETH_RST, active ? 1 : 0);
 }
-#endif // SMARTEVSE_VERSION >= 30 && < 40

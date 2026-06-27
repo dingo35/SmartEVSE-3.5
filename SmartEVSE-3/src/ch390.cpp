@@ -6,9 +6,6 @@
  */
 
 #include <Arduino.h>
-
-#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
-
 #include "ch390.h"
 #include "network_common.h"
 #include <string.h>
@@ -999,5 +996,3 @@ esp_err_t ch390_eth_init(void) {
     _LOG_I("CH390D Ethernet initialized, DHCP started\n");
     return ESP_OK;
 }
-
-#endif // SMARTEVSE_VERSION >= 30 && < 40

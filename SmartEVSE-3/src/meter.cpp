@@ -62,9 +62,7 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
     Import_active_energy = 0;
     Export_active_energy = 0;
     Energy = 0;
-#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
     Timeout = timeout;
-#endif
     EnergyCharged = 0;                                                  // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
     EnergyMeterStart = 0;                                               // kWh meter value is stored once EV is connected to EVSE (Wh)
     PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
@@ -72,7 +70,6 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
                                                                         // cleared when charging, reset to 1 when disconnected (state A)
 }
 
-#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
 /**
  * Combine Bytes received over modbus
  *
@@ -227,22 +224,13 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
                     SB2.WIFImodeSynced = 1;
                     if (SB2.WIFImode != SB2_WIFImode) {
                         SB2_WIFImode = SB2.WIFImode;
-#ifdef SMARTEVSE_VERSION //ESP32
                         shadowPrefs.markUChar("SB2WIFImode", &SB2_WIFImode);
-
-#else //CH32
-                        printf("@write_settings\n");
-#endif
                     }
                 }
 
                 if (SB2_WIFImode == 2 && SB2.WiFiConnected && !SubMenu) {
                     SB2_WIFImode = 1;                                       // Portal active and connected? Switch back to Enabled.
-#ifdef SMARTEVSE_VERSION //ESP32
                     shadowPrefs.markUChar("SB2WIFImode", &SB2_WIFImode);
-#else //CH32
-                    printf("@write_settings\n");
-#endif
                     LCDNav = 0;
                 }
 
@@ -256,11 +244,7 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
 
             // Set Sensorbox 2 to 3/4 Wire configuration (and phase Rotation) (v2.16)
             bool localGridActive = (buf[1] >= 0x10 && offset == 7);
-#ifdef SMARTEVSE_VERSION // ESP32 v3
             GridActive = localGridActive;                                       // Enable the GRID menu option
-#else //CH32
-            printf("@GridActive:%u\n", localGridActive);
-#endif
             if (localGridActive && (buf[1] & 0x3) != (Grid << 1) && (LoadBl < 2)) ModbusWriteSingleRequest(0x0A, 0x800, Grid << 1);
             break;
         }
@@ -328,18 +312,12 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
             PowerMeasured += Power[x];
             if (Power[x] < 0) var[x] = -var[x];
         }
-#ifndef SMARTEVSE_VERSION //CH32
-        printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
-#endif
     }
 
     // Convert Irms from mA to deciAmpère (A * 10)
     for (x = 0; x < 3; x++) {
         Irms[x] = (var[x] / 100);            // Convert to AMPERE * 10
     }
-#ifndef SMARTEVSE_VERSION //CH32
-    printf("@Irms:%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
-#endif
     // all OK
     return 1;
 }
@@ -405,24 +383,15 @@ signed int Meter::receivePowerMeasurement(uint8_t *buf) {
             return decodeMeasurement(buf, 0, EMConfig[Type].PDivisor);
     }
 }
-#endif
 
 
 void Meter::UpdateEnergies() {
     Energy = Import_active_energy - Export_active_energy;
     if (ResetKwh == 2) EnergyMeterStart = Energy;                               // At powerup, set Energy to kwh meter value
     EnergyCharged = Energy - EnergyMeterStart;                                  // Calculate Energy
-#ifndef SMARTEVSE_VERSION //CH32
-    printf("@Energy:%03u,%ld\n", Address, Energy);
-    printf("@EnergyMeterStart:%03u,%ld\n", Address, EnergyMeterStart);
-    printf("@EnergyCharged:%03d,%ld\n", Address, EnergyCharged);
-    printf("@Import_active_energy:%03d,%ld\n", Address, Import_active_energy);
-    printf("@Export_active_energy:%03d,%ld\n", Address, Export_active_energy);
-#else //ESP32 v3 and v4
 #if MODEM
     RecomputeSoC();
 #endif //MODEM
-#endif //SMARTEVSE_VERSION
 }
 
 
@@ -561,17 +530,7 @@ void Meter::UpdatePower() {
 
     
 void Meter::setTimeout(uint8_t NewTimeout) {
-#if SMARTEVSE_VERSION >= 40 //v4 ESP32
-    if (Address == MainsMeter.Address) {
-        Serial1.printf("@MainsMeterTimeout:%u\n", NewTimeout);
-    } else if (Address == EVMeter.Address) {
-        Serial1.printf("@EVMeterTimeout:%u\n", NewTimeout);
-    } else if (Address == CircuitMeter.Address) {
-        Serial1.printf("@CircuitMeterTimeout:%u\n", NewTimeout);
-    }
-#else
     Timeout = NewTimeout;
-#endif
 }
 
 // Calls appropriate measurement from response
@@ -597,9 +556,6 @@ void Meter::ResponseToMeasurement(ModBus MB) {
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
             UpdatePower();
-#ifndef SMARTEVSE_VERSION //CH32
-            printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
-#endif
         } else if (MB.Register == EMConfig[Type].ERegister) {
             //import active energy
             if (Type == EM_EASTRON3P_INV)

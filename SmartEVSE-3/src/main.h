@@ -157,13 +157,6 @@
 #define PILOT_NOK   0
 #define PILOT_SHORT 255
 
-#ifndef SMARTEVSE_VERSION
-#define _RSTB_0 digitalWrite(PIN_LCD_RST, LOW);
-#define _RSTB_1 digitalWrite(PIN_LCD_RST, HIGH);
-#define _A0_0 digitalWrite(PIN_LCD_A0_B2, LOW);
-#define _A0_1 digitalWrite(PIN_LCD_A0_B2, HIGH);
-#endif
-
 #define STATE_A_LED_BRIGHTNESS 40
 #define STATE_B_LED_BRIGHTNESS 255
 #define ERROR_LED_BRIGHTNESS 255
@@ -176,9 +169,6 @@ void setPilot(bool On);
 #define PILOT_CONNECTED setPilot(true);
 #define PILOT_DISCONNECTED setPilot(false);
 
-//TODO this can be integrated by choosing same definitions
-#ifdef SMARTEVSE_VERSION //ESP32
-
 #define BACKLIGHT_ON digitalWrite(PIN_LCD_LED, HIGH);
 #define BACKLIGHT_OFF digitalWrite(PIN_LCD_LED, LOW);
 
@@ -187,32 +177,11 @@ void setPilot(bool On);
 #define ACTUATOR_OFF { digitalWrite(PIN_ACTB, HIGH); digitalWrite(PIN_ACTA, HIGH); }
 
 #define RCMFAULT digitalRead(PIN_RCM_FAULT) //TODO ok for v4?
-#if SMARTEVSE_VERSION >=40
-#define SEND_TO_CH32(X) Serial1.printf("@%s:%u\n", #X, X); _LOG_V("[->] %s:%u\n", #X, X);
-#define SEND_TO_ESP32(X) //dummy
-#else //v3
-#define SEND_TO_CH32(X) //dummy
-#define SEND_TO_ESP32(X) //dummy
 #define CONTACTOR1_ON _LOG_A("@MSG: Switching Contactor1 ON.\n"); digitalWrite(PIN_SSR, HIGH);
 #define CONTACTOR1_OFF _LOG_A("@MSG: Switching Contactor1 OFF.\n"); digitalWrite(PIN_SSR, LOW);
 
 #define CONTACTOR2_ON _LOG_A("@MSG: Switching Contactor2 ON.\n"); digitalWrite(PIN_SSR2, HIGH);
 #define CONTACTOR2_OFF _LOG_A("@MSG: Switching Contactor2 OFF.\n"); digitalWrite(PIN_SSR2, LOW);
-#endif
-#else //CH32
-#define SEND_TO_CH32(X) //dummy
-#define SEND_TO_ESP32(X) printf("@%s:%u\n", #X, X);
-
-#define CONTACTOR1_ON printf("@MSG: Switching Contactor1 ON.\n"); funDigitalWrite(SSR1, FUN_HIGH);
-#define CONTACTOR1_OFF printf("@MSG: Switching Contactor1 OFF.\n"); funDigitalWrite(SSR1, FUN_LOW);
-
-#define CONTACTOR2_ON printf("@MSG: Switching Contactor2 ON.\n"); funDigitalWrite(SSR2, FUN_HIGH);
-#define CONTACTOR2_OFF printf("@MSG: Switching Contactor2 OFF.\n"); funDigitalWrite(SSR2, FUN_LOW);
-
-#define ACTUATOR_LOCK { funDigitalWrite(ACTB, FUN_HIGH); funDigitalWrite(ACTA, FUN_LOW); }
-#define ACTUATOR_UNLOCK { funDigitalWrite(ACTB, FUN_LOW); funDigitalWrite(ACTA, FUN_HIGH); }
-#define ACTUATOR_OFF { funDigitalWrite(ACTB, FUN_HIGH); funDigitalWrite(ACTA, FUN_HIGH); }
-#endif
 
 #define MODBUS_INVALID 0
 #define MODBUS_OK 1
