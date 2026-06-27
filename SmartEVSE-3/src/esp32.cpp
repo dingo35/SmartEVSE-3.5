@@ -1589,14 +1589,19 @@ void DisconnectEvent(void){
     _LOG_A("EV disconnected for a while. Resetting SoC states");
     uint8_t ModemStage = 0; // Enable Modem states again
     SEND_TO_CH32(ModemStage)
-    InitialSoC = -1;
-    FullSoC = -1;
-    RemainingSoC = -1;
-    ComputedSoC = -1;
-    EnergyCapacity = -1;
-    EnergyRequest = -1;
-    TimeUntilFull = -1;
-    strncpy(EVCCID, "", sizeof(EVCCID));
+    // Delete only when EV is disconnected (State == STATE_A)
+    if (State == STATE_A) {
+        InitialSoC = -1;
+        FullSoC = -1;
+        ComputedSoC = -1;
+        EnergyCapacity = -1;
+        EnergyRequest = -1;
+        TimeUntilFull = -1;
+        strncpy(EVCCID, "", sizeof(EVCCID));
+        _LOG_A("Reset SoC and EVCCID (EV is disconnected - STATE_A)");
+    } else {
+        _LOG_A("Keep SoC (EV is still connected)");
+    }
 }
 #endif //MODEM
 
