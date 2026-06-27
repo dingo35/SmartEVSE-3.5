@@ -10,7 +10,7 @@ OLD_CURRENT=20
 #energy in Wh:
 ENERGY=0
 while true; do
-    read -t 5 CURRENT
+    read -t 2 CURRENT
     if [ $CURRENT"x" == "x" ]; then
         CURRENT=$OLD_CURRENT
     else

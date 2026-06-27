@@ -171,8 +171,10 @@ extern std::array<mDNSServiceEntry, 8> mDNSServices;                            
                                                                                 // if there is a use case for more we can always increase this
 #endif
 
+extern bool isMDNSDiscoveryInProgress(void);
 extern void discoverNetworkMeters();
 extern void compileServiceName(int type, const char *hostname, char *output, size_t outputSize);
+extern void clearmDNSServices();
 extern uint8_t getmDNSServiceCount(int type);
 extern uint8_t getmDNSServiceCount();
 extern uint8_t getCompatiblemDNSServiceCount(uint8_t meterType);

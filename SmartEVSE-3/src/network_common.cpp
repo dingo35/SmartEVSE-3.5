@@ -93,7 +93,6 @@ extern void StopwebServer(void); //TODO or move over to network.cpp?
 extern void StartwebServer(void); //TODO or move over to network.cpp?
 extern bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request);
 extern uint8_t AutoUpdate;
-extern Preferences preferences;
 extern uint16_t firmwareUpdateTimer;
 
 uint32_t serialnr = 0;
@@ -954,6 +953,7 @@ std::array<mDNSServiceEntry, 8> mDNSServices = {};
 HTTPClient* homeWizardHttpClient=nullptr;
 bool homeWizardHttpClientInitialized = false;
 static bool mdnsDiscoveryInProgress = false;            // True when async mDNS task is running
+static bool mdnsDiscoveryHasRun = false;                // True after mDNS discovery has been executed for the current network state
 static unsigned long lastMdnsQueryTime = 0;             // Last time mDNS query was attempted
 static const unsigned long MDNS_RETRY_INTERVAL = 30000; // Retry mDNS discovery every 30 seconds if not found
 
@@ -987,11 +987,17 @@ static bool appendDiscoveredService(const String &hostname, uint16_t port, const
 /**
  * @brief Clear the cached mDNS discovery table.
  */
-static void clearmDNSServices() {
+void clearmDNSServices() {
     for (auto &service : mDNSServices) {
         service.ServiceType = 0;
         service.HostName = "";
     }
+    mdnsDiscoveryHasRun = false;
+    lastMdnsQueryTime = 0;
+}
+
+bool isMDNSDiscoveryInProgress(void) {
+    return mdnsDiscoveryInProgress;
 }
 
 /**
@@ -1198,6 +1204,7 @@ void mdnsDiscoveryTask(void* parameter) {
         _LOG_A("No matching mDNS services found.\n");
     }
 
+    mdnsDiscoveryHasRun = true;
     mdnsDiscoveryInProgress = false;
     _LOG_A("mDNS discovery task completed\n");
     vTaskDelete(NULL);
@@ -1284,11 +1291,10 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     const int httpCode = homeWizardHttpClient->GET();
     if (httpCode != HTTP_CODE_OK) {
         _LOG_A("Error on HTTP request (httpCode=%i), url=%s.\n", httpCode, url);
-        homeWizardHttpClient->end(); // Drop this request's socket; keep the client object so we don't churn the heap on every transient error.
-        if (httpCode < 0) {
-            lastMdnsQueryTime = 0; // Force immediate rediscovery on next attempt if the error was a connection failure
-            _LOG_A("Connection failed, allowing immediate rediscovery.\n");
-        }
+        homeWizardHttpClient->end(); // Always cleanup
+        delete homeWizardHttpClient;
+        homeWizardHttpClient = nullptr;
+        homeWizardHttpClientInitialized = false;
         return {false, {0, 0, 0, 0, 0, 0}};
     }
 
@@ -1310,7 +1316,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     }
 
     // Stack-allocated JSON document for the parsed response.
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     const DeserializationError error = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
     homeWizardHttpClient->end();
 
@@ -2128,7 +2134,6 @@ static void startNetworkServices(void) {
 // Can be called from both WiFi and Ethernet got-IP events.
 void onGotIP(const char *dns_ip) {
     clearmDNSServices();
-    lastMdnsQueryTime = 0;
 
     // Load DHCP DNS into mongoose
     static char dns4url[] = "udp://123.123.123.123:53";
@@ -2434,7 +2439,7 @@ void network_loop() {
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
 
-    if (NetworkConnected() && getmDNSServiceCount() == 0 &&
+    if (NetworkConnected() && !mdnsDiscoveryHasRun &&
             (MainsMeter.Type == EM_HOMEWIZARD ||
              EVMeter.Type == EM_HOMEWIZARD ||
              CircuitMeter.Type == EM_HOMEWIZARD)) {

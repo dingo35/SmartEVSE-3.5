@@ -27,8 +27,6 @@
 #define __ONEWIRE_H
 #ifdef SMARTEVSE_VERSION //ESP32
 
-extern Preferences preferences;
-
 void ReadRFIDlist(void);
 void DeleteAllRFID(void);
 void CheckRFID(void);

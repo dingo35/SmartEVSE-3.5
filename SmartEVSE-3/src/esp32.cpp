@@ -128,70 +128,17 @@ extern ModbusMessage MBEVMeterResponse(ModbusMessage request);
 hw_timer_t * timerA = NULL;
 Preferences preferences;
 
-// delayed write settings - reduces flash wear by combining multiple writes into one
-static bool SettingsDirty = false;                      // Flag indicating settings need to be written
-static unsigned long LastSettingsWriteTime = 0;         // millis() timestamp of last write
-
-// Cache structure for detecting changed values - only write values that actually changed
-struct SettingsCache {
-    uint8_t Config, Lock, Mode, AccessStatus;
-    uint16_t CardOffset;
-    uint32_t DelayedStartTime, DelayedStopTime;
-    uint16_t DelayedRepeat;
-    uint8_t LoadBl;
-    uint16_t MaxMains, MaxSumMains, MaxSumMainsTime, MaxCurrent, MinCurrent, MaxCircuit;
-    uint8_t Switch, RCmon;
-    uint16_t StartCurrent, StopTime, ImportCurrent;
-    uint8_t Grid, SB2_WIFImode, RFIDReader;
-    uint8_t MainsMeterType, MainsMeterAddress, EVMeterType, EVMeterAddress, CircuitMeterType, CircuitMeterAddress;
-    char MainsMeterDeviceHostName[32];
-    char EVMeterDeviceHostName[32];
-    char CircuitMeterDeviceHostName[32];
-    uint8_t EMEndianness, EMIDivisor, EMUDivisor, EMPDivisor, EMEDivisor, EMDataType, EMFunction;
-    uint16_t EMIRegister, EMURegister, EMPRegister, EMERegister;
-    uint8_t WIFImode;
-    uint8_t CapacityMode;
-    uint16_t EnableC2;
-    char intervals_json[128];
-#if MODEM
-    char RequiredEVCCID[32];
-#endif
-    uint16_t maxTemp;
-    uint8_t AutoUpdate, LCDlock, CableLock;
-    uint16_t LCDPin;
-    bool MQTTSmartServer;
-    uint8_t LedMode;
-#if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
-    uint8_t OcppMode;
-#endif
-    bool valid;  // True once cache is populated from read_settings()
-};
-static SettingsCache settingsCache = {};
 
 // Macros to only write if value changed
-#define PREFS_PUT_UCHAR_IF_CHANGED(key, value, cacheVar) \
-    if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
-        preferences.putUChar(key, value); \
-        settingsCache.cacheVar = (value); \
-    }
+// Note: arguments cannot have side effects (eg. i++) since they are evaluated multiple times
+// Also when called after an else, wrap it in {}
+ShadowPreferences shadowPrefs;
 
-#define PREFS_PUT_USHORT_IF_CHANGED(key, value, cacheVar) \
-    if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
-        preferences.putUShort(key, value); \
-        settingsCache.cacheVar = (value); \
-    }
-
-#define PREFS_PUT_ULONG_IF_CHANGED(key, value, cacheVar) \
-    if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
-        preferences.putULong(key, value); \
-        settingsCache.cacheVar = (value); \
-    }
-
-#define PREFS_PUT_BOOL_IF_CHANGED(key, value, cacheVar) \
-    if (!settingsCache.valid || (value) != settingsCache.cacheVar) { \
-        preferences.putBool(key, value); \
-        settingsCache.cacheVar = (value); \
-    }
+#define PREFS_PUT_UCHAR_IF_CHANGED(key, var)  shadowPrefs.markUChar (key, &(var))
+#define PREFS_PUT_USHORT_IF_CHANGED(key, var) shadowPrefs.markUShort(key, &(var))
+#define PREFS_PUT_ULONG_IF_CHANGED(key, var)  shadowPrefs.markULong (key, &(var))
+#define PREFS_PUT_BOOL_IF_CHANGED(key, var)   shadowPrefs.markBool  (key, &(var))
+#define PREFS_PUT_STRING_IF_CHANGED(key, var) shadowPrefs.markString(key, &(var))
 
 uint16_t LCDPin = 0;                                                        // PINcode to operate LCD keys from web-interface
 uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT, PIN_RS485_RX; //these pins have to be assigned dynamically because of hw version v3.1
@@ -290,7 +237,8 @@ extern uint8_t LoadBl;
 extern AccessStatus_t AccessStatus;
 extern uint8_t Nr_Of_Phases_Charging;
 
-extern uint8_t ActivationMode, ActivationTimer;
+extern uint8_t ActivationMode, ActivationTimer;                             // ActivationMode 255=inactive, x = nr of seconds we wait from B->C to go into ActivationMode
+                                                                            // ActivationTimer: nr of seconds we activate
 extern volatile uint16_t adcsample;
 extern volatile uint16_t ADCsamples[25];                                           // declared volatile, as they are used in a ISR
 extern volatile uint8_t sampleidx;
@@ -755,7 +703,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 CircuitMeter.Irms[1] = L2;
                 CircuitMeter.Irms[2] = L3;
                 CircuitMeter.CalcImeasured();
-                CircuitMeter.Timeout = COMM_TIMEOUT;
+                CircuitMeter.Timeout = COMM_CIRCTIMEOUT;
 #else //v4
                 Serial1.printf("@Irms:%03u,%d,%d,%d\n", CircuitMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
 #endif
@@ -772,7 +720,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
         Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
-        request_write_settings();
+        shadowPrefs.markString("RequiredEVCCID", &RequiredEVCCID);
 #endif
     } else if (topic == MQTTprefix + "/Set/ColorOff") {
         int32_t R, G, B;
@@ -830,7 +778,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         } else {
             CableLock = 0;
         }
-        request_write_settings();
+        shadowPrefs.markUChar("CableLock", &CableLock);
     } else if (topic == MQTTprefix + "/Set/EnableC2") {
         // for backwards compatibility we accept both 0-4 as string argument:
         //{ "Not present", "Always Off", "Solar Off", "Always On", "Auto" }
@@ -850,7 +798,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
             if (found)
                 EnableC2 = (EnableC2_t) value;
         }
-        request_write_settings();
+        shadowPrefs.markUShort("EnableC2", &EnableC2);
     } else if (topic == MQTTprefix + "/Set/RFID") {
         // Accept RFID card via MQTT to start/stop session
         // Payload should be hex string: 12 or 14 characters for 6 or 7 byte UID
@@ -1284,7 +1232,7 @@ void validate_settings(void) {
 #endif
     MainsMeter.setTimeout(COMM_TIMEOUT);
     EVMeter.setTimeout(COMM_TIMEOUT);                                             // Short Delay, to clear the error message for ~10 seconds.
-    CircuitMeter.setTimeout(COMM_TIMEOUT);
+    CircuitMeter.setTimeout(COMM_CIRCTIMEOUT);
 }
 
 
@@ -1404,17 +1352,17 @@ void read_settings() {
         MainsMeter.Address = preferences.getUChar("MainsMAddress",MAINS_METER_ADDRESS);
         strncpy(MainsMeter.DeviceHostName, preferences.getString("MainsHostName", "").c_str(), sizeof(MainsMeter.DeviceHostName));
         MainsMeter.DeviceHostName[sizeof(MainsMeter.DeviceHostName) - 1] = '\0';
-        MainsMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        MainsMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         EVMeter.Type = preferences.getUChar("EVMeter",EV_METER);
         EVMeter.Address = preferences.getUChar("EVMeterAddress",EV_METER_ADDRESS);
         strncpy(EVMeter.DeviceHostName, preferences.getString("EVMeterHostName", "").c_str(), sizeof(EVMeter.DeviceHostName));
         EVMeter.DeviceHostName[sizeof(EVMeter.DeviceHostName) - 1] = '\0';
-        EVMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        EVMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         CircuitMeter.Type = preferences.getUChar("CircuitMeter",CIRCUIT_METER);
         CircuitMeter.Address = preferences.getUChar("CircuitMAddress",CIRCUIT_METER_ADDRESS);
         strncpy(CircuitMeter.DeviceHostName, preferences.getString("CircuitHostName", "").c_str(), sizeof(CircuitMeter.DeviceHostName));
         CircuitMeter.DeviceHostName[sizeof(CircuitMeter.DeviceHostName) - 1] = '\0';
-        CircuitMeter.HostMenuSelection = 0; // Ensure HostMenuSelection is initialized to 0 so Menu shows the current saved hostname
+        CircuitMeter.HostMenuSelection = 1; // Ensure HostMenuSelection is initialized to show the current saved hostname
         EMConfig[EM_CUSTOM].Endianness = preferences.getUChar("EMEndianness",EMCUSTOM_ENDIANESS);
         EMConfig[EM_CUSTOM].IRegister = preferences.getUShort("EMIRegister",EMCUSTOM_IREGISTER);
         EMConfig[EM_CUSTOM].IDivisor = preferences.getUChar("EMIDivisor",EMCUSTOM_IDIVISOR);
@@ -1439,10 +1387,8 @@ void read_settings() {
         EnableC2 = (EnableC2_t) preferences.getUShort("EnableC2", ENABLE_C2);
         String Interval = preferences.getString("intervals_json", "");
         SetIntervalString(Interval);
-        strncpy(settingsCache.intervals_json, Interval.c_str(), sizeof(settingsCache.intervals_json));
 #if MODEM
         strncpy(RequiredEVCCID, preferences.getString("RequiredEVCCID", "").c_str(), sizeof(RequiredEVCCID));
-        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
 #endif
         maxTemp = preferences.getUShort("maxTemp", MAX_TEMPERATURE);
         LedMode = preferences.getUChar("LedMode", 0);
@@ -1452,70 +1398,6 @@ void read_settings() {
 #endif //ENABLE_OCPP
 
         preferences.end();                                  
-
-        // Populate settings cache with values just read from NVS
-        settingsCache.Config = Config;
-        settingsCache.Lock = Lock;
-        settingsCache.Mode = Mode;
-        settingsCache.AccessStatus = AccessStatus;
-        settingsCache.CardOffset = CardOffset;
-        settingsCache.DelayedStartTime = DelayedStartTime.epoch2;
-        settingsCache.DelayedStopTime = DelayedStopTime.epoch2;
-        settingsCache.DelayedRepeat = DelayedRepeat;
-        settingsCache.LoadBl = LoadBl;
-        settingsCache.MaxMains = MaxMains;
-        settingsCache.MaxSumMains = MaxSumMains;
-        settingsCache.MaxSumMainsTime = MaxSumMainsTime;
-        settingsCache.MaxCurrent = MaxCurrent;
-        settingsCache.MinCurrent = MinCurrent;
-        settingsCache.MaxCircuit = MaxCircuit;
-        settingsCache.Switch = Switch;
-        settingsCache.RCmon = RCmon;
-        settingsCache.StartCurrent = StartCurrent;
-        settingsCache.StopTime = StopTime;
-        settingsCache.ImportCurrent = ImportCurrent;
-        settingsCache.Grid = Grid;
-        settingsCache.SB2_WIFImode = SB2_WIFImode;
-        settingsCache.RFIDReader = RFIDReader;
-        settingsCache.MainsMeterType = MainsMeter.Type;
-        settingsCache.MainsMeterAddress = MainsMeter.Address;
-        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
-        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
-        settingsCache.EVMeterType = EVMeter.Type;
-        settingsCache.EVMeterAddress = EVMeter.Address;
-        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
-        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
-        settingsCache.CircuitMeterType = CircuitMeter.Type;
-        settingsCache.CircuitMeterAddress = CircuitMeter.Address;
-        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
-        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
-        settingsCache.EMEndianness = EMConfig[EM_CUSTOM].Endianness;
-        settingsCache.EMIRegister = EMConfig[EM_CUSTOM].IRegister;
-        settingsCache.EMIDivisor = EMConfig[EM_CUSTOM].IDivisor;
-        settingsCache.EMURegister = EMConfig[EM_CUSTOM].URegister;
-        settingsCache.EMUDivisor = EMConfig[EM_CUSTOM].UDivisor;
-        settingsCache.EMPRegister = EMConfig[EM_CUSTOM].PRegister;
-        settingsCache.EMPDivisor = EMConfig[EM_CUSTOM].PDivisor;
-        settingsCache.EMERegister = EMConfig[EM_CUSTOM].ERegister;
-        settingsCache.EMEDivisor = EMConfig[EM_CUSTOM].EDivisor;
-        settingsCache.EMDataType = EMConfig[EM_CUSTOM].DataType;
-        settingsCache.EMFunction = EMConfig[EM_CUSTOM].Function;
-        settingsCache.WIFImode = WIFImode;
-        settingsCache.EnableC2 = EnableC2;
-        settingsCache.CapacityMode = CapacityMode;
-        strncpy(settingsCache.intervals_json, GetIntervalString().c_str(), sizeof(settingsCache.intervals_json));
-        settingsCache.maxTemp = maxTemp;
-        settingsCache.AutoUpdate = AutoUpdate;
-        settingsCache.LCDlock = LCDlock;
-        settingsCache.CableLock = CableLock;
-        settingsCache.LCDPin = LCDPin;
-        settingsCache.MQTTSmartServer = MQTTSmartServer;
-        settingsCache.LedMode = LedMode;
-#if ENABLE_OCPP && defined(SMARTEVSE_VERSION)
-        settingsCache.OcppMode = OcppMode;
-#endif
-        settingsCache.valid = true;
-        _LOG_D("Settings cache populated from NVS\n");
 
         // Store settings when not initialized
         if (!Initialized) write_settings();
@@ -1529,106 +1411,76 @@ void write_settings(void) {
 
     validate_settings();
 
- if (preferences.begin("settings", false) ) {
-
     // Only write values that have actually changed from cached values
-    PREFS_PUT_UCHAR_IF_CHANGED("Config", Config, Config);
-    PREFS_PUT_UCHAR_IF_CHANGED("Lock", Lock, Lock);
-    PREFS_PUT_UCHAR_IF_CHANGED("Mode", Mode, Mode);
-    PREFS_PUT_UCHAR_IF_CHANGED("Access", AccessStatus, AccessStatus);
-    PREFS_PUT_USHORT_IF_CHANGED("CardOffs16", CardOffset, CardOffset);
-    PREFS_PUT_ULONG_IF_CHANGED("DelayedStartTim", DelayedStartTime.epoch2, DelayedStartTime);
-    PREFS_PUT_ULONG_IF_CHANGED("DelayedStopTime", DelayedStopTime.epoch2, DelayedStopTime);
-    PREFS_PUT_USHORT_IF_CHANGED("DelayedRepeat", DelayedRepeat, DelayedRepeat);
-    PREFS_PUT_UCHAR_IF_CHANGED("LoadBl", LoadBl, LoadBl);
-    PREFS_PUT_USHORT_IF_CHANGED("MaxMains", MaxMains, MaxMains);
-    PREFS_PUT_USHORT_IF_CHANGED("MaxSumMains", MaxSumMains, MaxSumMains);
-    PREFS_PUT_USHORT_IF_CHANGED("MaxSumMainsTime", MaxSumMainsTime, MaxSumMainsTime);
-    PREFS_PUT_USHORT_IF_CHANGED("MaxCurrent", MaxCurrent, MaxCurrent);
-    PREFS_PUT_USHORT_IF_CHANGED("MinCurrent", MinCurrent, MinCurrent);
-    PREFS_PUT_USHORT_IF_CHANGED("MaxCircuit", MaxCircuit, MaxCircuit);
-    PREFS_PUT_UCHAR_IF_CHANGED("Switch", Switch, Switch);
-    PREFS_PUT_UCHAR_IF_CHANGED("RCmon", RCmon, RCmon);
-    PREFS_PUT_USHORT_IF_CHANGED("StartCurrent", StartCurrent, StartCurrent);
-    PREFS_PUT_USHORT_IF_CHANGED("StopTime", StopTime, StopTime);
-    PREFS_PUT_USHORT_IF_CHANGED("ImportCurrent", ImportCurrent, ImportCurrent);
-    PREFS_PUT_UCHAR_IF_CHANGED("Grid", Grid, Grid);
-    PREFS_PUT_UCHAR_IF_CHANGED("SB2WIFImode", SB2_WIFImode, SB2_WIFImode);
-    PREFS_PUT_UCHAR_IF_CHANGED("RFIDReader", RFIDReader, RFIDReader);
+    PREFS_PUT_UCHAR_IF_CHANGED("Config", Config);
+    PREFS_PUT_UCHAR_IF_CHANGED("Lock", Lock);
+    PREFS_PUT_UCHAR_IF_CHANGED("Mode", Mode);
+    PREFS_PUT_UCHAR_IF_CHANGED("Access", AccessStatus);
+    PREFS_PUT_USHORT_IF_CHANGED("CardOffs16", CardOffset);
+    PREFS_PUT_ULONG_IF_CHANGED("DelayedStartTim", DelayedStartTime.epoch2);
+    PREFS_PUT_ULONG_IF_CHANGED("DelayedStopTime", DelayedStopTime.epoch2);
+    PREFS_PUT_USHORT_IF_CHANGED("DelayedRepeat", DelayedRepeat);
+    PREFS_PUT_UCHAR_IF_CHANGED("LoadBl", LoadBl);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxMains", MaxMains);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxSumMains", MaxSumMains);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxSumMainsTime", MaxSumMainsTime);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxCurrent", MaxCurrent);
+    PREFS_PUT_USHORT_IF_CHANGED("MinCurrent", MinCurrent);
+    PREFS_PUT_USHORT_IF_CHANGED("MaxCircuit", MaxCircuit);
+    PREFS_PUT_UCHAR_IF_CHANGED("Switch", Switch);
+    PREFS_PUT_UCHAR_IF_CHANGED("RCmon", RCmon);
+    PREFS_PUT_USHORT_IF_CHANGED("StartCurrent", StartCurrent);
+    PREFS_PUT_USHORT_IF_CHANGED("StopTime", StopTime);
+    PREFS_PUT_USHORT_IF_CHANGED("ImportCurrent", ImportCurrent);
+    PREFS_PUT_UCHAR_IF_CHANGED("Grid", Grid);
+    PREFS_PUT_UCHAR_IF_CHANGED("SB2WIFImode", SB2_WIFImode);
+    PREFS_PUT_UCHAR_IF_CHANGED("RFIDReader", RFIDReader);
 
-    PREFS_PUT_UCHAR_IF_CHANGED("MainsMeter", MainsMeter.Type, MainsMeterType);
-    PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address, MainsMeterAddress);
-        if (!settingsCache.valid || strcmp(MainsMeter.DeviceHostName, settingsCache.MainsMeterDeviceHostName) != 0) {
-        preferences.putString("MainsHostName", MainsMeter.DeviceHostName);
-        strncpy(settingsCache.MainsMeterDeviceHostName, MainsMeter.DeviceHostName, sizeof(settingsCache.MainsMeterDeviceHostName));
-        settingsCache.MainsMeterDeviceHostName[sizeof(settingsCache.MainsMeterDeviceHostName) - 1] = '\0';
-    }
-    PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type, EVMeterType);
-    PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address, EVMeterAddress);
-    if (!settingsCache.valid || strcmp(EVMeter.DeviceHostName, settingsCache.EVMeterDeviceHostName) != 0) {
-        preferences.putString("EVMeterHostName", EVMeter.DeviceHostName);
-        strncpy(settingsCache.EVMeterDeviceHostName, EVMeter.DeviceHostName, sizeof(settingsCache.EVMeterDeviceHostName));
-        settingsCache.EVMeterDeviceHostName[sizeof(settingsCache.EVMeterDeviceHostName) - 1] = '\0';
-    }
-    if (!settingsCache.valid || strcmp(CircuitMeter.DeviceHostName, settingsCache.CircuitMeterDeviceHostName) != 0) {
-        preferences.putString("CircuitHostName", CircuitMeter.DeviceHostName);
-        strncpy(settingsCache.CircuitMeterDeviceHostName, CircuitMeter.DeviceHostName, sizeof(settingsCache.CircuitMeterDeviceHostName));
-        settingsCache.CircuitMeterDeviceHostName[sizeof(settingsCache.CircuitMeterDeviceHostName) - 1] = '\0';
-    }
-    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type, CircuitMeterType);
-    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address, CircuitMeterAddress);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness, EMEndianness);
-    PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister, EMIRegister);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor, EMIDivisor);
-    PREFS_PUT_USHORT_IF_CHANGED("EMURegister", EMConfig[EM_CUSTOM].URegister, EMURegister);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMUDivisor", EMConfig[EM_CUSTOM].UDivisor, EMUDivisor);
-    PREFS_PUT_USHORT_IF_CHANGED("EMPRegister", EMConfig[EM_CUSTOM].PRegister, EMPRegister);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMPDivisor", EMConfig[EM_CUSTOM].PDivisor, EMPDivisor);
-    PREFS_PUT_USHORT_IF_CHANGED("EMERegister", EMConfig[EM_CUSTOM].ERegister, EMERegister);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMEDivisor", EMConfig[EM_CUSTOM].EDivisor, EMEDivisor);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMDataType", EMConfig[EM_CUSTOM].DataType, EMDataType);
-    PREFS_PUT_UCHAR_IF_CHANGED("EMFunction", EMConfig[EM_CUSTOM].Function, EMFunction);
-    PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode, WIFImode);
-    PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2, EnableC2);
-    PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode, CapacityMode);
-    {
-        String intervals = GetIntervalString();  // Build once, reuse.
-        if (!settingsCache.valid || strcmp(intervals.c_str(), settingsCache.intervals_json) != 0) {
-            preferences.putString("intervals_json", intervals);
-            strncpy(settingsCache.intervals_json, intervals.c_str(), sizeof(settingsCache.intervals_json));
-        }
-    }
+    PREFS_PUT_UCHAR_IF_CHANGED("MainsMeter", MainsMeter.Type);
+    PREFS_PUT_UCHAR_IF_CHANGED("MainsMAddress", MainsMeter.Address);
+    PREFS_PUT_STRING_IF_CHANGED("MainsHostName", MainsMeter.DeviceHostName);
+    PREFS_PUT_UCHAR_IF_CHANGED("EVMeter", EVMeter.Type);
+    PREFS_PUT_UCHAR_IF_CHANGED("EVMeterAddress", EVMeter.Address);
+    PREFS_PUT_STRING_IF_CHANGED("EVMeterHostName", EVMeter.DeviceHostName);
+    PREFS_PUT_STRING_IF_CHANGED("CircuitHostName", CircuitMeter.DeviceHostName);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMeter", CircuitMeter.Type);
+    PREFS_PUT_UCHAR_IF_CHANGED("CircuitMAddress", CircuitMeter.Address);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMEndianness", EMConfig[EM_CUSTOM].Endianness);
+    PREFS_PUT_USHORT_IF_CHANGED("EMIRegister", EMConfig[EM_CUSTOM].IRegister);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMIDivisor", EMConfig[EM_CUSTOM].IDivisor);
+    PREFS_PUT_USHORT_IF_CHANGED("EMURegister", EMConfig[EM_CUSTOM].URegister);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMUDivisor", EMConfig[EM_CUSTOM].UDivisor);
+    PREFS_PUT_USHORT_IF_CHANGED("EMPRegister", EMConfig[EM_CUSTOM].PRegister);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMPDivisor", EMConfig[EM_CUSTOM].PDivisor);
+    PREFS_PUT_USHORT_IF_CHANGED("EMERegister", EMConfig[EM_CUSTOM].ERegister);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMEDivisor", EMConfig[EM_CUSTOM].EDivisor);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMDataType", EMConfig[EM_CUSTOM].DataType);
+    PREFS_PUT_UCHAR_IF_CHANGED("EMFunction", EMConfig[EM_CUSTOM].Function);
+    PREFS_PUT_UCHAR_IF_CHANGED("WIFImode", WIFImode);
+    PREFS_PUT_USHORT_IF_CHANGED("EnableC2", EnableC2);
+    PREFS_PUT_USHORT_IF_CHANGED("CapacityMode", CapacityMode);
+    static String intervals;
+    intervals = GetIntervalString();  // Build once, reuse.
+    PREFS_PUT_STRING_IF_CHANGED("intervals_json", intervals);
 #if MODEM
-    if (!settingsCache.valid || strcmp(RequiredEVCCID, settingsCache.RequiredEVCCID) != 0) {
-        preferences.putString("RequiredEVCCID", String(RequiredEVCCID));
-        strncpy(settingsCache.RequiredEVCCID, RequiredEVCCID, sizeof(settingsCache.RequiredEVCCID));
-    }
+    PREFS_PUT_STRING_IF_CHANGED("RequiredEVCCID", RequiredEVCCID);
 #endif
-    PREFS_PUT_USHORT_IF_CHANGED("maxTemp", maxTemp, maxTemp);
-    PREFS_PUT_UCHAR_IF_CHANGED("AutoUpdate", AutoUpdate, AutoUpdate);
-    PREFS_PUT_UCHAR_IF_CHANGED("LCDlock", LCDlock, LCDlock);
-    PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock, CableLock);
-    PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin, LCDPin);
-    PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer, MQTTSmartServer);
-    PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode, LedMode);
+    PREFS_PUT_USHORT_IF_CHANGED("maxTemp", maxTemp);
+    PREFS_PUT_UCHAR_IF_CHANGED("AutoUpdate", AutoUpdate);
+    PREFS_PUT_UCHAR_IF_CHANGED("LCDlock", LCDlock);
+    PREFS_PUT_UCHAR_IF_CHANGED("CableLock", CableLock);
+    PREFS_PUT_USHORT_IF_CHANGED("LCDPin", LCDPin);
+    PREFS_PUT_BOOL_IF_CHANGED("MQTTSmartServer", MQTTSmartServer);
+    PREFS_PUT_UCHAR_IF_CHANGED("LedMode", LedMode);
 
 #if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
-    PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode, OcppMode);
+    PREFS_PUT_UCHAR_IF_CHANGED("OcppMode", OcppMode);
 #endif //ENABLE_OCPP
-
-    // Mark cache as valid after first write
-    settingsCache.valid = true;
-
-    preferences.end();
 
     _LOG_I("settings saved\n");
 #if SMARTEVSE_VERSION >= 40
     SendConfigToCH32();
 #endif
-
- } else {
-     _LOG_A("Can not open preferences!\n");
- }
 
 
     if (LoadBl == 1) {                                                          // Master mode
@@ -1638,20 +1490,6 @@ void write_settings(void) {
 
     ConfigChanged = 1;                                                          // FIXME this variable never reset to 0?
     SEND_TO_CH32(ConfigChanged);
-
-    // Update timestamp after successful write
-    LastSettingsWriteTime = millis();
-    SettingsDirty = false;
-}
-
-
-/* Request settings to be written to flash.
- * This does not write immediately - instead it sets a dirty flag.
- * The actual write happens in the main loop when 60 secs have passed since last write
-*/ 
-void request_write_settings(void) {
-    SettingsDirty = true;
-    _LOG_D("Settings write requested\n");
 }
 
 
@@ -1668,7 +1506,8 @@ int StoreTimeString(String DelayedTimeStr, DelayedTimeStruct *DelayedTime) {
         DelayedTime->epoch2 = mktime(&delayedtime_tm) - EPOCH2_OFFSET;
         // Compare the times
         time_t now = time(nullptr);             //get current local time
-        DelayedTime->diff = DelayedTime->epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+        struct tm tm_now;
+        DelayedTime->diff = DelayedTime->epoch2 - (mktime(localtime_r(&now, &tm_now)) - EPOCH2_OFFSET);
         return 0;
     }
     //error TODO not sure whether we keep the old time or reset it to zero?
@@ -2051,6 +1890,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(request->hasParam("backlight")) {
             int backlight = request->getParam("backlight")->value().toInt();
             BacklightTimer = backlight * BACKLIGHT;
+            //not saved in NVS
             doc["Backlight"] = backlight;
         }
 
@@ -2058,6 +1898,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("current_min")->value().toInt();
             if(current >= MIN_CURRENT && current <= 16 && LoadBl < 2) {
                 MinCurrent = current;
+                shadowPrefs.markUShort("MinCurrent", &MinCurrent);
                 doc["current_min"] = MinCurrent;
             } else {
                 doc["current_min"] = "Value not allowed!";
@@ -2068,12 +1909,19 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int val = request->getParam("capacity_mode")->value().toInt();
             if (val >= 0 && val <= 3) {
                 CapacityMode = (CapacityMode_t)val;
+                shadowPrefs.markUShort("CapacityMode", &CapacityMode);
+                if (CapacityMode == CAP_DISABLED) {
+                    MaxSumMains = 0;
+                    shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
+                }
                 doc["capacity_mode"] = val;
             }
         }
 
         if (request->hasParam("intervals")) {
-            String jsonStr = request->getParam("intervals")->value();
+            static String jsonStr;
+            jsonStr = request->getParam("intervals")->value();
+            shadowPrefs.markString("intervals_json", &jsonStr);
             SetIntervalString(jsonStr);
         }
 
@@ -2081,6 +1929,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("current_max_sum_mains")->value().toInt();
             if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
                 MaxSumMains = current;
+                shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 doc["current_max_sum_mains"] = MaxSumMains;
             } else {
                 doc["current_max_sum_mains"] = "Value not allowed!";
@@ -2091,6 +1940,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int time = request->getParam("max_sum_mains_timer")->value().toInt();
             if(time >= 0 && time <= 60 && LoadBl < 2) {
                 MaxSumMainsTime = time;
+                shadowPrefs.markUShort("MaxSumMainsTime", &MaxSumMainsTime);
                 doc["max_sum_mains_time"] = MaxSumMainsTime;
             } else {
                 doc["max_sum_mains_time"] = "Value not allowed!";
@@ -2099,11 +1949,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("disable_override_current")) {
             setOverrideCurrent(0);
+            //not saved in NVS
             doc["disable_override_current"] = "OK";
         }
 
         if(request->hasParam("custombutton")) {
             CustomButton = request->getParam("custombutton")->value().toInt() > 0;
+            //not saved in NVS
             doc["custombutton"] = CustomButton;
         }
 
@@ -2161,7 +2013,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             } else
                 DelayedStartTime.epoch2 = DELAYEDSTARTTIME;
 
-
+            //setMode will save all settings, so no need to save mode or delayed times here
             switch(mode.toInt()) {
                 case 0: // OFF
 #if SMARTEVSE_VERSION >=40 //v4                
@@ -2189,6 +2041,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("enable_C2")) {
             EnableC2 = (EnableC2_t) request->getParam("enable_C2")->value().toInt();
+            shadowPrefs.markUShort("EnableC2", &EnableC2);
             doc["settings"]["enable_C2"] = StrEnableC2[EnableC2];
         }
 
@@ -2197,6 +2050,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
             if(stop_timer >= 0 && stop_timer <= 60) {
                 StopTime = stop_timer;
+                shadowPrefs.markUShort("StopTime", &StopTime);
                 doc["stop_timer"] = true;
             } else {
                 doc["stop_timer"] = false;
@@ -2220,6 +2074,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("solar_start_current")->value().toInt();
             if(current >= 0 && current <= 48) {
                 StartCurrent = current;
+                shadowPrefs.markUShort("StartCurrent", &StartCurrent);
                 doc["solar_start_current"] = StartCurrent;
             } else {
                 doc["solar_start_current"] = "Value not allowed!";
@@ -2230,6 +2085,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int current = request->getParam("solar_max_import")->value().toInt();
             if(current >= 0 && current <= 48) {
                 ImportCurrent = current;
+                shadowPrefs.markUShort("ImportCurrent", &ImportCurrent);
                 doc["solar_max_import"] = ImportCurrent;
             } else {
                 doc["solar_max_import"] = "Value not allowed!";
@@ -2262,6 +2118,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 strncpy(RequiredEVCCID, request->getParam("required_evccid")->value().c_str(), sizeof(RequiredEVCCID));
                 doc["required_evccid"] = RequiredEVCCID;
                 Serial1.printf("@RequiredEVCCID:%s\n", RequiredEVCCID);
+                shadowPrefs.markString("RequiredEVCCID", &RequiredEVCCID);
             } else {
                 doc["required_evccid"] = "EVCCID too long (max 32 char)";
             }
@@ -2271,6 +2128,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int lock = request->getParam("lcdlock")->value().toInt();
             if (lock >= 0 && lock <= 1) {                                   //boundary check
                 LCDlock = lock;
+                shadowPrefs.markUChar("LCDlock", &LCDlock);
                 doc["lcdlock"] = lock;
             }
         }
@@ -2279,6 +2137,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             int c_lock = request->getParam("cablelock")->value().toInt();
             if (c_lock >= 0 && c_lock <= 1) {                               //boundary check
                 CableLock = c_lock;
+                shadowPrefs.markUChar("CableLock", &CableLock);
                 doc["cablelock"] = c_lock;
             }
         }
@@ -2289,6 +2148,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
                 if(request->hasParam("ocpp_mode")) {
                     OcppMode = request->getParam("ocpp_mode")->value().toInt();
+                    shadowPrefs.markUChar("OcppMode", &OcppMode);
                     doc["ocpp_mode"] = OcppMode;
                 }
 
@@ -2351,13 +2211,13 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_printf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n");
         { MgChunkPrint out(c); serializeJson(doc, out); }
-        request_write_settings();
         return true;
       }
     } else if (mg_http_match_uri(hm, "/power_day") && !memcmp("GET", hm->method.buf, hm->method.len)) {
         // Stream JSON via HTTP chunked encoding to avoid the ~8 KB DynamicJsonDocument + serialized String
         time_t now = time(NULL);
-        struct tm *tm_info = localtime(&now);
+        struct tm tm_info_buf;
+        struct tm *tm_info = localtime_r(&now, &tm_info_buf);
         uint8_t i, idx = tm_info->tm_hour * (3600/CapacityPeriodSeconds) + tm_info->tm_min / (CapacityPeriodSeconds/60);
         idx++; //go to the next time period; since PowerMeasured_Period is circular, this would be the oldest entry
 
@@ -3146,7 +3006,7 @@ void ocppLoop() {
         // Check against max and min currents, only write settings when value changes
         if ((current >= 6) && (current <= 80) && (MaxCurrent != current)) {
             MaxCurrent = current;
-            request_write_settings();
+            shadowPrefs.markUShort("MaxCurrent", &MaxCurrent);
             // set to invalid value, so it only sets MaxCurrent once.
             config->setInt(0);
             MicroOcpp::configuration_save();
@@ -3188,8 +3048,12 @@ void ocppLoop() {
     if (RFIDReader == 6 || RFIDReader == 0) {
         // RFID reader in OCPP mode or RFID fully disabled - OCPP controls Access_bit
         if (!OcppTrackPermitsCharge && ocppPermitsCharge()) {
-            _LOG_A("OCPP set Access_bit\n");
-            setAccess(ON);
+            if (DelayedStartTime.epoch2 && DelayedStartTime.diff > 0) {
+                _LOG_A("OCPP: transaction authorized, delayed charging active - suspending\n");
+            } else {
+                _LOG_A("OCPP set Access_bit\n");
+                setAccess(ON);
+            }
         } else if (AccessStatus == ON && !ocppPermitsCharge()) {
             _LOG_A("OCPP unset Access_bit\n");
             setAccess(OFF);
@@ -3197,8 +3061,10 @@ void ocppLoop() {
         OcppTrackPermitsCharge = ocppPermitsCharge();
 
         // Check if OCPP charge permission has been revoked by other module
+        // Don't end the transaction if Access is OFF due to delayed charging
         if (OcppTrackPermitsCharge && // OCPP has set Acess_bit and still allows charge
-                AccessStatus == OFF) { // Access_bit is not active anymore
+                AccessStatus == OFF && // Access_bit is not active anymore
+                !(DelayedStartTime.epoch2 && DelayedStartTime.diff > 0)) { // Not suspended for delayed charging
             endTransaction(nullptr, "Other");
         }
     } else {
@@ -3215,15 +3081,18 @@ void ocppLoop() {
             }
             beginTransaction_authorized(buf);
         } else if (AccessStatus == OFF && (OcppTrackAccessBit || (getTransaction() && getTransaction()->isActive()))) {
-            OcppTrackAccessBit = false;
-            _LOG_A("OCPP detected Access_bit unset\n");
-            char buf[15];
-            if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
-            } else {
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+            // Don't end the transaction if Access is OFF due to delayed charging
+            if (!(DelayedStartTime.epoch2 && DelayedStartTime.diff > 0)) {
+                OcppTrackAccessBit = false;
+                _LOG_A("OCPP detected Access_bit unset\n");
+                char buf[15];
+                if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
+                    sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                } else {
+                    sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+                }
+                endTransaction_authorized(buf);
             }
-            endTransaction_authorized(buf);
         }
     }
 
@@ -3886,20 +3755,14 @@ void loop() {
 #if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //v3
         // check if settings need to be written
         // and only write when enough time has passed
-        if (SettingsDirty) {
-            if ((lastCheck - LastSettingsWriteTime) >= (SETTINGS_WRITE_INTERVAL * 1000UL) || 
-                (LastSettingsWriteTime == 0)) {  // First write after boot
-                _LOG_A("Writing settings to flash\n");
-                write_settings();
-            }
-        }
+        shadowPrefs.loop();
 #endif
 
          // a reboot is requested, but we kindly wait until EV is not charging
         static uint8_t RebootDelay = 5;      
         if (shouldReboot && State != STATE_C) {                                 //slaves in STATE_C continue charging when Master reboots
             if (RebootDelay-- == 0) {                                           //give user some time to read any message on the webserver
-                if (SettingsDirty) write_settings();                            //write any pending settings before reboot
+                shadowPrefs.loop(true);                                         //force write of pending NVS keys
                 ESP.restart();                                                  //use non-blocking code so network_loop() keeps working.
             }
         }
@@ -3908,7 +3771,8 @@ void loop() {
         if (DelayedStartTime.epoch2 && LocalTimeSet) {
             // Compare the times
             time_t now = time(nullptr);             //get current local time
-            DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            struct tm tm_start;
+            DelayedStartTime.diff = DelayedStartTime.epoch2 - (mktime(localtime_r(&now, &tm_start)) - EPOCH2_OFFSET);
             if (DelayedStartTime.diff > 0) {
                 if (AccessStatus != OFF && (DelayedStopTime.epoch2 == 0 || DelayedStopTime.epoch2 > DelayedStartTime.epoch2))
                     setAccess(OFF);                         //switch to OFF, we are Delayed Charging
@@ -3926,7 +3790,8 @@ void loop() {
         if (DelayedStopTime.epoch2 && LocalTimeSet) {
             // Compare the times
             time_t now = time(nullptr);             //get current local time
-            DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime(&now)) - EPOCH2_OFFSET);
+            struct tm tm_stop;
+            DelayedStopTime.diff = DelayedStopTime.epoch2 - (mktime(localtime_r(&now, &tm_stop)) - EPOCH2_OFFSET);
             if (DelayedStopTime.diff <= 0) {
                 //DelayedStopTime has passed
                 if (DelayedRepeat == 1)                                         //we are on a daily repetition schedule
