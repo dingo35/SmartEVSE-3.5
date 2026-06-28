@@ -23,31 +23,10 @@
 */
 #include <stdio.h>
 #include <stdlib.h>
-
-#if SMARTEVSE_VERSION >=40 //ESP32 v4
-void BroadcastSettings(void) {
-    printf("@BroadcastSettings\n");
-}
-#else //ESP32 and CH32
-
-#ifdef SMARTEVSE_VERSION //ESP32
 #include "driver/uart.h"
-#else
-#include "ch32v003fun.h"
-#include "main.h"
-#include "main_c.h"
-#include "ch32.h"
-#include "utils.h"
-#include "meter.h"
-extern "C" {
-    #include "evse.h"
-}
-extern struct Sensorbox SB2;
-extern struct EMstruct EMConfig[];
-#endif
-
 #include "modbus.h"
-struct ModBus MB; //TODO do not define for ESP32v4
+
+struct ModBus MB;
 
 extern uint16_t Balanced[NR_EVSES];
 extern uint8_t State;
@@ -59,7 +38,6 @@ extern void ModbusRequestLoop();
 extern uint8_t ModbusRequest;
 
 
-#ifdef SMARTEVSE_VERSION //ESP32v3
 extern ModbusMessage response;
 
 // ########################## Modbus helper functions ##########################
@@ -87,67 +65,6 @@ void ModbusSend8(uint8_t address, uint8_t function, uint16_t reg, uint16_t data)
     _LOG_V("Sent packet");
     _LOG_V_NO_FUNC(" address: 0x%02x, function: 0x%02x, reg: 0x%04x, token:0x%08x, data: 0x%04x.\n", address, function, reg, token, data);
 }
-#else //CH32
-// ########################## Modbus helper functions ##########################
-
-/**
- * Send data over modbus
- * 
- * @param uint8_t address
- * @param uint8_t function
- * @param uint8_t byte
- * @param uint16_t pointer to values
- * @param uint8_t count of values
- */
-void ModbusSend(uint8_t address, uint8_t function, uint8_t byte, uint16_t *values, uint8_t count) {
-    uint16_t cs, i, n = 0;
-    uint8_t Tbuffer[MODBUS_BUFFER_SIZE];
-
-    // Device address
-    Tbuffer[n++] = address;
-    // Function
-    Tbuffer[n++] = function;
-    // The number of data bytes to follow
-    if (byte) Tbuffer[n++] = byte;
-    // Values
-    for (i = 0; i < count; i++) {
-        Tbuffer[n++] = ((uint8_t)(values[i]>>8));
-        Tbuffer[n++] = ((uint8_t)(values[i]));
-    }
-    // Calculate CRC16 from data
-    cs = crc16(Tbuffer, n);
-    Tbuffer[n++] = ((uint8_t)(cs));
-    Tbuffer[n++] = ((uint8_t)(cs>>8));
-
-    _LOG_V("Sent packet address: 0x%02x, function: 0x%02x, len=%u.\n", address, function, n);
-    for (i = 0; i < n; i++) _LOG_V_NO_FUNC("%02x ", Tbuffer[i]);
-    _LOG_V_NO_FUNC("\n");
-
-    // Send buffer to RS485 port
-    buffer_write(&ModbusTx, (char *) &Tbuffer, n);
-    // switch RS485 transceiver to transmit
-    funDigitalWrite(RS485_DIR, FUN_HIGH);
-    // enable transmit interrupt
-    USART2->CTLR1 |= USART_CTLR1_TXEIE;
-}
-
-/**
- * Send single value over modbus
- * 
- * @param uint8_t address
- * @param uint8_t function
- * @param uint16_t register
- * @param uint16_t data
- */
-void ModbusSend8(uint8_t address, uint8_t function, uint16_t reg, uint16_t data) {
-    uint16_t values[2];
-
-    values[0] = reg;
-    values[1] = data;
-    
-    ModbusSend(address, function, 0, values, 2);
-}
-#endif
 
 // ########################### Modbus main functions ###########################
 
@@ -182,7 +99,6 @@ void ModbusWriteSingleRequest(uint8_t address, uint16_t reg, uint16_t value) {
     ModbusSend8(address, 0x06, reg, value);  
 }
 
-#ifdef SMARTEVSE_VERSION //ESP32v3
 
 /**
  * Request write multiple register (FC=16) to a device over modbus
@@ -215,6 +131,7 @@ void ModbusWriteMultipleRequest(uint8_t address, uint16_t reg, uint16_t *values,
     _LOG_V_NO_FUNC("\n");
 }
 
+
 /**
  * Response an exception
  * 
@@ -226,65 +143,6 @@ void ModbusException(uint8_t address, uint8_t function, uint8_t exception) {
     response.setError(address, function, (Modbus::Error) exception);
 }
 
-#else //CH32
-
-/**
- * Request write multiple register (FC=16) to a device over modbus
- * 
- * @param uint8_t address
- * @param uint16_t register
- * @param uint8_t pointer to data
- * @param uint8_t count of data
- */
-void ModbusWriteMultipleRequest(uint8_t address, uint16_t reg, uint16_t *values, uint8_t count) {
-    uint16_t i, n = 0, cs;
-    uint8_t Tbuffer[MODBUS_BUFFER_SIZE];
-
-    MB.RequestAddress = address;
-    MB.RequestFunction = 0x10;
-    MB.RequestRegister = reg;
-    
-    // Device Address
-    Tbuffer[n++] = address;
-    // Function Code 16
-    Tbuffer[n++] = 0x10;
-    // Data Address of the first register
-    Tbuffer[n++] = ((uint8_t)(reg>>8));
-    Tbuffer[n++] = ((uint8_t)(reg));
-    // Number of registers to write
-    Tbuffer[n++] = 0x00;
-    Tbuffer[n++] = count;
-    // Number of data bytes to follow (2 registers x 2 bytes each = 4 bytes)
-    Tbuffer[n++] = count * 2u;
-    // Values
-    for (i = 0; i < count; i++) {
-        Tbuffer[n++] = ((uint8_t)(values[i]>>8));
-        Tbuffer[n++] = ((uint8_t)(values[i]));
-    }
-    // Calculate CRC16 from data
-    cs = crc16(Tbuffer, n);
-    Tbuffer[n++] = ((uint8_t)(cs));
-    Tbuffer[n++] = ((uint8_t)(cs>>8));	
-    // Send buffer to RS485 port
-    buffer_write(&ModbusTx, (char *) &Tbuffer, n);
-    // switch RS485 transceiver to transmit
-    funDigitalWrite(RS485_DIR, FUN_HIGH);
-    // enable transmit interrupt
-    USART2->CTLR1 |= USART_CTLR1_TXEIE;  
-}
-
-/**
- * Response an exception
- * 
- * @param uint8_t address
- * @param uint8_t function
- * @param uint8_t exeption
- */
-void ModbusException(uint8_t address, uint8_t function, uint8_t exception) {
-    uint16_t temp[1];
-    ModbusSend(address, function, exception, temp, 0);
-}
-#endif
 
 /**
  * Broadcast System configuration to Node controllers
@@ -321,14 +179,6 @@ void ModbusDecode(uint8_t * buf, uint8_t len) {
         _LOG_V_NO_FUNC(" %02x", buf[x]);
     }
     _LOG_V_NO_FUNC("\n");
-#ifndef SMARTEVSE_VERSION //CH32
-    if (len <= 4 || crc16(buf, len)) {//ESP32 has crc checked in modbus library
-        _LOG_A("Modbus CRC16 error, len=%d!", len);
-        return;
-    }
-    //ESP32 has crc16 chopped off:
-    len = len - 2;
-#endif
     // Modbus error packets length is 5 bytes
     if (len == 3) {
         MB.Type = MODBUS_EXCEPTION;
@@ -590,14 +440,10 @@ void ReadItemValueResponse(void) {
             values[i] = getItemValue(ItemID + i);
         }
         // ModbusReadInputResponse:
-#ifdef SMARTEVSE_VERSION //ESP32 v3
         response.add(MB.Address, MB.Function, (uint8_t)(MB.RegisterCount * 2));
         for (int i = 0; i < MB.RegisterCount; i++) {
             response.add(values[i]);
         }
-#else //CH32
-        ModbusSend(MB.Address, MB.Function, MB.RegisterCount * 2u, values, MB.RegisterCount);
-#endif
     } else {
         ModbusException(MB.Address, MB.Function, MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS);
     }
@@ -618,11 +464,7 @@ void WriteItemValueResponse(void) {
     _LOG_V("Broadcast received FC06 Item:%u val:%u\n",ItemID, MB.Value);
 
     if (OK && ItemID < STATUS_STATE) {
-#if !defined(SMARTEVSE_VERSION) //CH32
-        printf("@write_settings\n");
-#else
         write_settings();
-#endif
     }
 
     if (MB.Address != BROADCAST_ADR || LoadBl == 0) {
@@ -632,11 +474,7 @@ void WriteItemValueResponse(void) {
             ModbusException(MB.Address, MB.Function, MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE);
         } else {
             //ModbusWriteSingleResponse(MB.Address, MB.Register, MB.Value);
-#if !defined(SMARTEVSE_VERSION) //CH32
-            ModbusSend8(MB.Address, 0x06, MB.Register, MB.Value);
-#else
             response.add(MB.Address, MB.Function, (uint16_t)MB.Register, (uint16_t)MB.Value);
-#endif
         }
     }
 }
@@ -658,11 +496,7 @@ void WriteMultipleItemValueResponse(void) {
     }
 
     if (OK && ItemID < STATUS_STATE) {
-#if !defined(SMARTEVSE_VERSION) //CH32
-        printf("@write_settings\n");
-#else
         write_settings();
-#endif
     }
 
     if (MB.Address != BROADCAST_ADR || LoadBl == 0) {
@@ -672,12 +506,7 @@ void WriteMultipleItemValueResponse(void) {
             ModbusException(MB.Address, MB.Function, MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE);
         } else  {
             //ModbusWriteMultipleResponse(MB.Address, MB.Register, OK);
-#if !defined(SMARTEVSE_VERSION) //CH32
-            ModbusSend8(MB.Address, 0x10, MB.Register, OK);
-#else
             response.add(MB.Address, MB.Function, (uint16_t)MB.Register, (uint16_t)OK);
-
-#endif
         }
     }
 }
@@ -715,9 +544,6 @@ void HandleModbusRequest(void) {
                             MainsMeter.Irms[i] = combined;
                             _LOG_V_NO_FUNC("L%d=%.1fA,", i+1, (float)MainsMeter.Irms[i]/10);
                         }
-#ifndef SMARTEVSE_VERSION //CH32
-                        printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, MainsMeter.Irms[0], MainsMeter.Irms[1], MainsMeter.Irms[2]); //@Irms:011,312,123,124 means: the meter on address 11(dec) has MainsMeter.Irms[0] 312 dA, MainsMeter.Irms[1] of 123 dA, MainsMeter.Irms[2] of 124 dA.
-#endif
                         _LOG_V_NO_FUNC("\n");
                     }
                 } else {
@@ -762,7 +588,6 @@ void HandleModbusResponse(void) {
 }
 
 
-#ifdef SMARTEVSE_VERSION //ESP32 v3
 ModbusMessage response;     // response message to be sent back
 // Request handler for modbus messages addressed to -this- Node/Slave EVSE.
 // Sends response back to Master
@@ -900,48 +725,3 @@ void ConfigureModbusMode(uint8_t newmode) {
 
 }
 
-#else //CH32
-// printf can be slow.
-// By measuring the time the 10ms loop actually takes to execute we found that:
-// it takes ~625uS to execute when using printf (and tx interrrupts)
-// ~151uS without printf (with tx interrupt)
-// and only ~26uS when using DMA
-// printf with Circular DMA buffer takes ~536uS
-// current version with snprintf takes ~296uS
-//
-// Called by 10ms loop when new modbus data is available
-// ModbusRxLen contains length of data contained in array ModbusRx
-void CheckRS485Comm(void) { //looks like MBhandleData
-    ModbusDecode(ModbusRx, ModbusRxLen);
-
-    // Data received is a response to an earlier request from the master.
-    if (MB.Type == MODBUS_RESPONSE) {
-        HandleModbusResponse();
-    // Data received is a request from the master to a device on the bus.
-    } else if (MB.Type == MODBUS_REQUEST) { //looks like MBBroadcast
-        //printf("@MSG: Modbus Request Address %u / Function %02x / Register %02x\n",MB.Address,MB.Function,MB.Register);
-
-        // Broadcast or addressed to this device
-        if (MB.Address == BROADCAST_ADR || (LoadBl > 0 && MB.Address == LoadBl)) {
-            HandleModbusRequest();
-        }
-    } else if (MB.Type == MODBUS_EXCEPTION) {
-        _LOG_D("Modbus Address %02x exception %u received\n", MB.Address, MB.Exception);
-    } else {
-        _LOG_D("\nCRC invalid\n");
-    }
-
-
-
-
-//    char buf[256];
-//    for (uint8_t x=0; x<ModbusRxLen; x++) snprintf(buf+(x*3), 4, "%02X ", ModbusRx[x]);
-//    printf("@MSG: MB:%s\n", buf);
-
-    ModbusRxLen = 0;
-
-}
-
-#endif
-
-#endif

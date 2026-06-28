@@ -2366,6 +2366,7 @@ void WiFiSetup(void) {
     mg_mgr_init(&mgr);
 
     WiFi.setAutoReconnect(true);                                                // Required for Arduino 3
+    WiFi.setSleep(false);                                                       // to prevent wifi disconnects that are not detected by WiFi.status()
     //WiFi.persistent(true);
     WiFi.onEvent(onWifiEvent);
 

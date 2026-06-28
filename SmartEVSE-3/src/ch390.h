@@ -14,7 +14,6 @@
 
 #include <Arduino.h>
 
-#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
 
 // ---------- Pin mapping for CH390D add-on board (v3) ----------
 // Reuses LCD SPI pins. When CH390D is detected, LCD is disabled.
@@ -210,5 +209,4 @@ extern bool EthPresent;     // true if CH390D chip was detected at boot
 extern bool EthConnected;   // true if Ethernet link is up
 extern bool EthHasIP;       // true if Ethernet interface has a DHCP IP
 
-#endif // SMARTEVSE_VERSION >= 30 && < 40
 #endif // __CH390_H

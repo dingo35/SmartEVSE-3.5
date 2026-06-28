@@ -46,10 +46,4 @@ static constexpr uint32_t BMP_ROW_SIZE  = ((BMP_WIDTH + 31) / 32) * 4;       // 
 static constexpr size_t   BMP_IMAGE_SIZE = 62 + (BMP_ROW_SIZE * BMP_HEIGHT); // header + pixels
 extern const uint8_t* createImageFromGLCDBuffer(size_t &outSize);
 
-#if SMARTEVSE_VERSION >= 40
-#include <SPI.h>
-extern void glcd_clrln(unsigned char ln, unsigned char data);
-extern SPIClass LCD_SPI2;
-#endif
-
 #endif // #ifndef __GLCD_H
