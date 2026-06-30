@@ -1405,13 +1405,17 @@ void RecomputeSoC(void) {
             int EnergyRemaining = -1;
             int TargetEnergyCapacity = (FullSoC / 100.f) * EnergyCapacity;
 
+            // Use actual EnergyCharged from meter if available, otherwise use calculated from Irms
+            int32_t EffectiveEnergyCharged = EVMeter.EnergyCharged > 0 ? EVMeter.EnergyCharged : EVMeter.EnergyCharged_Calculated;
+
             if (EnergyRequest > 0) {
                 // Attempt to use EnergyRequest to determine SoC with greater accuracy
-                EnergyRemaining = EVMeter.EnergyCharged > 0 ? (EnergyRequest - EVMeter.EnergyCharged) : EnergyRequest;
+                EnergyRemaining = EffectiveEnergyCharged > 0 ? (EnergyRequest - EffectiveEnergyCharged) : EnergyRequest;
             } else {
                 // We use a rough estimation based on FullSoC and EnergyCapacity
-                EnergyRemaining = TargetEnergyCapacity - (EVMeter.EnergyCharged + (InitialSoC / 100.f) * EnergyCapacity);
+                EnergyRemaining = TargetEnergyCapacity - (EffectiveEnergyCharged + (InitialSoC / 100.f) * EnergyCapacity);
             }
+
 
             RemainingSoC = ((FullSoC * EnergyRemaining) / TargetEnergyCapacity);
             ComputedSoC = RemainingSoC > 1 ? (FullSoC - RemainingSoC) : FullSoC;
@@ -1419,10 +1423,13 @@ void RecomputeSoC(void) {
             // Only attempt to compute the SoC and TimeUntilFull if we have a EnergyRemaining and PowerMeasured
             if (EnergyRemaining > -1) {
                 int TimeToGo = -1;
+                // Use actual PowerMeasured if available, otherwise use calculated power from Irms
+                int32_t EffectivePower = EVMeter.PowerMeasured > 0 ? EVMeter.PowerMeasured : EVMeter.PowerCalculated;
+                
                 // Do a very simple estimation in seconds until car would reach FullSoC according to current charging power
-                if (EVMeter.PowerMeasured > 0) {
-                    // Use real-time PowerMeasured data if available
-                    TimeToGo = (3600 * EnergyRemaining) / EVMeter.PowerMeasured;
+                if (EffectivePower > 0) {
+                    // Use real-time Power data if available
+                    TimeToGo = (3600 * EnergyRemaining) / EffectivePower;
                 } else if (Mode != MODE_SOLAR && MaxCapacity != 0) { //prevent divide by zero
                     // Else, fall back on the theoretical maximum of the cable + nr of phases
                     TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * (Nr_Of_Phases_Charging * 230));
@@ -1455,14 +1462,21 @@ void RecomputeSoC(void) {
 void DisconnectEvent(void){
     _LOG_A("EV disconnected for a while. Resetting SoC states");
     uint8_t ModemStage = 0; // Enable Modem states again
-    InitialSoC = -1;
-    FullSoC = -1;
-    RemainingSoC = -1;
-    ComputedSoC = -1;
-    EnergyCapacity = -1;
-    EnergyRequest = -1;
-    TimeUntilFull = -1;
-    strncpy(EVCCID, "", sizeof(EVCCID));
+    SEND_TO_CH32(ModemStage)
+    // Delete only when EV is disconnected (State == STATE_A)
+    if (State == STATE_A) {
+        InitialSoC = -1;
+        FullSoC = -1;
+        RemainingSoC = -1;
+        ComputedSoC = -1;
+        EnergyCapacity = -1;
+        EnergyRequest = -1;
+        TimeUntilFull = -1;
+        strncpy(EVCCID, "", sizeof(EVCCID));
+        _LOG_A("Reset SoC and EVCCID (EV is disconnected - STATE_A)");
+    } else {
+        _LOG_A("Keep SoC (EV is still connected)");
+    }
 }
 #endif //MODEM
 
@@ -2393,6 +2407,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
+        EVMeter.CalculateEnergyFromCurrent();  // Calculate energy from current as fallback
         RecomputeSoC();
 
         doc["current_soc"] = current_soc;
