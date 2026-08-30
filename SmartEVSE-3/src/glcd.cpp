@@ -1490,6 +1490,23 @@ void GLCDMenu(uint8_t Buttons) {
                     GLCD_buffer_clr();
                     sprintf(Str, "%i%cC", getItemValue(STATUS_TEMP), 0x0C);                              // ° Degree symbol
                     GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);                     // show the internal temperature
+                    // Exit-direction icon (0x10+0x11 = right, 0x12+0x13 = left).
+                    // Suppressed when the user is on the EXIT MENU entry.
+                    int8_t pos = -1, exit_pos = -1;
+                    uint8_t total = getMenuItems();
+                    for (uint8_t i = 0; i < total; i++) {
+                        if (MenuItems[i] == LCDNav) pos = i;
+                        if (MenuItems[i] == MENU_EXIT) exit_pos = i;
+                    }
+                    if (pos != exit_pos && pos >= 0 && exit_pos >= 0) {
+                        uint8_t icon = ((exit_pos - pos + total) % total <= (pos - exit_pos + total) % total)
+                                           ? EXIT_ICON_RIGHT : EXIT_ICON_LEFT;
+                        GLCDx = GLCD_text_length(Str) + 4;       // 4 px gap after the temperature
+                        GLCDy = 0;
+                        GLCD_write_buf(icon, 0);
+                        GLCDx --;                                 // no gap between the two icon glyphs
+                        GLCD_write_buf(icon + 1, 0);
+                    }
                     sprintf(Str, "%.19s",(const char *) VERSION);
                     GLCD_write_buf_str(127, 0, Str, GLCD_ALIGN_RIGHT);// show software version in bottom right corner.
                     GLCD_sendbuf(7, 1);

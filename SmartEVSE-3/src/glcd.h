@@ -33,6 +33,9 @@
 #define GLCD_ALIGN_CENTER 1
 #define GLCD_ALIGN_RIGHT  2
 
+#define EXIT_ICON_RIGHT 0x10                                                 // font glyph base for "exit to the right" (0x10,0x11)
+#define EXIT_ICON_LEFT  0x12                                                 // font glyph base for "exit to the left"  (0x12,0x13)
+
 extern void GLCDHelp(void);
 extern void GLCD(void);
 extern void GLCDMenu(unsigned char Buttons);
