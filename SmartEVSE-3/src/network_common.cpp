@@ -1767,6 +1767,29 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
         } else if (mg_http_match_uri(hm, "/") && WIFImode == 2) { // serve AP page to fill in WIFI credentials
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%s", html_form);
+        // Browser reports its IANA timezone name (=query ?tz=Europe/Berlin) so the device
+        // can set its own timezone. Especially needed for Ethernet installs, where the
+        // WiFi setup portal (which also saves the browser timezone) never runs.
+        } else if (mg_http_match_uri(hm, "/settz") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+            char tz[64];
+            if (mg_http_get_var(&hm->query, "tz", tz, sizeof(tz)) > 0 && tz[0]) {
+                bool changed = (TZname != tz);
+                if (changed) {                              // avoid NVS wear on unchanged values
+                    TZname = tz;
+                    if (preferences.begin("settings", false)) {
+                        preferences.putString("TZname", TZname);
+                        preferences.end();
+                    }
+                }
+                // Resolve TZname into a POSIX TZ string now; also retries a previous
+                // zones.csv lookup that failed, on every subsequent page load.
+                if (changed || TZinfo == "") {
+                    xTaskCreate(setTimeZone, "setTimeZone", 4096, NULL, 1, NULL);
+                }
+                mg_http_reply(c, 200, "Content-Type: application/json\r\n", "{\"tz\":\"%s\"}\n", tz);
+            } else {
+                mg_http_reply(c, 400, "", "Missing tz");
+            }
         // save WiFi credentials, make sure we are still in WiFiPortal mode    
         } else if (mg_http_match_uri(hm, "/save") && WIFImode == 2) {
             char ssid[33], password[64], tz[64];

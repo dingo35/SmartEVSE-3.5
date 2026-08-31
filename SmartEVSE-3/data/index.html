@@ -1987,6 +1987,14 @@
   </div>
   <script>
     if (!window.isRawDataPage) {
+      // Report the browser timezone
+      try {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz && tz !== 'UTC') {
+          fetch('/settz?tz=' + encodeURIComponent(tz), { method: 'POST' }).catch(function () {});
+        }
+      } catch (e) { /* browser without Intl timezone support */ }
+
       // Get the current date and time
       var now = new Date();
       $('[id=stoptime_group]').hide();
