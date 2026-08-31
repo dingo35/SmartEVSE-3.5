@@ -1614,9 +1614,21 @@ label{display:block;margin:5px 0}
 input[type=text],input[type=password]{width:100%;padding:8px;font-size:14px;border:1px solid #ccc;box-sizing:border-box}
 input[type=submit]{width:100%;padding:8px;font-size:14px;background:#4CAF50;color:#fff;border:0;cursor:pointer}
 input[type=submit]:hover{background:#45a049}
+#rescan{width:100%;padding:8px;font-size:14px;background:#2196F3;color:#fff;border:0;cursor:pointer;margin:5px 0}
+#nets{display:flex;flex-direction:column;gap:4px;margin:5px 0}
+#nets button{padding:8px;font-size:13px;text-align:left;border:1px solid #ccc;background:#f8f8f8;cursor:pointer}
+#nets button:hover{background:#e8e8e8}
 @media (max-width:600px){form{width:95%}}</style>
 <script>function togglePassword(){var x=document.getElementById('password');x.type=x.type==='password'?'text':'password'}
-window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone}</script>
+function pick(s){document.getElementById('ssid').value=s}
+function doscan(r){fetch('/wifiscan'+(r?'?rescan=1':'')).then(function(r){return r.json()}).then(function(j){
+var d=document.getElementById('nets');
+if(j.n<0){d.textContent='Scanning...';setTimeout(function(){doscan(0)},1500);return}
+if(!j.a.length){d.textContent='No networks found';return}
+d.textContent='';
+j.a.forEach(function(w){var b=document.createElement('button');b.type='button';b.textContent=w[0]+' ('+w[1]+'dBm)';
+b.onclick=function(){pick(w[0])};d.appendChild(b)})})}
+window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone;doscan(0)}</script>
 </head>
 <body><form action="/save" method="POST">
 <h2>WiFi Setup</h2>
@@ -1627,8 +1639,11 @@ window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat
 "<small>SmartEVSE only connects to 2.4 GHz networks.</small>"
 #endif
 R"EOF(
+<label>Available networks:</label>
+<div id="nets">Scanning...</div>
+<button type="button" id="rescan" onclick="doscan(1)">Re-scan</button>
 <label>SSID:</label>
-<input type="text" name="ssid" required minlength="1" maxlength="32" pattern="[ -~]{1,32}" title="SSID must be 1-32 printable characters">
+<input type="text" name="ssid" id="ssid" required minlength="1" maxlength="32" pattern="[ -~]{1,32}" title="SSID must be 1-32 printable characters">
 <label>Password:</label>
 <input type="password" name="password" id="password" required minlength="8" maxlength="63" pattern="[ -~]{8,63}" title="Password must be 8-63 printable characters">
 <label><input type="checkbox" onclick="togglePassword()">Show Password</label>
@@ -1741,10 +1756,11 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     request->setMessage(hm);
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
-    // In portal mode, only allow the portal page, /save and /erasesettings
+    // In portal mode, only allow the portal page, /save, /wifiscan and /erasesettings
     if (WIFImode == 2 &&
         !mg_match(hm->uri, mg_str("/"),              NULL) &&
         !mg_match(hm->uri, mg_str("/save"),          NULL) &&
+        !mg_match(hm->uri, mg_str("/wifiscan"),      NULL) &&
         !mg_match(hm->uri, mg_str("/erasesettings"), NULL)) {
         mg_http_reply(c, 403, "Content-Type: text/plain\r\n", "Not available in portal mode");
         return;
@@ -1767,6 +1783,75 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
         } else if (mg_http_match_uri(hm, "/") && WIFImode == 2) { // serve AP page to fill in WIFI credentials
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%s", html_form);
+        // JSON list of up to 5 strongest WiFi networks, only in portal mode
+        } else if (mg_http_match_uri(hm, "/wifiscan") && WIFImode == 2) {
+            static char json[600];                          // 5 APs need ~410 bytes worst case
+            char flag[8];
+            int rescan = mg_http_get_var(&hm->query, "rescan", flag, sizeof(flag)) > 0;
+            int16_t st = (rescan) ? WIFI_SCAN_FAILED : WiFi.scanComplete();
+            if (st == WIFI_SCAN_RUNNING) {                  // scan in progress, page polls again
+                strcpy(json, "{\"n\":-1}");
+            } else if (st >= 0 && !rescan) {                // results available: top 5 by signal strength
+                char best[5][33];                           // strongest-first (SSID max 32 chars + NUL)
+                int32_t rssi[5];
+                int nr = 0;                                 // number of networks collected
+                for (int i = 0; i < st; i++) {
+                    String s = WiFi.SSID(i).substring(0, 32);
+                    const char *ss = s.c_str();
+                    if (!ss[0]) continue;                   // skip hidden networks (must be typed manually)
+                    bool printable = true;                  // only APs we can put in the setup form
+                    for (const char *p = ss; *p; p++) {
+                        if ((unsigned char)*p < ' ' || (unsigned char)*p > '~') { printable = false; break; }
+                    }
+                    if (!printable) continue;
+                    int32_t r = WiFi.RSSI(i);
+                    if (nr == 5 && r <= rssi[4]) continue;  // weaker than the collected top 5
+                    int pos = (nr < 5) ? nr++ : 4;          // append, or replace the weakest
+                    while (pos > 0 && rssi[pos - 1] < r) {  // insertion sort, strongest first
+                        rssi[pos] = rssi[pos - 1];
+                        strcpy(best[pos], best[pos - 1]);
+                        pos--;
+                    }
+                    rssi[pos] = r;
+                    strcpy(best[pos], ss);
+                }
+                // Mesh setups broadcast the same SSID on multiple APs: keep only the strongest
+                // instance of each SSID.
+                for (int i = 0; i < nr; i++) {
+                    for (int j = i + 1; j < nr; j++) {
+                        if (!strcmp(best[i], best[j])) {    // duplicate: shift the rest up
+                            for (int k = j; k < nr - 1; k++) {
+                                rssi[k] = rssi[k + 1];
+                                strcpy(best[k], best[k + 1]);
+                            }
+                            nr--;
+                            j--;                            // re-check the moved-in entry
+                        }
+                    }
+                }
+                // Serialize: {"n":<count>,"a":[["ssid",rssi],...]}
+                size_t pos = (size_t)snprintf(json, sizeof(json), "{\"n\":%d,\"a\":[", nr);
+                for (int i = 0; i < nr; i++) {
+                    char esc[70];                           // SSID escaped as JSON string (32 chars max)
+                    size_t e = 0;
+                    esc[e++] = '"';
+                    for (const char *p = best[i]; *p && e + 2 < sizeof(esc); p++) {
+                        if (*p == '"' || *p == '\\') esc[e++] = '\\';
+                        esc[e++] = *p;
+                    }
+                    esc[e++] = '"';
+                    esc[e] = 0;
+                    pos += snprintf(json + pos, sizeof(json) - pos, "%s[%s,%d]", i ? "," : "", esc, (int)rssi[i]);
+                }
+                snprintf(json + pos, sizeof(json) - pos, "]}");
+                WiFi.scanDelete();                          // free the scan result memory
+            } else {
+                // No (fresh) results: (re)start an async scan. A short 120ms/channel
+                // dwell (beacons are 100ms apart) keeps the total beacon-silence gap
+                // around 1.6s so a phone joined to the AP survives it.
+                strcpy(json, (WiFi.scanNetworks(true, false, false, 120) == WIFI_SCAN_RUNNING) ? "{\"n\":-1}" : "{\"n\":0,\"a\":[]}");
+            }
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", json);
         // Browser reports its IANA timezone name (=query ?tz=Europe/Berlin) so the device
         // can set its own timezone. Especially needed for Ethernet installs, where the
         // WiFi setup portal (which also saves the browser timezone) never runs.
@@ -1790,7 +1875,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             } else {
                 mg_http_reply(c, 400, "", "Missing tz");
             }
-        // save WiFi credentials, make sure we are still in WiFiPortal mode    
+        // save WiFi credentials, make sure we are still in WiFiPortal mode
         } else if (mg_http_match_uri(hm, "/save") && WIFImode == 2) {
             char ssid[33], password[64], tz[64];
             bool has_ssid = mg_http_get_var(&hm->body, "ssid", ssid, sizeof(ssid)) > 0;
