@@ -1253,7 +1253,7 @@ uint8_t getMenuItems (void) {
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)
     MenuItems[m++] = MENU_WIFI;                                                 // Wifi Disabled / Enabled / Portal
-    if (getItemValue(MENU_WIFI)  == 1) {                                        // only show AutoUpdate menu if Wifi enabled
+    if (getItemValue(MENU_WIFI) == 1 || NetworkConnected()) {                   // Show net-dependent items if WiFi enabled, or any network (incl. Ethernet) has an IP
         MenuItems[m++] = MENU_AUTOUPDATE;                                       // Firmware automatic update Disabled / Enabled
         MenuItems[m++] = MENU_PAIRING;                                          // Generate PairingPin for SmartEVSE App
         MenuItems[m++] = MENU_APPSERVER;                                        // App Server (0:Disable / 1:Enable)
