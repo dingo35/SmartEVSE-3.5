@@ -2450,6 +2450,11 @@ void Timer10ms_singlerun(void) {
                     EVMeter.EnergyMeterStart = EVMeter.Energy;              // store kwh measurement at start of charging.
                     EVMeter.EnergyCharged = EVMeter.Energy - EVMeter.EnergyMeterStart; // Calculate Energy
                     EVMeter.ResetKwh = 0;                                   // clear flag, will be set when disconnected from EVSE (State A)
+
+                    // Reset calculated energy fallback as well
+                    EVMeter.EnergyCharged_Calculated = 0;
+                    EVMeter.LastPowerCalcTime = millis();
+                    EVMeter.PowerCalculated = 0;
                 }
                 // Load Balancing : Node
                 if (LoadBl > 1) {

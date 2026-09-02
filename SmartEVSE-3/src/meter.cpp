@@ -68,6 +68,9 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
     PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
     ResetKwh = 2;                                                       // if set, reset EV kwh meter at state transition B->C
                                                                         // cleared when charging, reset to 1 when disconnected (state A)
+    EnergyCharged_Calculated = 0;                                       // Fallback: calculated energy from Irms
+    PowerCalculated = 0;                                                // Calculated power from Irms
+    LastPowerCalcTime = 0;                                              // Time of last power calculation
 }
 
 /**
@@ -586,3 +589,45 @@ void Meter::CalcImeasured(void) {
     }
 }
 
+// Calculate power and energy from Irms when no kWh meter is available
+// This function integrates power over time to estimate energy charged
+void Meter::CalculateEnergyFromCurrent(void) {
+    extern uint8_t State;
+    extern uint8_t Nr_Of_Phases_Charging;
+    
+    uint32_t now = millis();
+    
+    // Only calculate every 1000ms (1 second) to accumulate reasonable energy values
+    if (now - LastPowerCalcTime < 1000) {
+        return;
+    }
+    
+    // Must be in charging state with valid phase info
+    if (State != STATE_C || Nr_Of_Phases_Charging == 0) {
+        return;
+    }
+    
+    // Calculate current power in Watts from 3-phase current measurement
+    // Power = Sum of (Irms[phase] * 230V * phases_active)
+    // Irms is in units of 0.1A (i.e., 230 = 23.0 A)
+    int32_t TotalCurrent = 0;
+    for (int i = 0; i < 3; i++) {
+        TotalCurrent += Irms[i];  // Sum all phases
+    }
+    
+    // Convert current (in 0.1A units) to Watts: I(A) * 230V
+    // TotalCurrent is in 0.1A, so: (TotalCurrent / 10) * 230 = TotalCurrent * 23
+    PowerCalculated = TotalCurrent * 23;  // Result in Watts
+    
+    // Energy accumulated over this 1-second interval: Power(W) * 1(s) / 3600 = Wh/3600
+    // So: Energy(Wh) += Power(W) / 3600
+    if (PowerCalculated > 50) {  // Only integrate if power > 50W to avoid noise
+        int32_t EnergyDelta = PowerCalculated / 3600;  // Energy in Wh for this 1-second interval
+        EnergyCharged_Calculated += EnergyDelta;
+    }
+    
+    LastPowerCalcTime = now;
+    
+    _LOG_D("EVMeter PowerCalc: %.1f A | Power: %i W | EnergyCalc: %i Wh\n", 
+           (float)TotalCurrent / 10.0f, PowerCalculated, EnergyCharged_Calculated);
+}
