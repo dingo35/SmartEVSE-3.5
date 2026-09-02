@@ -851,6 +851,12 @@ void SetupMQTTClient() {
     MQTTclient.announce("OCPP",           "sensor", "");
     MQTTclient.announce("OCPPConnection", "sensor", "");
 
+    // Writable RFID tag: publishing a hex UID here simulates a card swipe.
+    snprintf(opt, sizeof(opt),
+        ", \"state_topic\":\"%s/RFIDLastRead\", \"command_topic\":\"%s/Set/RFID\""
+        ", \"min\":12, \"max\":14, \"pattern\":\"^([0-9a-fA-F]{12}|[0-9a-fA-F]{14})$\"", p, p);
+    MQTTclient.announce("RFID Tag", "text", opt);
+
     // LED color text entities: build state_topic/command_topic with snprintf.
     #define ANN_LED(label, slug) do { \
         snprintf(opt, sizeof(opt), \

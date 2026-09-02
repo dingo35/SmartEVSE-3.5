@@ -378,6 +378,7 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...For a 7 byte UID, use 14 hex characters (e.g., '11223344556677').
 ...The RFID will be processed using all existing checks: whitelist verification, OCPP authorization, etc.
 ...Swiping the same card again will typically stop the session (behavior depends on RFID Reader mode setting).
+...Home Assistant discovers this topic as the `RFID Tag` text entity, so the tag can also be set natively from HA.
 
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 
