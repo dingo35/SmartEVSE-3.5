@@ -1120,6 +1120,10 @@ int getmDNSServiceType(const String &hostname) {
     static const ServiceTypeMap serviceTypes[] = {
         {"p1meter-", EM_HOMEWIZARD},
         {"kwhmeter-", EM_HOMEWIZARD},
+        {"P1-", EM_HOMEWIZARD},
+        {"ETH-", EM_HOMEWIZARD},
+        {"NRG-", EM_HOMEWIZARD},
+        {"ULTRA-", EM_HOMEWIZARD},
          // Add more mappings for other brands/types here if needed
     };
 
