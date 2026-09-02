@@ -344,6 +344,10 @@ Valid topics you can publish to are:
                Example: "112233445566" (6 bytes) or "11223344556677" (7 bytes)
                This will simulate an RFID card swipe and start/stop a charging session using all existing RFID checks
                (whitelist verification, OCPP authorization, etc.)
+/Set/OCPPIdTag Free-text idTag for the OCPP backend (1-20 printable ASCII characters, no spaces)
+               Example: "CAR_A". Starts or stops an OCPP transaction under that label, so different
+               cars are told apart in the backend without inventing hex UIDs.
+               Requires OCPP to be enabled and the RFID Reader set to Rmt/OCPP or Disabled.
 ```
 Your mains kWh meter data can be fed with:
 ```
@@ -379,6 +383,15 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...The RFID will be processed using all existing checks: whitelist verification, OCPP authorization, etc.
 ...Swiping the same card again will typically stop the session (behavior depends on RFID Reader mode setting).
 ...Home Assistant discovers this topic as the `RFID Tag` text entity, so the tag can also be set natively from HA.
+
+If your backend cannot give a friendly name to a hex UID, publish a readable idTag instead:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/OCPPIdTag' -m 'CAR_A'
+```
+...OCPP 1.6 defines idTag as a CiString20Type, so up to 20 printable ASCII characters, compared case insensitively.
+...The current idTag is published on `/OCPPIdTag` and discovered by Home Assistant as the `OCPP IdTag` text entity.
+...A transaction is only stopped by the same idTag that started it, so one car cannot end another car's session.
+...That comparison is case sensitive, so stop a session with the exact spelling you started it with.
 
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 

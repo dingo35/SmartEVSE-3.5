@@ -324,6 +324,7 @@ private:
 extern ShadowPreferences shadowPrefs;
 
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen);
+void ocppUpdateIdTag(const char *idTag);
 bool ocppIsConnectorPlugged();
 
 bool ocppHasTxNotification();

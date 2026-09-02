@@ -56,6 +56,7 @@ char RequiredEVCCID[32] = "";                                               // R
 #include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Core/Context.h>
 #include <MicroOcpp/Model/FirmwareManagement/FirmwareService.h>
+#include <MicroOcpp/Operations/CiStrings.h>
 
 
 // Create a ModbusRTU server, client and bridge instance on Serial1
@@ -205,8 +206,7 @@ extern CapacityNode* first_interval;
 
 uint8_t OcppMode = OCPP_MODE; //OCPP Client mode. 0:Disable / 1:Enable
 
-unsigned char OcppRfidUuid [7];
-size_t OcppRfidUuidLen;
+char OcppIdTag [IDTAG_LEN_MAX + 1];    // idTag for the next OCPP transaction: hex UID from the RFID reader, or free text via MQTT
 unsigned long OcppLastRfidUpdate;
 unsigned long OcppTrackLastRfidUpdate;
 
@@ -745,6 +745,32 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 _LOG_A("Invalid RFID length received via MQTT (expected 12 or 14 hex chars): %s\n", hexString.c_str());
             }
         }
+    } else if (topic == MQTTprefix + "/Set/OCPPIdTag") {
+        // Start / stop an OCPP transaction with a free-text idTag, so each car can carry its own
+        // readable label in the backend instead of a hex UID.
+        // OCPP 1.6 IdToken is a CiString20Type: 1-20 printable ASCII characters, compared case insensitively.
+        uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
+        if (!OcppMode) {
+            _LOG_A("OCPP not enabled, ignoring MQTT idTag\n");
+        } else if (RFIDReader != 6 && RFIDReader != 0) {
+            // Any other mode hands the Access_bit to the built-in RFID store, which would fight this transaction
+            _LOG_A("RFID reader not in OCPP mode, ignoring MQTT idTag\n");
+        } else {
+            String idTag = payload;
+            idTag.trim();
+
+            bool valid = idTag.length() >= 1 && idTag.length() <= IDTAG_LEN_MAX;
+            for (size_t i = 0; valid && i < idTag.length(); i++) {
+                if (idTag[i] <= 0x20 || idTag[i] >= 0x7f) valid = false; // printable ASCII, no spaces
+            }
+
+            if (valid) {
+                _LOG_A("OCPP idTag received via MQTT: %s\n", idTag.c_str());
+                ocppUpdateIdTag(idTag.c_str());
+            } else {
+                _LOG_A("Invalid OCPP idTag received via MQTT (expected 1-20 printable ASCII chars): %s\n", idTag.c_str());
+            }
+        }
     }
 
     // Make sure MQTT updates directly to prevent debounces
@@ -856,6 +882,12 @@ void SetupMQTTClient() {
         ", \"state_topic\":\"%s/RFIDLastRead\", \"command_topic\":\"%s/Set/RFID\""
         ", \"min\":12, \"max\":14, \"pattern\":\"^([0-9a-fA-F]{12}|[0-9a-fA-F]{14})$\"", p, p);
     MQTTclient.announce("RFID Tag", "text", opt);
+
+    // Writable OCPP idTag: free text, for labelling transactions per car.
+    snprintf(opt, sizeof(opt),
+        ", \"command_topic\":\"%s/Set/OCPPIdTag\""
+        ", \"min\":1, \"max\":20, \"pattern\":\"^[!-~]{1,20}$\"", p);
+    MQTTclient.announce("OCPP IdTag", "text", opt);
 
     // LED color text entities: build state_topic/command_topic with snprintf.
     #define ANN_LED(label, slug) do { \
@@ -1017,6 +1049,8 @@ void mqttPublishData() {
         if (homeBatteryLastUpdate)
             mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
         mqPubS("/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
+        if (OcppIdTag[0]) //only export when set, because after boot it is empty = deletes the retained value
+            mqPubS("/OCPPIdTag", OcppIdTag, true, 0);
         mqPubS("/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
         {
             // RGB values: build "R,G,B" on the stack.
@@ -2492,12 +2526,26 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
  */
 
 void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
-    if (!uuid || uuidLen > sizeof(OcppRfidUuid)) {
+    if (!uuid || uuidLen < 1 || uuidLen > 7) {
         _LOG_W("OCPP: invalid UUID\n");
         return;
     }
-    memcpy(OcppRfidUuid, uuid, uuidLen);
-    OcppRfidUuidLen = uuidLen;
+    for (size_t i = 0; i < uuidLen; i++) {
+        snprintf(OcppIdTag + 2*i, 3, "%02X", uuid[i]);
+    }
+    OcppIdTag[2 * uuidLen] = '\0';
+    OcppLastRfidUpdate = millis();
+}
+
+// Use a free-text idTag instead of a hex UID, so transactions can be labelled per car.
+// OCPP 1.6 IdToken is a CiString20Type; MicroOcpp rejects anything longer in beginTransaction().
+void ocppUpdateIdTag(const char *idTag) {
+    if (!idTag || !*idTag || strlen(idTag) > IDTAG_LEN_MAX) {
+        _LOG_W("OCPP: invalid idTag\n");
+        return;
+    }
+    strncpy(OcppIdTag, idTag, sizeof(OcppIdTag) - 1);
+    OcppIdTag[sizeof(OcppIdTag) - 1] = '\0';
     OcppLastRfidUpdate = millis();
 }
 
@@ -2873,26 +2921,20 @@ void ocppLoop() {
     if (OcppTrackLastRfidUpdate != OcppLastRfidUpdate) {
         // New RFID card swiped
 
-        char uuidHex [2 * sizeof(OcppRfidUuid) + 1];
-        uuidHex[0] = '\0';
-        for (size_t i = 0; i < OcppRfidUuidLen; i++) {
-            snprintf(uuidHex + 2*i, 3, "%02X", OcppRfidUuid[i]);
-        }
-
         if (OcppLockingTx) {
             // Connector is still locked by earlier transaction
 
-            if (!strcmp(uuidHex, OcppLockingTx->getIdTag())) {
+            if (!strcmp(OcppIdTag, OcppLockingTx->getIdTag())) {
                 // Connector can be unlocked again
                 OcppLockingTx.reset();
-                endTransaction(uuidHex, "Local");
+                endTransaction(OcppIdTag, "Local");
             } // else: Connector remains blocked for now
         } else if (getTransaction()) {
             //OCPP lib still has transaction (i.e. transaction running or authorization pending) --> swiping card again invalidates idTag
-            endTransaction(uuidHex, "Local");
+            endTransaction(OcppIdTag, "Local");
         } else {
             //OCPP lib has no idTag --> swiped card is used for new transaction
-            OcppLockingTx = beginTransaction(uuidHex);
+            OcppLockingTx = beginTransaction(OcppIdTag);
         }
     }
     OcppTrackLastRfidUpdate = OcppLastRfidUpdate;
