@@ -698,8 +698,8 @@ void mqtt_receive_callback(const String topic, const String payload) {
         // Payload should be hex string: 12 or 14 characters for 6 or 7 byte UID
         // Examples: "010203040506" (6 bytes) or "01020304050607" (7 bytes)
         uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
-        if (!RFIDReader) {
-            _LOG_A("RFID reader not enabled, ignoring MQTT RFID\n");
+        if (!RFIDReader && !OcppMode) {
+            _LOG_A("RFID reader and OCPP not enabled, ignoring MQTT RFID\n");
         } else {
             String hexString = payload;
             hexString.trim();
@@ -977,7 +977,7 @@ void mqttPublishData() {
         mqPubS("/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         mqPubS("/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
         mqPubS("/EnableC2", StrEnableC2[EnableC2], true, 0);
-        if (RFIDReader) {
+        if (RFIDReader || OcppMode) {
             char buf[15];
             printRFID(buf);
             mqPubS("/RFIDLastRead", buf, true, 0);
