@@ -50,21 +50,21 @@ jobs:
                     echo "version=${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}-${{ inputs.prerelease }}" >> $GITHUB_OUTPUT
                  fi
               fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Cache pip
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: '${{ runner.os }}-pip-${{ hashFiles(''**/requirements.txt'') }}'
           restore-keys: |
             ${{ runner.os }}-pip-
       - name: Cache PlatformIO
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: '${{ runner.os }}-${{ hashFiles(''**/lockfiles'') }}'
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: '3.10'
       - name: Install PlatformIO
