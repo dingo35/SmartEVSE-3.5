@@ -8,6 +8,7 @@
 * If you configured MULTIple SmartEVSE's, follow the instructions below
 * Put your SmartEVSE in Solar Mode, and some specific settings for Solar Mode will open up
 * Now your SmartEVSE is ready for use!
+* If you, for some reason, need to reset your SmartEVSE to factory settings, browse to the `http://<your-smartevse>/erasesettings` webpage, and your SmartEVSE will be reset.
 
 # All menu options on the LCD screen:
 ## MODE
