@@ -1006,7 +1006,8 @@ void mqttPublishData() {
         if (EVMeter.Type) {
             mqPubI("/EVChargePower", EVMeter.PowerMeasured, false, 0);
             mqPubI("/EVEnergyCharged", EVMeter.EnergyCharged, true, 0);
-            mqPubI("/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
+            if (EVMeter.Energy) //only export when not zero, because after boot it is zero = empty value
+                mqPubI("/EVTotalEnergyCharged", EVMeter.Energy, false, 0);
         }
         if (homeBatteryLastUpdate)
             mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
@@ -1069,7 +1070,8 @@ void mqttSmartEVSEPublishData() {
     if (EVMeter.Type) {
         MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVChargePower", String(EVMeter.PowerMeasured), false, 0);
         MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVEnergyCharged", String(EVMeter.EnergyCharged), true, 0);
-        MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVImportActiveEnergy", String(EVMeter.Import_active_energy), false, 0);
+        if (EVMeter.Import_active_energy) //only export when not zero, because after boot it is zero = empty value
+            MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/EVImportActiveEnergy", String(EVMeter.Import_active_energy), false, 0);
     }
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/PairingPin", PairingPin, true, 0);
     MQTTclientSmartEVSE.publish(MQTTSmartEVSEprefix + "/MaxCurrent", String(MaxCurrent * 10), true, 0);
@@ -1693,7 +1695,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             doc["ev_meter"]["host"] = strlen(EVMeter.DeviceHostName) > 0 ? EVMeter.DeviceHostName : "Not Set";
         }
         doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured; // Watt
-        doc["ev_meter"]["total_wh"] = EVMeter.Energy; // Wh
+        if (EVMeter.Energy) //only export when not zero, because after boot it is zero = empty value
+            doc["ev_meter"]["total_wh"] = EVMeter.Energy; // Wh
         doc["ev_meter"]["charged_wh"] = EVMeter.EnergyCharged; // Wh
         doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
