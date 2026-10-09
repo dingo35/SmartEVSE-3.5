@@ -37,6 +37,10 @@ bool LocalTimeSet = false;
 
 //mongoose stuff
 #include "esp_log.h"
+#include "netdiag.h"
+#include "netwatchdog.h"
+#include <esp_heap_caps.h>
+#include <esp_wifi.h>
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
@@ -1654,11 +1658,11 @@ R"EOF(
 
 
 // Maximum concurrent HTTP connections to prevent socket exhaustion.
-// The ESP32 lwIP stack only has CONFIG_LWIP_MAX_SOCKETS (16) sockets total,
+// The ESP32 lwIP stack has CONFIG_LWIP_MAX_SOCKETS (now 32) sockets total,
 // shared by EVERYTHING (both HTTP listeners, both MQTT clients, mDNS, SNTP,
 // and the RemoteDebug telnet listener/client).
-#define MAX_HTTP_CONNECTIONS 4
-#define WS_CONNECTION_RESERVE 1
+#define MAX_HTTP_CONNECTIONS 6
+#define WS_CONNECTION_RESERVE 2
 
 // Count only accepted inbound server connections.
 // (This does not count listeners, outbound client connections,
@@ -1689,6 +1693,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     if (c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty, .skip_verification = 0};
     mg_tls_init(c, &opts);
+    }
+    // Reset-on-close: under connection bursts, politely-closed sockets linger
+    // in FIN-WAIT/TIME-WAIT holding PCB + buffers. SO_LINGER {1,0} makes
+    // close() send RST instead, releasing everything immediately.
+    {
+      struct linger lin = { 1, 0 };
+      setsockopt((int) (size_t) c->fd, SOL_SOCKET, SO_LINGER, (const char *) &lin, sizeof(lin));
     }
   } else if (ev == MG_EV_CLOSE) {
     if (c == HttpListener80) {
@@ -2294,11 +2305,14 @@ void onGotIP(const char *dns_ip) {
     }
 
     // Start mDNS
+    MDNS.end();  // release any previous responder instance (reconnect path)
     if (!MDNS.begin(APhostname.c_str())) {
         _LOG_A("Error setting up MDNS responder!\n");
     } else {
         _LOG_A("mDNS responder started. http://%s.local\n", APhostname.c_str());
-        MDNS.addService("http", "tcp", 80);
+        if (!MDNS.addService("http", "tcp", 80)) {
+            _LOG_A("Failed adding mDNS service http.tcp.\n");
+        }
     }
 
     startNetworkServices();
@@ -2546,6 +2560,20 @@ void WiFiSetup(void) {
 
 }
 
+// Full WiFi driver reload. A single recovery for every dead-path guard
+// Tears down the radio, netif, DNS resolver cache and lwIP state;
+// all services ride the same stack, so one reload heals every connection.
+static void wifiDriverReload(const char *reason) {
+    _LOG_A("wifi driver reload: %s\n", reason);
+    WiFi.disconnect(true);
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    delay(100);
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+}
 
 // called by loop() in the main program
 void network_loop() {
@@ -2577,7 +2605,19 @@ void network_loop() {
         if (!LocalTimeSet && (WIFImode == 1 || EthHasIP)) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
-        _LOG_D("free heap: %u largest free block: %u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        _LOG_A("internal ram free: %u largest free block: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#ifdef NETDIAG
+        { static char _ndline[160]; netdiag_health_line(_ndline, sizeof(_ndline));
+          uint32_t stok, stfail, strec; netwatchdog_selftest_counters(&stok, &stfail, &strec);
+          _LOG_A("wd: probes ok=%u fail=%u recoveries=%u | ticks=%lu | wst=%d\n",
+                 stok, stfail, strec, netwatchdog_ticks(), (int) WiFi.status()); }
+        { static uint8_t _ndctr = 0; if (++_ndctr >= 15) { _ndctr = 0; netdiag_dump(); } }
+#endif
+ 
+        int nw = netwatchdog_tick();
+        if (nw) {
+            wifiDriverReload(nw == 2 ? "netwatchdog: link probes dead" : "netwatchdog: dns dead");
+        }
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
