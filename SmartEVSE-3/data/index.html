@@ -219,7 +219,7 @@
         </details>
       </div>
 
-      <div class="section">
+      <div class="section hidden" id="mqtt-heading">
         <h2>MQTT</h2>
         <div class="ln"></div>
       </div>
@@ -419,12 +419,6 @@ const kw = (v) => (v / 1000).toFixed(1) + " kW";
 const kwh = (v) => (v / 1000).toFixed(1) + " kWh";
 
 
-try {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if (tz && tz !== "UTC") fetch("/settz?tz=" + encodeURIComponent(tz), { method: "POST" }).catch(() => {});
-} catch (e) {}
-
-
 let d = null;               
 let inited = false;
 let fails = 0;
@@ -620,15 +614,14 @@ function render() {
   $("fs-override").classList.toggle("hidden", ev.loadbl > 1 || sol);
 
   
+  $("mqtt-heading").classList.toggle("hidden", !d.mqtt);
+  $("mqtt-card").classList.toggle("hidden", !d.mqtt);
   if (d.mqtt) {
-    $("mqtt-card").classList.remove("hidden");
     renderMqttStatus(d.mqtt);
     if (!$("mqtt-details").open) {
       fillMqtt(d.mqtt);
     }
     $("mqtt-cert-wrap").classList.toggle("hidden", !$("mqtt-tls").checked || !$("mqtt-details").open);
-  } else {
-    $("mqtt-card").classList.add("hidden");
   }
 
   
@@ -656,8 +649,16 @@ function poll() {
       fails++;
       if (fails >= 2) $("hd-meta").textContent = "No response \u2014 retrying\u2026";
     })
-    .finally(() => { pollTimer = setTimeout(poll, fails > 2 ? 15000 : 5000); });
+    .finally(() => { pollTimer = setTimeout(poll, fails === 1 ? 500 : fails > 2 ? 15000 : 5000); });
 }
+
+// Request the page data before opening the LCD stream or sending other startup requests.
+poll();
+
+try {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (tz && tz !== "UTC") fetch("/settz?tz=" + encodeURIComponent(tz), { method: "POST" }).catch(() => {});
+} catch (e) {}
 
 
 buildModeButtons();
@@ -1014,7 +1015,6 @@ $("ocpp-save").onclick = function () {
   });
 })();
 
-poll();
 }
 </script>
   </body>
