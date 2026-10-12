@@ -245,20 +245,21 @@
           <div class="fields mt-10 mb-8" style="align-items:flex-end">
             <label class="f">Broker address<input type="text" id="mqtt-host" maxlength="65" autocomplete="url"></label>
             <label class="f">Port<input type="number" id="mqtt-port" min="1" max="65535" inputmode="numeric" style="width:90px"></label>
-            <label class="f">Topic prefix<input type="text" id="mqtt-prefix"></label>
+            <label class="f">Topic prefix<input type="text" id="mqtt-prefix" maxlength="32"></label>
           </div>
           <p class="mqtt-help">Leave port empty for 1883 (8883 with TLS). Leave topic prefix empty for the default; custom prefixes cannot contain +, #, or empty levels.</p>
           <div class="fields" style="margin-top:8px;align-items:flex-end">
-            <label class="f">Username<input type="text" id="mqtt-user" autocomplete="username" title="Leave empty for anonymous MQTT"></label>
-            <label class="f">Password<input type="password" id="mqtt-pass" autocomplete="new-password" placeholder="Not configured" title="Leave empty to keep the current password"></label>
-            <label class="switch infield" title="Use a secure (TLS) connection to the MQTT broker, usually port 8883">
+            <label class="f">Username<input type="text" id="mqtt-user" maxlength="64" autocomplete="username"></label>
+            <label class="f">Password<input type="password" id="mqtt-pass" maxlength="128" autocomplete="new-password" placeholder="Not configured" aria-describedby="mqtt-password-help"></label>
+            <label class="switch infield">
               <input type="checkbox" id="mqtt-tls">
               <span class="track"><span class="knob"></span></span>
             TLS</label>
           </div>
+          <p class="mqtt-help" id="mqtt-password-help">Leave the password blank to keep the current password. If none is set, it stays unset.</p>
           <div class="hidden" id="mqtt-cert-wrap" style="margin-top:8px">
             <label class="f">CA certificate (PEM, empty = built-in certificate)
-<textarea id="mqtt-cert" rows="6" spellcheck="false" title="Paste a PEM-formatted CA certificate for TLS, or leave empty for the built-in certificate"></textarea>
+              <textarea id="mqtt-cert" rows="6" spellcheck="false"></textarea>
             </label>
           </div>
           <div class="actions mt-10"><button class="btn pri" id="mqtt-save">Save MQTT</button></div>
@@ -431,6 +432,7 @@ let pollTimer = 0;
 let ocppFillPending = 0;  // deadline (ms) for the one-shot field fill right after enabling OCPP
 let mqttCertLoaded = false;
 let mqttSuccessTimer = 0;
+const mqttTextEncoder = new TextEncoder();
 
 /** Format an MQTT epoch timestamp in the browser's local time. @param {number} seconds Unix seconds. @returns {string} Local date and time, or an empty string. */
 function mqttTime(seconds) {
@@ -724,6 +726,8 @@ function validateMqtt() {
   const host = $("mqtt-host").value.trim();
   const port = $("mqtt-port").value.trim();
   const prefix = $("mqtt-prefix").value.trim();
+  const username = $("mqtt-user").value.trim();
+  const password = $("mqtt-pass").value;
   const invalid = [];
   if ($("mqtt-enabled").checked) {
     let hostError = "";
@@ -753,11 +757,19 @@ function validateMqtt() {
     if ($("mqtt-port").validity.badInput || (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535))) {
       invalid.push(["mqtt-port", "Port must be between 1 and 65535."]);
     }
-    if (prefix.startsWith("/") || prefix.endsWith("/") || prefix.includes("//") || /[#+\u0000-\u001f\u007f]/.test(prefix)) {
-      invalid.push(["mqtt-prefix", "Topic prefix cannot begin or end with /, contain empty levels, or use + or #."]);
-    }
   }
-  ["mqtt-host", "mqtt-port", "mqtt-prefix"].forEach((id) => {
+  if (mqttTextEncoder.encode(prefix).length > 32) {
+    invalid.push(["mqtt-prefix", "Topic prefix must be at most 32 bytes."]);
+  } else if ($("mqtt-enabled").checked && (prefix.startsWith("/") || prefix.endsWith("/") || prefix.includes("//") || /[#+\u0000-\u001f\u007f]/.test(prefix))) {
+    invalid.push(["mqtt-prefix", "Topic prefix cannot begin or end with /, contain empty levels, or use + or #."]);
+  }
+  if (mqttTextEncoder.encode(username).length > 64) {
+    invalid.push(["mqtt-user", "Username must be at most 64 bytes."]);
+  }
+  if (mqttTextEncoder.encode(password).length > 128) {
+    invalid.push(["mqtt-pass", "Password must be at most 128 bytes."]);
+  }
+  ["mqtt-host", "mqtt-port", "mqtt-prefix", "mqtt-user", "mqtt-pass"].forEach((id) => {
     const bad = invalid.some(([field]) => field === id);
     $(id).classList.toggle("mqtt-field-invalid", bad);
     if (bad) {
@@ -780,6 +792,7 @@ function validateMqtt() {
  */
 async function saveMqtt() {
   $("mqtt-save-error").classList.add("hidden");
+  $("mqtt-save-error").textContent = "MQTT settings could not be saved. Please try again.";
   $("mqtt-save-success").classList.add("hidden");
   clearTimeout(mqttSuccessTimer);
   if (!validateMqtt()) {
@@ -806,6 +819,12 @@ async function saveMqtt() {
   try {
     const response = await fetch("http://192.168.1.173/settings?" + params.toString(), { method: "POST", cache: "no-store" });
     if (!response.ok) {
+      if (response.status === 400) {
+        const errorResult = await response.json().catch(() => null);
+        if (errorResult && typeof errorResult.error === "string") {
+          $("mqtt-save-error").textContent = errorResult.error;
+        }
+      }
       throw new Error("HTTP " + response.status);
     }
     const result = await response.json();
@@ -841,7 +860,7 @@ $("mqtt-details").addEventListener("toggle", () => {
 });
 $("mqtt-tls").addEventListener("change", updateMqttTlsUi);
 $("mqtt-cert").addEventListener("input", () => { mqttCertLoaded = true; });
-["mqtt-host", "mqtt-port", "mqtt-prefix"].forEach((id) => $(id).addEventListener("input", () => {
+["mqtt-host", "mqtt-port", "mqtt-prefix", "mqtt-user", "mqtt-pass"].forEach((id) => $(id).addEventListener("input", () => {
   $(id).classList.remove("mqtt-field-invalid");
   $(id).removeAttribute("aria-invalid");
   $("mqtt-validation").classList.add("hidden");

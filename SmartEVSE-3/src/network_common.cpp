@@ -2302,6 +2302,26 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             DynamicJsonDocument doc(512);
 #if MQTT
             if (request->hasParam("mqtt_update") && request->getParam("mqtt_update")->value().toInt() == 1) {
+                // Check decoded byte lengths before applying any MQTT settings.
+                constexpr size_t mqttHostMaxBytes = 65;
+                constexpr size_t mqttPrefixMaxBytes = 32;
+                constexpr size_t mqttUsernameMaxBytes = 64;
+                constexpr size_t mqttPasswordMaxBytes = 128;
+                char mqttParam[mqttPasswordMaxBytes + 1];
+                const char *mqttLimitError = nullptr;
+                if (mg_http_get_var(&hm->query, "mqtt_host", mqttParam, mqttHostMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_host invalid (max 65 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_topic_prefix", mqttParam, mqttPrefixMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_topic_prefix invalid (max 32 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_username", mqttParam, mqttUsernameMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_username invalid (max 64 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_password", mqttParam, mqttPasswordMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_password invalid (max 128 bytes)";
+                }
+                if (mqttLimitError != nullptr) {
+                    mg_http_reply(c, 400, "Content-Type: application/json\r\n", "{\"error\":\"%s\"}\r\n", mqttLimitError);
+                    return;
+                }
 
                 if(request->hasParam("mqtt_host")) {
                     MQTTHost = request->getParam("mqtt_host")->value();
