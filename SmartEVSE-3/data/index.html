@@ -435,7 +435,7 @@ function mqttTime(seconds) {
     return "";
   }
   const date = new Date(seconds * 1000);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(undefined, { hourCycle: "h23" });
 }
 
 /** Show the MQTT connection state and its most useful context. @param {object} mqtt MQTT settings and runtime state. @returns {void} */
