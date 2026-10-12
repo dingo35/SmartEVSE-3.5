@@ -1554,8 +1554,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
         // Static doc: allocated once on first /settings GET, reused forever.
-        // Avoids ~3 KB heap churn every few seconds when the web statuspage polls.
-        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(4)); // https://arduinojson.org/v6/assistant/ + 4 MQTT fields
+        // Four additional MQTT members need four 16-byte slots on ESP32.
+        // Keep the original 3072-byte pool's allowance for copied strings.
+        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(4));
         doc.clear();
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
