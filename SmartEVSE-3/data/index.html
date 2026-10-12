@@ -35,6 +35,7 @@
 .connection-state[data-status="Error"],.connection-state[data-status="Disconnected"]{border-color:var(--err)}
 .connection-state[data-status="Connecting"]{border-color:var(--acc)}
 .connection-state-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:23px;height:23px;border-radius:50%;background:var(--fg2);color:var(--bg2);font-weight:700}
+.connection-state[data-status="Disabled"] .connection-state-icon{display:none}
 .connection-state[data-status="Connected"] .connection-state-icon{background:var(--ok);color:#fff}
 .connection-state[data-status="Error"] .connection-state-icon,.connection-state[data-status="Disconnected"] .connection-state-icon{background:var(--err);color:#fff}
 .connection-state[data-status="Connecting"] .connection-state-icon{background:var(--acc);color:#fff}
