@@ -649,7 +649,7 @@ function render() {
 
 function poll() {
   clearTimeout(pollTimer);                       
-  fetch("http://192.168.1.173/settings", { cache: "no-store" })
+  fetch("/settings", { cache: "no-store" })
     .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
     .then((j) => { d = j; fails = 0; render(); })
     .catch(() => {
@@ -817,7 +817,7 @@ async function saveMqtt() {
   button.disabled = true;
   button.textContent = "Saving…";
   try {
-    const response = await fetch("http://192.168.1.173/settings?" + params.toString(), { method: "POST", cache: "no-store" });
+    const response = await fetch("/settings?" + params.toString(), { method: "POST", cache: "no-store" });
     if (!response.ok) {
       if (response.status === 400) {
         const errorResult = await response.json().catch(() => null);
