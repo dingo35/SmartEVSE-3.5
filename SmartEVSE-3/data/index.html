@@ -37,9 +37,8 @@
       <div class="hbar">
         <h1>
           <img class="logo" src="favicon.ico" alt="" aria-hidden="true">
-          SmartEVSE
+          <span>SmartEVSE<span class="hmeta" id="hd-serial" style="font-weight:400"></span><span class="hmeta" id="hd-meta" style="margin-left:10px">connecting&hellip;</span></span>
         </h1>
-        <span class="hmeta" id="hd-meta">connecting&hellip;</span>
         <span class="spacer"></span>
         <button class="themebtn" id="theme-btn" title="Theme: automatic (follows the system)" aria-label="Switch theme"></button>
       </div>
@@ -431,7 +430,8 @@ function render() {
   const slave = ev.loadbl > 1;
 
   
-  $("hd-meta").textContent = d.version + " \u00b7 SmartEVSE-" + d.serialnr;
+  $("hd-serial").textContent = "-" + d.serialnr;
+  $("hd-meta").textContent = d.version;
 
   
   const stEl = $("st-state");

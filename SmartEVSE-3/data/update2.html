@@ -30,7 +30,7 @@ header{position:sticky;top:0;z-index:10;background:var(--bg2);border-bottom:1px 
 .hbar{max-width:1060px;margin:0 auto;display:flex;align-items:center;gap:10px;
   padding:10px clamp(10px,3vw,24px);flex-wrap:wrap}
 .hbar h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
-.logo{width:22px;height:22px;flex:none;color:var(--acc)}
+.logo{width:22px;height:22px;flex:none;border-radius:5px}
 .hmeta{color:var(--fg2);font-size:12px}
 .spacer{flex:1}
 .hbar .btn.sm{height:28px;padding:0 11px;display:inline-flex;align-items:center}
@@ -81,12 +81,9 @@ header{position:sticky;top:0;z-index:10;background:var(--bg2);border-bottom:1px 
     <header>
       <div class="hbar">
         <h1>
-          <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M13 2 4.5 13.5H11L9.5 22 19 9.5h-7L13 2z"/>
-          </svg>
-          SmartEVSE
+          <img class="logo" src="favicon.ico" alt="" aria-hidden="true">
+          <span>SmartEVSE<span class="hmeta" id="hd-serial" style="font-weight:400"></span><span class="hmeta" id="hd-meta" style="margin-left:10px">&hellip;</span></span>
         </h1>
-        <span class="hmeta" id="hd-meta">&hellip;</span>
         <span class="spacer"></span>
         <a class="btn sm" href="/">Back</a>
       </div>
@@ -190,7 +187,10 @@ function setStatus(text) { $id("status").innerHTML = text; }
 function loadVersion() {
   fetch("/settings", { cache: "no-store" })
     .then((r) => r.json())
-    .then((d) => { $id("hd-meta").textContent = d.version + " \u00b7 SmartEVSE-" + d.serialnr; })
+    .then((d) => {
+      $id("hd-serial").textContent = "-" + d.serialnr;
+      $id("hd-meta").textContent = d.version;
+    })
     .catch(() => { $id("hd-meta").textContent = "version unknown"; });
 }
 
