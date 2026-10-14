@@ -43,7 +43,6 @@
 input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
 .mqtt-feedback{font-size:13px;margin:8px 0 0}
 .mqtt-feedback.error{color:var(--err)}
-.mqtt-feedback.success{color:var(--ok)}
 #mqtt-save[aria-busy="true"]::before{content:"";display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:mqtt-save-spin .8s linear infinite}
 @keyframes mqtt-save-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){#mqtt-save[aria-busy="true"]::before{animation:none}}
@@ -267,8 +266,6 @@ input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
           </div>
           <div class="actions mt-10"><button class="btn pri" id="mqtt-save">Save MQTT</button></div>
           <p class="mqtt-feedback error hidden" id="mqtt-validation" role="alert"></p>
-          <p class="mqtt-feedback error hidden" id="mqtt-save-error" role="alert">MQTT settings could not be saved. Please try again.</p>
-          <p class="mqtt-feedback success hidden" id="mqtt-save-success" role="status">MQTT settings saved successfully.</p>
         </details>
       </div>
       <div class="section">
@@ -317,9 +314,9 @@ input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
       <div class="grid">
         <div class="card">
           <div class="actions sysbtns" style="margin-bottom:12px">
-            <a class="btn" href="/update" title="Update your firmware">Update</a>
-            <a class="btn" href="/?raw=1" title="Display your settings in JSON format">Raw data</a>
-            <a class="btn" href="capacity.html" title="Advanced users only: adapt Capacity settings">Capacity</a>
+            <a class="btn" href="#" id="ln-update" title="Update your firmware">Update</a>
+            <a class="btn" href="#" id="ln-raw" title="Display your settings in JSON format">Raw data</a>
+            <a class="btn" href="#" id="ln-capacity" title="Advanced users only: adapt Capacity settings">Capacity</a>
             <a class="btn" href="#" id="ln-doc" title="Show the online documentation">Help</a>
             <button class="btn dgr" id="btn-reboot" title="Reboot your device">Reboot</button>
           </div>
@@ -337,7 +334,22 @@ input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
 <script>
 "use strict";
 
-const SETTINGS_URL = location.hostname === "localhost" ? "http://192.168.1.173/settings" : "/settings";
+const DEVICE_BASE_URL = location.hostname === "localhost" ? "http://192.168.1.173" : location.origin;
+const SETTINGS_URL = DEVICE_BASE_URL + "/settings";
+const MQTT_CA_CERT_URL = DEVICE_BASE_URL + "/mqtt_ca_cert";
+const WS_URL = DEVICE_BASE_URL.replace(/^http/, "ws") + "/ws/lcd";
+const SET_TIMEZONE_URL = DEVICE_BASE_URL + "/settz";
+const REBOOT_URL = DEVICE_BASE_URL + "/reboot";
+const LCD_VERIFY_PASSWORD_URL = DEVICE_BASE_URL + "/lcd-verify-password";
+const HOME_URL = DEVICE_BASE_URL + "/";
+const UPDATE_URL = DEVICE_BASE_URL + "/update";
+const RAW_DATA_URL = HOME_URL + "?raw=1";
+const CAPACITY_URL = DEVICE_BASE_URL + "/capacity.html";
+const DOCUMENTATION_BASE_URL = "https://github.com/dingo35/SmartEVSE-3.5/tree/";
+
+document.getElementById("ln-update").href = UPDATE_URL;
+document.getElementById("ln-raw").href = RAW_DATA_URL;
+document.getElementById("ln-capacity").href = CAPACITY_URL;
 
 (function () {
   const STATES = ["auto", "light", "dark"];
@@ -395,7 +407,7 @@ function postSettings(params) {
 
 if (new URLSearchParams(location.search).get("raw") === "1") {
   document.body.innerHTML =
-    '<div class="wrap"><div class="actions" style="margin:14px 0"><a class="btn" href="/">&larr; Back</a>' +
+    '<div class="wrap"><div class="actions" style="margin:14px 0"><a class="btn" href="' + esc(HOME_URL) + '">&larr; Back</a>' +
     '<button class="btn" id="rawrefresh">Refresh</button><button class="btn" id="rawdl">Download</button></div>' +
     '<pre id="rawbox" style="white-space:pre-wrap;word-break:break-all;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px;font:12px ui-monospace,Consolas,monospace"></pre></div>';
   let raw = "";
@@ -429,7 +441,6 @@ let pollTimer = 0;
 let ocppFillPending = 0;  // deadline (ms) for the one-shot field fill right after enabling OCPP
 let mqttCertLoaded = false;
 let mqttCertLoadId = 0;
-let mqttSuccessTimer = 0;
 const mqttTextEncoder = new TextEncoder();
 
 /** Format an MQTT epoch timestamp as yyyy/mm/dd and local time. @param {number} seconds Unix seconds. @returns {string} Local date and time, or an empty string. */
@@ -678,7 +689,7 @@ poll();
 
 try {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if (tz && tz !== "UTC") fetch("/settz?tz=" + encodeURIComponent(tz), { method: "POST" }).catch(() => {});
+  if (tz && tz !== "UTC") fetch(SET_TIMEZONE_URL + "?tz=" + encodeURIComponent(tz), { method: "POST" }).catch(() => {});
 } catch (e) {}
 
 
@@ -694,16 +705,16 @@ $("chk-cablelock").onchange = (e) => postSettings(new URLSearchParams({ cableloc
 $("ln-doc").onclick = (e) => {
   e.preventDefault();
   const v = d && d.version ? d.version : "";
-  location.href = "https://github.com/dingo35/SmartEVSE-3.5/tree/" + (v.startsWith("v") ? v : "master?tab=readme-ov-file") + "#documentation";
+  location.href = DOCUMENTATION_BASE_URL + (v.startsWith("v") ? v : "master?tab=readme-ov-file") + "#documentation";
 };
 $("btn-reboot").onclick = function () {
   if (!confirm("Reboot the SmartEVSE?")) return;
-  fetch("/reboot").then((r) => r.text()).then((msg) => {
+  fetch(REBOOT_URL).then((r) => r.text()).then((msg) => {
     document.querySelector(".wrap").innerHTML =
       '<div class="card" style="margin-top:20px;text-align:center;padding:40px"><div class="big">Rebooting</div><div class="sub" id="rb">' + esc(msg) + "</div></div>";
     let n = 0;
     setInterval(() => { document.getElementById("rb").textContent = msg + ".".repeat(n++ % 4); }, 500);
-    const iv = setInterval(() => fetch(SETTINGS_URL, { cache: "no-store" }).then((r) => { if (r.ok) { clearInterval(iv); location.href = "/"; } }).catch(() => {}), 4000);
+    const iv = setInterval(() => fetch(SETTINGS_URL, { cache: "no-store" }).then((r) => { if (r.ok) { clearInterval(iv); location.href = HOME_URL; } }).catch(() => {}), 4000);
   });
 };
 
@@ -716,34 +727,39 @@ $("btn-reboot").onclick = function () {
 })();
 
 
-/** Load the saved CA certificate when the MQTT editor opens. @returns {Promise<void>} */
+/** Load the saved CA certificate while the MQTT TLS editor is open. @returns {Promise<void>} */
 async function loadMqttCert() {
-  if (mqttCertLoaded) {
+  if (mqttCertLoaded || !$("mqtt-tls").checked || !$("mqtt-details").open) {
     return;
   }
   const loadId = ++mqttCertLoadId;
   try {
-    const response = await fetch("/mqtt_ca_cert", { cache: "no-store" });
+    const response = await fetch(MQTT_CA_CERT_URL, { cache: "no-store" });
     if (!response.ok) {
       throw new Error("HTTP " + response.status);
     }
     const cert = await response.text();
-    if (loadId === mqttCertLoadId && $("mqtt-details").open && !mqttCertLoaded) {
+    if (loadId === mqttCertLoadId && $("mqtt-details").open && $("mqtt-tls").checked && !mqttCertLoaded) {
       $("mqtt-cert").value = cert.trim();
       mqttCertLoaded = true;
     }
   } catch (error) {
-    if (loadId === mqttCertLoadId && $("mqtt-details").open) {
+    if (loadId === mqttCertLoadId && $("mqtt-details").open && $("mqtt-tls").checked) {
       toast("Could not load the MQTT CA certificate");
     }
   }
 }
 
-/** Show TLS controls and the matching default port. @returns {void} */
+/** Show TLS controls, load the certificate if needed, and set the default port. @returns {void} */
 function updateMqttTlsUi() {
   const tls = $("mqtt-tls").checked;
   $("mqtt-cert-wrap").classList.toggle("hidden", !tls);
   $("mqtt-port").placeholder = tls ? "8883" : "1883";
+  if (tls) {
+    void loadMqttCert();
+  } else {
+    ++mqttCertLoadId;
+  }
 }
 
 /** Validate the MQTT fields required for an enabled connection. @returns {boolean} Whether the form is valid. */
@@ -816,10 +832,6 @@ function validateMqtt() {
  * @returns {Promise<void>}
  */
 async function saveMqtt() {
-  $("mqtt-save-error").classList.add("hidden");
-  $("mqtt-save-error").textContent = "MQTT settings could not be saved. Please try again.";
-  $("mqtt-save-success").classList.add("hidden");
-  clearTimeout(mqttSuccessTimer);
   if (!validateMqtt()) {
     return;
   }
@@ -845,13 +857,14 @@ async function saveMqtt() {
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
   button.textContent = "Saving…";
+  let errorMessage = "MQTT settings could not be saved. Please try again.";
   try {
     const response = await fetch(SETTINGS_URL + "?" + params.toString(), { method: "POST", cache: "no-store", signal: controller.signal });
     if (!response.ok) {
       if (response.status === 400) {
         const errorResult = await response.json().catch(() => null);
         if (errorResult && typeof errorResult.error === "string") {
-          $("mqtt-save-error").textContent = errorResult.error;
+          errorMessage = errorResult.error;
         }
       }
       throw new Error("HTTP " + response.status);
@@ -870,14 +883,13 @@ async function saveMqtt() {
       $("mqtt-pass").placeholder = result.mqtt_password_set ? "Password configured" : "Not configured";
     }
     $("mqtt-pass").value = "";
-    $("mqtt-save-success").classList.remove("hidden");
-    mqttSuccessTimer = setTimeout(() => $("mqtt-save-success").classList.add("hidden"), 5000);
+    toast("MQTT settings saved successfully.");
     poll();
   } catch (error) {
     if (controller.signal.aborted) {
-      $("mqtt-save-error").textContent = "Saving MQTT settings timed out after 30 seconds. Please check the connection and try again.";
+      errorMessage = "Saving MQTT settings timed out after 30 seconds. Please check the connection and try again.";
     }
-    $("mqtt-save-error").classList.remove("hidden");
+    toast(errorMessage);
   } finally {
     clearTimeout(timeout);
     const remaining = 1500 - (performance.now() - savingStarted);
@@ -892,20 +904,17 @@ async function saveMqtt() {
 
 /** Reload active MQTT settings whenever the editor opens, discarding unsaved changes. @returns {void} */
 function resetMqttEditor() {
+  ++mqttCertLoadId;
   if (!$("mqtt-details").open) return;
   if (d && d.mqtt) fillMqtt(d.mqtt);
   for (const field of $("mqtt-details").querySelectorAll(".mqtt-field-invalid")) {
     field.classList.remove("mqtt-field-invalid");
     field.removeAttribute("aria-invalid");
   }
-  for (const id of ["mqtt-validation", "mqtt-save-error", "mqtt-save-success"]) {
-    $(id).classList.add("hidden");
-  }
-  clearTimeout(mqttSuccessTimer);
+  $("mqtt-validation").classList.add("hidden");
   mqttCertLoaded = false;
   $("mqtt-cert").value = "";
   updateMqttTlsUi();
-  void loadMqttCert();
 }
 
 $("mqtt-details").addEventListener("toggle", resetMqttEditor);
@@ -949,7 +958,6 @@ $("ocpp-save").onclick = function () {
 
 (function () {
   const canvas = $("lcd"), msg = $("lcdmsg"), ctx = canvas.getContext("2d");
-  const WS_URL = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws/lcd";
   const PIN_KEY = "sevse-lcd-pin";
   let ws = null, retry = 0, retryTimer = 0, failTimer = 0, stopped = false, unlocked = false;
 
@@ -1033,7 +1041,7 @@ $("ocpp-save").onclick = function () {
   }
   function verify(pin, silent, init) {
     if (!/^\d{4}$/.test(pin)) { if (!silent) toast("Enter the 4-digit PIN"); return; }
-    fetch("/lcd-verify-password", {
+    fetch(LCD_VERIFY_PASSWORD_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "password=" + encodeURIComponent(pin)
