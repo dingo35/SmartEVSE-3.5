@@ -334,7 +334,7 @@ input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
 <script>
 "use strict";
 
-const DEVICE_BASE_URL = location.hostname === "localhost" ? "http://192.168.1.173" : location.origin;
+const DEVICE_BASE_URL = location.origin;
 const SETTINGS_URL = DEVICE_BASE_URL + "/settings";
 const MQTT_CA_CERT_URL = DEVICE_BASE_URL + "/mqtt_ca_cert";
 const WS_URL = DEVICE_BASE_URL.replace(/^http/, "ws") + "/ws/lcd";
@@ -551,7 +551,6 @@ function buildModeButtons() {
   });
 }
 
-/** Render the latest device settings and runtime data. @returns {void} */
 function render() {
   if (!d) return;
   const ev = d.evse || {}, st = d.settings || {}, ph = d.phase_currents || {}, evm = d.ev_meter || {};
