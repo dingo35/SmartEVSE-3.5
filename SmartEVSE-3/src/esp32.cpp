@@ -3331,6 +3331,7 @@ static void homewizard_task(void *parameter) {
             MainsMeter.Export_active_energy = evdata.second[4];
             MainsMeter.PowerMeasured = evdata.second[5];
             MainsMeter.UpdateEnergies();
+            MainsMeter.UpdateCapacity();
             _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);
         }
     }
