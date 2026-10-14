@@ -2890,6 +2890,8 @@ void CalcIsum(void) {
         }
         Isum = Isum + MainsMeter.Irms[x];
     }
+    if (MainsMeter.Type == EM_HOMEWIZARD && MainsMeter.NetCurrent != INT32_MIN)
+        Isum = MainsMeter.NetCurrent - (EnableC2 == ALWAYS_OFF ? BatteryCurrent : 3 * batteryPerPhase);
     MainsMeter.CalcImeasured();
 }
 

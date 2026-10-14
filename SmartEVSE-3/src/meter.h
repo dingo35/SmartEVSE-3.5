@@ -82,6 +82,7 @@ class Meter {
     uint8_t Address;
     char DeviceHostName[32];                                                    // Selected hostname for networked meters
         uint8_t HostMenuSelection;                                                  // Pending host menu selection for this meter
+    int32_t NetCurrent = INT32_MIN;                                             // Active-power equivalent current (dA), or unavailable
     int16_t Irms[3];                                                            // Momentary current per Phase (23 = 2.3A) (resolution 100mA)
     int16_t Imeasured;                                                          // Max of all Phases (Amps *10) of mains power
     int16_t Power[3];
