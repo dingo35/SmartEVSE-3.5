@@ -1360,6 +1360,8 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         if (doc.containsKey(key))
             phases++;
     }
+    // An aggregate current alongside L1/L2/L3 is not a fourth phase.
+    if (phases > 3) phases = 3;
 
     if (!phases) {
         // Early return on missing data.
