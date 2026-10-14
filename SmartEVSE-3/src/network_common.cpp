@@ -11,6 +11,10 @@
 #include "esp32.h"
 #include <ArduinoJson.h>
 
+#if MQTT_ESP
+#include "esp_tls_errors.h"
+#endif
+
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <Update.h>
@@ -56,6 +60,7 @@ String MQTTHost = "";
 uint16_t MQTTPort;
 mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
+bool MQTTenabled = false;
 bool MQTTtls = false;
 bool MQTTSmartServer = false;               // Use mqtt.smartevse.nl server, can be set from the LCD menu
 bool MQTTSmartServerChanged = false;        // Flag to trigger reconnect from network_loop()
@@ -101,6 +106,16 @@ extern uint16_t firmwareUpdateTimer;
 
 uint32_t serialnr = 0;
 
+#if MQTT
+static String defaultMqttTopicPrefix() {
+#ifdef SENSORBOX_VERSION
+    return "Sensorbox/" + String(serialnr);
+#else
+    return "SmartEVSE/" + String(serialnr);
+#endif
+}
+#endif
+
 
 // The following data will be updated by eeprom/storage data at powerup:
 uint8_t WIFImode = WIFI_MODE;                                               // WiFi Mode (0:Disabled / 1:Enabled / 2:Start Portal)
@@ -112,8 +127,163 @@ int downloadProgress = 0;
 int downloadSize = 0;
 
 #if MQTT
+static MqttRuntimeState mqttRuntime;
+static portMUX_TYPE mqttStatusMux = portMUX_INITIALIZER_UNLOCKED;
+static bool mqttAttemptStarted = false;
+static bool mqttAttemptFailed = false;
+
+const char *mqttStatusToString(MqttStatus status) {
+    switch (status) {
+    case MqttStatus::Disabled: return "Disabled";
+    case MqttStatus::Connecting: return "Connecting";
+    case MqttStatus::Connected: return "Connected";
+    case MqttStatus::Error: return "Error";
+    }
+    return "Error";
+}
+
+const char *mqttErrorToString(MqttError error) {
+    switch (error) {
+    case MqttError::None: return "None";
+    case MqttError::NetworkUnavailable: return "NetworkUnavailable";
+    case MqttError::DnsFailed: return "DnsFailed";
+    case MqttError::ConnectionRefused: return "ConnectionRefused";
+    case MqttError::AuthenticationFailed: return "AuthenticationFailed";
+    case MqttError::TlsFailed: return "TlsFailed";
+    case MqttError::Timeout: return "Timeout";
+    case MqttError::ConnectionLost: return "ConnectionLost";
+    case MqttError::Unknown: return "Unknown";
+    }
+    return "Unknown";
+}
+
+// Status is written by the MQTT task and read by the HTTP task
+MqttRuntimeState mqttGetRuntimeState() {
+    portENTER_CRITICAL(&mqttStatusMux);
+    MqttRuntimeState state = mqttRuntime;
+    portEXIT_CRITICAL(&mqttStatusMux);
+    return state;
+}
+
+// Epoch seconds, or 0 when the clock is not synced yet
+static uint32_t mqttTimestamp() {
+    return LocalTimeSet ? static_cast<uint32_t>(time(nullptr)) : 0;
+}
+
+static void mqttResetStatus() {
+    const bool enabled = MQTTenabled && MQTTHost != "";
+    portENTER_CRITICAL(&mqttStatusMux);
+    mqttRuntime = MqttRuntimeState{};
+    mqttRuntime.status = enabled ? MqttStatus::Connecting : MqttStatus::Disabled;
+    mqttAttemptStarted = mqttAttemptFailed = false;
+    portEXIT_CRITICAL(&mqttStatusMux);
+}
+
+// Keeps the status at Error during retries, so an earlier failure stays visible
+static void mqttRecordAttempt() {
+    const uint32_t now = mqttTimestamp();
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttRuntime.status != MqttStatus::Disabled) {
+        mqttRuntime.last_connect_attempt = now;
+        mqttAttemptStarted = true;
+        mqttAttemptFailed = false;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
+}
+
+static void mqttRecordConnected() {
+    const uint32_t now = mqttTimestamp();
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttAttemptStarted) {
+        mqttRuntime.status = MqttStatus::Connected;
+        mqttRuntime.last_error = MqttError::None;
+        mqttRuntime.connected_since = now;
+        mqttAttemptFailed = false;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
+}
+
+// startupFailure: the client could not be created, so no attempt was started
+static void mqttRecordError(MqttError error, bool startupFailure = false) {
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttRuntime.status != MqttStatus::Disabled && (mqttAttemptStarted || startupFailure)) {
+        mqttRuntime.status = MqttStatus::Error;
+        mqttRuntime.last_error = error;
+        mqttRuntime.connected_since = 0;
+        mqttAttemptFailed = true;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
+}
+
+// Keeps the reason of a preceding error event
+static void mqttRecordDisconnected() {
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttAttemptStarted) {
+        if (!mqttAttemptFailed) {
+            mqttRuntime.last_error = mqttRuntime.status == MqttStatus::Connected
+                ? MqttError::ConnectionLost : MqttError::Unknown;
+        }
+        mqttRuntime.status = MqttStatus::Error;
+        mqttRuntime.connected_since = 0;
+        mqttAttemptFailed = true;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
+}
+
+// MQTT 3.1.1 CONNACK return codes
+static MqttError mqttConnackError(uint8_t code) {
+    switch (code) {
+    case 1: // Unsupported protocol
+    case 2: // Identifier rejected
+    case 3: // Server unavailable
+        return MqttError::ConnectionRefused;
+    case 4: // Bad username/password
+    case 5: // Not authorized
+        return MqttError::AuthenticationFailed;
+    default:
+        return MqttError::Unknown;
+    }
+}
+
 #if MQTT_ESP == 1
-/*
+static esp_err_t mqttStartClient(esp_mqtt_client_handle_t client) {
+    const esp_err_t err = esp_mqtt_client_start(client);
+    // "Already started" is not an error once the running client has made an attempt
+    if (err != ESP_OK) {
+        portENTER_CRITICAL(&mqttStatusMux);
+        if (!mqttAttemptStarted && mqttRuntime.status != MqttStatus::Disabled) {
+            mqttRuntime.status = MqttStatus::Error;
+            mqttRuntime.last_error = MqttError::Unknown;
+            mqttAttemptFailed = true;
+        }
+        portEXIT_CRITICAL(&mqttStatusMux);
+    }
+    return err;
+}
+
+static MqttError mqttEspError(const esp_mqtt_error_codes_t *error) {
+    if (!error) return MqttError::Unknown;
+    if (error->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED)
+        return mqttConnackError(error->connect_return_code);
+    if (error->error_type != MQTT_ERROR_TYPE_TCP_TRANSPORT) return MqttError::Unknown;
+
+    if (error->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME) return MqttError::DnsFailed;
+    if (error->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT) return MqttError::Timeout;
+    if (error->esp_tls_last_esp_err == ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED ||
+        error->esp_tls_cert_verify_flags) return MqttError::TlsFailed;
+    switch (error->esp_transport_sock_errno) {
+    case ENETUNREACH:
+    case EHOSTUNREACH: return MqttError::NetworkUnavailable;
+    case ECONNREFUSED: return MqttError::ConnectionRefused;
+    case ETIMEDOUT: return MqttError::Timeout;
+    case ECONNRESET:
+    case ECONNABORTED:
+    case EPIPE: return MqttError::ConnectionLost;
+    }
+    return MqttError::Unknown;
+}
+
+/**
  * @brief Event handler registered to receive MQTT events
  *
  *  This function is called by the MQTT client event loop.
@@ -121,16 +291,21 @@ int downloadSize = 0;
  * @param handler_args user data registered to the event.
  * @param base Event base for the handler(always MQTT Base in this example).
  * @param event_id The id for the received event.
- * @param event_data The data for the event, esp_mqtt_event_handle_t.
+ * @param event The data for the event, esp_mqtt_event_handle_t.
  */
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, esp_mqtt_event_t *event) {
     switch ((esp_mqtt_event_id_t)event_id) {
+    case MQTT_EVENT_BEFORE_CONNECT:
+        mqttRecordAttempt();
+        break;
     case MQTT_EVENT_CONNECTED:
         MQTTclient.connected = true;
+        mqttRecordConnected();
         SetupMQTTClient();
         break;
     case MQTT_EVENT_DISCONNECTED:
         MQTTclient.connected = false;
+        mqttRecordDisconnected();
         break;
     case MQTT_EVENT_DATA:
         {
@@ -141,6 +316,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         }
         break;
     case MQTT_EVENT_ERROR:
+        mqttRecordError(mqttEspError(event->error_handle));
         _LOG_I("MQTT_EVENT_ERROR; Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
         break;
     default:
@@ -150,7 +326,10 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 
 void MQTTclient_t::connect(void) {
-    if (MQTTHost == "") return;
+    if (!MQTTenabled || MQTTHost == "") {
+        mqttResetStatus();
+        return;
+    }
     
     // Stop and destroy old client if exists to prevent memory leak
     if (client) {
@@ -158,6 +337,7 @@ void MQTTclient_t::connect(void) {
         esp_mqtt_client_destroy(client);
         client = nullptr;
     }
+    mqttResetStatus();
     
     static String ca_cert_str;
     if (MQTTtls) {
@@ -182,16 +362,18 @@ void MQTTclient_t::connect(void) {
 
     client = esp_mqtt_client_init(&mqtt_cfg);
     if (!client) {
+        mqttRecordError(MqttError::Unknown, true);
         _LOG_A("MQTT: esp_mqtt_client_init failed (heap: %u)\n", ESP.getFreeHeap());
         return;
     }
     esp_err_t err = esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
     if (err != ESP_OK) {
+        mqttRecordError(MqttError::Unknown, true);
         _LOG_A("MQTT: esp_mqtt_client_register_event failed: %d\n", err);
     }
     // Start now if any network interface is connected (WiFi or Ethernet)
     if (NetworkConnected()) {
-        err = esp_mqtt_client_start(client);
+        err = mqttStartClient(client);
         if (err != ESP_OK) {
             _LOG_A("MQTT: esp_mqtt_client_start failed: %d\n", err);
         }
@@ -1429,6 +1611,7 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
         _LOG_V("%lu CREATED\n", c->id);
         // c->is_hexdumping = 1;
     } else if (ev == MG_EV_ERROR) {
+        mqttRecordError(MqttError::Unknown);
         // On error, log error message
         _LOG_A("%lu ERROR %s\n", c->id, (char *) ev_data);
     } else if (ev == MG_EV_CONNECT) {
@@ -1439,6 +1622,12 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
             mg_tls_init(c, &opts);
         }
     } else if (ev == MG_EV_MQTT_OPEN) {
+        const int code = *static_cast<int *>(ev_data);
+        if (code != 0) {
+            mqttRecordError(mqttConnackError(code));
+            return;
+        }
+        mqttRecordConnected();
         // MQTT connect is successful
         _LOG_V("%lu CONNECTED to %s\n", c->id, s_mqtt_url);
         MQTTclient.connected = true;
@@ -1451,6 +1640,7 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
         String topic2 = String(mm->topic.buf).substring(0,mm->topic.len);
         mqtt_receive_callback(topic2, mm->data.buf);
     } else if (ev == MG_EV_CLOSE) {
+        mqttRecordDisconnected();
         _LOG_V("%lu CLOSED\n", c->id);
         MQTTclient.connected = false;
         MQTTclient.s_conn = NULL;  // Mark that we're closed
@@ -1459,6 +1649,8 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
 
 // Timer function - recreate client connection if it is closed
 static void timer_fn(void *arg) {
+    if (!MQTTenabled || MQTTHost == "") return;
+
     struct mg_mgr *mgr = (struct mg_mgr *) arg;
     struct mg_mqtt_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -1479,7 +1671,11 @@ static void timer_fn(void *arg) {
     //mqtt[s]://[username][:password]@host.domain[:port]
     snprintf(s_mqtt_url, sizeof(s_mqtt_url), "mqtt://%s:%i", MQTTHost.c_str(), MQTTPort);
 
-    if (MQTTclient.s_conn == NULL) MQTTclient.s_conn = mg_mqtt_connect(mgr, s_mqtt_url, &opts, fn_mqtt, NULL);
+    if (MQTTclient.s_conn == NULL) {
+        mqttRecordAttempt();
+        MQTTclient.s_conn = mg_mqtt_connect(mgr, s_mqtt_url, &opts, fn_mqtt, NULL);
+        if (!MQTTclient.s_conn) mqttRecordError(MqttError::Unknown);
+    }
 }
 #endif
 
@@ -2116,25 +2312,58 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
 #endif
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-            DynamicJsonDocument doc(64);
+            DynamicJsonDocument doc(512);
 #if MQTT
             if (request->hasParam("mqtt_update") && request->getParam("mqtt_update")->value().toInt() == 1) {
+                // Check decoded byte lengths before applying any MQTT settings.
+                constexpr size_t mqttHostMaxBytes = 65;
+                constexpr size_t mqttPrefixMaxBytes = 32;
+                constexpr size_t mqttUsernameMaxBytes = 64;
+                constexpr size_t mqttPasswordMaxBytes = 128;
+                char mqttParam[mqttPasswordMaxBytes + 1];
+                const char *mqttLimitError = nullptr;
+                if (mg_http_get_var(&hm->query, "mqtt_host", mqttParam, mqttHostMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_host invalid (max 65 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_topic_prefix", mqttParam, mqttPrefixMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_topic_prefix invalid (max 32 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_username", mqttParam, mqttUsernameMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_username invalid (max 64 bytes)";
+                } else if (mg_http_get_var(&hm->query, "mqtt_password", mqttParam, mqttPasswordMaxBytes + 1) == -3) {
+                    mqttLimitError = "mqtt_password invalid (max 128 bytes)";
+                }
+                if (mqttLimitError != nullptr) {
+                    mg_http_reply(c, 400, "Content-Type: application/json\r\n", "{\"error\":\"%s\"}\r\n", mqttLimitError);
+                    return;
+                }
 
                 if(request->hasParam("mqtt_host")) {
                     MQTTHost = request->getParam("mqtt_host")->value();
                     doc["mqtt_host"] = MQTTHost;
                 }
 
+                if (request->hasParam("mqtt_enabled")) {
+                    MQTTenabled = request->getParam("mqtt_enabled")->value() == "1";
+                } else if (request->hasParam("mqtt_host")) {
+                    // Older clients use an empty host to disable MQTT.
+                    MQTTenabled = MQTTHost != "";
+                }
+                doc["mqtt_enabled"] = MQTTenabled;
+
+                if (request->hasParam("mqtt_tls")) {
+                    MQTTtls = request->getParam("mqtt_tls")->value() == "1";
+                    doc["mqtt_tls"] = MQTTtls;
+                }
+
                 if(request->hasParam("mqtt_port")) {
                     MQTTPort = request->getParam("mqtt_port")->value().toInt();
-                    if (MQTTPort == 0) MQTTPort = 1883;
+                    if (MQTTPort == 0) MQTTPort = MQTTtls ? 8883 : 1883;
                     doc["mqtt_port"] = MQTTPort;
                 }
 
                 if(request->hasParam("mqtt_topic_prefix")) {
                     MQTTprefix = request->getParam("mqtt_topic_prefix")->value();
                     if (!MQTTprefix || MQTTprefix == "") {
-                        MQTTprefix = APhostname;
+                        MQTTprefix = defaultMqttTopicPrefix();
                     }
                     doc["mqtt_topic_prefix"] = MQTTprefix;
                 }
@@ -2155,11 +2384,6 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     doc["mqtt_password_set"] = (MQTTpassword != "");
                 }
 
-                if (request->hasParam("mqtt_tls")) {
-                    MQTTtls = request->getParam("mqtt_tls")->value() == "1";
-                    doc["mqtt_tls"] = MQTTtls;
-                }
-
                 if(request->hasParam("mqtt_ca_cert")) {
                     String cert = request->getParam("mqtt_ca_cert")->value();
                     writeMqttCaCert(cert);                      // Save to LittleFS
@@ -2170,6 +2394,8 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 MQTTclient.disconnect();
 #if MQTT_ESP == 1
                 MQTTclient.connect();
+#else
+                mqttResetStatus();
 #endif
 
                 if (preferences.begin("settings", false) ) {
@@ -2178,6 +2404,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     preferences.putString("MQTTprefix", MQTTprefix);
                     preferences.putString("MQTTHost", MQTTHost);
                     preferences.putUShort("MQTTPort", MQTTPort);
+                    preferences.putBool("MQTTenabled", MQTTenabled);
                     preferences.putBool("MQTTtls", MQTTtls);
                     preferences.end();
                 }
@@ -2220,12 +2447,21 @@ void timeSyncCallback(struct timeval *tv)
     // which is a blocking TCP send. This deadlocks because lwIP is waiting for this callback
     // to return while the TCP send needs lwIP to process packets.
     _LOG_A("Synced clock to NTP server!");
-#if MQTT && MQTT_ESP && SMARTEVSE_VERSION 
+#if MQTT
+#if MQTT_ESP && SMARTEVSE_VERSION
     // Start SmartEVSE MQTT connection after time is synced (TLS requires correct time for certificate validation)
     // Only connect on first sync - subsequent syncs should not restart the MQTT connection!
     if (!LocalTimeSet) {
         MQTTclientSmartEVSE.connect();
     }
+#endif
+    // Fill a missing connection time using the synchronized clock supplied by SNTP.
+    const uint32_t now = static_cast<uint32_t>(tv->tv_sec);
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttRuntime.status == MqttStatus::Connected && mqttRuntime.connected_since == 0) {
+        mqttRuntime.connected_since = now;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
 #endif
     LocalTimeSet = true;
 }
@@ -2268,8 +2504,8 @@ static void startNetworkServices(void) {
         MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
     }
 #else
-    if (MQTTHost != "" && MQTTclient.client)
-        esp_mqtt_client_start(MQTTclient.client);
+    if (MQTTenabled && MQTTHost != "" && MQTTclient.client)
+        mqttStartClient(MQTTclient.client);
 #ifdef SMARTEVSE_VERSION
     if (MQTTSmartServer && MQTTclientSmartEVSE.client)
         esp_mqtt_client_start(MQTTclientSmartEVSE.client);
@@ -2538,14 +2774,19 @@ void WiFiSetup(void) {
 #if MQTT
         MQTTpassword = preferences.getString("MQTTpassword");
         MQTTuser = preferences.getString("MQTTuser");
-#ifdef SENSORBOX_VERSION
-        MQTTprefix = preferences.getString("MQTTprefix", "Sensorbox/" + String(serialnr));
-#else
-        MQTTprefix = preferences.getString("MQTTprefix", "SmartEVSE/" + String(serialnr));
-#endif
+        MQTTprefix = preferences.getString("MQTTprefix", defaultMqttTopicPrefix());
         MQTTHost = preferences.getString("MQTTHost", "");
+        // Firmware versions before MQTTenabled used the presence of MQTTHost
+        // as the enable state. Preserve and persist that state during migration.
+        if (preferences.isKey("MQTTenabled")) {
+            MQTTenabled = preferences.getBool("MQTTenabled");
+        } else {
+            MQTTenabled = MQTTHost != "";
+            preferences.putBool("MQTTenabled", MQTTenabled);
+        }
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
         MQTTtls = preferences.getBool("MQTTtls", false);
+        mqttResetStatus();
 #endif //MQTT
         preferences.end();
     }

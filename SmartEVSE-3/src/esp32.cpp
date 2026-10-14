@@ -1554,8 +1554,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         boolean evConnected = pilot != PILOT_12V;                    //when access bit = 1, p.ex. in OFF mode, the STATEs are no longer updated
 
         // Static doc: allocated once on first /settings GET, reused forever.
-        // Avoids ~3 KB heap churn every few seconds when the web statuspage polls.
-        static DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
+        // Four additional MQTT members need four 16-byte slots on ESP32.
+        // Keep the original 3072-byte pool's allowance for copied strings.
+        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(4));
         doc.clear();
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
@@ -1655,17 +1656,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #endif
 
 #if MQTT
+        doc["mqtt"]["enabled"] = MQTTenabled;
         doc["mqtt"]["host"] = MQTTHost;
         doc["mqtt"]["port"] = MQTTPort;
         doc["mqtt"]["topic_prefix"] = MQTTprefix;
         doc["mqtt"]["username"] = MQTTuser;
         doc["mqtt"]["password_set"] = MQTTpassword != "";
         doc["mqtt"]["tls"] = MQTTtls;
-        if (MQTTclient.connected) {
-            doc["mqtt"]["status"] = "Connected";
-        } else {
-            doc["mqtt"]["status"] = "Disconnected";
-        }
+        const MqttRuntimeState mqttState = mqttGetRuntimeState();
+        doc["mqtt"]["status"] = mqttStatusToString(mqttState.status);
+        doc["mqtt"]["last_error"] = mqttErrorToString(mqttState.last_error);
+        doc["mqtt"]["connected_since"] = mqttState.connected_since;
+        doc["mqtt"]["last_connect_attempt"] = mqttState.last_connect_attempt;
         doc["mqtt"]["smartevse_server"] = MQTTSmartServer;
 #endif
         doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
