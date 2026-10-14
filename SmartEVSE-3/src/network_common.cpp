@@ -2427,6 +2427,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
 // turns out getLocalTime only checks if the current year > 2016, and if so, decides NTP must have synced;
 // this callback function actually checks if we are synced!
 // NOTE: This callback is called EVERY time SNTP syncs (every 3 hours), not just the first time!
+/** Handle clock synchronization and fill a missing MQTT connection timestamp. @param tv Synchronized system time supplied by SNTP. @return void */
 void timeSyncCallback(struct timeval *tv)
 {
     // WARNING: Do NOT add \n to this log message! This callback runs in lwIP SNTP task context.
@@ -2434,12 +2435,21 @@ void timeSyncCallback(struct timeval *tv)
     // which is a blocking TCP send. This deadlocks because lwIP is waiting for this callback
     // to return while the TCP send needs lwIP to process packets.
     _LOG_A("Synced clock to NTP server!");
-#if MQTT && MQTT_ESP && SMARTEVSE_VERSION 
+#if MQTT
+#if MQTT_ESP && SMARTEVSE_VERSION
     // Start SmartEVSE MQTT connection after time is synced (TLS requires correct time for certificate validation)
     // Only connect on first sync - subsequent syncs should not restart the MQTT connection!
     if (!LocalTimeSet) {
         MQTTclientSmartEVSE.connect();
     }
+#endif
+    // Fill a missing connection time using the synchronized clock supplied by SNTP.
+    const uint32_t now = static_cast<uint32_t>(tv->tv_sec);
+    portENTER_CRITICAL(&mqttStatusMux);
+    if (mqttRuntime.status == MqttStatus::Connected && mqttRuntime.connected_since == 0) {
+        mqttRuntime.connected_since = now;
+    }
+    portEXIT_CRITICAL(&mqttStatusMux);
 #endif
     LocalTimeSet = true;
 }
