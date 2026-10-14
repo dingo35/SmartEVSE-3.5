@@ -441,7 +441,7 @@ void Meter::UpdateCapacity() {
                 int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
                 int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
-                int16_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
+                int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
                 MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
                 if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
                     MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
