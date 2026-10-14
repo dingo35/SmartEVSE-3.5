@@ -40,8 +40,7 @@
 .connection-state-copy strong{display:block}
 .connection-state-meta{display:block;color:var(--fg2);font-size:12px;margin-top:3px}
 .mqtt-help{color:var(--fg2);font-size:12px;margin:4px 0 0}
-#ocpp-state-detail{font-size:inherit}
-.mqtt-field-invalid{border-color:var(--err)!important;outline:1px solid var(--err)}
+input.mqtt-field-invalid{border-color:var(--err);outline:1px solid var(--err)}
 .mqtt-feedback{font-size:13px;margin:8px 0 0}
 .mqtt-feedback.error{color:var(--err)}
 .mqtt-feedback.success{color:var(--ok)}
@@ -338,7 +337,7 @@
 <script>
 "use strict";
 
-
+const SETTINGS_URL = location.hostname === "localhost" ? "http://192.168.1.173/settings" : "/settings";
 
 (function () {
   const STATES = ["auto", "light", "dark"];
@@ -367,7 +366,6 @@
 
 
 const $ = (id) => document.getElementById(id);
-const SETTINGS_URL = location.hostname === "localhost" ? "http://192.168.1.173/settings" : "/settings";
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function toastEl2() { return document.getElementById("toast"); }
 let toastTimer = 0;
