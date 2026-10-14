@@ -433,6 +433,7 @@ void Meter::UpdateCapacity() {
                     //TODO for now we wait until the next measurement comes in
                 }
                 _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power_Month is %i.\n", AveragePower, Peak_Period_Power_Month);
+                LastMonth = CurrentMonth;
             } else {
                 //we are in the middle of a period
                 //calculate time remaining
