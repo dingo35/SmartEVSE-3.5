@@ -2427,7 +2427,6 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
 // turns out getLocalTime only checks if the current year > 2016, and if so, decides NTP must have synced;
 // this callback function actually checks if we are synced!
 // NOTE: This callback is called EVERY time SNTP syncs (every 3 hours), not just the first time!
-/** Handle clock synchronization and fill a missing MQTT connection timestamp. @param tv Synchronized system time supplied by SNTP. @return void */
 void timeSyncCallback(struct timeval *tv)
 {
     // WARNING: Do NOT add \n to this log message! This callback runs in lwIP SNTP task context.
