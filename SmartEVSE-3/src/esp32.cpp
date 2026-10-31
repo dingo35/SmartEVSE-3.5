@@ -145,6 +145,7 @@ extern uint16_t maxTemp;
 extern uint16_t MaxCapacity;                                                       // Cable limit (A) (limited by the wire in the charge cable, set automatically, or manually if Config=Fixed Cable)
 extern uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
 extern uint16_t OverrideCurrent;
+extern uint16_t OverrideTimeout;
 
 // Load Balance variables
 extern int16_t IsetBalanced;
@@ -506,6 +507,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
             if (RequestedCurrent >= (MinCurrent * 10) && RequestedCurrent <= (MaxCurrent * 10)) {
                 setOverrideCurrent(RequestedCurrent);
             }
+        }
+    } else if (topic == MQTTprefix + "/Set/CurrentOverrideTimeout") {
+        int RequestedTimeout = payload.toInt();
+        if (RequestedTimeout == 0 || (RequestedTimeout >= 10 && RequestedTimeout <= 3600)) {
+            OverrideTimeout = RequestedTimeout;
+            setOverrideCurrent(OverrideCurrent);                                // (re)arm or disarm the timer for the current override
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
         uint16_t RequestedCurrent = payload.toInt();
@@ -910,6 +917,11 @@ void SetupMQTTClient() {
         ", \"command_template\":\"{{ value | int * 10 }}\"", p, (unsigned)MaxCurrent);
     MQTTclient.announce("Charge Current Override", "number", opt);
 
+    snprintf(opt, sizeof(opt),
+        ", \"command_topic\":\"%s/Set/CurrentOverrideTimeout\", \"min\":\"0\", \"max\":\"3600\", \"mode\":\"box\""
+        ", \"device_class\":\"duration\", \"unit_of_measurement\":\"s\", \"entity_category\":\"config\"", p);
+    MQTTclient.announce("Charge Current Override Timeout", "number", opt);
+
     // Cable Lock:
     snprintf(opt, sizeof(opt),
         ", \"cablelock_topic\":\"%s/CableLock\", \"command_topic\":\"%s/Set/CableLock\""
@@ -973,6 +985,7 @@ void mqttPublishData() {
         mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
         mqPubI("/ChargeCurrentOverride", OverrideCurrent, true, 0);
+        mqPubI("/ChargeCurrentOverrideTimeout", OverrideTimeout, true, 0);
         mqPubI("/NrOfPhases", Nr_Of_Phases_Charging, true, 0);
         mqPubS("/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         mqPubS("/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
@@ -1620,6 +1633,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["settings"]["charge_current"] = Balanced[0];
         doc["settings"]["override_current"] = OverrideCurrent;
+        doc["settings"]["override_timeout"] = OverrideTimeout;
         doc["settings"]["current_min"] = MinCurrent;
         doc["settings"]["current_max"] = MaxCurrent;
         doc["settings"]["current_main"] = MaxMains;
@@ -1933,6 +1947,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["stop_timer"] = false;
             }
 
+        }
+
+        // Handled before override_current, so a request that sets both arms the timer for the new override
+        if(request->hasParam("override_timeout")) {
+            int timeout = request->getParam("override_timeout")->value().toInt();
+            if (timeout == 0 || (timeout >= 10 && timeout <= 3600)) {
+                OverrideTimeout = timeout;
+                setOverrideCurrent(OverrideCurrent);
+                doc["override_timeout"] = OverrideTimeout;
+            } else {
+                doc["override_timeout"] = "Value not allowed!";
+            }
         }
 
         if(Mode == MODE_NORMAL || Mode == MODE_SMART) {

@@ -109,6 +109,8 @@ uint8_t pilot;
 uint16_t MaxCapacity;                                                       // Cable limit (A) (limited by the wire in the charge cable, set automatically, or manually if Config=Fixed Cable)
 uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
 uint16_t OverrideCurrent = 0;                                               // Temporary assigned current (Amps *10) (modbus)
+uint16_t OverrideTimeout = 0;                                               // Seconds an OverrideCurrent stays valid without being refreshed (0 = never expires)
+uint16_t OverrideTimer = 0;                                                 // Seconds left before the OverrideCurrent falls back to MinCurrent
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
 
 // Load Balance variables
@@ -408,6 +410,7 @@ Button ExtSwitch;
 //similar to setAccess; OverrideCurrent owned by ESP32
 void setOverrideCurrent(uint16_t Current) { //c
     OverrideCurrent = Current;
+    OverrideTimer = Current ? OverrideTimeout : 0;                          // every write, also of an unchanged value, re-arms the timeout
 
     //write_settings TODO doesnt include OverrideCurrent
 #if MQTT
@@ -1389,6 +1392,19 @@ void Timer1S_singlerun(void) {
         if (MaxSumMainsTimer == 0) {
             if (State == STATE_C) setState(STATE_C1);                   // tell EV to stop charging
             setErrorFlags(LESS_6A);                                     // Set error: LESS_6A
+        }
+    }
+
+    // When OverrideTimeout is set, an external controller has to keep refreshing the OverrideCurrent.
+    // If it goes silent (controller, WiFi or broker down), fall back to MinCurrent instead of
+    // charging at the last requested current indefinitely. The fallback itself does not re-arm the timer.
+    if (OverrideTimer) {
+        if (--OverrideTimer == 0 && OverrideCurrent > MinCurrent * 10) {
+            OverrideCurrent = MinCurrent * 10;
+            _LOG_W("OverrideCurrent not refreshed within %us, falling back to MinCurrent.\n", OverrideTimeout);
+#if MQTT
+            lastMqttUpdate = 10;
+#endif //MQTT
         }
     }
 

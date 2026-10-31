@@ -69,6 +69,16 @@ to your curl POST command. -d ''
     curl -X POST http://ipaddress/settings?override_current=83 -d ''
 ```
 
+* override_timeout
+
+&emsp;&emsp;Fail-safe for external controllers. Value in seconds, must be 0 or >= 10 and <= 3600.
+<br>&emsp;&emsp;When set, every override_current must be refreshed (re-sent, also with an unchanged value) within this time,
+<br>&emsp;&emsp;otherwise the override falls back to the configured minimum current.
+<br>&emsp;&emsp;Using 0 (the default) disables the timeout. The value is not stored and resets to 0 on reboot.
+```
+    curl -X POST "http://ipaddress/settings?override_timeout=60&override_current=160" -d ''
+```
+
 * enable_C2
 
 &emsp;&emsp;Enables switching between 1 phase mode and 3 phase mode by controlling a 2nd contactor (C2 port)
