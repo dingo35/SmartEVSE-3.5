@@ -146,6 +146,7 @@ extern uint16_t MaxCapacity;                                                    
 extern uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
 extern uint16_t OverrideCurrent;
 extern uint16_t OverrideTimeout;
+extern uint8_t OverrideTimeoutAction;
 
 // Load Balance variables
 extern int16_t IsetBalanced;
@@ -513,6 +514,13 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (RequestedTimeout == 0 || (RequestedTimeout >= 10 && RequestedTimeout <= 3600)) {
             OverrideTimeout = RequestedTimeout;
             setOverrideCurrent(OverrideCurrent);                                // (re)arm or disarm the timer for the current override
+        }
+    } else if (topic == MQTTprefix + "/Set/CurrentOverrideTimeoutAction") {
+        // accepts 0/1 as well as "MinCurrent"/"Pause"
+        if (payload == "0" || payload == StrOverrideTimeoutAction[OVERRIDE_TIMEOUT_MINCURRENT]) {
+            OverrideTimeoutAction = OVERRIDE_TIMEOUT_MINCURRENT;
+        } else if (payload == "1" || payload == StrOverrideTimeoutAction[OVERRIDE_TIMEOUT_PAUSE]) {
+            OverrideTimeoutAction = OVERRIDE_TIMEOUT_PAUSE;
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
         uint16_t RequestedCurrent = payload.toInt();
@@ -922,6 +930,12 @@ void SetupMQTTClient() {
         ", \"device_class\":\"duration\", \"unit_of_measurement\":\"s\", \"entity_category\":\"config\"", p);
     MQTTclient.announce("Charge Current Override Timeout", "number", opt);
 
+    // state_topic defaults to <prefix>/ChargeCurrentOverrideTimeoutAction
+    snprintf(opt, sizeof(opt),
+        ", \"command_topic\":\"%s/Set/CurrentOverrideTimeoutAction\""
+        ", \"options\":[\"MinCurrent\", \"Pause\"], \"entity_category\":\"config\"", p);
+    MQTTclient.announce("Charge Current Override Timeout Action", "select", opt);
+
     // Cable Lock:
     snprintf(opt, sizeof(opt),
         ", \"cablelock_topic\":\"%s/CableLock\", \"command_topic\":\"%s/Set/CableLock\""
@@ -986,6 +1000,7 @@ void mqttPublishData() {
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
         mqPubI("/ChargeCurrentOverride", OverrideCurrent, true, 0);
         mqPubI("/ChargeCurrentOverrideTimeout", OverrideTimeout, true, 0);
+        mqPubS("/ChargeCurrentOverrideTimeoutAction", StrOverrideTimeoutAction[OverrideTimeoutAction], true, 0);
         mqPubI("/NrOfPhases", Nr_Of_Phases_Charging, true, 0);
         mqPubS("/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         mqPubS("/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
@@ -1634,6 +1649,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["charge_current"] = Balanced[0];
         doc["settings"]["override_current"] = OverrideCurrent;
         doc["settings"]["override_timeout"] = OverrideTimeout;
+        doc["settings"]["override_timeout_action"] = StrOverrideTimeoutAction[OverrideTimeoutAction];
         doc["settings"]["current_min"] = MinCurrent;
         doc["settings"]["current_max"] = MaxCurrent;
         doc["settings"]["current_main"] = MaxMains;
@@ -1958,6 +1974,16 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 doc["override_timeout"] = OverrideTimeout;
             } else {
                 doc["override_timeout"] = "Value not allowed!";
+            }
+        }
+
+        if(request->hasParam("override_timeout_action")) {
+            int action = request->getParam("override_timeout_action")->value().toInt();
+            if (action == OVERRIDE_TIMEOUT_MINCURRENT || action == OVERRIDE_TIMEOUT_PAUSE) {
+                OverrideTimeoutAction = action;
+                doc["override_timeout_action"] = StrOverrideTimeoutAction[OverrideTimeoutAction];
+            } else {
+                doc["override_timeout_action"] = "Value not allowed!";
             }
         }
 

@@ -73,11 +73,18 @@ to your curl POST command. -d ''
 
 &emsp;&emsp;Fail-safe for external controllers. Value in seconds, must be 0 or >= 10 and <= 3600.
 <br>&emsp;&emsp;When set, every override_current must be refreshed (re-sent, also with an unchanged value) within this time,
-<br>&emsp;&emsp;otherwise the override falls back to the configured minimum current.
+<br>&emsp;&emsp;otherwise the override_timeout_action is taken.
 <br>&emsp;&emsp;Using 0 (the default) disables the timeout. The value is not stored and resets to 0 on reboot.
 ```
     curl -X POST "http://ipaddress/settings?override_timeout=60&override_current=160" -d ''
 ```
+
+* override_timeout_action
+
+&emsp;&emsp;What happens when override_timeout expires:
+<br>&emsp;&emsp;0 (default): the override falls back to the configured minimum current.
+<br>&emsp;&emsp;1: charging is paused (as mode Pause) and the override is lowered to the minimum current. Charging stays paused until a mode is selected again.
+<br>&emsp;&emsp;Not stored; resets to 0 on reboot.
 
 * enable_C2
 

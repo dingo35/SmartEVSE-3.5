@@ -329,8 +329,10 @@ Valid topics you can publish to are:
 /Set/Mode
 /Set/CurrentOverride
 /Set/CurrentOverrideTimeout  seconds (0 = disabled, 10-3600); when set, CurrentOverride must be re-sent within this time,
-               otherwise the override falls back to MinCurrent. A fail-safe for when your controller, WiFi or broker goes down.
+               otherwise CurrentOverrideTimeoutAction is taken. A fail-safe for when your controller, WiFi or broker goes down.
                Not stored; resets to 0 on reboot.
+/Set/CurrentOverrideTimeoutAction  "MinCurrent" (or 0, default): the override falls back to MinCurrent;
+               "Pause" (or 1): charging is paused until a mode is selected again. Not stored; resets to MinCurrent on reboot.
 /Set/CurrentMaxSumMains
 /Set/CPPWMOverride
 /Set/MainsMeter

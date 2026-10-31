@@ -140,6 +140,8 @@
 #define BROADCAST_ADR 0x09
 #define COMM_TIMEOUT 11                                                         // Timeout for MainsMeter
 #define COMM_CIRCTIMEOUT 20                                                     // Timeout for CircuitMeter
+#define OVERRIDE_TIMEOUT_MINCURRENT 0                                           // OverrideTimeoutAction: fall back to MinCurrent
+#define OVERRIDE_TIMEOUT_PAUSE 1                                                // OverrideTimeoutAction: Pause charging
 #define COMM_EVTIMEOUT 8*NR_EVSES                                               // Timeout for EV Energy Meters
 
 #define PILOT_12V   12                                                          // State A - vehicle disconnected

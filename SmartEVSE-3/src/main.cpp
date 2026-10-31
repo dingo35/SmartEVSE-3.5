@@ -110,7 +110,8 @@ uint16_t MaxCapacity;                                                       // C
 uint16_t ChargeCurrent;                                                     // Calculated Charge Current (Amps *10)
 uint16_t OverrideCurrent = 0;                                               // Temporary assigned current (Amps *10) (modbus)
 uint16_t OverrideTimeout = 0;                                               // Seconds an OverrideCurrent stays valid without being refreshed (0 = never expires)
-uint16_t OverrideTimer = 0;                                                 // Seconds left before the OverrideCurrent falls back to MinCurrent
+uint16_t OverrideTimer = 0;                                                 // Seconds left before the OverrideTimeoutAction is taken
+uint8_t OverrideTimeoutAction = OVERRIDE_TIMEOUT_MINCURRENT;                // What to do when the OverrideCurrent expires: fall back to MinCurrent, or Pause
 int16_t Isum = 0;                                                           // Sum of all measured Phases (Amps *10) (can be negative)
 
 // Load Balance variables
@@ -235,6 +236,7 @@ extern unsigned char triwave8(unsigned char in);
 
 extern const char StrStateName[15][13] = {"A", "B", "C", "D", "COMM_B", "COMM_B_OK", "COMM_C", "COMM_C_OK", "Activate", "B1", "C1", "MODEM_REQ", "MODEM_WAIT", "MODEM_DONE", "MODEM_DENIED"}; //note that the extern is necessary here because the const will point the compiler to internal linkage; https://cplusplus.com/forum/general/81640/
 extern const char StrEnableC2[5][12] = { "Not present", "Always Off", "Solar Off", "Always On", "Auto" };
+extern const char StrOverrideTimeoutAction[2][11] = { "MinCurrent", "Pause" };
 
 //TODO perhaps move those routines from modbus to main?
 extern void ReadItemValueResponse(void);
@@ -1396,16 +1398,19 @@ void Timer1S_singlerun(void) {
     }
 
     // When OverrideTimeout is set, an external controller has to keep refreshing the OverrideCurrent.
-    // If it goes silent (controller, WiFi or broker down), fall back to MinCurrent instead of
+    // If it goes silent (controller, WiFi or broker down), fall back to MinCurrent, or Pause, instead of
     // charging at the last requested current indefinitely. The fallback itself does not re-arm the timer.
-    if (OverrideTimer) {
-        if (--OverrideTimer == 0 && OverrideCurrent > MinCurrent * 10) {
-            OverrideCurrent = MinCurrent * 10;
-            _LOG_W("OverrideCurrent not refreshed within %us, falling back to MinCurrent.\n", OverrideTimeout);
+    // Pause holds until the controller (or the user) selects a mode again; the override is lowered to
+    // MinCurrent as well, so a manual resume does not restart at the stale current.
+    if (OverrideTimer && --OverrideTimer == 0) {
+        bool pause = OverrideTimeoutAction == OVERRIDE_TIMEOUT_PAUSE && AccessStatus == ON;
+        if (OverrideCurrent > MinCurrent * 10) OverrideCurrent = MinCurrent * 10;
+        if (pause) setAccess(PAUSE);
+        _LOG_W("OverrideCurrent not refreshed within %us, %s.\n", OverrideTimeout,
+               pause ? "pausing" : "falling back to MinCurrent");
 #if MQTT
-            lastMqttUpdate = 10;
+        lastMqttUpdate = 10;
 #endif //MQTT
-        }
     }
 
     if (ChargeDelay) setChargeDelay(ChargeDelay-1);                     // Decrease Charge Delay counter

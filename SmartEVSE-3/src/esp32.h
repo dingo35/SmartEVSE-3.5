@@ -137,6 +137,7 @@ extern uint32_t serialnr;
 extern String PairingPin;
 
 extern const char StrEnableC2[5][12];
+extern const char StrOverrideTimeoutAction[2][11];
 //extern Single_Phase_t Switching_To_Single_Phase;
 extern uint8_t Nr_Of_Phases_Charging;
 
