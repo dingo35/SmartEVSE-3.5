@@ -97,7 +97,9 @@ class Meter {
     // capacity variables
     int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
     int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month, in Wh
+    uint32_t Peak_Month_Index;                                                  // month Peak_Period_Power_Month belongs to: (year * 12) + month(0-11); 0 = unknown
 #define CapacityPeriodSeconds 900  // 15 minutes
+#define CapacityMinimumPower 2500  // Flanders: 2.5kW is the minimum billed peak (W)
 #define DAY_POINTS 24*3600/CapacityPeriodSeconds
     int16_t PowerMeasured_Period[DAY_POINTS];                                   // the peak of the power per period(15min)
 
@@ -118,6 +120,9 @@ class Meter {
     signed int decodeMeasurement(uint8_t *buf, uint8_t Count, signed char Divisor);
     signed int decodeMeasurement(uint8_t *buf, uint8_t Count, uint8_t Endianness, MBDataType dataType, signed char Divisor);
 };
+
+uint32_t CapacityMonthIndex(const struct tm *t);                                // (year * 12) + month(0-11)
+void storeCapacityPeak(void);                                                   // persist MainsMeter monthly capacity peak (esp32.cpp)
 
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)
