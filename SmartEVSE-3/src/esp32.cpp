@@ -539,9 +539,8 @@ void mqtt_receive_callback(const String topic, const String payload) {
     } else if (topic == MQTTprefix + "/Set/CapacityPeak" && LoadBl < 2) {
         // Set the monthly capacity peak (W) used by CAPACITY MODE Flanders,
         // e.g. from the official "maximum demand running month" of the digital meter (P1, OBIS 1-0:1.6.0).
-        if (setCapacityPeak(payload.toInt())) {
-            mqPubI("/CapacityPeak", MainsMeter.Peak_Period_Power_Month, true, 0);
-        }
+        // The new value is published on /CapacityPeak with the next regular MQTT update.
+        setCapacityPeak(payload.toInt());
     } else if (topic == MQTTprefix + "/Set/CPPWMOverride") {
         int pwm = payload.toInt();
         if (pwm == -1) {
