@@ -87,18 +87,28 @@ void storeCapacityPeak(void) {
     shadowPrefs.markULong("CapPeakMonth", &MainsMeter.Peak_Month_Index);
 }
 
-// Set the monthly capacity peak (W) from outside (MQTT / REST), e.g. the official
-// "maximum demand running month" of the digital meter. Returns true when accepted.
+// Sync the monthly capacity peak (W) with an external source (MQTT / REST), e.g. the official
+// "maximum demand running month" of the digital meter.
+// This is not a static setting: like the automatic adjustment in UpdateCapacity(), it can only
+// RAISE the peak of the current month, never lower it. A new month still starts at CapacityMinimumPower.
+// Returns false when the value is invalid or the time is not known yet; a value that is not higher
+// than the current peak is valid but leaves the peak unchanged.
 bool setCapacityPeak(int32_t RequestedPeak) {
     if (RequestedPeak < CapacityMinimumPower || RequestedPeak > 100000) return false;
     time_t now = time(NULL);
     if (!LocalTimeSet || now == 0) return false;                            // month unknown: the value would be reset at the next period
     struct tm t_buf;
     tm* t = localtime_r(&now, &t_buf);
-    MainsMeter.Peak_Period_Power_Month = RequestedPeak;
-    MainsMeter.Peak_Month_Index = CapacityMonthIndex(t);
+    uint32_t CurrentMonth = CapacityMonthIndex(t);
+    if (MainsMeter.Peak_Month_Index != CurrentMonth) {                      // stored peak belongs to another month: start this month
+        MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
+        MainsMeter.Peak_Month_Index = CurrentMonth;
+    }
+    if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
+        MainsMeter.Peak_Period_Power_Month = RequestedPeak;
+        _LOG_A("Capacity peak of this month raised to %iW.\n", RequestedPeak);
+    }
     storeCapacityPeak();
-    _LOG_A("Capacity peak of this month set to %iW.\n", RequestedPeak);
     return true;
 }
 
@@ -1834,7 +1844,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(request->hasParam("capacity_peak")) {
             int peak = request->getParam("capacity_peak")->value().toInt();
             if (LoadBl < 2 && setCapacityPeak(peak)) {
-                doc["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;
+                doc["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;     // can stay higher than the requested value: the peak is only raised
             } else {
                 doc["capacity_peak_month"] = "Value not allowed!";
             }
