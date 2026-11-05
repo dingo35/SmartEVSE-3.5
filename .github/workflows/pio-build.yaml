@@ -76,6 +76,7 @@ jobs:
           super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
           PLATFORMIO_BUILD_FLAGS='-DVERSION=\"v${{ steps.version.outputs.version }}\" -DDBG=0' pio run -d SmartEVSE-3/
+          if [ -n "$super_secret" ]; then
           # Create a temporary file
           secret_file=$(mktemp)
           # Write the secret to the temporary file, because passing it as command line argument might reveal it for users using ps -a
@@ -84,18 +85,20 @@ jobs:
           openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
           # throw it all in one file
           cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./SmartEVSE-3/.pio/build/release/firmware.signed.bin
+          else echo "No signing key (fork): building unsigned firmware only"; fi
 
           # save .bin files to directory because v4 upload-artifact@v4 can no longer add files to an existing artifact; so much for efficiency :-(
           mkdir ./SmartEVSE-3/distribution
           mv ./SmartEVSE-3/.pio/build/release/*.bin ./SmartEVSE-3/distribution
 
           # Remove the temporary file
-          rm -f "$secret_file"
+          rm -f "$secret_file" || true
       - name: Build debug version
         env:
           super_secret: ${{ secrets.SECRET_RSA_KEY }}
         run: |
           PLATFORMIO_BUILD_FLAGS='-DVERSION=\"v${{ steps.version.outputs.version }}\" -DDBG=1' pio run -d SmartEVSE-3/
+          if [ -n "$super_secret" ]; then
           # Create a temporary file
           secret_file=$(mktemp)
           # Write the secret to the temporary file, because passing it as command line argument might reveal it for users using ps -a
@@ -104,10 +107,11 @@ jobs:
           openssl dgst -sign "$secret_file" -keyform PEM -sha256 -out firmware.sign -binary ./SmartEVSE-3/.pio/build/release/firmware.bin
           # throw it all in one file
           cat firmware.sign ./SmartEVSE-3/.pio/build/release/firmware.bin > ./SmartEVSE-3/.pio/build/release/firmware.signed.bin
+          else echo "No signing key (fork): building unsigned firmware only"; fi
           # Remove the temporary file
-          rm -f "$secret_file"
+          rm -f "$secret_file" || true
           mv ./SmartEVSE-3/.pio/build/release/firmware.bin ./SmartEVSE-3/distribution/firmware.debug.bin
-          mv ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ./SmartEVSE-3/distribution/firmware.debug.signed.bin
+          if [ -f ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ]; then mv ./SmartEVSE-3/.pio/build/release/firmware.signed.bin ./SmartEVSE-3/distribution/firmware.debug.signed.bin; fi
           # prevent the .bin files are gathered in .pio directory in the dists-zip file:
           cp -a ./SmartEVSE-3/HowToFlash.txt ./SmartEVSE-3/distribution
       
