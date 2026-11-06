@@ -118,6 +118,9 @@ extern uint16_t MinCurrent;
 extern uint8_t Mode;
 extern uint32_t CurrentPWM;
 extern void SetCurrent(uint16_t current);
+extern uint8_t MaxSumMainsTenths;
+extern uint16_t MaxSumMainsTenthsFor;
+extern int32_t getMaxSumMainsDA(void);
 
 extern bool CPDutyOverride;
 extern uint8_t Lock;
@@ -508,11 +511,16 @@ void mqtt_receive_callback(const String topic, const String payload) {
             }
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
-        uint16_t RequestedCurrent = payload.toInt();
-        if (RequestedCurrent == 0) {
+        // Accepts whole amps ("11") or one decimal ("10.4"), so a capacity limit can be set in 0.1A steps.
+        // The tenths are not stored and are ignored as soon as MaxSumMains is changed in another way.
+        int32_t RequestedDA = lroundf(payload.toFloat() * 10);
+        if (RequestedDA == 0) {
             MaxSumMains = 0;
-        } else if (RequestedCurrent == 0 || (RequestedCurrent >= 10 && RequestedCurrent <= 600)) {
-                MaxSumMains = RequestedCurrent;
+            MaxSumMainsTenths = 0;
+        } else if (RequestedDA >= 100 && RequestedDA <= 6000) {
+            MaxSumMains = RequestedDA / 10;
+            MaxSumMainsTenths = RequestedDA % 10;
+            MaxSumMainsTenthsFor = MaxSumMains;
         }
     } else if (topic == MQTTprefix + "/Set/CPPWMOverride") {
         int pwm = payload.toInt();
@@ -968,7 +976,12 @@ void mqttPublishData() {
         mqPubI("/ESPTemp", TempEVSE, false, 0);
         mqPubS("/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         mqPubI("/MaxCurrent", MaxCurrent * 10, true, 0);
-        mqPubI("/MaxSumMains", MaxSumMains, true, 0);
+        {   // published with one decimal, e.g. "10.4" (0.1A steps via /Set/CurrentMaxSumMains)
+            char buf[12];
+            int32_t da = getMaxSumMainsDA();
+            snprintf(buf, sizeof(buf), "%d.%d", (int)(da / 10), (int)(da % 10));
+            mqPubS("/MaxSumMains", buf, true, 0);
+        }
         mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
         mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
@@ -1625,6 +1638,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["current_main"] = MaxMains;
         doc["settings"]["current_max_circuit"] = MaxCircuit;
         doc["settings"]["current_max_sum_mains"] = MaxSumMains;
+        doc["settings"]["current_max_sum_mains_precise"] = getMaxSumMainsDA() / 10.0;    // A, including 0.1A steps set via MQTT
         doc["settings"]["max_sum_mains_time"] = MaxSumMainsTime;
         doc["settings"]["solar_max_import"] = ImportCurrent;
         doc["settings"]["solar_start_current"] = StartCurrent;
