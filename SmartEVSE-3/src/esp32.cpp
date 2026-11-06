@@ -1280,6 +1280,9 @@ void read_settings() {
         LoadBl = preferences.getUChar("LoadBl", LOADBL); 
         MaxMains = preferences.getUShort("MaxMains", MAX_MAINS); 
         MaxSumMains = preferences.getUShort("MaxSumMains", MAX_SUMMAINS);
+        MaxSumMainsTenths = preferences.getUChar("MaxSumMainsT", 0);         // 0.1A steps set through the web interface
+        if (MaxSumMainsTenths > 9) MaxSumMainsTenths = 0;
+        MaxSumMainsTenthsFor = MaxSumMains;
         if (!preferences.isKey("CapacityMode")) {
             //old firmware has not yet introduced CapacityMode, so do it here:
             if (MaxSumMains) //enabled, so CapacityMode FIXED
@@ -1873,11 +1876,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
 
         if(request->hasParam("current_max_sum_mains")) {
-            int current = request->getParam("current_max_sum_mains")->value().toInt();
-            if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
-                MaxSumMains = current;
+            // whole amps ("11") or one decimal ("10.4"); stored, so it survives a reboot
+            int32_t currentDA = lroundf(request->getParam("current_max_sum_mains")->value().toFloat() * 10);
+            if((currentDA == 0 || (currentDA >= 100 && currentDA <= 6000)) && LoadBl < 2) {
+                MaxSumMains = currentDA / 10;
+                MaxSumMainsTenths = currentDA % 10;
+                MaxSumMainsTenthsFor = MaxSumMains;
                 shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
-                doc["current_max_sum_mains"] = MaxSumMains;
+                shadowPrefs.markUChar("MaxSumMainsT", &MaxSumMainsTenths);
+                doc["current_max_sum_mains"] = getMaxSumMainsDA() / 10.0;
             } else {
                 doc["current_max_sum_mains"] = "Value not allowed!";
             }

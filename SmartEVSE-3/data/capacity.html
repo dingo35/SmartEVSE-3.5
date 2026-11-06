@@ -38,7 +38,7 @@
         </div>
         <div class="fields hidden" id="fixedCapacitySection" style="margin-top:10px">
           <label class="f">Max Sum Mains (A)
-            <input type="number" id="current_max_sum_mains" min="10" max="600" step="1" style="width:90px">
+            <input type="number" id="current_max_sum_mains" min="10" max="600" step="0.1" style="width:90px">
           </label>
           <span class="sub">Overall power limit in fixed mode.</span>
         </div>
@@ -231,7 +231,8 @@ function load() {
     renderTable();
     if (d.settings) {
       if (d.settings.capacity_mode !== undefined) $("capacity_mode").value = d.settings.capacity_mode;
-      if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
+      if (d.settings.current_max_sum_mains_precise !== undefined) $("current_max_sum_mains").value = Number(d.settings.current_max_sum_mains_precise).toFixed(1);
+      else if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
     }
     toggleSections();
   }).catch(() => toast("Failed to load settings"));
@@ -239,9 +240,9 @@ function load() {
 
 $("capacity_mode").onchange = (e) => { if (loaded) postSettings(new URLSearchParams({ capacity_mode: e.target.value })); toggleSections(); };
 $("current_max_sum_mains").onchange = (e) => {
-  const v = parseInt(e.target.value);
+  const v = Math.round(parseFloat(e.target.value) * 10) / 10;           // 0.1A steps
   if (isNaN(v) || v < 10 || v > 600) { toast("Value must be between 10 and 600"); load(); return; }
-  postSettings(new URLSearchParams({ current_max_sum_mains: v }));
+  postSettings(new URLSearchParams({ current_max_sum_mains: v.toFixed(1) }));
 };
 $("intervalForm").onsubmit = (e) => {
   e.preventDefault();
