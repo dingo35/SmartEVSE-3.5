@@ -91,14 +91,20 @@ a home battery's peak shaving.
 
 Now the divisor is the number of phases that is **actually switched**:
 
-| Setup | Divisor |
-|---|---|
-| Standalone, `CONTACT 2 = Always Off` (1 phase) | **1** (3× faster than before) |
-| Standalone, 3 phases or `Auto`/`Solar Off` switched to 3P | 3 (as before) |
-| Load balancing (master + nodes) | 3 (as before, conservative) |
+| `CONTACT 2` (standalone) | Charging on | Divisor |
+|---|---|---|
+| `Always Off` | 1 phase | **1** (3× faster than before) |
+| `Always On` | 3 phases | 3 (as before) |
+| `Solar Off` | 1 phase in Solar mode, 3 phases in Smart/Normal | **1** in Solar, 3 otherwise |
+| `Auto` | Solar mode switches itself between 1P and 3P on the available surplus; Smart/Normal: 3P | follows the switch: **1** on 1P, 3 on 3P |
+| `Not present` | no second contactor (counted as 3 phases) | 3 (as before) |
+| Load balancing (master + nodes), any setting | | 3 (as before, conservative) |
 
-Switching between 1P and 3P with a second contactor on **C2** is followed automatically, so the
-setup keeps working when you move to three phases later.
+The divisor is taken from the number of phases the firmware has actually switched
+(`Nr_Of_Phases_Charging`), so every 1P ↔ 3P switch with the contactor on **C2** is followed
+automatically: also the automatic switching in Solar mode with `Auto`, and a change of mode with
+`Solar Off`. A single-phase installation should use `CONTACT 2 = Always Off` (not `Not present`) to
+get divisor 1.
 
 ---
 
