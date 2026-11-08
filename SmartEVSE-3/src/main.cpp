@@ -195,6 +195,12 @@ bool phasesLastUpdateFlag = false;
 int16_t IrmsOriginal[3]={0, 0, 0};
 int16_t homeBatteryCurrent = 0;
 time_t homeBatteryLastUpdate = 0; // Time in seconds since epoch
+// Home battery power input (Set/HomeBatteryPower): the SmartEVSE converts it to homeBatteryCurrent itself
+int32_t homeBatteryPower = 0;                                               // last received battery power in W (+ charging / - discharging)
+int16_t homeBatterySoC = -1;                                                // last received state of charge in 0.1% (-1 = unknown)
+bool homeBatteryPowerInput = false;                                         // true when the current is calculated from Set/HomeBatteryPower
+uint16_t HomeBatteryOffset = 0;                                             // W subtracted from the received battery power (stored)
+uint16_t HomeBatteryFullSoC = 0;                                            // 0.1%; at or above this SoC the battery counts as 0 (0 = off, stored)
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 uint8_t ColorOff[3] = {0, 0, 0};          // off
 uint8_t ColorNormal[3] = {0, 255, 0};   // Green
@@ -2881,10 +2887,29 @@ uint16_t getItemValue(uint8_t nav) {
  * Note: The user who is posting battery charge data should take this into account, meaning: if he wants a minimum home battery (dis)charge rate he should substract this from the value he is sending.
  */
 // 
+/**
+ * Home battery power in W (+ charging / - discharging) and optional state of charge in 0.1% (-1 = unknown).
+ * The configured offset is subtracted, a full battery (SoC >= HomeBatteryFullSoC) counts as 0, and the
+ * result is converted to homeBatteryCurrent (0.1A) with the measured mains voltage (or 230V).
+ */
+void setHomeBatteryPower(int32_t Watt, int32_t SoC) {
+    homeBatteryPower = Watt;
+    homeBatterySoC = (SoC >= 0 && SoC <= 1000) ? SoC : -1;
+    int32_t w = Watt - (int32_t)HomeBatteryOffset;
+    if (HomeBatteryFullSoC && homeBatterySoC >= (int32_t)HomeBatteryFullSoC) w = 0;
+    int32_t da = w * 100 / (int32_t)CapacityVoltageDV();                    // W / V * 10
+    if (da > 2000) da = 2000;
+    if (da < -2000) da = -2000;
+    homeBatteryCurrent = (int16_t)da;
+    homeBatteryLastUpdate = time(NULL);
+    homeBatteryPowerInput = true;
+}
+
 int16_t getBatteryCurrent(void) {
     if (homeBatteryLastUpdate && (time(NULL) - homeBatteryLastUpdate) > 60) {
         homeBatteryLastUpdate = 0;                      // last update was more then 60s ago, set to 0
         homeBatteryCurrent = 0;
+        homeBatteryPowerInput = false;
         return 0;
     } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
         return homeBatteryCurrent;
