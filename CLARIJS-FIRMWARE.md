@@ -23,6 +23,8 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 5. [Measured mains voltage](#4-measured-mains-voltage)
 6. [Capacity mode Peak and configurable margin](#5-capacity-mode-peak-and-configurable-margin)
 7. [Home battery power in watts](#6-home-battery-power-in-watts)
+   · [Home battery protect](#home-battery-protect)
+   · [7. Smart mode start current](#7-smart-mode-start-current)
 8. [Benefits with a home battery](#benefits-with-a-home-battery)
 9. [MQTT and REST reference](#mqtt-and-rest-reference)
 10. [Example setup: P1 meter → SmartEVSE](#example-setup-p1-meter--smartevse)
@@ -41,7 +43,8 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 | 3 | Max Sum Mains headroom **per switched phase** instead of always ÷3 | On single phase the charger corrected an overshoot 3× too slowly |
 | 4 | **Measured voltage** from every mains meter (API, Modbus, HomeWizard) + **monthly peak from a HomeWizard P1** | The capacity modes used a fixed 230 V |
 | 5 | New capacity mode **Peak** + **configurable margin** | Stable ceiling just under the monthly peak that stays below a home battery's peak-shaving threshold |
-| 6 | **Home battery in watts**: offset, full SoC and conversion done by the SmartEVSE | `HomeBatteryCurrent` had to be calculated in deci-amps by the sender; every tweak meant changing the automation |
+| 6 | **Home battery in watts**: offset, full SoC and conversion done by the SmartEVSE, plus **Home battery protect** with a SoC window | `HomeBatteryCurrent` had to be calculated in deci-amps by the sender; a peak-shaving battery ended up charging the EV |
+| 7 | **Smart mode start current** fixed, setpoint capped at the measured headroom | A standalone charger started at full current and overshot the limit |
 | – | Bug fix: negative energy difference could register a bogus peak of up to 65 kW | `uint16_t` overflow in `UpdateCapacity()` |
 
 ---
@@ -248,6 +251,45 @@ HomeBatteryCurrent (0.1 A) = (power − offset) ÷ measured voltage × 10
 Example: power 1000 W, offset 25 W, voltage 232 V → (1000 − 25) ÷ 232 × 10 = **42** (4.2 A).
 With full SoC 99.7 % and a SoC of 99.8 % → **0**.
 
+### Home battery protect
+
+A battery doing peak shaving holds the mains exactly at its threshold. The SmartEVSE then sees almost
+no overshoot, lowers the current only 0.1 A per measurement, and meanwhile the battery charges the EV.
+Measured: after a start at 21 A the battery delivered **1.8 kW to the EV** for minutes, while the
+mains stayed at 2700–2730 W.
+
+With **Home battery protect** on, a discharging battery counts as mains import in **Smart** mode: the
+EV is limited as if the battery were idle, and the charger drops in one step. Charging the battery is
+not counted; discharges below 0.3 A are ignored.
+
+**SoC window (hysteresis):** with a well-charged battery you may want it to feed the EV after all.
+
+| Setting | MQTT | REST | Effect |
+|---|---|---|---|
+| Protect on/off | `Set/HomeBatteryProtect` (On/Off) | `home_battery_protect` (1/0) | default off |
+| Feed EV from (SoC high) | `Set/HomeBatteryProtectSoCHigh` | `home_battery_protect_soc_high` | at or above: protect paused, battery may feed the EV (0 = always protect) |
+| Protect again at (SoC low) | `Set/HomeBatteryProtectSoCLow` | `home_battery_protect_soc_low` | at or below: protect active again |
+
+Between the two values the last state is kept. Without a SoC protect is always active. The current
+state is published on `/HomeBatteryProtectActive` (HA binary sensor) and shown in the web interface
+as *(active)* / *(paused)*. All settings are stored, announced via MQTT discovery and editable in the
+Home battery card.
+
+---
+
+## 7. Smart mode start current
+
+Two problems in the original regulation, both visible as a start at full current:
+
+- **Start current not calculated (standalone).** On B→C the firmware calls the "new EVSE" calculation
+  before the EVSE is marked as charging, so it was skipped. The start current was whatever setpoint
+  had grown while the EV was not charging, in practice the maximum (21 A). Now the start current is
+  calculated from MaxMains / MaxCircuit / Max Sum Mains.
+- **Setpoint wind-up.** The setpoint rises step by step while the EV draws less than it (ramping up
+  after the start, or limited by the car). With Max Sum Mains and an EV meter the setpoint is now
+  capped at the **measured headroom**: Max Sum Mains − (mains − EV meter). So the EV can never take
+  more than what is free.
+
 ---
 
 ## Benefits with a home battery
@@ -318,6 +360,9 @@ Night charging of a Peugeot plug-in hybrid (±10 kWh), monthly peak 2755 W:
 | `<prefix>/Set/HomeBatteryFullSoC` | → EVSE | full SoC in % (0–100, one decimal, 0 = off), stored |
 | `<prefix>/HomeBatteryPower` | EVSE → | received battery power in W |
 | `<prefix>/HomeBatteryOffset`, `<prefix>/HomeBatteryFullSoC` | EVSE → | the settings |
+| `<prefix>/Set/HomeBatteryProtect` | → EVSE | On/Off, stored |
+| `<prefix>/Set/HomeBatteryProtectSoCHigh`, `…SoCLow` | → EVSE | SoC window in %, stored |
+| `<prefix>/HomeBatteryProtect`, `…SoCHigh`, `…SoCLow`, `…Active` | EVSE → | settings and current state |
 
 ### New REST parameters (`POST /settings?…`)
 
@@ -426,7 +471,8 @@ settings (`CapPeakW`, `CapMargin`, `MaxSumMainsT`) are simply ignored. Set `CAP 
 | [`maxsummains-tenths`](https://github.com/Clarijs/SmartEVSE-3.5/tree/maxsummains-tenths) | §2 Max Sum Mains in 0.1 A (MQTT, web, REST) | pull request |
 | [`maxsummains-phases`](https://github.com/Clarijs/SmartEVSE-3.5/tree/maxsummains-phases) | §3 regulation per switched phase | pull request |
 | [`capacity-peak-mode`](https://github.com/Clarijs/SmartEVSE-3.5/tree/capacity-peak-mode) | §1–§5 combined, including measured voltage, mode Peak and margin | pull request (after the others) |
-| [`home-battery-power`](https://github.com/Clarijs/SmartEVSE-3.5/tree/home-battery-power) | §6 home battery power in watts (on top of `capacity-peak-mode`) | pull request (after `capacity-peak-mode`) |
+| [`home-battery-power`](https://github.com/Clarijs/SmartEVSE-3.5/tree/home-battery-power) | §6 home battery power in watts, protect and SoC window (on top of `capacity-peak-mode`) | pull request (after `capacity-peak-mode`) |
+| [`smart-start-current`](https://github.com/Clarijs/SmartEVSE-3.5/tree/smart-start-current) | §7 start current and headroom cap in Smart mode | pull request (bug fix) |
 | [`release/capacity-peak-build`](https://github.com/Clarijs/SmartEVSE-3.5/tree/release/capacity-peak-build) | everything + CI change to build without signing key | **firmware for this fork**, not for a PR |
 
 Related discussion upstream: feature requests for a settable monthly peak and for using the measured
