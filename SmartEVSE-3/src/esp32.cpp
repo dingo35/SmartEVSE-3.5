@@ -104,6 +104,9 @@ bool setCapacityPeak(int32_t RequestedPeak) {
         MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
         MainsMeter.Peak_Month_Index = CurrentMonth;
     }
+    // In the first quarter of a month the meter can still report the peak of the previous month
+    // (clock difference, publish interval); a real peak of the new month only exists after 00:15.
+    if (t->tm_mday == 1 && t->tm_hour == 0 && t->tm_min < 15) return true;
     if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
         MainsMeter.Peak_Period_Power_Month = RequestedPeak;
         _LOG_A("Capacity peak of this month raised to %iW.\n", RequestedPeak);
@@ -591,10 +594,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         // MainsMeter can measure -200A to +200A per phase
         if ((n == 3 || n == 5 || n == 6) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
             // optional 6th value: voltage L1 in 0.1V (e.g. 2324), used by the capacity modes instead of a fixed 230V
-            if (n == 6 && V >= 1800 && V <= 2700) {
-                MainsVoltageDV = V;
-                MainsVoltageTime = time(NULL);
-            }
+            if (n == 6) SetMainsVoltageDV(V);
             // We expect 5 values (and accept -1 for unknown values)
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
@@ -3432,6 +3432,8 @@ static void homewizard_task(void *parameter) {
             MainsMeter.Import_active_energy = evdata.second[3];
             MainsMeter.Export_active_energy = evdata.second[4];
             MainsMeter.PowerMeasured = evdata.second[5];
+            SetMainsVoltageDV(evdata.second[6]);                            // voltage L1 for the capacity modes
+            if (evdata.second[7] > 0) setCapacityPeak(evdata.second[7]);    // official monthly peak (Belgian P1 meters)
             MainsMeter.UpdateEnergies();
             MainsMeter.UpdateCapacity();
             _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);

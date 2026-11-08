@@ -115,6 +115,7 @@ class Meter {
     void setTimeout(uint8_t Timeout);
   private:
     uint8_t receiveCurrentMeasurement(ModBus MB);
+    int32_t receiveVoltageMeasurement(uint8_t *buf);
     signed int receivePowerMeasurement(uint8_t *buf);
     signed int receiveEnergyMeasurement(uint8_t *buf);
     void combineBytes(void *var, uint8_t *buf, uint8_t pos, uint8_t endianness, MBDataType dataType);
@@ -130,6 +131,7 @@ void storeCapacityPeak(void);                                                   
 extern uint16_t CapacityMargin;                                                 // margin (W) under the capacity ceiling, default CapacitySafety
 extern uint16_t MainsVoltageDV;                                                 // last measured mains voltage L1 in 0.1V (0 = never received)
 extern time_t MainsVoltageTime;                                                 // time of that measurement
+void SetMainsVoltageDV(int32_t VoltageDV);                                      // store a measured mains voltage L1 (0.1V) if plausible
 uint16_t CapacityVoltageDV(void);                                               // measured voltage in 0.1V if recent and plausible, else AssumedVoltage
 int32_t CapacityPowerToDA(int32_t Watt);                                        // power -> current in 0.1A using CapacityVoltageDV()
 

@@ -389,6 +389,32 @@ void requestCurrentMeasurement(uint8_t Meter, uint8_t Address) {
 
 
 /**
+ * Send voltage (L1) measurement request over modbus
+ *
+ * @param uint8_t Meter
+ * @param uint8_t Address
+ * @return bool true if a request was sent
+ */
+bool requestVoltageMeasurement(uint8_t Meter, uint8_t Address) {
+    switch(Meter) {
+        case 0:
+        case EM_SENSORBOX:                                                      // no voltage measurement
+        case EM_API:                                                            // voltage is the 6th value of the API payload
+        case EM_HOMEWIZARD:                                                     // voltage is read over the HomeWizard API
+        case EM_UNUSED_SLOT4:
+            return false;
+        case EM_SOLAREDGE:
+            // PhVphA + 6 voltages + scaling factor V_SF
+            ModbusReadInputRequest(Address, EMConfig[Meter].Function, EMConfig[Meter].URegister, 8);
+            return true;
+        default:
+            requestMeasurement(Meter, Address, EMConfig[Meter].URegister, 1);
+            return true;
+    }
+}
+
+
+/**
  * Map a Modbus register to an item ID (MENU_xxx or STATUS_xxx)
  * 
  * @return uint8_t ItemID
