@@ -62,6 +62,14 @@ int32_t getMaxSumMainsDA(void) {
     if (!MaxSumMains) return 0;
     return MaxSumMains * 10 + (MaxSumMainsTenthsFor == MaxSumMains ? MaxSumMainsTenths : 0);
 }
+// Set MaxSumMains in 0.1A (used by the capacity modes); 1..9 (0.1-0.9A) becomes 1A, which stops charging
+void setMaxSumMainsDA(int32_t dA) {
+    if (dA < 10) dA = 10;
+    if (dA > 6000) dA = 6000;
+    MaxSumMains = dA / 10;
+    MaxSumMainsTenths = dA % 10;
+    MaxSumMainsTenthsFor = MaxSumMains;
+}
 uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging
 uint16_t MaxSumMainsTimer = 0;
 uint16_t GridRelayMaxSumMains = GRID_RELAY_MAX_SUMMAINS;                    // Max Mains Amps summed over all 3 phases, switched by relay provided by energy provider

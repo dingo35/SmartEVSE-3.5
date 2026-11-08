@@ -27,6 +27,7 @@
 #define __EVSE_METER
 
 #include "main.h"
+#include <time.h>
 
 
 #define EM_SENSORBOX 1                                                          // Mains meter types
@@ -123,6 +124,14 @@ class Meter {
 
 uint32_t CapacityMonthIndex(const struct tm *t);                                // (year * 12) + month(0-11)
 void storeCapacityPeak(void);                                                   // persist MainsMeter monthly capacity peak (esp32.cpp)
+
+#define CapacitySafety 100                                                      // default margin (W) under the capacity ceiling
+#define AssumedVoltage 230                                                      // used when no (recent) voltage measurement is available
+extern uint16_t CapacityMargin;                                                 // margin (W) under the capacity ceiling, default CapacitySafety
+extern uint16_t MainsVoltageDV;                                                 // last measured mains voltage L1 in 0.1V (0 = never received)
+extern time_t MainsVoltageTime;                                                 // time of that measurement
+uint16_t CapacityVoltageDV(void);                                               // measured voltage in 0.1V if recent and plausible, else AssumedVoltage
+int32_t CapacityPowerToDA(int32_t Watt);                                        // power -> current in 0.1A using CapacityVoltageDV()
 
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)

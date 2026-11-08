@@ -554,6 +554,13 @@ void mqtt_receive_callback(const String topic, const String payload) {
             MaxSumMainsTenths = RequestedDA % 10;
             MaxSumMainsTenthsFor = MaxSumMains;
         }
+    } else if (topic == MQTTprefix + "/Set/CapacityMargin" && LoadBl < 2) {
+        // margin in W under the capacity ceiling (Flanders, Interval, Peak); stored
+        int32_t margin = payload.toInt();
+        if (margin >= 0 && margin <= 1000) {
+            CapacityMargin = margin;
+            shadowPrefs.markUShort("CapMargin", &CapacityMargin);
+        }
     } else if (topic == MQTTprefix + "/Set/CapacityPeak" && LoadBl < 2) {
         // Set the monthly capacity peak (W) used by CAPACITY MODE Flanders,
         // e.g. from the official "maximum demand running month" of the digital meter (P1, OBIS 1-0:1.6.0).
@@ -578,11 +585,16 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (MainsMeter.Type != EM_API || LoadBl >= 2)
             return;
 
-        int32_t L1, L2, L3, W, WH;
-        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
+        int32_t L1, L2, L3, W, WH, V;
+        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH, &V);
 
         // MainsMeter can measure -200A to +200A per phase
-        if ((n == 3 || n == 5) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+        if ((n == 3 || n == 5 || n == 6) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+            // optional 6th value: voltage L1 in 0.1V (e.g. 2324), used by the capacity modes instead of a fixed 230V
+            if (n == 6 && V >= 1800 && V <= 2700) {
+                MainsVoltageDV = V;
+                MainsVoltageTime = time(NULL);
+            }
             // We expect 5 values (and accept -1 for unknown values)
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
@@ -591,7 +603,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 MainsMeter.Irms[2] = L3;
                 CalcIsum();
             }
-            if (n == 5) {
+            if (n >= 5) {
                 if (W > -1) {
                     // Power measurement
                     MainsMeter.PowerMeasured = W;
@@ -1020,8 +1032,9 @@ void mqttPublishData() {
             snprintf(buf, sizeof(buf), "%d.%d", (int)(da / 10), (int)(da % 10));
             mqPubS("/MaxSumMains", buf, true, 0);
         }
-        if (CapacityMode == FLANDERS)
+        if (CapacityMode == FLANDERS || CapacityMode == PEAK)
             mqPubI("/CapacityPeak", MainsMeter.Peak_Period_Power_Month, true, 0);
+        mqPubI("/CapacityMargin", CapacityMargin, true, 0);
         mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
         mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
@@ -1292,6 +1305,8 @@ void read_settings() {
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
+        CapacityMargin = preferences.getUShort("CapMargin", CapacitySafety);
+        if (CapacityMargin > 1000) CapacityMargin = CapacitySafety;
         MainsMeter.Peak_Period_Power_Month = preferences.getULong("CapPeakW", CapacityMinimumPower);
         MainsMeter.Peak_Month_Index = preferences.getULong("CapPeakMonth", 0);    // checked against the current month in UpdateCapacity()
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
@@ -1698,7 +1713,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
         doc["settings"]["capacity_mode"] = CapacityMode;
-        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders
+        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders and Peak
+        doc["settings"]["capacity_margin"] = CapacityMargin;                           // W under the capacity ceiling
+        if (MainsVoltageDV) doc["settings"]["mains_voltage"] = MainsVoltageDV / 10.0;  // V, last measured (API MainsMeter)
+        doc["settings"]["capacity_voltage"] = CapacityVoltageDV() / 10.0;              // V used for the capacity calculation
         String intervalsStr = GetIntervalString();
         doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
@@ -1847,7 +1865,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("capacity_mode")) {
             int val = request->getParam("capacity_mode")->value().toInt();
-            if (val >= 0 && val <= 3) {
+            if (val >= 0 && val <= 4) {
                 CapacityMode = (CapacityMode_t)val;
                 shadowPrefs.markUShort("CapacityMode", &CapacityMode);
                 if (CapacityMode == CAP_DISABLED) {
@@ -1855,6 +1873,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 }
                 doc["capacity_mode"] = val;
+            }
+        }
+
+        if(request->hasParam("capacity_margin")) {
+            int margin = request->getParam("capacity_margin")->value().toInt();
+            if (margin >= 0 && margin <= 1000 && LoadBl < 2) {
+                CapacityMargin = margin;
+                shadowPrefs.markUShort("CapMargin", &CapacityMargin);
+                doc["capacity_margin"] = CapacityMargin;
+            } else {
+                doc["capacity_margin"] = "Value not allowed!";
             }
         }
 
