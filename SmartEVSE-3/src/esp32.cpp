@@ -3321,7 +3321,7 @@ static void homewizard_task(void *parameter) {
 
     if (MainsMeter.Type == EM_HOMEWIZARD && LoadBl < 2) {
         _LOG_A("Start HomeWizard MainsMeter reading.");
-        const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName);
+        const auto evdata = getDataFromHomeWizard(MainsMeter.DeviceHostName, &MainsMeter.NetCurrent);
         for (int i = 0; i < evdata.first; i++)
             MainsMeter.Irms[i] = evdata.second[i];
         if (evdata.first) {
