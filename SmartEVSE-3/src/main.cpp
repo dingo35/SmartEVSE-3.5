@@ -202,6 +202,21 @@ bool homeBatteryPowerInput = false;                                         // t
 uint16_t HomeBatteryOffset = 0;                                             // W subtracted from the received battery power (stored)
 uint16_t HomeBatteryFullSoC = 0;                                            // 0.1%; at or above this SoC the battery counts as 0 (0 = off, stored)
 uint8_t HomeBatteryProtect = 0;                                             // 1: in Smart mode a discharging battery counts as mains import (stored)
+uint16_t HomeBatteryProtectSoCHigh = 0;                                     // 0.1%; at or above: battery may discharge into the EV (protect paused), 0 = off (stored)
+uint16_t HomeBatteryProtectSoCLow = 0;                                      // 0.1%; at or below: protect active again (stored)
+bool homeBatteryProtectPaused = false;                                      // hysteresis state between SoCLow and SoCHigh
+
+// Is home battery protect active now? SoC hysteresis: paused at/above SoCHigh, active again at/below SoCLow
+bool isHomeBatteryProtectActive(void) {
+    if (!HomeBatteryProtect) return false;
+    if (!HomeBatteryProtectSoCHigh || homeBatterySoC < 0) {                 // no SoC window or SoC unknown: always protect
+        homeBatteryProtectPaused = false;
+        return true;
+    }
+    if (homeBatterySoC >= (int16_t)HomeBatteryProtectSoCHigh) homeBatteryProtectPaused = true;
+    else if (homeBatterySoC <= (int16_t)HomeBatteryProtectSoCLow) homeBatteryProtectPaused = false;
+    return !homeBatteryProtectPaused;
+}
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 uint8_t ColorOff[3] = {0, 0, 0};          // off
 uint8_t ColorNormal[3] = {0, 255, 0};   // Green
@@ -2914,7 +2929,7 @@ int16_t getBatteryCurrent(void) {
         return 0;
     } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
         return homeBatteryCurrent;
-    } else if (Mode == MODE_SMART && HomeBatteryProtect && homeBatteryCurrent <= -3) {
+    } else if (Mode == MODE_SMART && homeBatteryCurrent <= -3 && isHomeBatteryProtectActive()) {
         // Home battery protect: a discharging battery (e.g. peak shaving) hides the real load from the mains meter.
         // Count the discharge as import, so the EV is limited as if the battery were idle and never charges the EV.
         // Charging the battery is not counted (that is already in the mains measurement). Deadband 0.3A.

@@ -231,6 +231,9 @@ extern bool homeBatteryPowerInput;
 extern uint16_t HomeBatteryOffset;
 extern uint16_t HomeBatteryFullSoC;
 extern uint8_t HomeBatteryProtect;
+extern uint16_t HomeBatteryProtectSoCHigh;
+extern uint16_t HomeBatteryProtectSoCLow;
+extern bool isHomeBatteryProtectActive(void);
 extern void setHomeBatteryPower(int32_t Watt, int32_t SoC);
 
 // "W" or "W:SoC" (SoC in %, decimals allowed) -> setHomeBatteryPower()
@@ -707,6 +710,18 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (payload == "1" || payload.equalsIgnoreCase("On")) HomeBatteryProtect = 1;
         else if (payload == "0" || payload.equalsIgnoreCase("Off")) HomeBatteryProtect = 0;
         shadowPrefs.markUChar("BatProtect", &HomeBatteryProtect);
+    } else if (topic == MQTTprefix + "/Set/HomeBatteryProtectSoCHigh" && LoadBl < 2) {
+        int32_t soc = parseSoCTenths(payload);
+        if (soc >= 0) {
+            HomeBatteryProtectSoCHigh = soc;
+            shadowPrefs.markUShort("BatProtHigh", &HomeBatteryProtectSoCHigh);
+        }
+    } else if (topic == MQTTprefix + "/Set/HomeBatteryProtectSoCLow" && LoadBl < 2) {
+        int32_t soc = parseSoCTenths(payload);
+        if (soc >= 0) {
+            HomeBatteryProtectSoCLow = soc;
+            shadowPrefs.markUShort("BatProtLow", &HomeBatteryProtectSoCLow);
+        }
     } else if (topic == MQTTprefix + "/Set/HomeBatteryFullSoC" && LoadBl < 2) {
         int32_t soc = parseSoCTenths(payload);
         if (soc >= 0) {
@@ -1026,6 +1041,15 @@ void SetupMQTTClient() {
             ", \"command_topic\":\"%s/Set/HomeBatteryProtect\", \"payload_on\":\"On\", \"payload_off\":\"Off\""
             ", \"entity_category\":\"config\"", p);
         MQTTclient.announce("Home Battery Protect", "switch", opt);
+        snprintf(opt, sizeof(opt),
+            ", \"command_topic\":\"%s/Set/HomeBatteryProtectSoCHigh\", \"min\":\"0\", \"max\":\"100\", \"step\":\"0.1\""
+            ", \"mode\":\"box\", \"unit_of_measurement\":\"%%\", \"entity_category\":\"config\"", p);
+        MQTTclient.announce("Home Battery Protect SoC High", "number", opt);
+        snprintf(opt, sizeof(opt),
+            ", \"command_topic\":\"%s/Set/HomeBatteryProtectSoCLow\", \"min\":\"0\", \"max\":\"100\", \"step\":\"0.1\""
+            ", \"mode\":\"box\", \"unit_of_measurement\":\"%%\", \"entity_category\":\"config\"", p);
+        MQTTclient.announce("Home Battery Protect SoC Low", "number", opt);
+        MQTTclient.announce("Home Battery Protect Active", "binary_sensor", ", \"payload_on\":\"On\", \"payload_off\":\"Off\"");
     }
 
     // Cable Lock:
@@ -1143,6 +1167,11 @@ void mqttPublishData() {
             char soc[8];
             mqPubI("/HomeBatteryOffset", HomeBatteryOffset, true, 0);
             mqPubS("/HomeBatteryProtect", HomeBatteryProtect ? "On" : "Off", true, 0);
+            mqPubS("/HomeBatteryProtectActive", isHomeBatteryProtectActive() ? "On" : "Off", false, 0);
+            snprintf(soc, sizeof(soc), "%u.%u", HomeBatteryProtectSoCHigh / 10, HomeBatteryProtectSoCHigh % 10);
+            mqPubS("/HomeBatteryProtectSoCHigh", soc, true, 0);
+            snprintf(soc, sizeof(soc), "%u.%u", HomeBatteryProtectSoCLow / 10, HomeBatteryProtectSoCLow % 10);
+            mqPubS("/HomeBatteryProtectSoCLow", soc, true, 0);
             snprintf(soc, sizeof(soc), "%u.%u", HomeBatteryFullSoC / 10, HomeBatteryFullSoC % 10);
             mqPubS("/HomeBatteryFullSoC", soc, true, 0);
         }
@@ -1381,6 +1410,10 @@ void read_settings() {
         HomeBatteryFullSoC = preferences.getUShort("BatFullSoC", 0);
         if (HomeBatteryFullSoC > 1000) HomeBatteryFullSoC = 0;
         HomeBatteryProtect = preferences.getUChar("BatProtect", 0) ? 1 : 0;
+        HomeBatteryProtectSoCHigh = preferences.getUShort("BatProtHigh", 0);
+        if (HomeBatteryProtectSoCHigh > 1000) HomeBatteryProtectSoCHigh = 0;
+        HomeBatteryProtectSoCLow = preferences.getUShort("BatProtLow", 0);
+        if (HomeBatteryProtectSoCLow > 1000) HomeBatteryProtectSoCLow = 0;
         MainsMeter.Peak_Period_Power_Month = preferences.getULong("CapPeakW", CapacityMinimumPower);
         LastMonth = preferences.getUChar("CapPeakMon", 0);                        // checked against the current month in UpdateCapacity()
         if (LastMonth < 0 || LastMonth > 12) LastMonth = 0;
@@ -1848,6 +1881,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["home_battery"]["offset"] = HomeBatteryOffset;                  // W
         doc["home_battery"]["full_soc"] = HomeBatteryFullSoC / 10.0;        // %, 0 = off
         doc["home_battery"]["protect"] = HomeBatteryProtect;                // 1: discharge counts as import in Smart mode
+        doc["home_battery"]["protect_soc_high"] = HomeBatteryProtectSoCHigh / 10.0;  // %, battery may feed the EV at/above (0 = off)
+        doc["home_battery"]["protect_soc_low"] = HomeBatteryProtectSoCLow / 10.0;    // %, protect again at/below
+        doc["home_battery"]["protect_active"] = isHomeBatteryProtectActive() ? 1 : 0;
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
@@ -1989,6 +2025,24 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             } else {
                 doc["home_battery_protect"] = "Value not allowed!";
             }
+        }
+
+        if(request->hasParam("home_battery_protect_soc_high")) {
+            int32_t soc = parseSoCTenths(request->getParam("home_battery_protect_soc_high")->value());
+            if (soc >= 0 && LoadBl < 2) {
+                HomeBatteryProtectSoCHigh = soc;
+                shadowPrefs.markUShort("BatProtHigh", &HomeBatteryProtectSoCHigh);
+                doc["home_battery_protect_soc_high"] = HomeBatteryProtectSoCHigh / 10.0;
+            } else doc["home_battery_protect_soc_high"] = "Value not allowed!";
+        }
+
+        if(request->hasParam("home_battery_protect_soc_low")) {
+            int32_t soc = parseSoCTenths(request->getParam("home_battery_protect_soc_low")->value());
+            if (soc >= 0 && LoadBl < 2) {
+                HomeBatteryProtectSoCLow = soc;
+                shadowPrefs.markUShort("BatProtLow", &HomeBatteryProtectSoCLow);
+                doc["home_battery_protect_soc_low"] = HomeBatteryProtectSoCLow / 10.0;
+            } else doc["home_battery_protect_soc_low"] = "Value not allowed!";
         }
 
         if(request->hasParam("home_battery_full_soc")) {
