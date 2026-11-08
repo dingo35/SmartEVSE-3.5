@@ -38,7 +38,7 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 | 1 | Monthly capacity peak can be **synced, is published and survives a reboot** | After a reboot the charger reset its peak to 2500 W; the official value from the digital meter could not be used |
 | 2 | **Max Sum Mains in 0.1 A** (MQTT, web page, REST) | The regulation already works in 0.1 A, only the limit was whole amps (10 A → 11 A is ±230 W) |
 | 3 | Max Sum Mains headroom **per switched phase** instead of always ÷3 | On single phase the charger corrected an overshoot 3× too slowly |
-| 4 | **Measured voltage** via the API mains meter | The capacity modes used a fixed 230 V |
+| 4 | **Measured voltage** from every mains meter (API, Modbus, HomeWizard) + **monthly peak from a HomeWizard P1** | The capacity modes used a fixed 230 V |
 | 5 | New capacity mode **Peak** + **configurable margin** | Stable ceiling just under the monthly peak that stays below a home battery's peak-shaving threshold |
 | – | Bug fix: negative energy difference could register a bogus peak of up to 65 kW | `uint16_t` overflow in `UpdateCapacity()` |
 
@@ -104,6 +104,25 @@ setup keeps working when you move to three phases later.
 
 ## 4. Measured mains voltage
 
+The capacity modes convert power to current with the **measured voltage of L1** instead of a fixed
+230 V. Every type of mains meter supplies it:
+
+| Mains meter (`MAINS MET`) | Where the voltage comes from | How often |
+|---|---|---|
+| **API** (MQTT / REST) | 6th value of the `MainsMeter` payload (below) | every update |
+| **Modbus kWh meters**: Phoenix C, Finder 7E, Eastron3P, InvEastrn, ABB, SolarEdge, WAGO, Eastron1P, Finder 7M, Sinotimer, Schneider, Chint 3P, C.Gavazzi, Chint 1P, Custom | voltage register L1 from the meter table (`U_REG`); SolarEdge with its SunSpec scaling factor | ±10 s, only while a capacity mode is active |
+| **HomeWizard** (P1 meter, kWh meter) | `active_voltage_l1_v` (P1 / 3-phase) or `active_voltage_v` (1-phase) from `/api/v1/data` | every reading (±2 s) |
+| **Sensorbox** | no voltage measurement | stays 230 V |
+
+For the Chint 3P (DTSU666) the voltage register in the table was changed from `0x2000` (Uab,
+L1–L2, ±400 V) to `0x2006` (Ua, L1–N); the register was not used before.
+
+**HomeWizard P1 on a Belgian digital meter** also delivers the official monthly peak
+(`montly_power_peak_w`, the key name is spelled like that in the HomeWizard API). It is used like
+`/Set/CapacityPeak` (§1), so with a HomeWizard P1 no ESP or MQTT is needed for mode Peak.
+
+### API mains meter
+
 **`<prefix>/Set/MainsMeter`** accepts an optional **6th value: voltage L1 in 0.1 V**:
 
 ```
@@ -114,7 +133,8 @@ L1:L2:L3:W:Wh:V        e.g.  117:0:0:2716:5222464:2324
 └──┴──┴───────── current per phase in 0.1 A (signed)
 ```
 
-- Used when it is **recent (< 60 s)** and **plausible (180–270 V)**; otherwise 230 V as before.
+- For every meter type: used when it is **recent (< 60 s)** and **plausible (180–270 V)**;
+  otherwise 230 V as before.
 - Used by the capacity modes Interval, Flanders and Peak to convert power to current.
 - `/settings` shows `mains_voltage` (last received) and `capacity_voltage` (value used).
 
@@ -357,8 +377,12 @@ voltage instead of `AssumedVoltage = 230`.
 ## Known limitations
 
 - The **LCD menu** shows Max Sum Mains in whole amps; the web page and MQTT show 0.1 A.
-- The voltage is only taken from the **API mains meter** (MQTT). Modbus mains meters still use 230 V
-  for the capacity modes (the voltage register is defined in `EMConfig[]` but not polled).
+- The **Sensorbox** has no voltage measurement; with a Sensorbox the capacity modes keep using 230 V.
+- The Modbus voltage registers come from the existing meter table and were not used before; they are
+  tested with the API and HomeWizard path on this installation, not on every Modbus meter. A wrong
+  or missing value falls outside 180–270 V and is ignored (230 V is used).
+- An external monthly peak (MQTT, REST, HomeWizard) is ignored during the **first quarter of a
+  month** (1st, 00:00–00:15), because the meter can still report the peak of the previous month.
 - **`HomeBatteryCurrent`** is only used in Solar mode (unchanged).
 - The per-phase regulation looks at the contactors, not at the car: a single-phase car on a
   three-phase setup with C2 on is regulated with divisor 3 (the original, slower behaviour).
