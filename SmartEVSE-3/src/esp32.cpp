@@ -1032,7 +1032,7 @@ void mqttPublishData() {
             snprintf(buf, sizeof(buf), "%d.%d", (int)(da / 10), (int)(da % 10));
             mqPubS("/MaxSumMains", buf, true, 0);
         }
-        if (CapacityMode == FLANDERS || CapacityMode == PEAK)
+        if (CapacityMode == FLANDERS)
             mqPubI("/CapacityPeak", MainsMeter.Peak_Period_Power_Month, true, 0);
         mqPubI("/CapacityMargin", CapacityMargin, true, 0);
         mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
@@ -1304,6 +1304,7 @@ void read_settings() {
                 preferences.putUShort("CapacityMode", CAP_DISABLED);
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
+        if (CapacityMode > FLANDERS) CapacityMode = FLANDERS;               // former test mode "Peak" (4) is now Flanders
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
         CapacityMargin = preferences.getUShort("CapMargin", CapacitySafety);
         if (CapacityMargin > 1000) CapacityMargin = CapacitySafety;
@@ -1713,7 +1714,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
         doc["settings"]["capacity_mode"] = CapacityMode;
-        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders and Peak
+        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders
         doc["settings"]["capacity_margin"] = CapacityMargin;                           // W under the capacity ceiling
         if (MainsVoltageDV) doc["settings"]["mains_voltage"] = MainsVoltageDV / 10.0;  // V, last measured (API MainsMeter)
         doc["settings"]["capacity_voltage"] = CapacityVoltageDV() / 10.0;              // V used for the capacity calculation
@@ -1865,7 +1866,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("capacity_mode")) {
             int val = request->getParam("capacity_mode")->value().toInt();
-            if (val >= 0 && val <= 4) {
+            if (val >= 0 && val <= 3) {
                 CapacityMode = (CapacityMode_t)val;
                 shadowPrefs.markUShort("CapacityMode", &CapacityMode);
                 if (CapacityMode == CAP_DISABLED) {

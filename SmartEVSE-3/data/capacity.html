@@ -34,7 +34,6 @@
             <option value="1">Fixed</option>
             <option value="2">Interval</option>
             <option value="3">Flanders</option>
-            <option value="4">Peak</option>
           </select>
         </div>
         <div class="fields hidden" id="marginSection" style="margin-top:10px">
@@ -44,7 +43,7 @@
           <span class="sub" id="capacityInfo"></span>
         </div>
         <p class="sub hidden" id="peakHelp" style="margin:8px 0 0">
-          <b>Peak</b>: limits the mains power to the monthly peak minus the margin, recalculated with every meter
+          <b>Flanders</b>: limits the mains power to the monthly peak minus the margin, recalculated with every meter
           update using the measured voltage. The monthly peak starts at 2500 W each month, is raised automatically
           when a 15-minute average breaks it, and can be synced from your digital meter via MQTT
           <code>/Set/CapacityPeak</code>. Send the voltage as 6th value of <code>/Set/MainsMeter</code>
@@ -171,8 +170,8 @@ function toggleSections() {
   const mode = $("capacity_mode").value;
   $("intervalsContent").classList.toggle("hidden", mode !== "2");
   $("fixedCapacitySection").classList.toggle("hidden", mode !== "1");
-  $("marginSection").classList.toggle("hidden", !["2", "3", "4"].includes(mode));
-  $("peakHelp").classList.toggle("hidden", mode !== "4");
+  $("marginSection").classList.toggle("hidden", !["2", "3"].includes(mode));
+  $("peakHelp").classList.toggle("hidden", mode !== "3");
 }
 
 function renderTable() {
@@ -251,9 +250,9 @@ function load() {
       else if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
       if (d.settings.capacity_margin !== undefined) $("capacity_margin").value = d.settings.capacity_margin;
       const info = [];
-      if (d.settings.capacity_peak_month !== undefined && ["3", "4"].includes(String(d.settings.capacity_mode))) info.push("Monthly peak " + d.settings.capacity_peak_month + " W");
+      if (d.settings.capacity_peak_month !== undefined && String(d.settings.capacity_mode) === "3") info.push("Monthly peak " + d.settings.capacity_peak_month + " W");
       if (d.settings.capacity_voltage !== undefined) info.push((d.settings.mains_voltage !== undefined ? "measured " : "assumed ") + Number(d.settings.capacity_voltage).toFixed(1) + " V");
-      if (d.settings.current_max_sum_mains_precise !== undefined && ["2", "3", "4"].includes(String(d.settings.capacity_mode))) info.push("limit now " + Number(d.settings.current_max_sum_mains_precise).toFixed(1) + " A");
+      if (d.settings.current_max_sum_mains_precise !== undefined && ["2", "3"].includes(String(d.settings.capacity_mode))) info.push("limit now " + Number(d.settings.current_max_sum_mains_precise).toFixed(1) + " A");
       $("capacityInfo").textContent = info.join(" · ");
     }
     toggleSections();
