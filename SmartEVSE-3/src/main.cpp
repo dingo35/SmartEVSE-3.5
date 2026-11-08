@@ -1042,10 +1042,14 @@ void CalcBalancedCurrent(char mod) {
         } //end MODE_SOLAR
         else { // MODE_SMART
         // New EVSE charging, and only if we have active EVSE's
-            if (mod && ActiveEVSE) {                                            // if we have an ActiveEVSE and mod=1, we must be Master, so MaxCircuit has to be
-                                                                                // taken into account
-
-                IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_Circuit ); //assume the current should be available on all 3 phases
+            // New EVSE charging: start from the current that is actually available.
+            // Standalone (LoadBl 0) calls this on B->C before BalancedState[0] is C, so ActiveEVSE is still 0 there;
+            // without this the start current was the IsetBalanced that kept growing while the EV was not charging
+            // (up to MAX), so the EV started at full current and only came down when the mains went over the limit.
+            if (mod && (ActiveEVSE || LoadBl == 0)) {
+                IsetBalanced = (MaxMains * 10) - Baseload;                      //assume the current should be available on all 3 phases
+                if ((LoadBl == 0 && CircuitMeter.Type) || LoadBl == 1)          // Conditions in which MaxCircuit has to be considered
+                    IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10 ) - Baseload_Circuit);
                 if (MaxSumMains)
                     IsetBalanced = min((int) IsetBalanced, (int) ((getMaxSumMainsDA() - Isum) / SumMainsPhases())); //per phase that is switched (3 when load balancing)
                 _LOG_V("Checkpoint 3 Smart Isetbalanced=%d.%d A, IsumImport=%d.%d, Isum=%d.%d, ImportCurrent=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), IsumImport/10, abs(IsumImport%10), Isum/10, abs(Isum%10), ImportCurrent);
@@ -1064,6 +1068,16 @@ void CalcBalancedCurrent(char mod) {
     // guard MaxCircuit
     if ((LoadBl == 0 && CircuitMeter.Type && Mode != MODE_NORMAL) || LoadBl == 1)     // Conditions in which MaxCircuit has to be considered
         IsetBalanced = min((int) IsetBalanced, (MaxCircuit * 10) - Baseload_Circuit); //limiting is per phase so no Nr_Of_Phases_Charging here!
+    // guard MaxSumMains (standalone Smart mode with an EV meter): never set more than the measured headroom.
+    // IsetBalanced is increased step by step while the EV draws less than its setpoint (ramping up after the start,
+    // or limited by the EV), so it could end far above what is available; the EV then overshoots the limit as soon
+    // as it takes more. The baseload is the mains minus what the EV meter measures, so this cap is exact.
+    if (Mode == MODE_SMART && MaxSumMains && LoadBl == 0 && EVMeter.Type) {
+        int EVsum = 0;
+        for (int x = 0; x < 3; x++) if (EVMeter.Irms[x] > 0) EVsum += EVMeter.Irms[x];
+        IsetBalanced = min((int) IsetBalanced, (int) ((getMaxSumMainsDA() - (Isum - EVsum)) / SumMainsPhases()));
+        if (IsetBalanced < 0) IsetBalanced = 0;                                 // shortage is handled below
+    }
     // guard GridRelay
     if (GridRelayOpen) {
         int Phases = Force_Single_Phase_Charging() ? 1 : 3;
