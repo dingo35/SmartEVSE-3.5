@@ -75,6 +75,10 @@ The digital meter reports the official value on its P1 port (OBIS `1-0:1.6.0`).
   `current_max_sum_mains_precise`.
 - The tenths are dropped as soon as CAPACITY is changed in the LCD menu (which still shows whole amps).
 
+![Capacity page in mode Fixed: Max Sum Mains 11.7 A](docs/images/clarijs/capacity-fixed-tenths.png)
+
+*Capacity page in mode Fixed: Max Sum Mains with one decimal.*
+
 ---
 
 ## 3. Regulation per switched phase
@@ -112,6 +116,20 @@ L1:L2:L3:W:Wh:V        e.g.  117:0:0:2716:5222464:2324
 - Used when it is **recent (< 60 s)** and **plausible (180–270 V)**; otherwise 230 V as before.
 - Used by the capacity modes Interval, Flanders and Peak to convert power to current.
 - `/settings` shows `mains_voltage` (last received) and `capacity_voltage` (value used).
+
+Excerpt of `GET /settings` with the new fields (values from this installation):
+
+```json
+"settings": {
+  "current_max_sum_mains": 11,
+  "current_max_sum_mains_precise": 11.7,
+  "capacity_mode": 4,
+  "capacity_peak_month": 2755,
+  "capacity_margin": 55,
+  "mains_voltage": 229.8,
+  "capacity_voltage": 229.8
+}
+```
 - The normal Smart/Solar regulation works in amps and does not need the voltage.
 
 ---
@@ -148,6 +166,10 @@ Use **Peak** with a peak-shaving home battery; **Flanders** without one.
 - Used by Interval, Flanders and Peak. Interval and Flanders now also use the measured voltage and
   0.1 A steps.
 - Published on `<prefix>/CapacityMargin`.
+
+![Capacity page in mode Peak: margin 55 W, monthly peak 2755 W, measured 229.8 V, limit 11.7 A](docs/images/clarijs/capacity-peak.png)
+
+*Capacity page in mode Peak: margin field, and a status line with the monthly peak, the measured voltage and the resulting limit (2755 − 55 W) ÷ 229.8 V = 11.7 A.*
 
 Example with a monthly peak of 2755 W, margin 55 W and a home battery shaving at peak − 30 W:
 
