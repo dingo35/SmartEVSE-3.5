@@ -1290,13 +1290,14 @@ void discoverNetworkMeters() {
  *
  * @return A pair containing:
  *     - A int flag indicating: 0: failure, 1: single phase current, 3: 3 phase current
- *     - An array of 6 values representing the active current in deci-amps for L1, L2, L3, total, import, and export
+ *     - An array of 8 values: current in deci-amps for L1, L2, L3, total import (Wh), total export (Wh),
+ *       total power (W), voltage L1 (0.1V, 0 = not available) and the monthly capacity peak (W, 0 = not available)
  */
-std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char *hostname, int32_t* netCurrent) {
+std::pair<int8_t, std::array<std::int32_t, 8> > getDataFromHomeWizard(const char *hostname, int32_t* netCurrent) {
     _LOG_A("Invocation\n");
     if (hostname == nullptr || hostname[0] == '\0') {
         _LOG_A("No hostname provided.\n");
-        return {false, {0, 0, 0, 0, 0, 0}};
+        return {false, {0, 0, 0, 0, 0, 0, 0, 0}};
     }
     char url[64];
     snprintf(url, sizeof(url), "http://%s/api/v1/data", hostname);
@@ -1323,7 +1324,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         delete homeWizardHttpClient;
         homeWizardHttpClient = nullptr;
         homeWizardHttpClientInitialized = false;
-        return {false, {0, 0, 0, 0, 0, 0}};
+        return {false, {0, 0, 0, 0, 0, 0, 0, 0}};
     }
 
     // Get the response stream
@@ -1332,14 +1333,17 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     const char* currentKeys[] = {"active_current_l1_a", "active_current_l2_a", "active_current_l3_a","active_current_a"};
     const char* powerKeys[] = { "active_power_l1_w", "active_power_l2_w", "active_power_l3_w","active_power_w"};
     const char* totalsKeys[] = {"total_power_import_kwh", "total_power_export_kwh"};
+    // voltage L1: P1 meter / 3-phase kWh meter, single phase kWh meter; monthly peak: Belgian P1 meters (key name as in the API)
+    const char* extraKeys[] = {"active_voltage_l1_v", "active_voltage_v", "montly_power_peak_w"};
 
     // Filter is constant; build it once and reuse forever.
-    static StaticJsonDocument<256> filter;
+    static StaticJsonDocument<384> filter;
     static bool filterInit = false;
     if (!filterInit) {
         for (const auto* key : currentKeys) filter[key] = true;
         for (const auto* key : powerKeys)   filter[key] = true;
         for (const auto* key : totalsKeys)  filter[key] = true;
+        for (const auto* key : extraKeys)   filter[key] = true;
         filterInit = true;
     }
 
@@ -1351,7 +1355,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     // Handle JSON parsing errors.
     if (error) {
         _LOG_A("JSON deserialization failed: %s\n", error.c_str());
-        return {false, {0, 0, 0, 0, 0, 0}};
+        return {false, {0, 0, 0, 0, 0, 0, 0, 0}};
     }
 
     uint8_t phases = 0;
@@ -1366,10 +1370,10 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     if (!phases) {
         // Early return on missing data.
         _LOG_A("Required JSON fields 'active_current_a' not found\n");
-        return {phases, {0, 0, 0, 0, 0, 0}};
+        return {phases, {0, 0, 0, 0, 0, 0, 0, 0}};
     }
 
-    std::array<int32_t, 6> evdata{};
+    std::array<int32_t, 8> evdata{};
     _LOG_A("Reading %u-phase data\n", phases);
 
     // Determine grid direction based on power: negative indicates feed-in, positive indicates usage.
@@ -1393,6 +1397,9 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     evdata[3] = doc[totalsKeys[0]].as<float>() * 1000; // total import in Wh
     evdata[4] = doc[totalsKeys[1]].as<float>() * 1000; // total export in Wh
     evdata[5] = doc[powerKeys[3]].as<float>() * 1; // total power in Watts
+    if (doc.containsKey(extraKeys[0]))      evdata[6] = lroundf(doc[extraKeys[0]].as<float>() * 10); // voltage L1 in 0.1V
+    else if (doc.containsKey(extraKeys[1])) evdata[6] = lroundf(doc[extraKeys[1]].as<float>() * 10);
+    if (doc.containsKey(extraKeys[2]))      evdata[7] = lroundf(doc[extraKeys[2]].as<float>());      // monthly peak in W
 
     if (netCurrent) {
         *netCurrent = INT32_MIN;

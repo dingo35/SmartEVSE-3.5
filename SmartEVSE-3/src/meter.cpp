@@ -37,7 +37,7 @@ struct EMstruct EMConfig[] = {
     {"Homewizrd", ENDIANESS_HBF_HWF, 0, MB_DATATYPE_INT16,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // Homewizard network connected meters
 
     {"Schneider", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x0BD3, 0, 0x0BB7, 0, 0x0BF3,-3, 0xB02B, 0,0xB02D, 0}, // Schneider iEM3x5x series (V / A / kW / kWh) iEM3x50 counts only Energy Import, no Export
-    {"Chint 3P",  ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh)
+    {"Chint 3P",  ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2006, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh); U_REG: Ua (L1-N), 0x2000 is Uab (L1-L2)
     {"C.Gavazzi", ENDIANESS_HBF_LWF, 4, MB_DATATYPE_INT32,      0x0, 1,    0xC, 3,   0x28, 1,   0x34, 1,  0x4E, 1}, // Carlo Gavazzi EM340 (0.1V / mA / 0.1W / 0.1kWh) 
     {"Chint 1P",  ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x2002, 0, 0x2004,-3, 0x4000, 0,0x400A, 0}, // Chint DDSU666 (0.1V / A / kW / kWh)
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
@@ -328,6 +328,25 @@ uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
 }
 
 /**
+ * Read the voltage of L1 (phase to neutral) from modbus
+ *
+ * @param pointer to buf
+ * @return int32_t Voltage in 0.1V
+ */
+int32_t Meter::receiveVoltageMeasurement(uint8_t *buf) {
+    switch (Type) {
+        case EM_SOLAREDGE:
+        {
+            // SunSpec: PhVphA (0) .. V_SF (7), voltage = value * 10^V_SF
+            int scalingFactor = (int)decodeMeasurement(buf, 7, 0);
+            return decodeMeasurement(buf, 0, -(scalingFactor + 1));
+        }
+        default:
+            return decodeMeasurement(buf, 0, EMConfig[Type].UDivisor - 1);
+    }
+}
+
+/**
  * Read energy measurement from modbus
  *
  * @param pointer to buf
@@ -404,6 +423,13 @@ void Meter::UpdateEnergies() {
 uint16_t CapacityMargin = CapacitySafety;  // margin (W) under the capacity ceiling; settable via MQTT /Set/CapacityMargin or REST
 uint16_t MainsVoltageDV = 0;               // measured mains voltage L1 in 0.1V, e.g. from the API MainsMeter payload (6th value)
 time_t MainsVoltageTime = 0;
+
+void SetMainsVoltageDV(int32_t VoltageDV) {
+    if (VoltageDV >= 1800 && VoltageDV <= 2700) {                       // plausible phase voltage (180-270V)
+        MainsVoltageDV = VoltageDV;
+        MainsVoltageTime = time(NULL);
+    }
+}
 
 uint16_t CapacityVoltageDV(void) {
     time_t now = time(NULL);
@@ -586,6 +612,9 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                 }
                 CalcImeasured();
             }
+        } else if (this == &MainsMeter && MB.Register == EMConfig[Type].URegister) {
+            // voltage L1 of the mains meter, used by the capacity modes instead of a fixed 230V
+            SetMainsVoltageDV(receiveVoltageMeasurement(MB.Data));
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
             UpdatePower();

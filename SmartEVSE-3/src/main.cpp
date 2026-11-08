@@ -2129,6 +2129,11 @@ void ModbusRequestLoop() {
                         requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 1);
                         break;
                     }
+                    // ~every 10s: voltage L1, used by the capacity modes instead of a fixed 230V
+                    if (CapacityMode != CAP_DISABLED && energytimer % 5 == 2) {
+                        _LOG_D("ModbusRequest %u: Request MainsMeter Voltage Measurement\n", ModbusRequest);
+                        if (requestVoltageMeasurement(MainsMeter.Type, MainsMeter.Address)) break;
+                    }
                 }
                 // Request active energy if Circuitmeter is configured
                 if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {     // EM_API is not a modbus device
