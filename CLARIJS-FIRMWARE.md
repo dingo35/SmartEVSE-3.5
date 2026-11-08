@@ -299,8 +299,8 @@ Two problems in the original regulation, both visible as a start at full current
   after the start, or limited by the car). With Max Sum Mains and an EV meter the setpoint is now
   capped at the **measured headroom**: Max Sum Mains − (mains − EV meter). So the EV can never take
   more than what is free. Most EVs draw a little less than the setpoint (measured: 9.4 A at 10.0 A);
-  that difference, max 1.0 A, may stay on top of the cap, so the mains still settles at the limit
-  instead of ±100 W below it.
+  that difference may stay on top of the cap when it is at most 1.0 A (an EV that is still ramping
+  up gets nothing extra), so the mains still settles at the limit instead of ±100 W below it.
 
 ---
 
