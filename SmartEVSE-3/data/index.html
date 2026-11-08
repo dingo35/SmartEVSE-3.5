@@ -168,6 +168,7 @@
           <div class="fields hidden" id="batt-settings" title="Applied to Set/HomeBatteryPower">
             <label class="f">Offset<input type="number" id="batt-offset" min="0" max="1000" step="1" style="width:80px"> W</label>
             <label class="f">Full at<input type="number" id="batt-fullsoc" min="0" max="100" step="0.1" style="width:80px"> % (0 = off)</label>
+            <label class="f" title="Smart mode: a discharging battery counts as grid import, so it never charges the EV"><input type="checkbox" id="batt-protect"> Protect (Smart)</label>
           </div>
         </div>
       </div>
@@ -511,6 +512,7 @@ function render() {
     if (hb.soc !== undefined) $("batt-soc").textContent = hb.soc.toFixed(1) + " %";
     if (document.activeElement !== $("batt-offset")) $("batt-offset").value = hb.offset;
     if (document.activeElement !== $("batt-fullsoc")) $("batt-fullsoc").value = hb.full_soc;
+    $("batt-protect").checked = hb.protect === 1;
   } else $("c-battery").classList.add("hidden");
 
   
@@ -593,6 +595,7 @@ $("sol-import").onchange = (e) => postSettings(new URLSearchParams({ solar_max_i
 $("sol-stop").onchange = (e) => postSettings(new URLSearchParams({ stop_timer: e.target.value }));
 $("batt-offset").onchange = (e) => postSettings(new URLSearchParams({ home_battery_offset: e.target.value }));
 $("batt-fullsoc").onchange = (e) => postSettings(new URLSearchParams({ home_battery_full_soc: e.target.value }));
+$("batt-protect").onchange = (e) => postSettings(new URLSearchParams({ home_battery_protect: e.target.checked ? 1 : 0 }));
 $("chk-lcdlock").onchange = (e) => postSettings(new URLSearchParams({ lcdlock: e.target.checked ? 1 : 0 }));
 $("chk-cablelock").onchange = (e) => postSettings(new URLSearchParams({ cablelock: e.target.checked ? 1 : 0 }));
 $("ln-doc").onclick = (e) => {

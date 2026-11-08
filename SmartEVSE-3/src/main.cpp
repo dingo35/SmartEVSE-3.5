@@ -201,6 +201,7 @@ int16_t homeBatterySoC = -1;                                                // l
 bool homeBatteryPowerInput = false;                                         // true when the current is calculated from Set/HomeBatteryPower
 uint16_t HomeBatteryOffset = 0;                                             // W subtracted from the received battery power (stored)
 uint16_t HomeBatteryFullSoC = 0;                                            // 0.1%; at or above this SoC the battery counts as 0 (0 = off, stored)
+uint8_t HomeBatteryProtect = 0;                                             // 1: in Smart mode a discharging battery counts as mains import (stored)
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 uint8_t ColorOff[3] = {0, 0, 0};          // off
 uint8_t ColorNormal[3] = {0, 255, 0};   // Green
@@ -2926,6 +2927,11 @@ int16_t getBatteryCurrent(void) {
         homeBatteryPowerInput = false;
         return 0;
     } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
+        return homeBatteryCurrent;
+    } else if (Mode == MODE_SMART && HomeBatteryProtect && homeBatteryCurrent <= -3) {
+        // Home battery protect: a discharging battery (e.g. peak shaving) hides the real load from the mains meter.
+        // Count the discharge as import, so the EV is limited as if the battery were idle and never charges the EV.
+        // Charging the battery is not counted (that is already in the mains measurement). Deadband 0.3A.
         return homeBatteryCurrent;
     } else {
         return 0;                                       // don't touch homeBatteryCurrent, just return 0
