@@ -22,11 +22,12 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 4. [Regulation per switched phase](#3-regulation-per-switched-phase)
 5. [Measured mains voltage](#4-measured-mains-voltage)
 6. [Capacity mode Peak and configurable margin](#5-capacity-mode-peak-and-configurable-margin)
-7. [MQTT and REST reference](#mqtt-and-rest-reference)
-8. [Example setup: P1 meter → SmartEVSE](#example-setup-p1-meter--smartevse)
-9. [Installing and rolling back](#installing-and-rolling-back)
-10. [Branches and pull requests](#branches-and-pull-requests)
-11. [Known limitations](#known-limitations)
+7. [Benefits with a home battery](#benefits-with-a-home-battery)
+8. [MQTT and REST reference](#mqtt-and-rest-reference)
+9. [Example setup: P1 meter → SmartEVSE](#example-setup-p1-meter--smartevse)
+10. [Installing and rolling back](#installing-and-rolling-back)
+11. [Branches and pull requests](#branches-and-pull-requests)
+12. [Known limitations](#known-limitations)
 
 ---
 
@@ -57,8 +58,8 @@ The digital meter reports the official value on its P1 port (OBIS `1-0:1.6.0`).
 - The peak is **stored together with its month** (`CapPeakW`, `CapPeakMonth` in preferences):
   - a reboot in the same month keeps the peak,
   - a new month still starts at 2500 W.
-- Published on **`<prefix>/CapacityPeak`** (Flanders and Peak mode, with Home Assistant discovery
-  as power sensor *Capacity Peak*) and as `capacity_peak_month` in `/settings`.
+- Published on **`<prefix>/CapacityPeak`** (Flanders and Peak mode, also announced via MQTT
+  discovery as power sensor *Capacity Peak*) and as `capacity_peak_month` in `/settings`.
 - Fix: `AveragePower` is now `int32_t` and clamped at 0. A meter reset or replacement can no longer
   wrap around and register a peak of up to 65 kW.
 
@@ -181,6 +182,54 @@ Example with a monthly peak of 2755 W, margin 55 W and a home battery shaving at
 
 ---
 
+## Benefits with a home battery
+
+Many home batteries (Huawei LUNA2000, and others) protect the capacity tariff with **peak shaving on
+the instantaneous grid power**: above a threshold the battery discharges. Without these changes the
+SmartEVSE and the battery work against each other: the charger lets the car use everything up to its
+limit, the battery sees the grid go above its threshold and starts feeding the car, and the energy you
+stored for the expensive evening hours ends up in the car.
+
+With this firmware, the charger stays **just below** the battery's threshold:
+
+```
+monthly peak (billed)              2755 W
+battery peak shaving (peak − 30)   2725 W   ← battery only discharges above this
+SmartEVSE limit (peak − margin)    2700 W   ← mode Peak, margin 55 W, measured voltage
+```
+
+| Benefit | How |
+|---|---|
+| **The battery does not charge the car** | The SmartEVSE limit (peak − margin) stays below the battery's threshold, so the car is charged from the grid and the battery only reacts to real peaks in the house |
+| **Stored energy stays for the house** | Energy in the battery is used in the expensive hours instead of disappearing into the car at night |
+| **No new monthly peak** | The car takes what is left under the peak; when a big load starts (oven, kettle) the charger backs off and the battery shaves what is left |
+| **Short peaks are corrected 3× faster** (single phase) | Regulation per switched phase (§3); with a meter update every second (P1 via MQTT) an overshoot is gone within a few seconds, so the battery is triggered less often and cycles less |
+| **No overshoot when the voltage rises** | The limit is calculated in watts with the measured voltage (§4). With a fixed limit of 11.7 A, 230 → 236 V would mean 2761 W: above the battery's threshold and even above the peak |
+| **Stable limit** | Mode Peak (§5) has no 15 minute budget, so the charger never goes above the threshold at the start of a quiet period, as Flanders does |
+| **Follows the month automatically** | The monthly peak is synced from the digital meter and survives a reboot (§1); a new month starts at 2500 W for the charger, and the battery threshold can follow the same value |
+| **More charging power than a safe fixed limit** | 0.1 A steps (§2) and a small margin bring the charger within ±100 W of the peak instead of ±250–450 W |
+
+### Measured on this installation
+
+Night charging of a Peugeot plug-in hybrid (±10 kWh), monthly peak 2755 W:
+
+| | Before (Fixed 11 A, 230 V, ÷3 regulation) | After (mode Peak / 0.1 A, measured voltage, per-phase regulation) |
+|---|---|---|
+| 15 minute average while charging | 2300 – 2500 W | 2617 – 2663 W |
+| Margin to the monthly peak | 255 – 455 W | ±110 W (smallest 92 W) |
+| Home battery during charging | ±0.7 kWh discharged into the car (peaks up to 4.7 kW) | practically idle (±7 W), only short peaks shaved |
+| New monthly peak | no | no |
+
+**Recommended settings with a peak-shaving battery**
+
+- Battery peak shaving: **monthly peak − 30 W** (follow the monthly peak).
+- SmartEVSE: **CAP MODE = Peak**, **margin 55 W** (always larger than the battery's distance to the peak).
+- Send the voltage with the mains meter (`L1:L2:L3:W:Wh:V`), preferably every second.
+- Do not use Flanders with such a battery: its 15 minute budget lets the instantaneous power go
+  above the battery's threshold.
+
+---
+
 ## MQTT and REST reference
 
 ### New or changed MQTT topics
@@ -214,12 +263,10 @@ Example with a monthly peak of 2755 W, margin 55 W and a home battery shaving at
 ## Example setup: P1 meter → SmartEVSE
 
 The P1 port of the digital meter is read by an ESP8266 with ESPHome. It publishes directly to the
-SmartEVSE over MQTT, so Home Assistant is not in the control path (only the MQTT broker is needed).
+SmartEVSE over MQTT; only an MQTT broker is needed in between.
 
 ```
 P1 port ──> ESP8266 (ESPHome) ──MQTT──> SmartEVSE (CAP MODE Peak)
-                 │
-                 └── Home Assistant (API): dashboards, home battery, smart charging
 ```
 
 ESPHome (excerpt; give the `dsmr` sensors the ids used below):
@@ -269,10 +316,9 @@ interval:
 ```
 
 SmartEVSE settings: `MAINS MET = API`, `CAP MODE = Peak`, margin via `/Set/CapacityMargin` (e.g. 55).
-
-Home Assistant keeps doing the parts the SmartEVSE cannot do: the home battery's peak shaving
-(e.g. Huawei `set_capacity_control_periods` at monthly peak − 30 W), `HomeBatteryCurrent` for Solar
-mode, and switching between Pause and Smart for charging in the cheapest quarters.
+Set the home battery's peak shaving a bit closer to the monthly peak than the SmartEVSE margin
+(e.g. peak − 30 W for the battery, peak − 55 W for the SmartEVSE); see
+[Benefits with a home battery](#benefits-with-a-home-battery).
 
 ---
 
