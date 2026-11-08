@@ -1088,14 +1088,13 @@ void CalcBalancedCurrent(char mod) {
     // IsetBalanced is increased step by step while the EV draws less than its setpoint (ramping up after the start,
     // or limited by the EV), so it could end far above what is available; the EV then overshoots the limit as soon
     // as it takes more. The baseload is the mains minus what the EV meter measures, so this cap is exact.
-    // Most EVs draw a little less than the setpoint; that difference (max 1.0A) may stay on top of the cap,
-    // otherwise the EV would settle that much below the limit.
+    // Most EVs draw a little less than the setpoint; that difference may stay on top of the cap, otherwise the EV
+    // would settle that much below the limit. Only when it is at most 1.0A: an EV that is still ramping up gets nothing extra.
     if (Mode == MODE_SMART && MaxSumMains && LoadBl == 0 && EVMeter.Type) {
         int EVsum = 0;
         for (int x = 0; x < 3; x++) if (EVMeter.Irms[x] > 0) EVsum += EVMeter.Irms[x];
         int UnderDraw = (BalancedState[0] == STATE_C) ? Balanced[0] - EVMeter.Imeasured : 0;   // setpoint - measured EV current (per phase)
-        if (UnderDraw < 0) UnderDraw = 0;
-        if (UnderDraw > 10) UnderDraw = 10;
+        if (UnderDraw < 0 || UnderDraw > 10) UnderDraw = 0;                    // only a settled EV (not one still ramping up)
         IsetBalanced = min((int) IsetBalanced, (int) ((getMaxSumMainsDA() - (Isum - EVsum)) / SumMainsPhases()) + UnderDraw);
         if (IsetBalanced < 0) IsetBalanced = 0;                                 // shortage is handled below
     }
