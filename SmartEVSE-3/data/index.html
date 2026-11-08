@@ -591,8 +591,8 @@ $("ovsel").onchange = () => { const a = ovAmps(+$("ovsel").value); postSettings(
 $("sol-start").onchange = (e) => postSettings(new URLSearchParams({ solar_start_current: e.target.value }));
 $("sol-import").onchange = (e) => postSettings(new URLSearchParams({ solar_max_import: e.target.value }));
 $("sol-stop").onchange = (e) => postSettings(new URLSearchParams({ stop_timer: e.target.value }));
-$("batt-offset").onchange = (e) => postSettings(new URLSearchParams({ home_battery_offset: e.target.value }));
-$("batt-fullsoc").onchange = (e) => postSettings(new URLSearchParams({ home_battery_full_soc: e.target.value }));
+$("batt-offset").onchange = (e) => e.target.value !== "" && postSettings(new URLSearchParams({ home_battery_offset: e.target.value }));
+$("batt-fullsoc").onchange = (e) => e.target.value !== "" && postSettings(new URLSearchParams({ home_battery_full_soc: e.target.value }));
 $("chk-lcdlock").onchange = (e) => postSettings(new URLSearchParams({ lcdlock: e.target.checked ? 1 : 0 }));
 $("chk-cablelock").onchange = (e) => postSettings(new URLSearchParams({ cablelock: e.target.checked ? 1 : 0 }));
 $("ln-doc").onclick = (e) => {
