@@ -22,12 +22,13 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 4. [Regulation per switched phase](#3-regulation-per-switched-phase)
 5. [Measured mains voltage](#4-measured-mains-voltage)
 6. [Capacity mode Peak and configurable margin](#5-capacity-mode-peak-and-configurable-margin)
-7. [Benefits with a home battery](#benefits-with-a-home-battery)
-8. [MQTT and REST reference](#mqtt-and-rest-reference)
-9. [Example setup: P1 meter → SmartEVSE](#example-setup-p1-meter--smartevse)
-10. [Installing and rolling back](#installing-and-rolling-back)
-11. [Branches and pull requests](#branches-and-pull-requests)
-12. [Known limitations](#known-limitations)
+7. [Home battery power in watts](#6-home-battery-power-in-watts)
+8. [Benefits with a home battery](#benefits-with-a-home-battery)
+9. [MQTT and REST reference](#mqtt-and-rest-reference)
+10. [Example setup: P1 meter → SmartEVSE](#example-setup-p1-meter--smartevse)
+11. [Installing and rolling back](#installing-and-rolling-back)
+12. [Branches and pull requests](#branches-and-pull-requests)
+13. [Known limitations](#known-limitations)
 
 ---
 
@@ -40,6 +41,7 @@ for the **Flemish capacity tariff** (*capaciteitstarief*) and for installations 
 | 3 | Max Sum Mains headroom **per switched phase** instead of always ÷3 | On single phase the charger corrected an overshoot 3× too slowly |
 | 4 | **Measured voltage** from every mains meter (API, Modbus, HomeWizard) + **monthly peak from a HomeWizard P1** | The capacity modes used a fixed 230 V |
 | 5 | New capacity mode **Peak** + **configurable margin** | Stable ceiling just under the monthly peak that stays below a home battery's peak-shaving threshold |
+| 6 | **Home battery in watts**: offset, full SoC and conversion done by the SmartEVSE | `HomeBatteryCurrent` had to be calculated in deci-amps by the sender; every tweak meant changing the automation |
 | – | Bug fix: negative energy difference could register a bogus peak of up to 65 kW | `uint16_t` overflow in `UpdateCapacity()` |
 
 ---
@@ -208,6 +210,46 @@ Example with a monthly peak of 2755 W, margin 55 W and a home battery shaving at
 
 ---
 
+## 6. Home battery power in watts
+
+The original firmware only accepts the home battery as a current: `Set/HomeBatteryCurrent` in
+**0.1 A**. The sender therefore has to subtract any offset, convert watts to amps with a voltage and
+handle a full battery itself, and every adjustment means changing that automation.
+
+Now the raw values can be sent and the tuning is done **on the SmartEVSE**:
+
+```
+<prefix>/Set/HomeBatteryPower     1250          battery power in W (+ charging / − discharging)
+<prefix>/Set/HomeBatteryPower     1250:87.5     … with the state of charge in %
+```
+
+The SmartEVSE calculates:
+
+```
+HomeBatteryCurrent (0.1 A) = (power − offset) ÷ measured voltage × 10
+                           = 0 when SoC ≥ full SoC
+```
+
+| Setting | MQTT | REST (`POST /settings`) | Default |
+|---|---|---|---|
+| Offset in W, subtracted from the power | `Set/HomeBatteryOffset` | `home_battery_offset` | 0 |
+| Full SoC in % (one decimal), at or above it the battery counts as 0 | `Set/HomeBatteryFullSoC` | `home_battery_full_soc` | 0 = off |
+
+- Both settings are **stored**, published (`/HomeBatteryOffset`, `/HomeBatteryFullSoC`) and announced
+  via MQTT discovery as number entities *Home Battery Offset* and *Home Battery Full SoC*.
+- The **Home battery** card of the web interface shows the received power and SoC and has fields for
+  both settings.
+- The voltage is the measured mains voltage of §4 (or 230 V).
+- REST alternative: `POST /currents?battery_power=1250&battery_soc=87.5`.
+- `GET /settings` → `home_battery`: `current`, `power`, `soc`, `offset`, `full_soc`.
+- `Set/HomeBatteryCurrent` keeps working as before. As in the original firmware, the battery is only
+  used in **Solar** mode, and is reset to 0 when no update arrives for 60 seconds.
+
+Example: power 1000 W, offset 25 W, voltage 232 V → (1000 − 25) ÷ 232 × 10 = **42** (4.2 A).
+With full SoC 99.7 % and a SoC of 99.8 % → **0**.
+
+---
+
 ## Benefits with a home battery
 
 Many home batteries (Huawei LUNA2000, and others) protect the capacity tariff with **peak shaving on
@@ -251,6 +293,8 @@ Night charging of a Peugeot plug-in hybrid (±10 kWh), monthly peak 2755 W:
 - Battery peak shaving: **monthly peak − 30 W** (follow the monthly peak).
 - SmartEVSE: **CAP MODE = Peak**, **margin 55 W** (always larger than the battery's distance to the peak).
 - Send the voltage with the mains meter (`L1:L2:L3:W:Wh:V`), preferably every second.
+- For Solar mode: send the battery power in W (and SoC) to `Set/HomeBatteryPower` and set the offset
+  and full SoC on the SmartEVSE (§6).
 - Do not use Flanders with such a battery: its 15 minute budget lets the instantaneous power go
   above the battery's threshold.
 
@@ -269,6 +313,11 @@ Night charging of a Peugeot plug-in hybrid (±10 kWh), monthly peak 2755 W:
 | `<prefix>/MaxSumMains` | EVSE → | amps with one decimal |
 | `<prefix>/CapacityPeak` | EVSE → | monthly peak in W (Flanders / Peak) |
 | `<prefix>/CapacityMargin` | EVSE → | margin in W |
+| `<prefix>/Set/HomeBatteryPower` | → EVSE | battery power in W, optional `:SoC` in % |
+| `<prefix>/Set/HomeBatteryOffset` | → EVSE | offset in W (0–1000), stored |
+| `<prefix>/Set/HomeBatteryFullSoC` | → EVSE | full SoC in % (0–100, one decimal, 0 = off), stored |
+| `<prefix>/HomeBatteryPower` | EVSE → | received battery power in W |
+| `<prefix>/HomeBatteryOffset`, `<prefix>/HomeBatteryFullSoC` | EVSE → | the settings |
 
 ### New REST parameters (`POST /settings?…`)
 
@@ -278,11 +327,15 @@ Night charging of a Peugeot plug-in hybrid (±10 kWh), monthly peak 2755 W:
 | `capacity_mode` | 0 Disabled, 1 Fixed, 2 Interval, 3 Flanders, **4 Peak** |
 | `capacity_peak` | monthly peak in W (only raises) |
 | `capacity_margin` | margin in W |
+| `home_battery_offset` | battery offset in W |
+| `home_battery_full_soc` | full SoC in % |
+
+`POST /currents?battery_power=…&battery_soc=…` sends the battery power (W) and SoC (%).
 
 ### New fields in `GET /settings` (`settings` object)
 
 `current_max_sum_mains_precise`, `capacity_peak_month`, `capacity_margin`, `mains_voltage`,
-`capacity_voltage`.
+`capacity_voltage`; in the `home_battery` object: `power`, `soc`, `offset`, `full_soc`.
 
 ---
 
@@ -373,6 +426,7 @@ settings (`CapPeakW`, `CapMargin`, `MaxSumMainsT`) are simply ignored. Set `CAP 
 | [`maxsummains-tenths`](https://github.com/Clarijs/SmartEVSE-3.5/tree/maxsummains-tenths) | §2 Max Sum Mains in 0.1 A (MQTT, web, REST) | pull request |
 | [`maxsummains-phases`](https://github.com/Clarijs/SmartEVSE-3.5/tree/maxsummains-phases) | §3 regulation per switched phase | pull request |
 | [`capacity-peak-mode`](https://github.com/Clarijs/SmartEVSE-3.5/tree/capacity-peak-mode) | §1–§5 combined, including measured voltage, mode Peak and margin | pull request (after the others) |
+| [`home-battery-power`](https://github.com/Clarijs/SmartEVSE-3.5/tree/home-battery-power) | §6 home battery power in watts (on top of `capacity-peak-mode`) | pull request (after `capacity-peak-mode`) |
 | [`release/capacity-peak-build`](https://github.com/Clarijs/SmartEVSE-3.5/tree/release/capacity-peak-build) | everything + CI change to build without signing key | **firmware for this fork**, not for a PR |
 
 Related discussion upstream: feature requests for a settable monthly peak and for using the measured
