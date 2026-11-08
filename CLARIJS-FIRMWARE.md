@@ -270,6 +270,16 @@ not counted; discharges below 0.3 A are ignored.
 | Feed EV from (SoC high) | `Set/HomeBatteryProtectSoCHigh` | `home_battery_protect_soc_high` | at or above: protect paused, battery may feed the EV (0 = always protect) |
 | Protect again at (SoC low) | `Set/HomeBatteryProtectSoCLow` | `home_battery_protect_soc_low` | at or below: protect active again |
 
+Example with *Feed EV from* 80 % and *Protect again at* 50 %:
+
+| Battery SoC | Protect |
+|---|---|
+| 85 % | paused: the battery may feed the EV |
+| 85 → 60 % (discharging) | stays paused |
+| 50 % | active: the EV is limited as if the battery were idle |
+| 50 → 70 % (charging) | stays active |
+| 80 % | paused again |
+
 Between the two values the last state is kept. Without a SoC protect is always active. The current
 state is published on `/HomeBatteryProtectActive` (HA binary sensor) and shown in the web interface
 as *(active)* / *(paused)*. All settings are stored, announced via MQTT discovery and editable in the
@@ -481,6 +491,13 @@ voltage instead of `AssumedVoltage = 230`.
 ---
 
 ## Known limitations
+
+- **Home battery protect and big house loads:** when the house alone goes above the limit (oven plus
+  hob), protect makes the SmartEVSE lower the EV to the minimum (6 A). If that lasts longer than
+  `MaxSumMainsTime`, charging stops until there is room again. Without protect the battery silently
+  covered this.
+- **Home battery protect needs a fresh battery value:** without an update for 60 seconds the battery
+  counts as 0 and protect has no effect. Send `Set/HomeBatteryPower` every second or every few seconds.
 
 - The **LCD menu** shows Max Sum Mains in whole amps; the web page and MQTT show 0.1 A.
 - The **Sensorbox** has no voltage measurement; with a Sensorbox the capacity modes keep using 230 V.
