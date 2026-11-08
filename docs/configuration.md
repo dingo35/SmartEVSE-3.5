@@ -335,6 +335,9 @@ Valid topics you can publish to are:
 /Set/MainsMeter
 /Set/EVMeter
 /Set/HomeBatteryCurrent
+/Set/HomeBatteryPower  Home battery power in W (+ charging / - discharging), optionally with SoC in %: "1234" or "1234:87.5"
+/Set/HomeBatteryOffset  W subtracted from /Set/HomeBatteryPower (0-1000, default 0, stored)
+/Set/HomeBatteryFullSoC  At or above this SoC (%) the battery counts as 0 (0-100, one decimal, 0 = off, stored)
 /Set/RequiredEVCCID
 /Set/ColorOff
 /Set/ColorNormal
@@ -391,6 +394,8 @@ The `/Set/MainsMeter` payload accepts an optional 6th value with the mains volta
 CAPACITY MODE **Peak** limits the mains power to the monthly peak (see `/Set/CapacityPeak`) minus the margin, recalculated with every meter update using the measured voltage, in 0.1A steps. Unlike Flanders it does not spread a 15 minute energy budget, so the limit is stable and also stays below the threshold of a home battery doing peak shaving on instantaneous power. The monthly peak still starts at 2500W each month and is raised automatically when a 15 minute average breaks it. The margin (`/Set/CapacityMargin`, REST `capacity_margin`, default 100W) applies to Interval, Flanders and Peak.
 
 The `/Set/CapacityPeak` topic syncs the monthly peak (15 minute average, in W) that [CAPACITY MODE](#capacity-mode) Flanders uses as its ceiling with an external source, for example the "maximum demand running month" (OBIS 1-0:1.6.0) read from the P1 port of your digital meter. It is not a static setting: SmartEVSE still raises the peak itself when a 15 minute average breaks the ceiling, and this topic can only raise the peak of the current month, never lower it. Values below 2500W are ignored, and the value is only accepted once the SmartEVSE knows the current date and time. The peak is stored together with the month it belongs to, so it survives a reboot and is reset to 2500W when a new month starts. The current value is published on `/CapacityPeak` (in Flanders mode) and shown as `capacity_peak_month` in `/settings`; it can also be raised through the REST API with a POST to `/settings?capacity_peak=2755`.
+
+Instead of a calculated `/Set/HomeBatteryCurrent`, the raw battery power can be sent to `/Set/HomeBatteryPower` (W, + charging / - discharging), optionally followed by the state of charge: `1234:87.5`. The SmartEVSE subtracts `HomeBatteryOffset`, counts a full battery (SoC at or above `HomeBatteryFullSoC`) as 0, and converts the result to `HomeBatteryCurrent` with the measured mains voltage (or 230V). So the fine-tuning is done on the SmartEVSE (MQTT, REST, Home Assistant discovery as *Home Battery Offset* / *Home Battery Full SoC*, or the Home battery card of the web interface) and the sender never has to change. Like `HomeBatteryCurrent`, the result is only used in Solar mode, and is reset when no update is received for 60 seconds. `/HomeBatteryPower`, `/HomeBatteryOffset` and `/HomeBatteryFullSoC` are published; `/settings` shows them in the `home_battery` object (`power`, `soc`, `offset`, `full_soc`).
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.

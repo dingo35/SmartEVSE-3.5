@@ -206,6 +206,16 @@ curl -X POST "http://ipaddress/currents?battery_current=300" -d ''
 ```
 ...means your battery is charging at 10A per phase (3 * 10A = 30A = 300dA).
 
+* battery_power (and optional battery_soc)
+
+&emsp;&emsp;Home battery power in W (positive = charging, negative = discharging), optionally with the state of charge in %.
+<br>&emsp;&emsp;The SmartEVSE subtracts home_battery_offset, counts the battery as 0 at or above home_battery_full_soc,
+<br>&emsp;&emsp;and converts it to battery_current with the measured mains voltage (or 230V).
+```
+curl -X POST "http://ipaddress/currents?battery_power=1500&battery_soc=87.5" -d ''
+```
+The offset and full SoC are set with `POST /settings?home_battery_offset=25&home_battery_full_soc=99.7`.
+
 NOTE: The battery current is ONLY taken into account in SOLAR mode !!!
 
 NOTE: By default the current fed here is divided by three and corrected on every phase.
