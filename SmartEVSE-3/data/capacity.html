@@ -47,7 +47,7 @@
           <b>Peak</b>: limits the mains power to the monthly peak minus the margin, recalculated with every meter
           update using the measured voltage. The monthly peak starts at 2500 W each month, is raised automatically
           when a 15-minute average breaks it, and can be synced from your digital meter via MQTT
-          <code>/Set/CapacityPeak</code>. Send the voltage as 6th value of <code>/Set/MainsMeter</code>
+          <code>/Set/CapacityPeakSync</code>. Send the voltage as 6th value of <code>/Set/MainsMeter</code>
           (<code>L1:L2:L3:W:Wh:V</code>, V in 0.1 V); otherwise 230 V is assumed.
         </p>
         <div class="fields hidden" id="fixedCapacitySection" style="margin-top:10px">
