@@ -400,15 +400,31 @@ void Meter::UpdateEnergies() {
 }
 
 
-#define CapacitySafety 100         // stay 100W under the Capacity ceiling
-#define AssumedVoltage 230         // TODO take this from the meter measurements
+// CapacitySafety (default margin) and AssumedVoltage (fallback) are defined in meter.h
+uint16_t CapacityMargin = CapacitySafety;  // margin (W) under the capacity ceiling; settable via MQTT /Set/CapacityMargin or REST
+uint16_t MainsVoltageDV = 0;               // measured mains voltage L1 in 0.1V, e.g. from the API MainsMeter payload (6th value)
+time_t MainsVoltageTime = 0;
+
+uint16_t CapacityVoltageDV(void) {
+    time_t now = time(NULL);
+    if (MainsVoltageDV >= 1800 && MainsVoltageDV <= 2700 && MainsVoltageTime && (now - MainsVoltageTime) <= 60)
+        return MainsVoltageDV;
+    return AssumedVoltage * 10;
+}
+
+int32_t CapacityPowerToDA(int32_t Watt) {
+    if (Watt <= 0) return 0;
+    return (int32_t) ((int64_t) Watt * 100 / CapacityVoltageDV());    // W / V * 10 = W * 100 / dV
+}
 void Meter::UpdateCapacity() {
     extern uint16_t MaxSumMains;
+    extern void setMaxSumMainsDA(int32_t dA);
+    extern int32_t getMaxSumMainsDA(void);
     time_t now;
     time(&now);
     // only process if time is valid
     if (LocalTimeSet && now != 0 && Address == MainsMeter.Address) {
-        if (CapacityMode == FLANDERS) {
+        if (CapacityMode == FLANDERS || CapacityMode == PEAK) {
     //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
     // CapacityMinimumPower (2.5kW, the minimum billed) is defined in meter.h
     //#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
@@ -433,7 +449,7 @@ void Meter::UpdateCapacity() {
                 if (LastMonth != CurrentMonth) {      // we started a new month (or the stored peak belongs to another month)
                     Peak_Period_Power_Month = CapacityMinimumPower;
                     LastMonth = CurrentMonth;
-                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / AssumedVoltage;
+                    if (CapacityMode == FLANDERS) setMaxSumMainsDA(CapacityPowerToDA(CapacityMinimumPower - CapacityMargin));
                     storeCapacityPeak();
                 } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
                     Peak_Period_Power_Month = AveragePower;
@@ -442,17 +458,18 @@ void Meter::UpdateCapacity() {
                     //TODO for now we wait until the next measurement comes in
                 }
                 _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power_Month is %i.\n", AveragePower, Peak_Period_Power_Month);
-            } else {
+            } else if (CapacityMode == FLANDERS) {
                 //we are in the middle of a period
                 //calculate time remaining
                 time_t TimeRemaining = CapacityPeriodSeconds - (now % CapacityPeriodSeconds); //in seconds
                 int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
                 int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
-                int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
-                MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
-                if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
+                int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacityMargin;
+                if (Average_Power_Available_This_Period <= 0 || CapacityPowerToDA(Average_Power_Available_This_Period) < 10)
                     MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
+                else
+                    setMaxSumMainsDA(CapacityPowerToDA(Average_Power_Available_This_Period));
                 _LOG_D("Import_active_energy: %iWh CurrentPeriodStartEnergy: %iWh.\n", Import_active_energy, CurrentPeriodStartEnergy);
                 _LOG_D("TimeRemaining: %lu Energy_Used_This_Period: %iWh, Energy_Capacity_This_Period: %iWh, Energy_Available_This_Period: %iWh.\n", TimeRemaining, Energy_Used_This_Period, Energy_Capacity_This_Period, Energy_Available_This_Period);
                 _LOG_V("Capacity: setting MaxSumMains to %uA; average power available rest of this period: %iW.\n", MaxSumMains, Average_Power_Available_This_Period);
@@ -474,6 +491,13 @@ void Meter::UpdateCapacity() {
 
                 Baseload = MainsMeter.Imeasured - TotalCurrent;                         // Calculate Baseload (load without any active EVSE)
     */
+            }
+            if (CapacityMode == PEAK) {
+                // Instantaneous ceiling that follows the monthly peak: (peak - margin) / measured voltage, in 0.1A.
+                // Stable (no per-period budget), and stays below a home battery's peak-shaving threshold.
+                setMaxSumMainsDA(CapacityPowerToDA(Peak_Period_Power_Month - CapacityMargin));
+                _LOG_V("Capacity PEAK: peak %iW, margin %uW, voltage %u.%uV -> MaxSumMains %u.%uA\n", Peak_Period_Power_Month, CapacityMargin,
+                       CapacityVoltageDV() / 10, CapacityVoltageDV() % 10, MaxSumMains, getMaxSumMainsDA() % 10);
             }
         } else if (CapacityMode == INTERVAL) {
             struct tm t_int_buf;
@@ -498,14 +522,14 @@ void Meter::UpdateCapacity() {
                 }
 
                 if (prev != NULL) {
-                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / AssumedVoltage;
+                    setMaxSumMainsDA(CapacityPowerToDA(prev->max_power_watts - CapacityMargin));
                 } else {
                     // Before first interval → use last rule minus safety
                     const CapacityNode* last = first_interval;
                     while (last->next) {
                         last = last->next;
                     }
-                    MaxSumMains = (last->max_power_watts - CapacitySafety) / AssumedVoltage;
+                    setMaxSumMainsDA(CapacityPowerToDA(last->max_power_watts - CapacityMargin));
                 }
             } else {
                 // No schedule → silently skip (MaxSumMains unchanged)
