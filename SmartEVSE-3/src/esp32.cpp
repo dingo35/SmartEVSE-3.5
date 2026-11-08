@@ -84,7 +84,7 @@ ShadowPreferences shadowPrefs;
 // so it survives a reboot within the same month.
 void storeCapacityPeak(void) {
     shadowPrefs.markULong("CapPeakW", &MainsMeter.Peak_Period_Power_Month);
-    shadowPrefs.markULong("CapPeakMonth", &MainsMeter.Peak_Month_Index);
+    shadowPrefs.markUChar("CapPeakMon", &LastMonth);
 }
 
 // Sync the monthly capacity peak (W) with an external source (MQTT / REST), e.g. the official
@@ -99,10 +99,10 @@ bool setCapacityPeak(int32_t RequestedPeak) {
     if (!LocalTimeSet || now == 0) return false;                            // month unknown: the value would be reset at the next period
     struct tm t_buf;
     tm* t = localtime_r(&now, &t_buf);
-    uint32_t CurrentMonth = CapacityMonthIndex(t);
-    if (MainsMeter.Peak_Month_Index != CurrentMonth) {                      // stored peak belongs to another month: start this month
+    int8_t CurrentMonth = t->tm_mon + 1;                                    // 1–12
+    if (LastMonth != CurrentMonth) {                                        // stored peak belongs to another month: start this month
         MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
-        MainsMeter.Peak_Month_Index = CurrentMonth;
+        LastMonth = CurrentMonth;
     }
     if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
         MainsMeter.Peak_Period_Power_Month = RequestedPeak;
@@ -546,7 +546,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
         } else if (RequestedCurrent == 0 || (RequestedCurrent >= 10 && RequestedCurrent <= 600)) {
                 MaxSumMains = RequestedCurrent;
         }
-    } else if (topic == MQTTprefix + "/Set/CapacityPeak" && LoadBl < 2) {
+    } else if (topic == MQTTprefix + "/Set/CapacityPeakSync" && LoadBl < 2) {
         // Set the monthly capacity peak (W) used by CAPACITY MODE Flanders,
         // e.g. from the official "maximum demand running month" of the digital meter (P1, OBIS 1-0:1.6.0).
         // The new value is published on /CapacityPeak with the next regular MQTT update.
@@ -1277,7 +1277,8 @@ void read_settings() {
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
         MainsMeter.Peak_Period_Power_Month = preferences.getULong("CapPeakW", CapacityMinimumPower);
-        MainsMeter.Peak_Month_Index = preferences.getULong("CapPeakMonth", 0);    // checked against the current month in UpdateCapacity()
+        LastMonth = preferences.getUChar("CapPeakMon", 0);                        // checked against the current month in UpdateCapacity()
+        if (LastMonth < 0 || LastMonth > 12) LastMonth = 0;
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
         MaxCircuit = preferences.getUShort("MaxCircuit", MAX_CIRCUIT); 
@@ -1841,8 +1842,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             }
         }
 
-        if(request->hasParam("capacity_peak")) {
-            int peak = request->getParam("capacity_peak")->value().toInt();
+        if(request->hasParam("capacity_peak_sync")) {
+            int peak = request->getParam("capacity_peak_sync")->value().toInt();
             if (LoadBl < 2 && setCapacityPeak(peak)) {
                 doc["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;     // can stay higher than the requested value: the peak is only raised
             } else {
