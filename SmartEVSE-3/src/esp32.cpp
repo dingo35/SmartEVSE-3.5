@@ -187,6 +187,10 @@ extern bool phasesLastUpdateFlag;
 extern int16_t IrmsOriginal[3];
 extern int16_t homeBatteryCurrent;
 extern time_t homeBatteryLastUpdate;
+extern int32_t homeBatteryPower;
+extern bool homeBatteryPowerInput;
+extern uint16_t HomeBatteryOffset;
+extern void setHomeBatteryPower(int32_t Watt);
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 extern uint8_t ColorOff[3] ;
 extern uint8_t ColorNormal[3] ;
@@ -611,6 +615,18 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
         homeBatteryCurrent = payload.toInt();
         homeBatteryLastUpdate = time(NULL);
+        homeBatteryPowerInput = false;
+    } else if (topic == MQTTprefix + "/Set/HomeBatteryPower") {
+        // raw battery power in W (+ charging / - discharging); offset and voltage are applied by the SmartEVSE
+        if (LoadBl >= 2)
+            return;
+        setHomeBatteryPower(lroundf(payload.toFloat()));
+    } else if (topic == MQTTprefix + "/Set/HomeBatteryOffset" && LoadBl < 2) {
+        int32_t offset = payload.toInt();
+        if (offset >= 0 && offset <= 1000) {
+            HomeBatteryOffset = offset;
+            shadowPrefs.markUShort("BatOffset", &HomeBatteryOffset);
+        }
 #if MODEM
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
@@ -910,6 +926,13 @@ void SetupMQTTClient() {
         ", \"command_template\":\"{{ value | int * 10 }}\"", p, (unsigned)MaxCurrent);
     MQTTclient.announce("Charge Current Override", "number", opt);
 
+    if (LoadBl < 2) {
+        snprintf(opt, sizeof(opt),
+            ", \"command_topic\":\"%s/Set/HomeBatteryOffset\", \"min\":\"0\", \"max\":\"1000\", \"step\":\"1\""
+            ", \"mode\":\"box\", \"unit_of_measurement\":\"W\", \"entity_category\":\"config\"", p);
+        MQTTclient.announce("Home Battery Offset", "number", opt);
+    }
+
     // Cable Lock:
     snprintf(opt, sizeof(opt),
         ", \"cablelock_topic\":\"%s/CableLock\", \"command_topic\":\"%s/Set/CableLock\""
@@ -1011,6 +1034,10 @@ void mqttPublishData() {
         }
         if (homeBatteryLastUpdate)
             mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
+        if (homeBatteryLastUpdate && homeBatteryPowerInput)
+            mqPubI("/HomeBatteryPower", homeBatteryPower, false, 0);
+        if (LoadBl < 2)
+            mqPubI("/HomeBatteryOffset", HomeBatteryOffset, true, 0);
         mqPubS("/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
         mqPubS("/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
         {
@@ -1236,6 +1263,8 @@ void read_settings() {
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
+        HomeBatteryOffset = preferences.getUShort("BatOffset", 0);
+        if (HomeBatteryOffset > 1000) HomeBatteryOffset = 0;
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
         MaxCircuit = preferences.getUShort("MaxCircuit", MAX_CIRCUIT); 
@@ -1688,6 +1717,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
+        if (homeBatteryPowerInput) doc["home_battery"]["power"] = homeBatteryPower;   // W as received
+        doc["home_battery"]["offset"] = HomeBatteryOffset;                  // W
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
@@ -1795,6 +1826,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 }
                 doc["capacity_mode"] = val;
+            }
+        }
+
+        if(request->hasParam("home_battery_offset")) {
+            int offset = request->getParam("home_battery_offset")->value().toInt();
+            if (offset >= 0 && offset <= 1000 && LoadBl < 2) {
+                HomeBatteryOffset = offset;
+                shadowPrefs.markUShort("BatOffset", &HomeBatteryOffset);
+                doc["home_battery_offset"] = HomeBatteryOffset;
+            } else {
+                doc["home_battery_offset"] = "Value not allowed!";
             }
         }
 
@@ -2157,9 +2199,18 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if (LoadBl < 2) {
                 homeBatteryCurrent = request->getParam("battery_current")->value().toInt();
                 homeBatteryLastUpdate = time(NULL);
+                homeBatteryPowerInput = false;
                 doc["battery_current"] = homeBatteryCurrent;
             } else
                 doc["battery_current"] = "not allowed on slave";
+        }
+
+        if(request->hasParam("battery_power")) {
+            if (LoadBl < 2) {
+                setHomeBatteryPower(lroundf(request->getParam("battery_power")->value().toFloat()));
+                doc["battery_current"] = homeBatteryCurrent;
+            } else
+                doc["battery_power"] = "not allowed on slave";
         }
 
         if(MainsMeter.Type == EM_API) {
