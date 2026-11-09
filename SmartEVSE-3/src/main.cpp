@@ -955,7 +955,8 @@ void CalcBalancedCurrent(char mod) {
         int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);
         if (MaxSumMains) {
             // Use ExcessMaxSumMains as additional per-phase constraint (prevents current fluctuations when CAPACITY is used)
-            Idifference = min(Idifference, ExcessMaxSumMains / 3);
+            // divide by the phases that are switched: 1 for a standalone EVSE charging on one phase (3x faster), else 3 (as before)
+            Idifference = min(Idifference, ExcessMaxSumMains / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3));
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
@@ -1014,7 +1015,7 @@ void CalcBalancedCurrent(char mod) {
 
                 IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_Circuit ); //assume the current should be available on all 3 phases
                 if (MaxSumMains)
-                    IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum)/3); //assume the current should be available on all 3 phases
+                    IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum) / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3)); //per phase that is switched (3 when load balancing)
                 _LOG_V("Checkpoint 3 Smart Isetbalanced=%d.%d A, IsumImport=%d.%d, Isum=%d.%d, ImportCurrent=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), IsumImport/10, abs(IsumImport%10), Isum/10, abs(Isum%10), ImportCurrent);
             }
         } //end MODE_SMART
