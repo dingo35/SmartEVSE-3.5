@@ -157,6 +157,9 @@
             <span>Current</span>
             <b id="batt-current">&mdash;</b>
           </div>
+          <div class="fields hidden" id="batt-settings">
+            <label class="f" title="Smart mode: a discharging battery counts as grid import, so it does not charge the EV"><input type="checkbox" id="batt-guard"> Battery Guard (Smart)</label>
+          </div>
         </div>
       </div>
       <div class="section">
@@ -491,6 +494,8 @@ function render() {
     const bc = d.home_battery.current;
     $("batt-status").textContent = bc < 0 ? "Discharging" : bc > 0 ? "Charging" : "Idle";
     $("batt-current").textContent = amp(bc);
+    $("batt-settings").classList.toggle("hidden", slave);
+    $("batt-guard").checked = d.home_battery.guard === 1;
   } else $("c-battery").classList.add("hidden");
 
   
@@ -568,6 +573,7 @@ buildModeButtons();
 const ovAmps = (p) => p < 1 ? 0 : (d.settings.current_min + p - 1);
 $("ovsel").oninput = () => { const a = ovAmps(+$("ovsel").value); $("ovval").textContent = a < 1 ? "no override" : a + " A"; };
 $("ovsel").onchange = () => { const a = ovAmps(+$("ovsel").value); postSettings(new URLSearchParams({ override_current: String(a * 10) })).then(() => poll()); };
+$("batt-guard").onchange = (e) => postSettings(new URLSearchParams({ battery_guard: e.target.checked ? 1 : 0 }));
 $("sol-start").onchange = (e) => postSettings(new URLSearchParams({ solar_start_current: e.target.value }));
 $("sol-import").onchange = (e) => postSettings(new URLSearchParams({ solar_max_import: e.target.value }));
 $("sol-stop").onchange = (e) => postSettings(new URLSearchParams({ stop_timer: e.target.value }));

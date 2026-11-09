@@ -333,6 +333,7 @@ Valid topics you can publish to are:
 /Set/MainsMeter
 /Set/EVMeter
 /Set/HomeBatteryCurrent
+/Set/BatteryGuard  On/Off: in Smart mode a discharging home battery counts as mains import (stored, default Off)
 /Set/RequiredEVCCID
 /Set/ColorOff
 /Set/ColorNormal
@@ -383,6 +384,8 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 
 The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
+
+With `/Set/BatteryGuard On` (REST `battery_guard=1`, Home Assistant switch *Battery Guard*, or the Home battery card of the web interface) the home battery current is also used in Smart mode, but only when the battery discharges: the discharge counts as mains import, so the EV is limited as if the battery were idle. This stops a home battery doing peak shaving from charging the EV: it holds the mains just at its threshold, so without Battery Guard the SmartEVSE sees almost no overshoot and only corrects 0.1A at a time, while the battery feeds the EV. Charging the battery is not counted, and discharges below 0.3A are ignored. It needs `/Set/HomeBatteryCurrent` (updated at least every 60 seconds). The setting is stored and published on `/BatteryGuard`.
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.

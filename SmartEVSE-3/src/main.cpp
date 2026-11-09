@@ -179,6 +179,7 @@ bool phasesLastUpdateFlag = false;
 int16_t IrmsOriginal[3]={0, 0, 0};
 int16_t homeBatteryCurrent = 0;
 time_t homeBatteryLastUpdate = 0; // Time in seconds since epoch
+uint8_t BatteryGuard = 0;          // 1: in Smart mode a discharging home battery counts as mains import (stored)
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 uint8_t ColorOff[3] = {0, 0, 0};          // off
 uint8_t ColorNormal[3] = {0, 255, 0};   // Green
@@ -2855,6 +2856,11 @@ int16_t getBatteryCurrent(void) {
         homeBatteryCurrent = 0;
         return 0;
     } else if (Mode == MODE_SOLAR) {                    // Use BatteryCurrent only in Solar Mode
+        return homeBatteryCurrent;
+    } else if (Mode == MODE_SMART && BatteryGuard && homeBatteryCurrent <= -3) {
+        // Battery Guard: a discharging home battery (e.g. peak shaving) hides load from the mains meter, so the
+        // EV would be charged from the battery. Count the discharge as import, so the EV is limited as if the
+        // battery were idle. Charging is not counted (already in the mains measurement). Deadband 0.3A.
         return homeBatteryCurrent;
     } else {
         return 0;                                       // don't touch homeBatteryCurrent, just return 0

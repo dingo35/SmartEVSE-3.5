@@ -187,6 +187,7 @@ extern bool phasesLastUpdateFlag;
 extern int16_t IrmsOriginal[3];
 extern int16_t homeBatteryCurrent;
 extern time_t homeBatteryLastUpdate;
+extern uint8_t BatteryGuard;
 // set by EXTERNAL logic through MQTT/REST to indicate cheap tariffs ahead until unix time indicated
 extern uint8_t ColorOff[3] ;
 extern uint8_t ColorNormal[3] ;
@@ -611,6 +612,12 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
         homeBatteryCurrent = payload.toInt();
         homeBatteryLastUpdate = time(NULL);
+    } else if (topic == MQTTprefix + "/Set/BatteryGuard") {
+        if (LoadBl >= 2)
+            return;
+        if (payload == "1" || payload.equalsIgnoreCase("On")) BatteryGuard = 1;
+        else if (payload == "0" || payload.equalsIgnoreCase("Off")) BatteryGuard = 0;
+        shadowPrefs.markUChar("BatteryGuard", &BatteryGuard);
 #if MODEM
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
@@ -910,6 +917,11 @@ void SetupMQTTClient() {
         ", \"command_template\":\"{{ value | int * 10 }}\"", p, (unsigned)MaxCurrent);
     MQTTclient.announce("Charge Current Override", "number", opt);
 
+    if (LoadBl < 2) {
+        snprintf(opt, sizeof(opt), ", \"command_topic\":\"%s/Set/BatteryGuard\", \"payload_on\":\"On\", \"payload_off\":\"Off\", \"entity_category\":\"config\"", p);
+        MQTTclient.announce("Battery Guard", "switch", opt);
+    }
+
     // Cable Lock:
     snprintf(opt, sizeof(opt),
         ", \"cablelock_topic\":\"%s/CableLock\", \"command_topic\":\"%s/Set/CableLock\""
@@ -1011,6 +1023,8 @@ void mqttPublishData() {
         }
         if (homeBatteryLastUpdate)
             mqPubI("/HomeBatteryCurrent", homeBatteryCurrent, false, 0);
+        if (LoadBl < 2)
+            mqPubS("/BatteryGuard", BatteryGuard ? "On" : "Off", true, 0);
         mqPubS("/OCPP", OcppMode ? "Enabled" : "Disabled", true, 0);
         mqPubS("/OCPPConnection", (OcppWsClient && OcppWsClient->isConnected()) ? "Connected" : "Disconnected", false, 0);
         {
@@ -1236,6 +1250,7 @@ void read_settings() {
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
+        BatteryGuard = preferences.getUChar("BatteryGuard", 0) ? 1 : 0;
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
         MaxCircuit = preferences.getUShort("MaxCircuit", MAX_CIRCUIT); 
@@ -1688,6 +1703,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
+        doc["home_battery"]["guard"] = BatteryGuard;                        // 1: discharge counts as import in Smart mode
 
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
@@ -1944,6 +1960,17 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                 } else {
                     doc["override_current"] = "Value not allowed!";
                 }
+            }
+        }
+
+        if(request->hasParam("battery_guard")) {
+            int v = request->getParam("battery_guard")->value().toInt();
+            if ((v == 0 || v == 1) && LoadBl < 2) {
+                BatteryGuard = v;
+                shadowPrefs.markUChar("BatteryGuard", &BatteryGuard);
+                doc["battery_guard"] = BatteryGuard;
+            } else {
+                doc["battery_guard"] = "Value not allowed!";
             }
         }
 
