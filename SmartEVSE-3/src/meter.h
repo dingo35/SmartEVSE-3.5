@@ -27,6 +27,7 @@
 #define __EVSE_METER
 
 #include "main.h"
+#include <time.h>
 
 
 #define EM_SENSORBOX 1                                                          // Mains meter types
@@ -99,6 +100,7 @@ class Meter {
     int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
     int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month, in Wh
 #define CapacityPeriodSeconds 900  // 15 minutes
+#define CapacityMinimumPower 2500  // Flanders: 2.5kW is the minimum billed peak (W)
 #define DAY_POINTS 24*3600/CapacityPeriodSeconds
     int16_t PowerMeasured_Period[DAY_POINTS];                                   // the peak of the power per period(15min)
 
@@ -113,12 +115,25 @@ class Meter {
     void setTimeout(uint8_t Timeout);
   private:
     uint8_t receiveCurrentMeasurement(ModBus MB);
+    int32_t receiveVoltageMeasurement(uint8_t *buf);
     signed int receivePowerMeasurement(uint8_t *buf);
     signed int receiveEnergyMeasurement(uint8_t *buf);
     void combineBytes(void *var, uint8_t *buf, uint8_t pos, uint8_t endianness, MBDataType dataType);
     signed int decodeMeasurement(uint8_t *buf, uint8_t Count, signed char Divisor);
     signed int decodeMeasurement(uint8_t *buf, uint8_t Count, uint8_t Endianness, MBDataType dataType, signed char Divisor);
 };
+
+extern int8_t LastMonth;                                                        // month (1-12) of MainsMeter.Peak_Period_Power_Month, 0 = unknown
+void storeCapacityPeak(void);                                                   // persist MainsMeter monthly capacity peak (esp32.cpp)
+
+#define CapacitySafety 100                                                      // default margin (W) under the capacity ceiling
+#define AssumedVoltage 230                                                      // used when no (recent) voltage measurement is available
+extern uint16_t CapacityMargin;                                                 // margin (W) under the capacity ceiling, default CapacitySafety
+extern uint16_t MainsVoltageDV;                                                 // last measured mains voltage L1 in 0.1V (0 = never received)
+extern time_t MainsVoltageTime;                                                 // time of that measurement
+void SetMainsVoltageDV(int32_t VoltageDV);                                      // store a measured mains voltage L1 (0.1V) if plausible
+uint16_t CapacityVoltageDV(void);                                               // measured voltage in 0.1V if recent and plausible, else AssumedVoltage
+int32_t CapacityPowerToDA(int32_t Watt);                                        // power -> current in 0.1A using CapacityVoltageDV()
 
 extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)

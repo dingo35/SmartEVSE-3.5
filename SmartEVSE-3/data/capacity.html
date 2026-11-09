@@ -34,11 +34,25 @@
             <option value="1">Fixed</option>
             <option value="2">Interval</option>
             <option value="3">Flanders</option>
+            <option value="4">Peak</option>
           </select>
         </div>
+        <div class="fields hidden" id="marginSection" style="margin-top:10px">
+          <label class="f" title="How many watts to stay under the power limit / monthly peak">Margin (W)
+            <input type="number" id="capacity_margin" min="0" max="1000" step="5" style="width:90px">
+          </label>
+          <span class="sub" id="capacityInfo"></span>
+        </div>
+        <p class="sub hidden" id="peakHelp" style="margin:8px 0 0">
+          <b>Peak</b>: limits the mains power to the monthly peak minus the margin, recalculated with every meter
+          update using the measured voltage. The monthly peak starts at 2500 W each month, is raised automatically
+          when a 15-minute average breaks it, and can be synced from your digital meter via MQTT
+          <code>/Set/CapacityPeakSync</code>. Send the voltage as 6th value of <code>/Set/MainsMeter</code>
+          (<code>L1:L2:L3:W:Wh:V</code>, V in 0.1 V); otherwise 230 V is assumed.
+        </p>
         <div class="fields hidden" id="fixedCapacitySection" style="margin-top:10px">
           <label class="f">Max Sum Mains (A)
-            <input type="number" id="current_max_sum_mains" min="10" max="600" step="1" style="width:90px">
+            <input type="number" id="current_max_sum_mains" min="10" max="600" step="0.1" style="width:90px">
           </label>
           <span class="sub">Overall power limit in fixed mode.</span>
         </div>
@@ -157,6 +171,8 @@ function toggleSections() {
   const mode = $("capacity_mode").value;
   $("intervalsContent").classList.toggle("hidden", mode !== "2");
   $("fixedCapacitySection").classList.toggle("hidden", mode !== "1");
+  $("marginSection").classList.toggle("hidden", !["2", "3", "4"].includes(mode));
+  $("peakHelp").classList.toggle("hidden", mode !== "4");
 }
 
 function renderTable() {
@@ -231,7 +247,14 @@ function load() {
     renderTable();
     if (d.settings) {
       if (d.settings.capacity_mode !== undefined) $("capacity_mode").value = d.settings.capacity_mode;
-      if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
+      if (d.settings.current_max_sum_mains_precise !== undefined) $("current_max_sum_mains").value = Number(d.settings.current_max_sum_mains_precise).toFixed(1);
+      else if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
+      if (d.settings.capacity_margin !== undefined) $("capacity_margin").value = d.settings.capacity_margin;
+      const info = [];
+      if (d.settings.capacity_peak_month !== undefined && ["3", "4"].includes(String(d.settings.capacity_mode))) info.push("Monthly peak " + d.settings.capacity_peak_month + " W");
+      if (d.settings.capacity_voltage !== undefined) info.push((d.settings.mains_voltage !== undefined ? "measured " : "assumed ") + Number(d.settings.capacity_voltage).toFixed(1) + " V");
+      if (d.settings.current_max_sum_mains_precise !== undefined && ["2", "3", "4"].includes(String(d.settings.capacity_mode))) info.push("limit now " + Number(d.settings.current_max_sum_mains_precise).toFixed(1) + " A");
+      $("capacityInfo").textContent = info.join(" · ");
     }
     toggleSections();
   }).catch(() => toast("Failed to load settings"));
@@ -239,9 +262,14 @@ function load() {
 
 $("capacity_mode").onchange = (e) => { if (loaded) postSettings(new URLSearchParams({ capacity_mode: e.target.value })); toggleSections(); };
 $("current_max_sum_mains").onchange = (e) => {
-  const v = parseInt(e.target.value);
+  const v = Math.round(parseFloat(e.target.value) * 10) / 10;           // 0.1A steps
   if (isNaN(v) || v < 10 || v > 600) { toast("Value must be between 10 and 600"); load(); return; }
-  postSettings(new URLSearchParams({ current_max_sum_mains: v }));
+  postSettings(new URLSearchParams({ current_max_sum_mains: v.toFixed(1) }));
+};
+$("capacity_margin").onchange = (e) => {
+  const v = parseInt(e.target.value);
+  if (isNaN(v) || v < 0 || v > 1000) { toast("Value must be between 0 and 1000"); load(); return; }
+  postSettings(new URLSearchParams({ capacity_margin: v }));
 };
 $("intervalForm").onsubmit = (e) => {
   e.preventDefault();

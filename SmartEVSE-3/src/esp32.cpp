@@ -80,6 +80,41 @@ ShadowPreferences shadowPrefs;
 #define PREFS_PUT_BOOL_IF_CHANGED(key, var)   shadowPrefs.markBool  (key, &(var))
 #define PREFS_PUT_STRING_IF_CHANGED(key, var) shadowPrefs.markString(key, &(var))
 
+// Persist the monthly capacity peak of the MainsMeter (CAPACITY MODE Flanders),
+// so it survives a reboot within the same month.
+void storeCapacityPeak(void) {
+    shadowPrefs.markULong("CapPeakW", &MainsMeter.Peak_Period_Power_Month);
+    shadowPrefs.markUChar("CapPeakMon", &LastMonth);
+}
+
+// Sync the monthly capacity peak (W) with an external source (MQTT / REST), e.g. the official
+// "maximum demand running month" of the digital meter.
+// This is not a static setting: like the automatic adjustment in UpdateCapacity(), it can only
+// RAISE the peak of the current month, never lower it. A new month still starts at CapacityMinimumPower.
+// Returns false when the value is invalid or the time is not known yet; a value that is not higher
+// than the current peak is valid but leaves the peak unchanged.
+bool setCapacityPeak(int32_t RequestedPeak) {
+    if (RequestedPeak < CapacityMinimumPower || RequestedPeak > 100000) return false;
+    time_t now = time(NULL);
+    if (!LocalTimeSet || now == 0) return false;                            // month unknown: the value would be reset at the next period
+    struct tm t_buf;
+    tm* t = localtime_r(&now, &t_buf);
+    int8_t CurrentMonth = t->tm_mon + 1;                                    // 1–12
+    if (LastMonth != CurrentMonth) {                                        // stored peak belongs to another month: start this month
+        MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
+        LastMonth = CurrentMonth;
+    }
+    // In the first quarter of a month the meter can still report the peak of the previous month
+    // (clock difference, publish interval); a real peak of the new month only exists after 00:15.
+    if (t->tm_mday == 1 && t->tm_hour == 0 && t->tm_min < 15) return true;
+    if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
+        MainsMeter.Peak_Period_Power_Month = RequestedPeak;
+        _LOG_A("Capacity peak of this month raised to %iW.\n", RequestedPeak);
+    }
+    storeCapacityPeak();
+    return true;
+}
+
 uint16_t LCDPin = 0;                                                        // PINcode to operate LCD keys from web-interface
 uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT, PIN_RS485_RX; //these pins have to be assigned dynamically because of hw version v3.1
 
@@ -118,6 +153,9 @@ extern uint16_t MinCurrent;
 extern uint8_t Mode;
 extern uint32_t CurrentPWM;
 extern void SetCurrent(uint16_t current);
+extern uint8_t MaxSumMainsTenths;
+extern uint16_t MaxSumMainsTenthsFor;
+extern int32_t getMaxSumMainsDA(void);
 
 extern bool CPDutyOverride;
 extern uint8_t Lock;
@@ -508,12 +546,29 @@ void mqtt_receive_callback(const String topic, const String payload) {
             }
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
-        uint16_t RequestedCurrent = payload.toInt();
-        if (RequestedCurrent == 0) {
+        // Accepts whole amps ("11") or one decimal ("10.4"), so a capacity limit can be set in 0.1A steps.
+        // The tenths are not stored and are ignored as soon as MaxSumMains is changed in another way.
+        int32_t RequestedDA = lroundf(payload.toFloat() * 10);
+        if (RequestedDA == 0) {
             MaxSumMains = 0;
-        } else if (RequestedCurrent == 0 || (RequestedCurrent >= 10 && RequestedCurrent <= 600)) {
-                MaxSumMains = RequestedCurrent;
+            MaxSumMainsTenths = 0;
+        } else if (RequestedDA >= 100 && RequestedDA <= 6000) {
+            MaxSumMains = RequestedDA / 10;
+            MaxSumMainsTenths = RequestedDA % 10;
+            MaxSumMainsTenthsFor = MaxSumMains;
         }
+    } else if (topic == MQTTprefix + "/Set/CapacityMargin" && LoadBl < 2) {
+        // margin in W under the capacity ceiling (Flanders, Interval, Peak); stored
+        int32_t margin = payload.toInt();
+        if (margin >= 0 && margin <= 1000) {
+            CapacityMargin = margin;
+            shadowPrefs.markUShort("CapMargin", &CapacityMargin);
+        }
+    } else if (topic == MQTTprefix + "/Set/CapacityPeakSync" && LoadBl < 2) {
+        // Set the monthly capacity peak (W) used by CAPACITY MODE Flanders,
+        // e.g. from the official "maximum demand running month" of the digital meter (P1, OBIS 1-0:1.6.0).
+        // The new value is published on /CapacityPeak with the next regular MQTT update.
+        setCapacityPeak(payload.toInt());
     } else if (topic == MQTTprefix + "/Set/CPPWMOverride") {
         int pwm = payload.toInt();
         if (pwm == -1) {
@@ -533,11 +588,13 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (MainsMeter.Type != EM_API || LoadBl >= 2)
             return;
 
-        int32_t L1, L2, L3, W, WH;
-        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
+        int32_t L1, L2, L3, W, WH, V;
+        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH, &V);
 
         // MainsMeter can measure -200A to +200A per phase
-        if ((n == 3 || n == 5) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+        if ((n == 3 || n == 5 || n == 6) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+            // optional 6th value: voltage L1 in 0.1V (e.g. 2324), used by the capacity modes instead of a fixed 230V
+            if (n == 6) SetMainsVoltageDV(V);
             // We expect 5 values (and accept -1 for unknown values)
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
@@ -546,7 +603,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 MainsMeter.Irms[2] = L3;
                 CalcIsum();
             }
-            if (n == 5) {
+            if (n >= 5) {
                 if (W > -1) {
                     // Power measurement
                     MainsMeter.PowerMeasured = W;
@@ -795,6 +852,7 @@ void SetupMQTTClient() {
         MQTTclient.announce("Home Battery Current", "sensor", CURRENT);
     }
     MQTTclient.announce("Max Sum Mains", "sensor", ", \"device_class\":\"current\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"A\"");
+    MQTTclient.announce("Capacity Peak", "sensor", ", \"device_class\":\"power\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"W\"");
 
 #if MODEM
     {
@@ -968,7 +1026,15 @@ void mqttPublishData() {
         mqPubI("/ESPTemp", TempEVSE, false, 0);
         mqPubS("/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         mqPubI("/MaxCurrent", MaxCurrent * 10, true, 0);
-        mqPubI("/MaxSumMains", MaxSumMains, true, 0);
+        {   // published with one decimal, e.g. "10.4" (0.1A steps via /Set/CurrentMaxSumMains)
+            char buf[12];
+            int32_t da = getMaxSumMainsDA();
+            snprintf(buf, sizeof(buf), "%d.%d", (int)(da / 10), (int)(da % 10));
+            mqPubS("/MaxSumMains", buf, true, 0);
+        }
+        if (CapacityMode == FLANDERS || CapacityMode == PEAK)
+            mqPubI("/CapacityPeak", MainsMeter.Peak_Period_Power_Month, true, 0);
+        mqPubI("/CapacityMargin", CapacityMargin, true, 0);
         mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
         mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
@@ -1227,6 +1293,9 @@ void read_settings() {
         LoadBl = preferences.getUChar("LoadBl", LOADBL); 
         MaxMains = preferences.getUShort("MaxMains", MAX_MAINS); 
         MaxSumMains = preferences.getUShort("MaxSumMains", MAX_SUMMAINS);
+        MaxSumMainsTenths = preferences.getUChar("MaxSumMainsT", 0);         // 0.1A steps set through the web interface
+        if (MaxSumMainsTenths > 9) MaxSumMainsTenths = 0;
+        MaxSumMainsTenthsFor = MaxSumMains;
         if (!preferences.isKey("CapacityMode")) {
             //old firmware has not yet introduced CapacityMode, so do it here:
             if (MaxSumMains) //enabled, so CapacityMode FIXED
@@ -1236,6 +1305,11 @@ void read_settings() {
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
+        CapacityMargin = preferences.getUShort("CapMargin", CapacitySafety);
+        if (CapacityMargin > 1000) CapacityMargin = CapacitySafety;
+        MainsMeter.Peak_Period_Power_Month = preferences.getULong("CapPeakW", CapacityMinimumPower);
+        LastMonth = preferences.getUChar("CapPeakMon", 0);                        // checked against the current month in UpdateCapacity()
+        if (LastMonth < 0 || LastMonth > 12) LastMonth = 0;
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
         MaxCircuit = preferences.getUShort("MaxCircuit", MAX_CIRCUIT); 
@@ -1625,6 +1699,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["current_main"] = MaxMains;
         doc["settings"]["current_max_circuit"] = MaxCircuit;
         doc["settings"]["current_max_sum_mains"] = MaxSumMains;
+        doc["settings"]["current_max_sum_mains_precise"] = getMaxSumMainsDA() / 10.0;    // A, including 0.1A steps set via MQTT
         doc["settings"]["max_sum_mains_time"] = MaxSumMainsTime;
         doc["settings"]["solar_max_import"] = ImportCurrent;
         doc["settings"]["solar_start_current"] = StartCurrent;
@@ -1639,6 +1714,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
         doc["settings"]["capacity_mode"] = CapacityMode;
+        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders and Peak
+        doc["settings"]["capacity_margin"] = CapacityMargin;                           // W under the capacity ceiling
+        if (MainsVoltageDV) doc["settings"]["mains_voltage"] = MainsVoltageDV / 10.0;  // V, last measured (API MainsMeter)
+        doc["settings"]["capacity_voltage"] = CapacityVoltageDV() / 10.0;              // V used for the capacity calculation
         String intervalsStr = GetIntervalString();
         doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
@@ -1787,7 +1866,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(request->hasParam("capacity_mode")) {
             int val = request->getParam("capacity_mode")->value().toInt();
-            if (val >= 0 && val <= 3) {
+            if (val >= 0 && val <= 4) {
                 CapacityMode = (CapacityMode_t)val;
                 shadowPrefs.markUShort("CapacityMode", &CapacityMode);
                 if (CapacityMode == CAP_DISABLED) {
@@ -1795,6 +1874,26 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 }
                 doc["capacity_mode"] = val;
+            }
+        }
+
+        if(request->hasParam("capacity_margin")) {
+            int margin = request->getParam("capacity_margin")->value().toInt();
+            if (margin >= 0 && margin <= 1000 && LoadBl < 2) {
+                CapacityMargin = margin;
+                shadowPrefs.markUShort("CapMargin", &CapacityMargin);
+                doc["capacity_margin"] = CapacityMargin;
+            } else {
+                doc["capacity_margin"] = "Value not allowed!";
+            }
+        }
+
+        if(request->hasParam("capacity_peak_sync")) {
+            int peak = request->getParam("capacity_peak_sync")->value().toInt();
+            if (LoadBl < 2 && setCapacityPeak(peak)) {
+                doc["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;     // can stay higher than the requested value: the peak is only raised
+            } else {
+                doc["capacity_peak_month"] = "Value not allowed!";
             }
         }
 
@@ -1806,11 +1905,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         }
 
         if(request->hasParam("current_max_sum_mains")) {
-            int current = request->getParam("current_max_sum_mains")->value().toInt();
-            if((current == 0 || (current >= 10 && current <= 600)) && LoadBl < 2) {
-                MaxSumMains = current;
+            // whole amps ("11") or one decimal ("10.4"); stored, so it survives a reboot
+            int32_t currentDA = lroundf(request->getParam("current_max_sum_mains")->value().toFloat() * 10);
+            if((currentDA == 0 || (currentDA >= 100 && currentDA <= 6000)) && LoadBl < 2) {
+                MaxSumMains = currentDA / 10;
+                MaxSumMainsTenths = currentDA % 10;
+                MaxSumMainsTenthsFor = MaxSumMains;
                 shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
-                doc["current_max_sum_mains"] = MaxSumMains;
+                shadowPrefs.markUChar("MaxSumMainsT", &MaxSumMainsTenths);
+                doc["current_max_sum_mains"] = getMaxSumMainsDA() / 10.0;
             } else {
                 doc["current_max_sum_mains"] = "Value not allowed!";
             }
@@ -3330,6 +3433,8 @@ static void homewizard_task(void *parameter) {
             MainsMeter.Import_active_energy = evdata.second[3];
             MainsMeter.Export_active_energy = evdata.second[4];
             MainsMeter.PowerMeasured = evdata.second[5];
+            SetMainsVoltageDV(evdata.second[6]);                            // voltage L1 for the capacity modes
+            if (evdata.second[7] > 0) setCapacityPeak(evdata.second[7]);    // official monthly peak (Belgian P1 meters)
             MainsMeter.UpdateEnergies();
             MainsMeter.UpdateCapacity();
             _LOG_A("Updated MainsMeter with Irms: %d, %d, %d, ActiveEnergyImport: %u, ActiveEnergyExport: %u, PowerMeasured: %u.\n", evdata.second[0], evdata.second[1], evdata.second[2], evdata.second[3], evdata.second[4], evdata.second[5]);

@@ -54,6 +54,22 @@ uint16_t MaxMains = MAX_MAINS;                                              // M
 uint16_t MaxSumMains = MAX_SUMMAINS;                                        // Max Mains Amps summed over all 3 phases, limit used by EU capacity rate (A)
                                                                             // see https://github.com/serkri/SmartEVSE-3/issues/215
                                                                             // 0 means disabled, allowed value 10 - 600 A
+uint8_t MaxSumMainsTenths = 0;                                              // extra 0.1A steps (0-9) on top of MaxSumMains, set via MQTT (e.g. "10.4")
+uint16_t MaxSumMainsTenthsFor = 0;                                          // the MaxSumMains value the tenths belong to; ignored as soon as MaxSumMains
+                                                                            // is changed by anything else (menu, web, capacity mode)
+// MaxSumMains in 0.1A, as used by the regulation (0 = disabled)
+int32_t getMaxSumMainsDA(void) {
+    if (!MaxSumMains) return 0;
+    return MaxSumMains * 10 + (MaxSumMainsTenthsFor == MaxSumMains ? MaxSumMainsTenths : 0);
+}
+// Set MaxSumMains in 0.1A (used by the capacity modes); 1..9 (0.1-0.9A) becomes 1A, which stops charging
+void setMaxSumMainsDA(int32_t dA) {
+    if (dA < 10) dA = 10;
+    if (dA > 6000) dA = 6000;
+    MaxSumMains = dA / 10;
+    MaxSumMainsTenths = dA % 10;
+    MaxSumMainsTenthsFor = MaxSumMains;
+}
 uint8_t MaxSumMainsTime = MAX_SUMMAINSTIME;                                 // Number of Minutes we wait when MaxSumMains is exceeded, before we stop charging
 uint16_t MaxSumMainsTimer = 0;
 uint16_t GridRelayMaxSumMains = GRID_RELAY_MAX_SUMMAINS;                    // Max Mains Amps summed over all 3 phases, switched by relay provided by energy provider
@@ -840,7 +856,7 @@ char IsCurrentAvailable(void) {
     // When using PowerSharing, we do not know the configuration of the nodes, assume 1 Phase
     uint8_t Phases = 1;
     if (LoadBl == 0) Phases = Force_Single_Phase_Charging() ? 1 : 3;
-    if (Mode != MODE_NORMAL && MaxSumMains && ((Phases * ActiveEVSE * MinCurrent * 10) + Isum > MaxSumMains * 10)) {
+    if (Mode != MODE_NORMAL && MaxSumMains && ((Phases * ActiveEVSE * MinCurrent * 10) + Isum > getMaxSumMainsDA())) {
         //printf("@MSG: No current available MaxSumMains line %d. ActiveEVSE=%u, MinCurrent=%uA, Isum=%d.%dA, MaxSumMains=%uA.\n", __LINE__, ActiveEVSE, MinCurrent, Isum/10, abs(Isum%10), MaxSumMains);
         return 0;                                                           // Not enough current available!, return with error
     }
@@ -952,10 +968,10 @@ void CalcBalancedCurrent(char mod) {
             Idifference = min((MaxMains * 10) - MainsMeter.Imeasured, (MaxCircuit * 10) - CircuitMeter.Imeasured);
         else
             Idifference = (MaxMains * 10) - MainsMeter.Imeasured;
-        int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);
+        int ExcessMaxSumMains = (getMaxSumMainsDA() - Isum);
         if (MaxSumMains) {
             // Use ExcessMaxSumMains as additional per-phase constraint (prevents current fluctuations when CAPACITY is used)
-            Idifference = min(Idifference, ExcessMaxSumMains / 3);
+            Idifference = min(Idifference, ExcessMaxSumMains / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3));
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
@@ -1014,7 +1030,7 @@ void CalcBalancedCurrent(char mod) {
 
                 IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_Circuit ); //assume the current should be available on all 3 phases
                 if (MaxSumMains)
-                    IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum)/3); //assume the current should be available on all 3 phases
+                    IsetBalanced = min((int) IsetBalanced, (int) ((getMaxSumMainsDA() - Isum) / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3))); //per phase that is switched (3 when load balancing)
                 _LOG_V("Checkpoint 3 Smart Isetbalanced=%d.%d A, IsumImport=%d.%d, Isum=%d.%d, ImportCurrent=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), IsumImport/10, abs(IsumImport%10), Isum/10, abs(Isum%10), ImportCurrent);
             }
         } //end MODE_SMART
@@ -2101,6 +2117,11 @@ void ModbusRequestLoop() {
                         _LOG_D("ModbusRequest %u: Request MainsMeter Export Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(MainsMeter.Type, MainsMeter.Address, 1);
                         break;
+                    }
+                    // ~every 10s: voltage L1, used by the capacity modes instead of a fixed 230V
+                    if (CapacityMode != CAP_DISABLED && energytimer % 5 == 2) {
+                        _LOG_D("ModbusRequest %u: Request MainsMeter Voltage Measurement\n", ModbusRequest);
+                        if (requestVoltageMeasurement(MainsMeter.Type, MainsMeter.Address)) break;
                     }
                 }
                 // Request active energy if Circuitmeter is configured

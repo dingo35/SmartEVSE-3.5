@@ -329,6 +329,8 @@ Valid topics you can publish to are:
 /Set/Mode
 /Set/CurrentOverride
 /Set/CurrentMaxSumMains
+/Set/CapacityMargin  Margin in W under the capacity ceiling (0-1000, default 100)
+/Set/CapacityPeakSync  Raise the monthly capacity peak in W (>= 2500) for CAPACITY MODE Flanders
 /Set/CPPWMOverride
 /Set/MainsMeter
 /Set/EVMeter
@@ -382,7 +384,13 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 
-The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
+The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting. Besides whole amps (`11`) it accepts one decimal (`10.4`), so a capacity limit can be followed in 0.1A steps, for example when an external system calculates it from a power limit and the measured grid voltage. Like the whole amps, a value set over MQTT is not stored; the tenths are dropped as soon as CAPACITY is changed in another way (LCD menu or capacity mode). The Capacity page of the web interface (and the `current_max_sum_mains` parameter of the REST API) also accepts 0.1A steps, and stores them. `/MaxSumMains` is published with one decimal, and `/settings` shows it as `current_max_sum_mains_precise`. The LCD menu still shows whole amps.
+
+The `/Set/MainsMeter` payload accepts an optional 6th value with the mains voltage of L1 in 0.1V: `L1:L2:L3:W:Wh:V`, e.g. `117:0:0:2716:5222464:2324`. When a recent voltage is available, the capacity modes (Interval, Flanders, Peak) convert power to current with it instead of a fixed 230V; `/settings` shows it as `mains_voltage` and the value used as `capacity_voltage`. Other mains meters supply the voltage as well: Modbus kWh meters have their L1 voltage register read about every 10 seconds while a capacity mode is active (all meters in the list, except the Sensorbox), and a HomeWizard meter delivers it with every reading (`active_voltage_l1_v` or `active_voltage_v`). A HomeWizard P1 meter on a Belgian digital meter also delivers the official monthly peak (`montly_power_peak_w`), which is used like `/Set/CapacityPeakSync`. During the first quarter of a month an external peak is ignored, because the meter can still report the peak of the previous month.
+
+CAPACITY MODE **Peak** limits the mains power to the monthly peak (see `/Set/CapacityPeakSync`) minus the margin, recalculated with every meter update using the measured voltage, in 0.1A steps. Unlike Flanders it does not spread a 15 minute energy budget, so the limit is stable and also stays below the threshold of a home battery doing peak shaving on instantaneous power. The monthly peak still starts at 2500W each month and is raised automatically when a 15 minute average breaks it. The margin (`/Set/CapacityMargin`, REST `capacity_margin`, default 100W) applies to Interval, Flanders and Peak.
+
+The `/Set/CapacityPeakSync` topic syncs the monthly peak (15 minute average, in W) that [CAPACITY MODE](#capacity-mode) Flanders uses as its ceiling with an external source, for example the "maximum demand running month" (OBIS 1-0:1.6.0) read from the P1 port of your digital meter. It is not a static setting: SmartEVSE still raises the peak itself when a 15 minute average breaks the ceiling, and this topic can only raise the peak of the current month, never lower it. Values below 2500W are ignored, and the value is only accepted once the SmartEVSE knows the current date and time. The peak is stored together with the month it belongs to, so it survives a reboot and is reset to 2500W when a new month starts. The current value is published on `/CapacityPeak` (in Flanders mode) and shown as `capacity_peak_month` in `/settings`; it can also be raised through the REST API with a POST to `/settings?capacity_peak_sync=2755`.
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.
