@@ -80,6 +80,38 @@ ShadowPreferences shadowPrefs;
 #define PREFS_PUT_BOOL_IF_CHANGED(key, var)   shadowPrefs.markBool  (key, &(var))
 #define PREFS_PUT_STRING_IF_CHANGED(key, var) shadowPrefs.markString(key, &(var))
 
+// Persist the monthly capacity peak of the MainsMeter (CAPACITY MODE Flanders),
+// so it survives a reboot within the same month.
+void storeCapacityPeak(void) {
+    shadowPrefs.markULong("CapPeakW", &MainsMeter.Peak_Period_Power_Month);
+    shadowPrefs.markUChar("CapPeakMon", &LastMonth);
+}
+
+// Sync the monthly capacity peak (W) with an external source (MQTT / REST), e.g. the official
+// "maximum demand running month" of the digital meter.
+// This is not a static setting: like the automatic adjustment in UpdateCapacity(), it can only
+// RAISE the peak of the current month, never lower it. A new month still starts at CapacityMinimumPower.
+// Returns false when the value is invalid or the time is not known yet; a value that is not higher
+// than the current peak is valid but leaves the peak unchanged.
+bool setCapacityPeak(int32_t RequestedPeak) {
+    if (RequestedPeak < CapacityMinimumPower || RequestedPeak > 100000) return false;
+    time_t now = time(NULL);
+    if (!LocalTimeSet || now == 0) return false;                            // month unknown: the value would be reset at the next period
+    struct tm t_buf;
+    tm* t = localtime_r(&now, &t_buf);
+    int8_t CurrentMonth = t->tm_mon + 1;                                    // 1–12
+    if (LastMonth != CurrentMonth) {                                        // stored peak belongs to another month: start this month
+        MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
+        LastMonth = CurrentMonth;
+    }
+    if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
+        MainsMeter.Peak_Period_Power_Month = RequestedPeak;
+        _LOG_A("Capacity peak of this month raised to %iW.\n", RequestedPeak);
+    }
+    storeCapacityPeak();
+    return true;
+}
+
 uint16_t LCDPin = 0;                                                        // PINcode to operate LCD keys from web-interface
 uint8_t PIN_SW_IN, PIN_ACTA, PIN_ACTB, PIN_RCM_FAULT, PIN_RS485_RX; //these pins have to be assigned dynamically because of hw version v3.1
 
@@ -514,6 +546,11 @@ void mqtt_receive_callback(const String topic, const String payload) {
         } else if (RequestedCurrent == 0 || (RequestedCurrent >= 10 && RequestedCurrent <= 600)) {
                 MaxSumMains = RequestedCurrent;
         }
+    } else if (topic == MQTTprefix + "/Set/CapacityPeakSync" && LoadBl < 2) {
+        // Set the monthly capacity peak (W) used by CAPACITY MODE Flanders,
+        // e.g. from the official "maximum demand running month" of the digital meter (P1, OBIS 1-0:1.6.0).
+        // The new value is published on /CapacityPeak with the next regular MQTT update.
+        setCapacityPeak(payload.toInt());
     } else if (topic == MQTTprefix + "/Set/CPPWMOverride") {
         int pwm = payload.toInt();
         if (pwm == -1) {
@@ -795,6 +832,7 @@ void SetupMQTTClient() {
         MQTTclient.announce("Home Battery Current", "sensor", CURRENT);
     }
     MQTTclient.announce("Max Sum Mains", "sensor", ", \"device_class\":\"current\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"A\"");
+    MQTTclient.announce("Capacity Peak", "sensor", ", \"device_class\":\"power\", \"state_class\":\"measurement\", \"unit_of_measurement\":\"W\"");
 
 #if MODEM
     {
@@ -969,6 +1007,8 @@ void mqttPublishData() {
         mqPubS("/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
         mqPubI("/MaxCurrent", MaxCurrent * 10, true, 0);
         mqPubI("/MaxSumMains", MaxSumMains, true, 0);
+        if (CapacityMode == FLANDERS)
+            mqPubI("/CapacityPeak", MainsMeter.Peak_Period_Power_Month, true, 0);
         mqPubI("/MaxSumMainsTime", MaxSumMainsTime, true, 0);
         mqPubS("/CustomButton", CustomButton ? "On" : "Off", false, 0);
         mqPubI("/ChargeCurrent", Balanced[0], true, 0);
@@ -1236,6 +1276,9 @@ void read_settings() {
         }
         CapacityMode = (CapacityMode_t) preferences.getUShort("CapacityMode", CAP_DISABLED);
         MaxSumMainsTime = preferences.getUShort("MaxSumMainsTime", MAX_SUMMAINSTIME);
+        MainsMeter.Peak_Period_Power_Month = preferences.getULong("CapPeakW", CapacityMinimumPower);
+        LastMonth = preferences.getUChar("CapPeakMon", 0);                        // checked against the current month in UpdateCapacity()
+        if (LastMonth < 0 || LastMonth > 12) LastMonth = 0;
         MaxCurrent = preferences.getUShort("MaxCurrent", MAX_CURRENT); 
         MinCurrent = preferences.getUShort("MinCurrent", MIN_CURRENT); 
         MaxCircuit = preferences.getUShort("MaxCircuit", MAX_CIRCUIT); 
@@ -1639,6 +1682,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
         doc["settings"]["capacity_mode"] = CapacityMode;
+        doc["settings"]["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;   // W, used by CAPACITY MODE Flanders
         String intervalsStr = GetIntervalString();
         doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
@@ -1795,6 +1839,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                     shadowPrefs.markUShort("MaxSumMains", &MaxSumMains);
                 }
                 doc["capacity_mode"] = val;
+            }
+        }
+
+        if(request->hasParam("capacity_peak_sync")) {
+            int peak = request->getParam("capacity_peak_sync")->value().toInt();
+            if (LoadBl < 2 && setCapacityPeak(peak)) {
+                doc["capacity_peak_month"] = MainsMeter.Peak_Period_Power_Month;     // can stay higher than the requested value: the peak is only raised
+            } else {
+                doc["capacity_peak_month"] = "Value not allowed!";
             }
         }
 
