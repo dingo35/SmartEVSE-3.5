@@ -859,17 +859,6 @@ char IsCurrentAvailable(void) {
 }
 
 
-// Number of phases over which a change of IsetBalanced shows up in Isum, used to turn the
-// MaxSumMains (CAPACITY) headroom into a per-phase current.
-// Standalone EVSE: the phases we actually switch (CONTACTOR2 / EnableC2), so a 1-phase setup
-// (EnableC2 = Always Off, or Auto/Solar Off switched to 1P) reacts 3x faster to the limit, and a
-// 3-phase setup behaves exactly as before. Switching between 1P and 3P is followed automatically.
-// Load balancing (master with nodes): keep the conservative 3, as nodes may charge on 3 phases.
-static uint8_t SumMainsPhases(void) {
-    if (LoadBl == 0 && Nr_Of_Phases_Charging == 1) return 1;
-    return 3;
-}
-
 // Calculates Balanced PWM current for each EVSE
 // mod =0 normal
 // mod =1 we have a new EVSE requesting to start charging.
@@ -966,7 +955,8 @@ void CalcBalancedCurrent(char mod) {
         int ExcessMaxSumMains = ((MaxSumMains * 10) - Isum);
         if (MaxSumMains) {
             // Use ExcessMaxSumMains as additional per-phase constraint (prevents current fluctuations when CAPACITY is used)
-            Idifference = min(Idifference, ExcessMaxSumMains / SumMainsPhases());
+            // divide by the phases that are switched: 1 for a standalone EVSE charging on one phase (3x faster), else 3 (as before)
+            Idifference = min(Idifference, ExcessMaxSumMains / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3));
             if (ExcessMaxSumMains < 0) {                                       // No ExcessMaxSumMains, we stop charging if MaxSumMains (Capacity) is set
                 LimitedByMaxSumMains = true;
                 _LOG_V("Current is limited by MaxSumMains: MaxSumMains=%uA, Isum=%d.%dA, Nr_Of_Phases_Charging=%u.\n", MaxSumMains, Isum/10, abs(Isum%10), Nr_Of_Phases_Charging);
@@ -1025,7 +1015,7 @@ void CalcBalancedCurrent(char mod) {
 
                 IsetBalanced = min((MaxMains * 10) - Baseload, (MaxCircuit * 10 ) - Baseload_Circuit ); //assume the current should be available on all 3 phases
                 if (MaxSumMains)
-                    IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum) / SumMainsPhases()); //per phase that is switched (3 when load balancing)
+                    IsetBalanced = min((int) IsetBalanced, ((MaxSumMains * 10) - Isum) / ((LoadBl == 0 && Nr_Of_Phases_Charging == 1) ? 1 : 3)); //per phase that is switched (3 when load balancing)
                 _LOG_V("Checkpoint 3 Smart Isetbalanced=%d.%d A, IsumImport=%d.%d, Isum=%d.%d, ImportCurrent=%u.\n", IsetBalanced/10, abs(IsetBalanced%10), IsumImport/10, abs(IsumImport%10), Isum/10, abs(Isum%10), ImportCurrent);
             }
         } //end MODE_SMART
