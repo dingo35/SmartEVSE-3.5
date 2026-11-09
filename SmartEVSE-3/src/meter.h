@@ -124,4 +124,9 @@ extern Meter MainsMeter;
 extern Meter EVMeter;                                                         // Type of EV electric meter (0: Disabled / Constants EM_*)
 extern Meter CircuitMeter;
 
+extern uint16_t MainsVoltageDV;                                                 // measured mains voltage L1 in 0.1V (0 = never measured)
+extern time_t MainsVoltageTime;
+void SetMainsVoltageDV(int32_t VoltageDV);                                      // store a measured mains voltage L1 (0.1V) if plausible
+uint16_t CapacityVoltageDV(void);                                               // voltage (0.1V) used by the capacity modes
+
 #endif

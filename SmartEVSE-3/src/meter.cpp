@@ -396,7 +396,26 @@ void Meter::UpdateEnergies() {
 
 
 #define CapacitySafety 100         // stay 100W under the Capacity ceiling
-#define AssumedVoltage 230         // TODO take this from the meter measurements
+#define AssumedVoltage 230         // used when no recent mains voltage is measured
+
+// Mains voltage of L1 in 0.1V, as measured by the mains meter (API: 6th value of Set/MainsMeter)
+uint16_t MainsVoltageDV = 0;
+time_t MainsVoltageTime = 0;
+
+void SetMainsVoltageDV(int32_t VoltageDV) {
+    if (VoltageDV >= 1800 && VoltageDV <= 2700) {                       // plausible phase voltage (180-270V)
+        MainsVoltageDV = VoltageDV;
+        MainsVoltageTime = time(NULL);
+    }
+}
+
+// Voltage (0.1V) used to convert power to current in the capacity modes:
+// the measured mains voltage when it is recent (< 60s), otherwise AssumedVoltage
+uint16_t CapacityVoltageDV(void) {
+    if (MainsVoltageDV && (time(NULL) - MainsVoltageTime) < 60) return MainsVoltageDV;
+    return AssumedVoltage * 10;
+}
+
 void Meter::UpdateCapacity() {
     extern uint16_t MaxSumMains;
     time_t now;
@@ -426,7 +445,7 @@ void Meter::UpdateCapacity() {
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
                 if (LastMonth != CurrentMonth) {      // we started a new month
                     Peak_Period_Power_Month = CapacityMinimumPower;
-                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) / AssumedVoltage;
+                    MaxSumMains = (CapacityMinimumPower - CapacitySafety) * 10 / CapacityVoltageDV();
                 } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
                     Peak_Period_Power_Month = AveragePower;
                     //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
@@ -442,7 +461,7 @@ void Meter::UpdateCapacity() {
                 int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
                 int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
-                MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
+                MaxSumMains = Average_Power_Available_This_Period * 10 / CapacityVoltageDV();
                 if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
                     MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
                 _LOG_D("Import_active_energy: %iWh CurrentPeriodStartEnergy: %iWh.\n", Import_active_energy, CurrentPeriodStartEnergy);
@@ -490,14 +509,14 @@ void Meter::UpdateCapacity() {
                 }
 
                 if (prev != NULL) {
-                    MaxSumMains = (prev->max_power_watts - CapacitySafety) / AssumedVoltage;
+                    MaxSumMains = (prev->max_power_watts - CapacitySafety) * 10 / CapacityVoltageDV();
                 } else {
                     // Before first interval → use last rule minus safety
                     const CapacityNode* last = first_interval;
                     while (last->next) {
                         last = last->next;
                     }
-                    MaxSumMains = (last->max_power_watts - CapacitySafety) / AssumedVoltage;
+                    MaxSumMains = (last->max_power_watts - CapacitySafety) * 10 / CapacityVoltageDV();
                 }
             } else {
                 // No schedule → silently skip (MaxSumMains unchanged)
