@@ -382,7 +382,7 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 
-The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
+The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting. Besides whole amps (`11`) it accepts one decimal (`10.4`), so a capacity limit can be followed in 0.1A steps, for example when an external system calculates it from a power limit and the measured grid voltage. Like the whole amps, a value set over MQTT is not stored; the tenths are dropped as soon as CAPACITY is changed in another way (LCD menu or capacity mode). The Capacity page of the web interface (and the `current_max_sum_mains` parameter of the REST API) also accepts 0.1A steps, and stores them. `/MaxSumMains` is published with one decimal, and `/settings` shows it as `current_max_sum_mains_precise`. The LCD menu still shows whole amps.
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.
