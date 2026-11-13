@@ -533,12 +533,13 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (MainsMeter.Type != EM_API || LoadBl >= 2)
             return;
 
-        int32_t L1, L2, L3, W, WH;
-        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH);
+        int32_t L1, L2, L3, W, WH, V;
+        int n = sscanf(payload.c_str(), "%d:%d:%d:%d:%d:%d", &L1, &L2, &L3, &W, &WH, &V);
 
         // MainsMeter can measure -200A to +200A per phase
-        if ((n == 3 || n == 5) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-            // We expect 5 values (and accept -1 for unknown values)
+        if ((n == 3 || n == 5 || n == 6) && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
+            // We expect 5 values (and accept -1 for unknown values); an optional 6th value is the voltage of L1 in 0.1V
+            if (n == 6) SetMainsVoltageDV(V);
             if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
                 MainsMeter.Irms[0] = L1;
@@ -546,7 +547,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
                 MainsMeter.Irms[2] = L3;
                 CalcIsum();
             }
-            if (n == 5) {
+            if (n >= 5) {
                 if (W > -1) {
                     // Power measurement
                     MainsMeter.PowerMeasured = W;
@@ -1639,6 +1640,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["settings"]["cablelock"] = CableLock;
         doc["settings"]["ledmode"] = LedMode;
         doc["settings"]["capacity_mode"] = CapacityMode;
+        if (MainsVoltageDV) doc["settings"]["mains_voltage"] = MainsVoltageDV / 10.0;     // last measured voltage L1
+        doc["settings"]["capacity_voltage"] = CapacityVoltageDV() / 10.0;               // voltage used by the capacity modes
         String intervalsStr = GetIntervalString();
         doc["settings"]["intervals"] = serialized(intervalsStr);   // ArduinoJson magic: parse string as JSON
 #if MODEM
