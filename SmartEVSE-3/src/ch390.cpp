@@ -147,7 +147,7 @@ static void ch390_stop_locked(emac_ch390_t *emac) {
 static void ch390_start_locked(emac_ch390_t *emac) {
     ch390_reg_write(CH390_MPTRCR, MPTRCR_RST_RX);
     ch390_reg_write(CH390_ISR, ISR_CLR_STATUS);
-    ch390_reg_write(CH390_IMR, IMR_PAR | IMR_ROOI | IMR_ROI | IMR_PRI);
+    ch390_reg_write(CH390_IMR, IMR_PAR | IMR_PRI);
     uint8_t rcr;
     ch390_reg_read(CH390_RCR, &rcr);
     ch390_reg_write(CH390_RCR, rcr | RCR_RXEN);
@@ -164,6 +164,17 @@ static void ch390_drop_frame(uint16_t length) {
     if (addr >= 0x4000) addr -= 0x3400;
     ch390_reg_write(CH390_MRRH, addr >> 8);
     ch390_reg_write(CH390_MRRL, addr & 0xFF);
+}
+
+// Drop the whole RX FIFO: move the read pointer onto the write pointer.
+// Resetting it to SRAM start (MPTRCR_RST_RX) exposes stale bytes instead.
+// Caller must hold spi_lock.
+static void ch390_rx_resync_locked(void) {
+    uint8_t rwph, rwpl;
+    ch390_reg_read(CH390_RWPAH, &rwph);
+    ch390_reg_read(CH390_RWPAL, &rwpl);
+    ch390_reg_write(CH390_MRRH, rwph);
+    ch390_reg_write(CH390_MRRL, rwpl);
 }
 
 // Full software reset + register reinit. Caller must hold spi_lock.
@@ -252,28 +263,20 @@ static void ch390_rx_task(void *arg) {
     uint8_t status = 0;
     uint8_t *buffer;
     while (1) {
-        // Wait for ISR notification or 1000ms timeout
-        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000)) == 0 &&
-                gpio_get_level((gpio_num_t)CH390_INT) == 0) {
-            continue;   // no notification and no interrupt asserted
+        // INT is a level but the GPIO is edge-triggered: only sleep while it is
+        // low, otherwise a missed edge stalls RX for up to 1 s (FIFO overflow).
+        if (gpio_get_level((gpio_num_t)CH390_INT) == 0) {
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         }
 
-        // read and clear interrupt status
+        // Mask while clearing: a bit set between read and write-back would
+        // leave the line high with no further edge.
         CH390_LOCK(emac);
+        ch390_reg_write(CH390_IMR, IMR_PAR);
         ch390_reg_read(CH390_ISR, &status);
         ch390_reg_write(CH390_ISR, status);
+        ch390_reg_write(CH390_IMR, IMR_PAR | IMR_PRI);
         CH390_UNLOCK(emac);
-
-        // RX FIFO overflow — reset RX path
-        if (status & (ISR_ROS | ISR_ROO)) {
-            _LOG_W("CH390: RX overflow (ISR=0x%02X), resetting RX\n", status);
-            CH390_LOCK(emac);
-            ch390_stop_locked(emac);
-            esp_rom_delay_us(1000);
-            ch390_start_locked(emac);
-            CH390_UNLOCK(emac);
-            continue;
-        }
 
         /* packet received */
         if (status & ISR_PR) {
@@ -409,11 +412,10 @@ static esp_err_t ch390_mac_receive(esp_eth_mac_t *mac, uint8_t *buf, uint32_t *l
     ch390_reg_read(CH390_MRCMDX, &rxbyte);
     ch390_reg_read(CH390_MRCMDX, &rxbyte);
 
-    // If rxbyte indicates error state, do stop/start recovery
+    // Corrupt head byte (pointer out of step, typically after an overflow):
+    // resync to the write pointer; a reset to SRAM start fails again at once.
     if (rxbyte & CH390_PKT_ERR) {
-        ch390_stop_locked(emac);
-        esp_rom_delay_us(1000);
-        ch390_start_locked(emac);
+        ch390_rx_resync_locked();
         CH390_UNLOCK(emac);
         return ESP_ERR_INVALID_RESPONSE;
     }
@@ -432,8 +434,7 @@ static esp_err_t ch390_mac_receive(esp_eth_mac_t *mac, uint8_t *buf, uint32_t *l
             CH390_UNLOCK(emac);
             return ESP_ERR_INVALID_RESPONSE;
         } else if (*length > ETH_MAX_PACKET_SIZE) {
-            // Reset rx memory pointer
-            ch390_reg_write(CH390_MPTRCR, MPTRCR_RST_RX);
+            ch390_rx_resync_locked();
             CH390_UNLOCK(emac);
             return ESP_ERR_INVALID_RESPONSE;
         } else {
