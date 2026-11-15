@@ -362,6 +362,13 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 ...where P is the Power in W,
 ...where E is the Energy in Wh.
 
+OR, to let the capacity modes use the measured voltage instead of 230V:
+```
+mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-xxxxx/Set/MainsMeter' -m L1:L2:L3:P:E:V
+```
+
+...where V is the voltage of L1 in deci-Volts (2324 means 232.4V). With a HomeWizard P1 meter (`MAINS MET = Homewizrd`) the voltage is read automatically (`active_voltage_l1_v`). The capacity modes (Flanders and Interval) convert their power limit to MaxSumMains with this voltage when it is recent (less than 60 seconds old) and plausible (180-270V); otherwise they use 230V as before. `/settings` shows the last measured value as `mains_voltage` and the voltage in use as `capacity_voltage`.
+
 
 Your EV kWh meter data can be fed with:
 ```

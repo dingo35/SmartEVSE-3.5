@@ -1340,6 +1340,7 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         for (const auto* key : currentKeys) filter[key] = true;
         for (const auto* key : powerKeys)   filter[key] = true;
         for (const auto* key : totalsKeys)  filter[key] = true;
+        filter["active_voltage_l1_v"] = true;                                  // used by the capacity modes
         filterInit = true;
     }
 
@@ -1368,6 +1369,10 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         _LOG_A("Required JSON fields 'active_current_a' not found\n");
         return {phases, {0, 0, 0, 0, 0, 0}};
     }
+
+    // Voltage of L1 for the capacity modes (ignored when missing or implausible, then 230V is used)
+    if (doc.containsKey("active_voltage_l1_v"))
+        SetMainsVoltageDV(lroundf(doc["active_voltage_l1_v"].as<float>() * 10));
 
     std::array<int32_t, 6> evdata{};
     _LOG_A("Reading %u-phase data\n", phases);
