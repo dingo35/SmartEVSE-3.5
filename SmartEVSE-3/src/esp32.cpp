@@ -586,6 +586,7 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
             if (WH > -1) {
                 EVMeter.Import_active_energy = WH;
+                EVMeter.Import_energy_read = true;
                 EVMeter.Export_active_energy = 0;
                 EVMeter.UpdateEnergies();
             }
@@ -2207,6 +2208,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
             if(request->hasParam("import_active_energy") && request->hasParam("export_active_energy") && request->hasParam("import_active_power")) {
 
                 EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
+                EVMeter.Import_energy_read = true;
                 EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
                 EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
                 EVMeter.UpdateEnergies();
@@ -2539,6 +2541,10 @@ void ocppInit() {
 
     setEnergyMeterInput([] () { //Input of the electricity meter register in Wh
         return EVMeter.Energy;
+    });
+
+    setStartTxReadyInput([] () {
+        return !EVMeter.Type || EVMeter.Import_energy_read;
     });
 
     setPowerMeterInput([] () { //Input of the power meter reading in W
@@ -3361,6 +3367,7 @@ static void homewizard_task(void *parameter) {
             EVMeter.CalcImeasured();
             EVMeter.setTimeout(COMM_TIMEOUT);
             EVMeter.Import_active_energy = evdata.second[3];
+            EVMeter.Import_energy_read = true;
             EVMeter.Export_active_energy = evdata.second[4];
             EVMeter.PowerMeasured = evdata.second[5];
             EVMeter.UpdateEnergies();

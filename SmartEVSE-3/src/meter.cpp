@@ -563,6 +563,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             else {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
+                Import_energy_read = true;
                 if (Address == MainsMeter.Address) UpdateCapacity();
             }
             UpdateEnergies();
@@ -570,6 +571,7 @@ void Meter::ResponseToMeasurement(ModBus MB) {
             //export active energy
             if (Type == EM_EASTRON3P_INV) {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
+                Import_energy_read = true;
                 if (Address == MainsMeter.Address) UpdateCapacity();
             } else
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);

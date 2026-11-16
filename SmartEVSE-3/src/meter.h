@@ -89,6 +89,7 @@ class Meter {
     int16_t PowerMeasured;                                                      // Measured Charge power in Watt by kWh meter (sum of all phases)
     uint8_t Timeout;
     int32_t Import_active_energy;                                               // Imported active energy
+    bool Import_energy_read = false;                                            // Import register received since boot; zero is a valid reading
     int32_t Export_active_energy;                                               // Exported active energy
     int32_t Energy;                                                             // Wh -> Import_active_energy - Export_active_energy
     int32_t EnergyCharged;                                                      // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
