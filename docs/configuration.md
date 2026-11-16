@@ -333,6 +333,8 @@ Valid topics you can publish to are:
 /Set/MainsMeter
 /Set/EVMeter
 /Set/HomeBatteryCurrent
+/Set/HomeBatteryPower  Home battery power in W (+ charging / - discharging): "1234"
+/Set/HomeBatteryOffset  W subtracted from /Set/HomeBatteryPower (0-1000, default 0, stored)
 /Set/RequiredEVCCID
 /Set/ColorOff
 /Set/ColorNormal
@@ -383,6 +385,8 @@ mosquitto_pub  -h ip-of-mosquitto-server -u username -P password -t 'SmartEVSE-x
 You can find test scripts in the [test directory](https://github.com/SmartEVSE/SmartEVSE-3/tree/master/SmartEVSE-3/test) that feed EV and MainsMeter data to your MQTT server.
 
 The `/Set/CurrentMaxSumMains` topic can be used to set the [CAPACITY](#capacity) setting.
+
+Instead of a calculated `/Set/HomeBatteryCurrent`, the raw battery power can be sent to `/Set/HomeBatteryPower` (W, + charging / - discharging). The SmartEVSE subtracts `HomeBatteryOffset` and converts the result to `HomeBatteryCurrent` at 230V. So the fine-tuning is done on the SmartEVSE (MQTT, REST, Home Assistant discovery as *Home Battery Offset*, or the Home battery card of the web interface) and the sender never has to change. Like `HomeBatteryCurrent`, the result is only used in Solar mode, and is reset when no update is received for 60 seconds. `/HomeBatteryPower` and `/HomeBatteryOffset` are published; `/settings` shows them in the `home_battery` object (`power`, `offset`).
 
 # Multiple SmartEVSE controllers on one mains supply (Power Share)
 Up to eight SmartEVSE modules can share one mains supply.

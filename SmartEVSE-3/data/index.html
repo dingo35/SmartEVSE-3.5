@@ -157,6 +157,13 @@
             <span>Current</span>
             <b id="batt-current">&mdash;</b>
           </div>
+          <div class="row hidden" id="batt-power-row">
+            <span>Power (received)</span>
+            <b id="batt-power">&mdash;</b>
+          </div>
+          <div class="fields hidden" id="batt-settings" title="Applied to Set/HomeBatteryPower">
+            <label class="f">Offset<input type="number" id="batt-offset" min="0" max="1000" step="1" style="width:80px"> W</label>
+          </div>
         </div>
       </div>
       <div class="section">
@@ -491,6 +498,11 @@ function render() {
     const bc = d.home_battery.current;
     $("batt-status").textContent = bc < 0 ? "Discharging" : bc > 0 ? "Charging" : "Idle";
     $("batt-current").textContent = amp(bc);
+    const hb = d.home_battery, hasP = hb.power !== undefined;
+    $("batt-power-row").classList.toggle("hidden", !hasP);
+    $("batt-settings").classList.toggle("hidden", !hasP || slave);
+    if (hasP) $("batt-power").textContent = hb.power + " W";
+    if (document.activeElement !== $("batt-offset")) $("batt-offset").value = hb.offset;
   } else $("c-battery").classList.add("hidden");
 
   
@@ -571,6 +583,7 @@ $("ovsel").onchange = () => { const a = ovAmps(+$("ovsel").value); postSettings(
 $("sol-start").onchange = (e) => postSettings(new URLSearchParams({ solar_start_current: e.target.value }));
 $("sol-import").onchange = (e) => postSettings(new URLSearchParams({ solar_max_import: e.target.value }));
 $("sol-stop").onchange = (e) => postSettings(new URLSearchParams({ stop_timer: e.target.value }));
+$("batt-offset").onchange = (e) => e.target.value !== "" && postSettings(new URLSearchParams({ home_battery_offset: e.target.value }));
 $("chk-lcdlock").onchange = (e) => postSettings(new URLSearchParams({ lcdlock: e.target.checked ? 1 : 0 }));
 $("chk-cablelock").onchange = (e) => postSettings(new URLSearchParams({ cablelock: e.target.checked ? 1 : 0 }));
 $("ln-doc").onclick = (e) => {
