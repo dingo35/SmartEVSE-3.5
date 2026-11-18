@@ -57,11 +57,29 @@ extern String MQTTprefix;
 extern String MQTTHost;
 extern uint16_t MQTTPort;
 extern uint8_t lastMqttUpdate;
+extern bool MQTTenabled;
 extern bool MQTTtls;
 extern bool MQTTSmartServer;
 extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from network_loop()
 extern bool WIFImodeChanged;               // Flag to trigger handleWIFImode() from network_loop()
 extern String MQTTprivatePassword;   
+
+enum class MqttStatus { Disabled, Connecting, Connected, Error };
+enum class MqttError {
+    None, NetworkUnavailable, DnsFailed, ConnectionRefused, AuthenticationFailed,
+    TlsFailed, Timeout, ConnectionLost, Unknown
+};
+
+struct MqttRuntimeState {
+    MqttStatus status = MqttStatus::Disabled;
+    MqttError last_error = MqttError::None;
+    uint32_t connected_since = 0;
+    uint32_t last_connect_attempt = 0;
+};
+
+const char *mqttStatusToString(MqttStatus status);
+const char *mqttErrorToString(MqttError error);
+MqttRuntimeState mqttGetRuntimeState();
 
 class MQTTclient_t {
 #if MQTT_ESP == 0
@@ -74,7 +92,13 @@ public:
         default_opts.qos = 0;
         default_opts.retain = false;
     }
-    void disconnect(void) { mg_mqtt_disconnect(s_conn, &default_opts); };
+    void disconnect(void) {
+        if (s_conn) {
+            mg_mqtt_disconnect(s_conn, &default_opts);
+            s_conn->is_draining = 1;
+            connected = false;
+        }
+    };
     struct mg_connection *s_conn;
 #else
 public:

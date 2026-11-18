@@ -13,6 +13,33 @@ will give output like:
 
 This output is often used to add to your bug report, so the developers can see your configuration.
 
+## MQTT status fields
+
+The `mqtt` object contains the following status fields:
+
+* status
+
+&emsp;&emsp;Connection status with the MQTT broker:
+<br>&emsp;&emsp;Disabled: MQTT is disabled or no MQTT host is configured
+<br>&emsp;&emsp;Connecting: waiting for the first connection attempt to complete
+<br>&emsp;&emsp;Connected: connected to the MQTT broker
+<br>&emsp;&emsp;Error: connection failed or was lost; SmartEVSE keeps retrying, see `last_error`
+
+&emsp;&emsp;In older firmware versions the status was either Connected or Disconnected. Disconnected is no longer used.
+
+* last_error
+
+&emsp;&emsp;Reason of the last failure. Reset to None when connected.
+<br>&emsp;&emsp;None, NetworkUnavailable, DnsFailed, ConnectionRefused, AuthenticationFailed, TlsFailed, Timeout, ConnectionLost or Unknown
+
+* connected_since
+
+&emsp;&emsp;Unix timestamp (seconds) of the current connection, 0 when not connected or when the time was not yet synchronized.
+
+* last_connect_attempt
+
+&emsp;&emsp;Unix timestamp (seconds) of the last connection attempt, 0 when no attempt was made or when the time was not yet synchronized.
+
 NOTE:
 In the http world, GET parameters are passed like this:
 curl -X GET http://ipaddress/endpoint?param1=value1&param2=value2
