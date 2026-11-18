@@ -99,6 +99,7 @@ class Meter {
     int32_t CurrentPeriodStartEnergy;                                           // the value of Import_active_energy at the start of the energy period
     int32_t Peak_Period_Power_Month;                                            // the peak of the average power in CapacityPeriodSeconds in the current month, in Wh
 #define CapacityPeriodSeconds 900  // 15 minutes
+#define CapacityMinHorizon 120     // Flanders: spread the remaining energy over at least 2 minutes
 #define DAY_POINTS 24*3600/CapacityPeriodSeconds
     int16_t PowerMeasured_Period[DAY_POINTS];                                   // the peak of the power per period(15min)
 

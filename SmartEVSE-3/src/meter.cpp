@@ -438,10 +438,16 @@ void Meter::UpdateCapacity() {
                 //we are in the middle of a period
                 //calculate time remaining
                 time_t TimeRemaining = CapacityPeriodSeconds - (now % CapacityPeriodSeconds); //in seconds
+                // Near the end of a period the remaining energy is divided by only a few seconds, so the
+                // available power swings hard (thousands of W up or down per update), which made the EV stop
+                // and start. Spread the remaining budget over at least CapacityMinHorizon seconds: the last
+                // part of the period is then regulated as if the budget had to last a little longer, which is
+                // safe (it can only lower the power when there is budget left).
+                time_t Horizon = TimeRemaining < CapacityMinHorizon ? CapacityMinHorizon : TimeRemaining;
                 int32_t Energy_Used_This_Period = Import_active_energy - CurrentPeriodStartEnergy; //Wh
                 int32_t Energy_Capacity_This_Period = Peak_Period_Power_Month * CapacityPeriodSeconds / 3600; //we use this months ceiling
                 int32_t Energy_Available_This_Period = Energy_Capacity_This_Period - Energy_Used_This_Period;
-                int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / TimeRemaining) - CapacitySafety;
+                int32_t Average_Power_Available_This_Period = (Energy_Available_This_Period * 3600 / Horizon) - CapacitySafety;
                 MaxSumMains = Average_Power_Available_This_Period / AssumedVoltage;
                 if (Average_Power_Available_This_Period <= 0 || MaxSumMains == 0)
                     MaxSumMains = 1; //set it to 1A available will stop charging; 0 means MaxSumMains disabled so can't use that
