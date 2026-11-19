@@ -37,6 +37,10 @@ bool LocalTimeSet = false;
 
 //mongoose stuff
 #include "esp_log.h"
+#include "netdiag.h"
+#include "netwatchdog.h"
+#include <esp_heap_caps.h>
+#include <esp_wifi.h>
 struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
 // end of mongoose stuff
 
@@ -177,10 +181,20 @@ void MQTTclient_t::connect(void) {
     _LOG_A("MQTT connecting to %s as %s\n", MQTTHost.c_str(), MQTTprefix.c_str());
 
     client = esp_mqtt_client_init(&mqtt_cfg);
-    esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
+    if (!client) {
+        _LOG_A("MQTT: esp_mqtt_client_init failed (heap: %u)\n", ESP.getFreeHeap());
+        return;
+    }
+    esp_err_t err = esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t) ESP_EVENT_ANY_ID, (esp_event_handler_t) mqtt_event_handler, NULL);
+    if (err != ESP_OK) {
+        _LOG_A("MQTT: esp_mqtt_client_register_event failed: %d\n", err);
+    }
     // Start now if any network interface is connected (WiFi or Ethernet)
     if (NetworkConnected()) {
-        esp_mqtt_client_start(client);
+        err = esp_mqtt_client_start(client);
+        if (err != ESP_OK) {
+            _LOG_A("MQTT: esp_mqtt_client_start failed: %d\n", err);
+        }
     }
 }
 
@@ -373,7 +387,10 @@ void mqtt_smartevse_event_handler(void *handler_args, esp_event_base_t base, int
     }
 }
 
-// Centralized cleanup - prevents race conditions by atomically clearing state before stopping client
+// Centralized cleanup - prevents race conditions by atomically clearing state before stopping client.
+// This only stops the client; it deliberately does NOT destroy it. esp_mqtt_client_stop() blocks until
+// the client task has fully stopped, so the handle is left in a safe, inert state that connect() can
+// cheaply restart later. 
 void MQTTclientSmartEVSE_t::cleanup(bool publishOffline) {
     connected = false;
     MQTTclientSmartEVSE_AppConnected = false;
@@ -383,12 +400,8 @@ void MQTTclientSmartEVSE_t::cleanup(bool publishOffline) {
         esp_mqtt_client_publish(client, (MQTTSmartEVSEprefix + "/connected").c_str(), "offline", 7, 0, 1);
     }
     
-    // Stop and destroy client - esp_mqtt_client_stop may block briefly
     // Note: This must NOT be called from MQTT task context (event handler)
     esp_mqtt_client_stop(client);
-    vTaskDelay(50 / portTICK_PERIOD_MS);  // Allow MQTT task to finish gracefully
-    esp_mqtt_client_destroy(client);
-    client = nullptr;
 }
 
 void MQTTclientSmartEVSE_t::connect(void) {
@@ -396,13 +409,18 @@ void MQTTclientSmartEVSE_t::connect(void) {
         if (MQTTSmartServer) _LOG_A("SmartEVSE MQTT: No private key hash available.\n");
         return;
     }
-    if (ESP.getFreeHeap() < 50000) {
-        _LOG_A("SmartEVSE MQTT: Not enough memory for TLS connection.\n");
+
+    if (client) {
+        // Already initialized from an earlier connect() 
+        connected = false;
+        _LOG_A("SmartEVSE MQTT restarting existing client as %s\n", MQTTSmartEVSEprefix.c_str());
+        esp_err_t err = esp_mqtt_client_start(client);
+        if (err != ESP_OK) {
+            _LOG_A("SmartEVSE MQTT: esp_mqtt_client_start failed: %d (heap: %u)\n", err, ESP.getFreeHeap());
+        }
         return;
     }
-    
-    cleanup();  // Clean up any existing connection first
-    
+
     // Initialize shared prefix (used by all SmartEVSE MQTT functions)
     MQTTSmartEVSEprefix = "SmartEVSE-" + String(serialnr);
     
@@ -421,8 +439,18 @@ void MQTTclientSmartEVSE_t::connect(void) {
     
     _LOG_A("SmartEVSE MQTT connecting as %s (heap: %u)\n", MQTTSmartEVSEprefix.c_str(), ESP.getFreeHeap());
     client = esp_mqtt_client_init(&cfg);
-    esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t)ESP_EVENT_ANY_ID, (esp_event_handler_t)mqtt_smartevse_event_handler, NULL);
-    esp_mqtt_client_start(client);
+    if (!client) {
+        _LOG_A("SmartEVSE MQTT: esp_mqtt_client_init failed (heap: %u)\n", ESP.getFreeHeap());
+        return;
+    }
+    esp_err_t err = esp_mqtt_client_register_event(client, (esp_mqtt_event_id_t)ESP_EVENT_ANY_ID, (esp_event_handler_t)mqtt_smartevse_event_handler, NULL);
+    if (err != ESP_OK) {
+        _LOG_A("SmartEVSE MQTT: esp_mqtt_client_register_event failed: %d\n", err);
+    }
+    err = esp_mqtt_client_start(client);
+    if (err != ESP_OK) {
+        _LOG_A("SmartEVSE MQTT: esp_mqtt_client_start failed: %d (heap: %u)\n", err, ESP.getFreeHeap());
+    }
 }
 
 void MQTTclientSmartEVSE_t::disconnect(void) {
@@ -1264,7 +1292,7 @@ void discoverNetworkMeters() {
  *     - A int flag indicating: 0: failure, 1: single phase current, 3: 3 phase current
  *     - An array of 6 values representing the active current in deci-amps for L1, L2, L3, total, import, and export
  */
-std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char *hostname) {
+std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char *hostname, int32_t* netCurrent) {
     _LOG_A("Invocation\n");
     if (hostname == nullptr || hostname[0] == '\0') {
         _LOG_A("No hostname provided.\n");
@@ -1332,6 +1360,8 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
         if (doc.containsKey(key))
             phases++;
     }
+    // An aggregate current alongside L1/L2/L3 is not a fourth phase.
+    if (phases > 3) phases = 3;
 
     if (!phases) {
         // Early return on missing data.
@@ -1363,6 +1393,16 @@ std::pair<int8_t, std::array<std::int32_t, 6> > getDataFromHomeWizard(const char
     evdata[3] = doc[totalsKeys[0]].as<float>() * 1000; // total import in Wh
     evdata[4] = doc[totalsKeys[1]].as<float>() * 1000; // total export in Wh
     evdata[5] = doc[powerKeys[3]].as<float>() * 1; // total power in Watts
+
+    if (netCurrent) {
+        *netCurrent = INT32_MIN;
+        // L+G E360 on 3x230V reports zero phase powers (Fluvius P1 specification).
+        // Keep RMS phase currents for MaxMains, but use signed total power for
+        // Solar/capacity regulation, on the capacity budget's existing 230V basis.
+        if (phases >= 3 && doc.containsKey(powerKeys[3]) &&
+            doc[powerKeys[0]].as<int>() == 0 && doc[powerKeys[1]].as<int>() == 0 && doc[powerKeys[2]].as<int>() == 0)
+            *netCurrent = evdata[5] * 10 / 230;
+    }
 
 return {phases, evdata};
 }
@@ -1590,9 +1630,21 @@ label{display:block;margin:5px 0}
 input[type=text],input[type=password]{width:100%;padding:8px;font-size:14px;border:1px solid #ccc;box-sizing:border-box}
 input[type=submit]{width:100%;padding:8px;font-size:14px;background:#4CAF50;color:#fff;border:0;cursor:pointer}
 input[type=submit]:hover{background:#45a049}
+#rescan{width:100%;padding:8px;font-size:14px;background:#2196F3;color:#fff;border:0;cursor:pointer;margin:5px 0}
+#nets{display:flex;flex-direction:column;gap:4px;margin:5px 0}
+#nets button{padding:8px;font-size:13px;text-align:left;border:1px solid #ccc;background:#f8f8f8;cursor:pointer}
+#nets button:hover{background:#e8e8e8}
 @media (max-width:600px){form{width:95%}}</style>
 <script>function togglePassword(){var x=document.getElementById('password');x.type=x.type==='password'?'text':'password'}
-window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone}</script>
+function pick(s){document.getElementById('ssid').value=s}
+function doscan(r){fetch('/wifiscan'+(r?'?rescan=1':'')).then(function(r){return r.json()}).then(function(j){
+var d=document.getElementById('nets');
+if(j.n<0){d.textContent='Scanning...';setTimeout(function(){doscan(0)},1500);return}
+if(!j.a.length){d.textContent='No networks found';return}
+d.textContent='';
+j.a.forEach(function(w){var b=document.createElement('button');b.type='button';b.textContent=w[0]+' ('+w[1]+'dBm)';
+b.onclick=function(){pick(w[0])};d.appendChild(b)})})}
+window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone;doscan(0)}</script>
 </head>
 <body><form action="/save" method="POST">
 <h2>WiFi Setup</h2>
@@ -1603,8 +1655,11 @@ window.onload=function(){document.getElementById('tz').value=Intl.DateTimeFormat
 "<small>SmartEVSE only connects to 2.4 GHz networks.</small>"
 #endif
 R"EOF(
+<label>Available networks:</label>
+<div id="nets">Scanning...</div>
+<button type="button" id="rescan" onclick="doscan(1)">Re-scan</button>
 <label>SSID:</label>
-<input type="text" name="ssid" required minlength="1" maxlength="32" pattern="[ -~]{1,32}" title="SSID must be 1-32 printable characters">
+<input type="text" name="ssid" id="ssid" required minlength="1" maxlength="32" pattern="[ -~]{1,32}" title="SSID must be 1-32 printable characters">
 <label>Password:</label>
 <input type="password" name="password" id="password" required minlength="8" maxlength="63" pattern="[ -~]{8,63}" title="Password must be 8-63 printable characters">
 <label><input type="checkbox" onclick="togglePassword()">Show Password</label>
@@ -1614,9 +1669,12 @@ R"EOF(
 )EOF";
 
 
-// Maximum concurrent HTTP connections to prevent socket exhaustion
-#define MAX_HTTP_CONNECTIONS 8
-#define WS_CONNECTION_RESERVE 1
+// Maximum concurrent HTTP connections to prevent socket exhaustion.
+// The ESP32 lwIP stack has CONFIG_LWIP_MAX_SOCKETS (now 32) sockets total,
+// shared by EVERYTHING (both HTTP listeners, both MQTT clients, mDNS, SNTP,
+// and the RemoteDebug telnet listener/client).
+#define MAX_HTTP_CONNECTIONS 6
+#define WS_CONNECTION_RESERVE 2
 
 // Count only accepted inbound server connections.
 // (This does not count listeners, outbound client connections,
@@ -1647,6 +1705,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     if (c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty, .skip_verification = 0};
     mg_tls_init(c, &opts);
+    }
+    // Reset-on-close: under connection bursts, politely-closed sockets linger
+    // in FIN-WAIT/TIME-WAIT holding PCB + buffers. SO_LINGER {1,0} makes
+    // close() send RST instead, releasing everything immediately.
+    {
+      struct linger lin = { 1, 0 };
+      setsockopt((int) (size_t) c->fd, SOL_SOCKET, SO_LINGER, (const char *) &lin, sizeof(lin));
     }
   } else if (ev == MG_EV_CLOSE) {
     if (c == HttpListener80) {
@@ -1714,10 +1779,11 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
     request->setMessage(hm);
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
-    // In portal mode, only allow the portal page, /save and /erasesettings
+    // In portal mode, only allow the portal page, /save, /wifiscan and /erasesettings
     if (WIFImode == 2 &&
         !mg_match(hm->uri, mg_str("/"),              NULL) &&
         !mg_match(hm->uri, mg_str("/save"),          NULL) &&
+        !mg_match(hm->uri, mg_str("/wifiscan"),      NULL) &&
         !mg_match(hm->uri, mg_str("/erasesettings"), NULL)) {
         mg_http_reply(c, 403, "Content-Type: text/plain\r\n", "Not available in portal mode");
         return;
@@ -1740,7 +1806,99 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
         } else if (mg_http_match_uri(hm, "/") && WIFImode == 2) { // serve AP page to fill in WIFI credentials
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%s", html_form);
-        // save WiFi credentials, make sure we are still in WiFiPortal mode    
+        // JSON list of up to 5 strongest WiFi networks, only in portal mode
+        } else if (mg_http_match_uri(hm, "/wifiscan") && WIFImode == 2) {
+            static char json[600];                          // 5 APs need ~410 bytes worst case
+            char flag[8];
+            int rescan = mg_http_get_var(&hm->query, "rescan", flag, sizeof(flag)) > 0;
+            int16_t st = (rescan) ? WIFI_SCAN_FAILED : WiFi.scanComplete();
+            if (st == WIFI_SCAN_RUNNING) {                  // scan in progress, page polls again
+                strcpy(json, "{\"n\":-1}");
+            } else if (st >= 0 && !rescan) {                // results available: top 5 by signal strength
+                char best[5][33];                           // strongest-first (SSID max 32 chars + NUL)
+                int32_t rssi[5];
+                int nr = 0;                                 // number of networks collected
+                for (int i = 0; i < st; i++) {
+                    String s = WiFi.SSID(i).substring(0, 32);
+                    const char *ss = s.c_str();
+                    if (!ss[0]) continue;                   // skip hidden networks (must be typed manually)
+                    bool printable = true;                  // only APs we can put in the setup form
+                    for (const char *p = ss; *p; p++) {
+                        if ((unsigned char)*p < ' ' || (unsigned char)*p > '~') { printable = false; break; }
+                    }
+                    if (!printable) continue;
+                    int32_t r = WiFi.RSSI(i);
+                    if (nr == 5 && r <= rssi[4]) continue;  // weaker than the collected top 5
+                    int pos = (nr < 5) ? nr++ : 4;          // append, or replace the weakest
+                    while (pos > 0 && rssi[pos - 1] < r) {  // insertion sort, strongest first
+                        rssi[pos] = rssi[pos - 1];
+                        strcpy(best[pos], best[pos - 1]);
+                        pos--;
+                    }
+                    rssi[pos] = r;
+                    strcpy(best[pos], ss);
+                }
+                // Mesh setups broadcast the same SSID on multiple APs: keep only the strongest
+                // instance of each SSID.
+                for (int i = 0; i < nr; i++) {
+                    for (int j = i + 1; j < nr; j++) {
+                        if (!strcmp(best[i], best[j])) {    // duplicate: shift the rest up
+                            for (int k = j; k < nr - 1; k++) {
+                                rssi[k] = rssi[k + 1];
+                                strcpy(best[k], best[k + 1]);
+                            }
+                            nr--;
+                            j--;                            // re-check the moved-in entry
+                        }
+                    }
+                }
+                // Serialize: {"n":<count>,"a":[["ssid",rssi],...]}
+                size_t pos = (size_t)snprintf(json, sizeof(json), "{\"n\":%d,\"a\":[", nr);
+                for (int i = 0; i < nr; i++) {
+                    char esc[70];                           // SSID escaped as JSON string (32 chars max)
+                    size_t e = 0;
+                    esc[e++] = '"';
+                    for (const char *p = best[i]; *p && e + 2 < sizeof(esc); p++) {
+                        if (*p == '"' || *p == '\\') esc[e++] = '\\';
+                        esc[e++] = *p;
+                    }
+                    esc[e++] = '"';
+                    esc[e] = 0;
+                    pos += snprintf(json + pos, sizeof(json) - pos, "%s[%s,%d]", i ? "," : "", esc, (int)rssi[i]);
+                }
+                snprintf(json + pos, sizeof(json) - pos, "]}");
+                WiFi.scanDelete();                          // free the scan result memory
+            } else {
+                // No (fresh) results: (re)start an async scan. A short 120ms/channel
+                // dwell (beacons are 100ms apart) keeps the total beacon-silence gap
+                // around 1.6s so a phone joined to the AP survives it.
+                strcpy(json, (WiFi.scanNetworks(true, false, false, 120) == WIFI_SCAN_RUNNING) ? "{\"n\":-1}" : "{\"n\":0,\"a\":[]}");
+            }
+            mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", json);
+        // Browser reports its IANA timezone name (=query ?tz=Europe/Berlin) so the device
+        // can set its own timezone. Especially needed for Ethernet installs, where the
+        // WiFi setup portal (which also saves the browser timezone) never runs.
+        } else if (mg_http_match_uri(hm, "/settz") && !memcmp("POST", hm->method.buf, hm->method.len)) {
+            char tz[64];
+            if (mg_http_get_var(&hm->query, "tz", tz, sizeof(tz)) > 0 && tz[0]) {
+                bool changed = (TZname != tz);
+                if (changed) {                              // avoid NVS wear on unchanged values
+                    TZname = tz;
+                    if (preferences.begin("settings", false)) {
+                        preferences.putString("TZname", TZname);
+                        preferences.end();
+                    }
+                }
+                // Resolve TZname into a POSIX TZ string now; also retries a previous
+                // zones.csv lookup that failed, on every subsequent page load.
+                if (changed || TZinfo == "") {
+                    xTaskCreate(setTimeZone, "setTimeZone", 4096, NULL, 1, NULL);
+                }
+                mg_http_reply(c, 200, "Content-Type: application/json\r\n", "{\"tz\":\"%s\"}\n", tz);
+            } else {
+                mg_http_reply(c, 400, "", "Missing tz");
+            }
+        // save WiFi credentials, make sure we are still in WiFiPortal mode
         } else if (mg_http_match_uri(hm, "/save") && WIFImode == 2) {
             char ssid[33], password[64], tz[64];
             bool has_ssid = mg_http_get_var(&hm->body, "ssid", ssid, sizeof(ssid)) > 0;
@@ -1823,7 +1981,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                 if (!memcmp(file,"firmware.bin", sizeof("firmware.bin")) || !memcmp(file,"firmware.debug.bin", sizeof("firmware.debug.bin"))) {
                     if(!offset) {
                         _LOG_A("Update Start: %s\n", file);
-                        if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
+                        if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000, U_FLASH)) {
                             _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
                             Update.printError(Serial);
                         }
@@ -1857,7 +2015,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         hm->body.len = hm->body.len - SIGNATURE_LENGTH;
                         _LOG_A("Firmware signature:");
                         dump(signature);
-                        if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
+                        if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000, U_FLASH)) {
                             _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
                             Update.printError(Serial);
                         }
@@ -2094,20 +2252,25 @@ bool NetworkConnected(void) {
 static bool servicesStarted = false;
 
 // Start network services (HTTP, MQTT, mDNS, SNTP, RemoteDebug).
-// Safe to call multiple times — only starts services once.
+// Safe to call multiple times — the HTTP listeners are (re)tried every call
+// (in case an earlier bind failed, e.g. transient socket exhaustion), while
+// the one-time-only steps below are still guarded by servicesStarted.
 static void startNetworkServices(void) {
-    if (servicesStarted) return;
-    servicesStarted = true;
     mg_log_set(MG_LL_NONE);
 
     // Start HTTP listeners (bind to 0.0.0.0 — works on all interfaces)
     if (!HttpListener80) {
         HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);
+        if (!HttpListener80) _LOG_A("ERROR: Failed to start HTTP listener on port 80\n");
     }
     if (!HttpListener443) {
         HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *)1);
+        if (!HttpListener443) _LOG_A("ERROR: Failed to start HTTP listener on port 443\n");
     }
-    _LOG_A("HTTP server started\n");
+    if (HttpListener80 || HttpListener443) _LOG_A("HTTP server started\n");
+
+    if (servicesStarted) return;
+    servicesStarted = true;
 
 #if MQTT
 #if MQTT_ESP == 0
@@ -2154,11 +2317,14 @@ void onGotIP(const char *dns_ip) {
     }
 
     // Start mDNS
+    MDNS.end();  // release any previous responder instance (reconnect path)
     if (!MDNS.begin(APhostname.c_str())) {
         _LOG_A("Error setting up MDNS responder!\n");
     } else {
         _LOG_A("mDNS responder started. http://%s.local\n", APhostname.c_str());
-        MDNS.addService("http", "tcp", 80);
+        if (!MDNS.addService("http", "tcp", 80)) {
+            _LOG_A("Failed adding mDNS service http.tcp.\n");
+        }
     }
 
     startNetworkServices();
@@ -2178,6 +2344,7 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             _LOG_A("Connected or reconnected to WiFi\n");
             break;
         case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+        case WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_LOST_IP:
             if (WIFImode == 1) {
 #if MQTT
                 //mg_timer_free(&mgr);
@@ -2197,7 +2364,9 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             WiFi.begin((char*)ssid, (char *)password);
         }
         break;
-        default: break;                                                         // prevent compiler warnings
+        default: 
+            _LOG_A("WiFi Event: %d (not handled!)\n", event);
+        break;                                                         // prevent compiler warnings
   }
 }
 
@@ -2403,6 +2572,20 @@ void WiFiSetup(void) {
 
 }
 
+// Full WiFi driver reload. A single recovery for every dead-path guard
+// Tears down the radio, netif, DNS resolver cache and lwIP state;
+// all services ride the same stack, so one reload heals every connection.
+static void wifiDriverReload(const char *reason) {
+    _LOG_A("wifi driver reload: %s\n", reason);
+    WiFi.disconnect(true);
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    delay(100);
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+}
 
 // called by loop() in the main program
 void network_loop() {
@@ -2434,7 +2617,19 @@ void network_loop() {
         if (!LocalTimeSet && (WIFImode == 1 || EthHasIP)) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
-        _LOG_D("free heap: %u largest free block: %u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+        _LOG_A("internal ram free: %u largest free block: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#ifdef NETDIAG
+        { static char _ndline[160]; netdiag_health_line(_ndline, sizeof(_ndline));
+          uint32_t stok, stfail, strec; netwatchdog_selftest_counters(&stok, &stfail, &strec);
+          _LOG_A("wd: probes ok=%u fail=%u recoveries=%u | ticks=%lu | wst=%d\n",
+                 stok, stfail, strec, netwatchdog_ticks(), (int) WiFi.status()); }
+        { static uint8_t _ndctr = 0; if (++_ndctr >= 15) { _ndctr = 0; netdiag_dump(); } }
+#endif
+ 
+        int nw = netwatchdog_tick();
+        if (nw) {
+            wifiDriverReload(nw == 2 ? "netwatchdog: link probes dead" : "netwatchdog: dns dead");
+        }
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy

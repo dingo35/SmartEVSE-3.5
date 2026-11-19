@@ -2,9 +2,6 @@
 #define __MAIN_C
 
 
-//here should be declarations for code that will run on both the CH32 and the ESP32
-//THUS it can only be C-code, NO C++ here!!
-
 #define NUM_ADC_SAMPLES 32
 
 #define STATE_A 0                                                               // A Vehicle not connected
@@ -18,7 +15,6 @@
 #define STATE_ACTSTART 8                                                        // I Activation mode in progress
 #define STATE_B1 9                                                              // J Vehicle connected / EVSE not ready to deliver energy: no PWM signal
 #define STATE_C1 10                                                             // K Vehicle charging / EVSE not ready to deliver energy: no PWM signal (temp state when stopping charge from EVSE)
-//#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 TODO
 #define STATE_MODEM_REQUEST 11                                                          // L Vehicle connected / requesting ISO15118 communication, 0% duty
 #define STATE_MODEM_WAIT 12                                                          // M Vehicle connected / requesting ISO15118 communication, 5% duty
 #define STATE_MODEM_DONE 13                                                // Modem communication succesful, SoCs extracted. Here, re-plug vehicle
@@ -44,7 +40,6 @@ extern void SetCPDuty(uint32_t DutyCycle);
 extern volatile uint8_t RxRdy1;
 extern volatile uint8_t ModbusRxLen;
 
-//#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //CH32 and v3
 // Error flags are base in CH32 or v3 ESP32
 #define NO_ERROR 0
 #define LESS_6A 1
@@ -52,7 +47,6 @@ extern volatile uint8_t ModbusRxLen;
 #define TEMP_HIGH 4
 #define EV_NOCOMM 8
 #define RCM_TRIPPED 16                                                          // RCM tripped. >6mA DC residual current detected.
-//#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >= 40 //CH32 and v4
 #define RCM_TEST 32                                                             // RCM_TEST = true, RCM_TRIPPED = false:  RCM test is running (if counter is active) OR RCM test has failed (if RCMTestcounter is not active)
                                                                                 // RCM_TEST = true, RCM_TRIPPED = true:   RCM test has succeeded
                                                                                 // RCM_TEST = false, RCM_TRIPPED = true:  RCM is tripped

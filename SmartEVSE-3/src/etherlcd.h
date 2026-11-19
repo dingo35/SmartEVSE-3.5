@@ -31,7 +31,6 @@
 
 #include <Arduino.h>
 
-#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40
 
 // CH32V003 register addresses (match EtherLCD firmware)
 #define ELCD_REG_BUTTONS    0x00
@@ -85,5 +84,4 @@ void etherlcd_lcd_data(uint8_t data);
 // active=true pulls ETH_RST low (reset), active=false releases it high.
 void etherlcd_eth_rst(bool active);
 
-#endif // SMARTEVSE_VERSION >= 30 && < 40
 #endif // __ETHERLCD_H

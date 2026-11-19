@@ -166,7 +166,7 @@ struct mDNSServiceEntry {
     String HostName;
 };
 
-extern std::pair<int8_t, std::array<std::int32_t, 6>> getDataFromHomeWizard(const char *hostname);
+extern std::pair<int8_t, std::array<std::int32_t, 6>> getDataFromHomeWizard(const char *hostname, int32_t* netCurrent = nullptr);
 extern std::array<mDNSServiceEntry, 8> mDNSServices;                            // Allow discovery of up to 8 mDNS services for now
                                                                                 // if there is a use case for more we can always increase this
 #endif

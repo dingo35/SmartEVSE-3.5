@@ -26,10 +26,8 @@
 #define __EVSE_MODBUS
 
 #include "meter.h"
-#ifdef SMARTEVSE_VERSION //ESP32
 #include "ModbusServerRTU.h"
 #include "ModbusClientRTU.h"
-#endif
 
 struct ModBus {
     uint8_t Address;
@@ -46,12 +44,10 @@ struct ModBus {
     uint8_t Exception;
 };
 
-#ifdef SMARTEVSE_VERSION //ESP32
 
 // definition of MBserver / MBclient class is done in evse.cpp
 extern ModbusServerRTU MBserver;
 extern ModbusClientRTU MBclient; 
-#endif
 
 void ModbusReadInputRequest(uint8_t address, uint8_t function, uint16_t reg, uint16_t quantity);
 void ModbusWriteSingleRequest(uint8_t address, uint16_t reg, uint16_t value);

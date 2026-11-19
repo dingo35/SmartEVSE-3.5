@@ -33,18 +33,9 @@ uint8_t triwave8(uint8_t in);
 uint8_t scale8(uint8_t i, uint8_t scale);
 uint8_t ease8InOutQuad(uint8_t i);
 
-#ifdef SMARTEVSE_VERSION //ESP32
 uint32_t MacId();
 void sprintfl(char *str, const char *Format, signed long Value, unsigned char Divisor, unsigned char Decimal);
 unsigned char triwave8(unsigned char in);
 unsigned char scale8(unsigned char i, unsigned char scale);
 unsigned char ease8InOutQuad(unsigned char i);
-#else //CH32
-
-#define max(a,b) ((a)>(b)?(a):(b))
-#define min(a,b) ((a)<(b)?(a):(b))
-uint16_t crc16(uint8_t *buf, uint8_t len);
-//int _write(int fd, char *buf, int size);
-
-#endif
 #endif	/* UTILS_H */

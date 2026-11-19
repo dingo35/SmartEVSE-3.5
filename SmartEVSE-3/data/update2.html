@@ -1,195 +1,320 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>SmartEVSEv3</title>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
-      #container { margin-right: auto; margin-left: auto; max-width: 900px; }
-      #info { background: #e0f0f0; border-radius: .5em; padding: 2em;  }
-      #wrapper { margin-top: 1em; }
-    </style>
-    <script>
-        let OWNER_FACT="SmartEVSE";
-        let REPO_FACT="SmartEVSE-3";
-        let OWNER_COMM="dingo35";
-        let REPO_COMM="SmartEVSE-3.5";
-        let update_url="";
-// Helper function to display upload status
-var setStatus = function(text) {
-  document.getElementById('el3').innerText = text;
-};
-
-        function fetchProgress() {
-          fetch('/autoupdate')
-            .then(res => res.json())
-            .then(data => {
-              // code to handle the response
-              if (data.progress == -1) { //sucess
-                setStatus('Firmware update succesfully completed, will reboot as soon as no EV is connected.');
-              }
-              else {
-                if (data.progress == -2) { //fail
-                    setStatus('ERROR: Firmware update fail.');
-                } else {
-                    setStatus('Firmware update progress: ' + data.progress + '/' + data.size);
-                }
-              }
-            })
-            .catch(err => {
-              console.error('Error: ', err)
-            })
-        }
-        function update_fw(owner, debug) {
-          fetch("/autoupdate?owner=" + owner + "&debug=" + debug)
-            .then(res => res.json())
-            .then(data => {
-              setStatus('Firmware update progress: ' + data.progress + '/' + data.size);
-              // code to handle the response
-              var fetchInterval = 1000; // 1 seconds.
-              // Invoke the request every 1 seconds.
-              setInterval(fetchProgress, fetchInterval);
-            })
-            .catch(err => {
-              console.error('Error: ', err)
-            })
-        }
-    </script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>SmartEVSE - Update</title>
+    <link rel="icon" href="favicon.ico">
+<style>
+/* same design language as index.html (self-contained) */
+:root{
+  --bg:#f4f6f9; --bg2:#ffffff; --bg3:#eef1f5; --fg:#171c24; --fg2:#5b6472;
+  --line:#dfe4ea; --acc:#2f7bff; --ok:#1fa971; --err:#e5484d;
+  --radius:14px; --shadow:0 1px 3px rgba(20,30,50,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0e1116; --bg2:#161b23; --bg3:#1d242e; --fg:#e8edf4; --fg2:#8b95a5;
+    --line:#28303c; --acc:#4d8dff; --shadow:0 1px 3px rgba(0,0,0,.4);}
+}
+:root[data-theme="dark"]{ --bg:#0e1116; --bg2:#161b23; --bg3:#1d242e; --fg:#e8edf4; --fg2:#8b95a5;
+  --line:#28303c; --acc:#4d8dff; --shadow:0 1px 3px rgba(0,0,0,.4);}
+:root[data-theme="light"]{ --bg:#f4f6f9; --bg2:#ffffff; --bg3:#eef1f5; --fg:#171c24; --fg2:#5b6472;
+  --line:#dfe4ea; --acc:#2f7bff; --shadow:0 1px 3px rgba(20,30,50,.08);}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+  -webkit-text-size-adjust:100%}
+a{color:var(--acc);text-decoration:none}
+.wrap{max-width:1060px;margin:0 auto;padding:12px clamp(10px,3vw,24px) 60px}
+header{position:sticky;top:0;z-index:10;background:var(--bg2);border-bottom:1px solid var(--line)}
+.hbar{max-width:1060px;margin:0 auto;display:flex;align-items:center;gap:10px;
+  padding:10px clamp(10px,3vw,24px);flex-wrap:wrap}
+.hbar h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+.logo{width:22px;height:22px;flex:none;border-radius:5px}
+.hmeta{color:var(--fg2);font-size:12px}
+.spacer{flex:1}
+.hbar .btn.sm{height:28px;padding:0 11px;display:inline-flex;align-items:center}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:14px 16px;margin-top:14px}
+.card h2{margin:0 0 8px;font-size:11.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.7px;color:var(--fg2)}
+.sub{color:var(--fg2);font-size:12px}
+.hidden{display:none!important}
+.err{color:var(--err);font-weight:600}
+.ok{color:var(--ok)}
+/* release rows */
+.rel{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;
+  padding:10px 0;border-top:1px solid var(--line)}
+.rel:first-of-type{border-top:0}
+.rel .who{flex:1 1 200px;min-width:0}
+.rel .who b{display:block}
+.rel .who .sub{margin-top:2px;overflow-wrap:anywhere}
+.rel .ver{font-weight:600;flex:0 0 auto;text-align:right;white-space:nowrap}
+.rel .actions{display:flex;gap:8px;flex:0 0 auto}
+.btn{appearance:none;border:1px solid var(--line);background:var(--bg3);color:var(--fg);
+  border-radius:8px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.sm{padding:5px 11px;font-size:13px}
+/* Phone: release rows go compact so Standard+Debug always share one line.
+   Row = name/notes line + [version | Standard Debug] line. The version+
+   buttons group needs ~205px, well inside a 320px viewport. */
+@media (max-width: 480px) {
+  .rel{gap:6px}
+  .rel .who{flex:1 1 100%}                  /* own line, must not shrink  */
+  .rel .who .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rel .ver{flex:0 0 auto}
+  .rel .actions{flex:0 0 auto;margin-left:auto}
+  .btn.sm{padding:5px 9px;font-size:12px}
+}
+/* progress */
+.prog{height:10px;border-radius:99px;background:var(--bg3);overflow:hidden;margin-top:8px}
+.prog i{display:block;height:100%;width:0;background:var(--acc);transition:width .4s}
+#status{margin-top:8px;font-size:14px;min-height:1.4em}
+/* (theme pill removed: theme is selected on index.html) */
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);
+  padding:9px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:99;max-width:90vw}
+#toast.show{opacity:.92}
+</style>
   </head>
-  <body onload="loadData()">
-    <div id="container">
-      <div id="info">
-          Current version: <span id="version"></span><br>
-          =========================================================================================<br>
-          UPDATE FIRMWARE
-          <br><br>
-          <table style='text-align: left'>
-            <tr>
-              <th>Distribution:</th>
-              <th>Status:</th>
-              <th>Github release notes:</th>
-              <th>Latest version:</th>
-              <th>Flash:</th>
-            </tr>
-            <tr>
-              <td>Factory</td>
-              <td>stable</td>
-              <td><a href="https://github.com/"
-                     onclick="location.href=this.href + OWNER_FACT + '/' + REPO_FACT + '/releases';return false;"><script>document.write(OWNER_FACT)</script></a></td>
-              <td><div id="latest_fact"></div></td>
-              <td><button onclick="update_fw(OWNER_FACT, 0)" style="width: 100px; display:inline-block;">Standard</button>
-              <td><button onclick="update_fw(OWNER_FACT, 1)" style="width: 100px; display:inline-block;">Debug</button>
-            </tr>
-            <tr>
-                <td>Community&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</td>
-              <td>bleeding edge&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</td>
-              <td><a href="https://github.com/"
-                     onclick="location.href=this.href + OWNER_COMM + '/' + REPO_COMM + '/releases';return false;"><script>document.write(OWNER_COMM)</script></a></td>
-              <td><div id="latest_comm"></div></td>
-              <td><button onclick="update_fw(OWNER_COMM, 0)" style="width: 100px; display:inline-block;">Standard</button>
-              <td><button onclick="update_fw(OWNER_COMM, 1)" style="width: 100px; display:inline-block;">Debug</button>
-            </tr>
-          </table>
-          <br>
-          =========================================================================================<br>
-          CUSTOM FLASHING
-          <br><br>
-          Flash one of:<ul>
-              <li>firmware.bin or firmware.signed.bin (to update the firmware);</li>
-              <li>firmware.debug.bin or firmware.debug.signed.bin (if you want to telnet to your SmartEVSE to see debug messages);</li>
-              <li>rfid.txt (if you want to bulk upload allowed NFC tags for the RFID reader);</li>
-          </ul>
-          You should only flash files with those exact names.<br>No need to flash spiffs.bin for versions 3.6.0-RC1 and newer!<br>No need to rename firmware.debug.bin anymore for versions 3.6.0-RC2 and newer!<br>Signed firmware is verified to be original and can be handled by versions 3.6.2 and newer.
-          <br><br><br>NOTE: "Choose file:"  uploads only work with http connections, and will fail with https connections!<br>
+  <body>
+    <header>
+      <div class="hbar">
+        <h1>
+          <img class="logo" src="favicon.ico" alt="" aria-hidden="true">
+          <span>SmartEVSE<span class="hmeta" id="hd-serial" style="font-weight:400"></span><span class="hmeta" id="hd-meta" style="margin-left:10px">&hellip;</span></span>
+        </h1>
+        <span class="spacer"></span>
+        <a class="btn sm" href="/">Back</a>
       </div>
-      <div id="wrapper">
-        <input type="file" id="el1" style="display: none"/>
-        <button id="el2">Choose file...</button>
-        <div id="el3"></div>
+    </header>
+    <div class="wrap">
+      <div class="card" id="card-online">
+        <h2>Online firmware update</h2>
+        <p class="sub" style="margin:0 0 4px">
+          Fetches a release directly from GitHub over the internet. The device reboots when finished (waits until no EV is charging).
+        </p>
+        <div class="rel">
+          <div class="who">
+            <b>Factory</b>
+            <span class="sub">stable &middot; <a id="rel-fact" href="https://github.com/SmartEVSE/SmartEVSE-3/releases" target="_blank" rel="noopener">release notes</a></span>
+          </div>
+          <div class="ver" id="latest_fact">&hellip;</div>
+          <div class="actions">
+            <button class="btn sm pri" id="fw-fact">Standard</button>
+            <button class="btn sm" id="fw-fact-dbg">Debug</button>
+          </div>
+        </div>
+        <div class="rel">
+          <div class="who">
+            <b>Community</b>
+            <span class="sub">bleeding edge &middot; <a id="rel-comm" href="https://github.com/dingo35/SmartEVSE-3.5/releases" target="_blank" rel="noopener">release notes</a></span>
+          </div>
+          <div class="ver" id="latest_comm">&hellip;</div>
+          <div class="actions">
+            <button class="btn sm pri" id="fw-comm">Standard</button>
+            <button class="btn sm" id="fw-comm-dbg">Debug</button>
+          </div>
+        </div>
+        <div class="prog hidden" id="prog"><i id="progbar"></i></div>
+        <div id="status"></div>
+      </div>
+      <div class="card" id="card-manual">
+        <h2>Manual upload</h2>
+        <p class="sub" style="margin:0 0 10px">
+          Flash a file from your computer, exactly named:
+          <b>firmware.bin</b>,
+          <b>firmware.signed.bin</b>,
+          <b>firmware.debug.bin</b>,
+          <b>firmware.debug.signed.bin</b>
+          or
+          <b>rfid.txt</b>
+          (bulk RFID whitelist). No spiffs.bin needed since 3.6.0-RC1; signed files verify as original since 3.6.2.
+        </p>
+        <p class="sub err" style="margin:0 0 10px">
+          Note: file upload only works over
+          <b>http://</b>
+          connections (not https).
+        </p>
+        <input type="file" id="fileInput" class="hidden">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn pri" id="btnFile">Choose file&hellip;</button>
+          <span class="sub" id="fname"></span>
+        </div>
+        <div class="prog hidden" id="mprog"><i id="mprogbar"></i></div>
       </div>
     </div>
-  </body>
+    <div id="toast"></div>
+<script>
+"use strict";
 
-  <script type="module">
-// Octokit.js
-// https://github.com/octokit/core.js#readme
-import { Octokit } from "https://esm.sh/@octokit/core";
-window.loadData=loadData;
+/* Follow the theme selected on index.html (localStorage "sevse-theme",
+   "auto" = no attribute -> OS prefers-color-scheme). No pill here: the
+   theme can only be CHANGED on the main page. */
+(function () {
+  let theme;
+  try { theme = localStorage.getItem("sevse-theme") || "auto"; } catch (e) { theme = "auto"; }
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.setAttribute("data-theme", theme);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "sevse-theme") return;
+    if (e.newValue === "light" || e.newValue === "dark") {
+      document.documentElement.setAttribute("data-theme", e.newValue);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  });
+})();
 
-function loadData() {
-    document.getElementById("version").innerHTML = sessionStorage.getItem("version");
-    getLatestVersion(OWNER_FACT, REPO_FACT, 'latest_fact');
-    getLatestVersion(OWNER_COMM, REPO_COMM, 'latest_comm');
+const OWNER_FACT = "SmartEVSE", REPO_FACT = "SmartEVSE-3";
+const OWNER_COMM = "dingo35", REPO_COMM = "SmartEVSE-3.5";
+const $id = (id) => document.getElementById(id);
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+let toastTimer = 0;
+function toast(msg) {
+  const t = $id("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2500);
 }
+function setStatus(text) { $id("status").innerHTML = text; }
 
-async function getLatestVersion(owner, repo, element) {
-    const octokit = new Octokit({
+
+function loadVersion() {
+  fetch("/settings", { cache: "no-store" })
+    .then((r) => r.json())
+    .then((d) => {
+      $id("hd-serial").textContent = "-" + d.serialnr;
+      $id("hd-meta").textContent = d.version;
     })
-
-    try {
-        const result = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', {
-          owner: owner,
-          repo: repo,
-          headers: {
-            'X-GitHub-Api-Version': '2022-11-28'
-          }
-        })
-
-        //asset_id=result.data.assets.filter(function(entry){ return entry.name==="firmware.signed.bin";})[0].id;
-        //console.log(asset_id);
-        //console.log(JSON.stringify(result.data.assets));
-        document.getElementById(element).innerHTML = result.data.tag_name;
-    } catch (error) {
-        console.error(error.message);
-    }
+    .catch(() => { $id("hd-meta").textContent = "version unknown"; });
 }
 
-// Copyright (c) 2020 Cesanta Software Limited
-// All rights reserved
 
-// When user clicks on a button, trigger file selection dialog
-var button = document.getElementById('el2');
-button.onclick = function(ev) {
-  input.click();
-};
+function ghLatest(owner, repo, elId) {
+  fetch("https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest")
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+    .then((j) => { $id(elId).textContent = j.tag_name; })
+    .catch(() => { $id(elId).textContent = "offline?"; });
+}
 
-// Send a large blob of data chunk by chunk
-var sendFileData = function(name, data, chunkSize) {
-  var sendChunk = function(offset) {
-    var chunk = data.subarray(offset, offset + chunkSize) || '';
-    var opts = {method: 'POST', body: chunk};
-    var url = '/update?offset=' + offset + '&file=' + encodeURIComponent(name) + '&size=' + data.length;
-    var ok;
-    if (offset + chunk.length == data.length) {
-        setStatus('Upload of ' + name + ' finished, will reboot. You can close this page.');
-        window.location.href = "/";
-    }
+
+const UPDATE_START_TIMEOUT_MS = 15000;   
+let updateStartStamp = 0;
+let pollInterval = 0;
+
+function stopProgress() {
+  clearInterval(pollInterval);
+  pollInterval = 0;
+}
+function fetchProgress() {
+  fetch("/autoupdate")
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.progress === -1) {
+        stopProgress();
+        setStatus('<span class="ok">Firmware update completed. Rebooting as soon as no EV is connected.</span>');
+      } else if (d.progress === -2) {
+        stopProgress();
+        setStatus('<span class="err">ERROR: firmware update failed. Check the connection and try again.</span>');
+      } else if (d.size > 0) {
+        const pct = Math.min(100, (d.progress / d.size) * 100);
+        $id("prog").classList.remove("hidden");
+        $id("progbar").style.width = pct + "%";
+        setStatus("Downloading: " + d.progress.toLocaleString() + " / " + d.size.toLocaleString() +
+          " bytes (" + pct.toFixed(0) + "%)");
+      } else if (d.progress === 0) {
+        
+        if (Date.now() - updateStartStamp > UPDATE_START_TIMEOUT_MS) {
+          stopProgress();
+          enableButtons();
+          setStatus('<span class="err">Update did not start. This device only accepts firmware from owners' +
+            ' "' + OWNER_FACT + '" or "' + OWNER_COMM + '", and the release server must be reachable.</span>');
+        } else {
+          setStatus("Connecting to release server&hellip;");
+        }
+      } else {
+        
+        stopProgress();
+        enableButtons();
+      }
+    })
+    .catch(() => {});
+}
+function enableButtons() {
+  ["fw-fact", "fw-fact-dbg", "fw-comm", "fw-comm-dbg"].forEach((id) => ($id(id).disabled = false));
+}
+function updateFw(owner, dbg) {
+  ["fw-fact", "fw-fact-dbg", "fw-comm", "fw-comm-dbg"].forEach((id) => ($id(id).disabled = true));
+  updateStartStamp = Date.now();
+  fetch("/autoupdate?owner=" + owner + "&debug=" + dbg)
+    .then((r) => r.json())
+    .then(() => {
+      setStatus("Starting update&hellip;");
+      $id("prog").classList.remove("hidden");
+      stopProgress();
+      pollInterval = setInterval(fetchProgress, 1000);
+    })
+    .catch(() => {
+      enableButtons();
+      setStatus('<span class="err">Request failed.</span>');
+    });
+}
+$id("fw-fact").onclick = () => updateFw(OWNER_FACT, 0);
+$id("fw-fact-dbg").onclick = () => updateFw(OWNER_FACT, 1);
+$id("fw-comm").onclick = () => updateFw(OWNER_COMM, 0);
+$id("fw-comm-dbg").onclick = () => updateFw(OWNER_COMM, 1);
+
+
+function sendFileData(name, data, chunkSize) {
+  const sendChunk = (offset) => {
+    const chunk = data.subarray(offset, offset + chunkSize);
+    const url = "/update?offset=" + offset + "&file=" + encodeURIComponent(name) + "&size=" + data.length;
+    if (offset + chunk.length >= data.length)
+      setStatus("Upload of " + name + " finished, device reboots. You can close this page.");
     else
-        setStatus('Uploading ' + name + ', bytes ' + offset + '..' + (offset + chunk.length) + ' of ' + data.length);
-    fetch(url, opts)
-        .then(function(res) {
-          if (res.ok && chunk.length > 0) sendChunk(offset + chunk.length);
-          ok = res.ok;
-          return res.text();
-        })
-        .then(function(text) {
-          if (!ok) setStatus('Error: ' + text);
-        });
+      setStatus("Uploading " + name + ", bytes " + offset + ".." + (offset + chunk.length) + " of " + data.length);
+    $id("mprog").classList.remove("hidden");
+    $id("mprogbar").style.width = (offset + chunk.length) / data.length * 100 + "%";
+    fetch(url, { method: "POST", body: chunk })
+      .then((res) => res.text().then((text) => ({ ok: res.ok, text })))
+      .then(({ ok, text }) => {
+        if (!ok) {
+          
+          setStatus('<span class="err">' + esc(text.trim() || ("HTTP error " + ok)) + "</span>");
+          return;
+        }
+        const code = parseInt(text, 10);
+        if (!isNaN(code) && code < 0) {
+          setStatus('<span class="err">Error: device rejected the file (' + code + ").</span>");
+          return;
+        }
+        if (chunk.length > 0) sendChunk(offset + chunk.length);
+      })
+      .catch((e) => setStatus('<span class="err">Upload failed: ' + esc(e.message) + "</span>"));
   };
   sendChunk(0);
-};
-
-// If user selected a file, read it into memory and trigger sendFileData()
-var input = document.getElementById('el1');
-input.onchange = function(ev) {
-  if (!ev.target.files[0]) return;
-  var f = ev.target.files[0], r = new FileReader();
+}
+$id("btnFile").onclick = () => $id("fileInput").click();
+$id("fileInput").onchange = (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  $id("fname").textContent = f.name + " (" + f.size.toLocaleString() + " bytes)";
+  const r = new FileReader();
   r.readAsArrayBuffer(f);
-  r.onload = function() {
-    ev.target.value = '';
+  r.onload = () => {
+    ev.target.value = "";
     sendFileData(f.name, new Uint8Array(r.result), 2048);
   };
 };
-    </script>
+
+loadVersion();
+ghLatest(OWNER_FACT, REPO_FACT, "latest_fact");
+ghLatest(OWNER_COMM, REPO_COMM, "latest_comm");
+</script>
+  </body>
 </html>

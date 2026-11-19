@@ -1,374 +1,261 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Smart EVSE V3 - Power Limit Intervals</title>
-
-    <!-- jQuery Mobile (kept for consistency) -->
-    <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
-    <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
-    <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
-
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-
-    <!-- Your custom styling -->
-    <link href="styling.css" rel="stylesheet">
-
-    <style>
-        .tooltip {
-            position: relative;
-            display: inline-block;
-            border-bottom: 1px dotted black;
-            opacity: unset;
-            font-size: inherit;
-        }
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            width: 220px;
-            background-color: black;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 5px 0;
-            position: absolute;
-            z-index: 1;
-            bottom: 100%;
-            left: 50%;
-            margin-left: -110px;
-            font-size: .875rem;
-        }
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-        }
-        .table th {
-            background-color: #f8f9fa;
-        }
-        .btn-sm {
-            padding: 0.25rem 0.5rem;
-            font-size: 0.875rem;
-        }
-    </style>
-</head>
-<body>
-
-    <div id="wrapper">
-        <div id="content-wrapper" class="d-flex flex-column">
-            <div id="content">
-                <div class="container-fluid">
-
-                    <!-- Header -->
-                    <div style="margin-bottom: 20px;">
-                        <div class="card bg-success text-white shadow">
-                            <div class="card-body">
-                                <h1 class="h3 mb-0 text-white-800">Smart EVSE V3</h1>
-                                <h1 class="h5 mb-0 text-white-800">
-                                    <span id="version-label">Version:</span>
-                                    <span id="version" data-version=""></span>
-                                </h1>
-                                <h1 id="serialnr" class="h5 mb-0 text-white-800">SmartEVSE-</h1>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Capacity Mode Section -->
-                    <div class="row">
-                        <div class="col-lg-12 mb-4">
-                            <div class="card border-left-primary shadow h-100 py-2">
-                                <div class="card-body">Please ONLY enable this setting if you have an electricity provider that has a Capacity Limit Rate.
-                                    This is a rate where if you exceed a certain amount of kW in a certain time period, you will have to pay more.
-                                    This setting lets you limit that Capacity. For this to work, your MainsMeter feed needs to provide energy (kWh) data to the SmartEVSE.
-                                    <h5 class="card-title"><br>Capacity Mode</h5>
-                                    <div class="d-flex align-items-center">
-                                        <select id="capacity_mode" class="form-select">
-                                            <option value="0">Disabled</option>
-                                            <option value="1">Fixed</option>
-                                            <option value="2">Interval</option>
-                                            <option value="3">Flanders</option>
-                                        </select>
-                                    </div>
-                                    <div id="fixedCapacitySection" class="mt-3" style="display: none;">
-                                        <label for="current_max_sum_mains" class="form-label">Max Sum Mains (A)</label>
-                                        <div class="d-flex align-items-center">
-                                            <input type="number" id="current_max_sum_mains" class="form-control" min="10" max="600" step="1" required>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row" id="intervalsContent">
-
-                        <!-- Form to add/edit interval -->
-                        <div class="col-lg-5 mb-4">
-                            <div class="card border-left-primary shadow h-100 py-2">
-                                <div class="card-body">
-                                    <h5 class="card-title">Add / Edit Power Limit Interval</h5>
-                                    <form id="intervalForm">
-                                        <input type="hidden" id="editIndex" value="-1">
-
-                                        <div class="mb-3">
-                                            <label for="start_time" class="form-label tooltip">
-                                                Start Time
-                                                <span class="tooltiptext">Time when this power limit becomes active (last interval continues until next day)</span>
-                                            </label>
-                                            <input type="time" class="form-control" id="start_time" required>
-                                        </div>
-
-                                        <div class="mb-3">
-                                            <label for="power_limit" class="form-label tooltip">
-                                                Max Power (W)
-                                                <span class="tooltiptext">Maximum allowed power from this time until the next interval</span>
-                                            </label>
-                                            <input type="number" class="form-control" id="power_limit" min="0" max="32000" step="100" placeholder="e.g. 6000" required>
-                                        </div>
-
-                                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                            <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display:none;" onclick="cancelEdit()">Cancel</button>
-                                            <button type="submit" class="btn btn-primary" id="saveBtn">Add Interval</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- List of intervals -->
-                        <div class="col-lg-7 mb-4">
-                            <div class="card border-left-primary shadow h-100 py-2">
-                                <div class="card-body">
-                                    <h5 class="card-title">Configured Intervals</h5>
-                                    <div class="table-responsive">
-                                        <table class="table table-hover" id="intervalsTable">
-                                            <thead>
-                                                <tr>
-                                                    <th>Start Time</th>
-                                                    <th>Max Power (W)</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="intervalsBody"></tbody>
-                                        </table>
-                                    </div>
-                                    <div id="noIntervalsMsg" class="text-center py-4 text-muted">
-                                        No intervals defined yet.<br>Use the form on the left to add time-based power limits.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <!-- Bottom actions -->
-                    <div class="row mt-3" id="clearIntervalsSection">
-                        <div class="col text-center">
-                            <a href="index.html" class="btn btn-outline-secondary me-2">Back to Dashboard</a>
-                            <button class="btn btn-outline-danger me-2" onclick="if(confirm('Clear ALL intervals? This cannot be undone.')) clearAllIntervals()">Clear All Intervals</button>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>SmartEVSE - Capacity</title>
+    <link rel="icon" href="favicon.ico">
+<style>
+:root{--bg:#f4f6f9;--bg2:#ffffff;--bg3:#eef1f5;--fg:#171c24;--fg2:#5b6472;--line:#dfe4ea;--acc:#2f7bff;--ok:#1fa971;--err:#e5484d;--chg:#1fa971;--radius:14px;--shadow:0 1px 3px rgba(20,30,50,.08)}[data-theme="dark"]{--bg:#0e1116;--bg2:#161b23;--bg3:#1d242e;--fg:#e8edf4;--fg2:#8b95a5;--line:#28303c;--acc:#4d8dff;--shadow:0 1px 3px rgba(0,0,0,.4)}@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--bg2:#161b23;--bg3:#1d242e;--fg:#e8edf4;--fg2:#8b95a5;--line:#28303c;--acc:#4d8dff;--shadow:0 1px 3px rgba(0,0,0,.4)}}[data-theme="light"]{--bg:#f4f6f9;--bg2:#ffffff;--bg3:#eef1f5;--fg:#171c24;--fg2:#5b6472;--line:#dfe4ea;--acc:#2f7bff;--shadow:0 1px 3px rgba(20,30,50,.08)}*{box-sizing:border-box}html,body{margin:0;padding:0}body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;-webkit-text-size-adjust:100%}a{color:var(--acc);text-decoration:none}.wrap{max-width:1060px;margin:0 auto;padding:12px clamp(10px,3vw,24px) 96px}header{position:sticky;top:0;z-index:10;background:var(--bg2);border-bottom:1px solid var(--line)}.hbar{max-width:1060px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:10px clamp(10px,3vw,24px);flex-wrap:wrap}.hbar h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}.logo{width:22px;height:22px;flex:none;border-radius:5px}.hmeta{color:var(--fg2);font-size:12px}.spacer{flex:1}.hbar .btn.sm{height:28px;padding:0 11px;display:inline-flex;align-items:center}.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:14px}.card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;min-width:0}.card h2{margin:0 0 8px;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--fg2)}.row{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px}.row b{font-weight:600;text-align:right;overflow-wrap:anywhere}.row span{color:var(--fg2)}.span2{grid-column:1/-1}.big{font-size:26px;font-weight:700;line-height:1.1}.sub{color:var(--fg2);font-size:12px}.state-charging{color:var(--chg)}.state-error{color:var(--err)}.modes{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.modes button{flex:1 1 auto;min-width:74px;padding:10px 6px;font-size:14px;font-weight:600;border:1px solid var(--line);border-radius:10px;background:var(--bg3);color:var(--fg);cursor:pointer}.modes button:active{transform:scale(.97)}.modes button.on{background:var(--acc);border-color:var(--acc);color:#fff}fieldset{border:1px solid var(--line);border-radius:10px;margin:10px 0 0;padding:10px}legend{font-size:12px;color:var(--fg2);padding:0 6px}.fields{display:flex;flex-wrap:wrap;gap:10px;align-items:center}label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--fg2)}input[type=text],input[type=number],input[type=password],input[type=datetime-local],input[type=url],input[type=time],select,textarea{background:var(--bg3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:14px;max-width:100%}textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px}.btn{appearance:none;border:1px solid var(--line);background:var(--bg3);color:var(--fg);border-radius:8px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}.btn:active{transform:scale(.97)}.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}.btn.dgr{border-color:var(--err);color:var(--err)}.btn.sm{padding:4px 10px;font-size:13px}.actions{display:flex;flex-wrap:wrap;gap:8px}.section{margin-top:26px;display:flex;align-items:center;gap:10px}.section h2{margin:0;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--fg2)}.section .ln{flex:1;height:1px;background:var(--line)}.hidden{display:none!important}#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:99;max-width:90vw}#toast.show{opacity:.92}.tbl{width:100%;border-collapse:collapse;font-size:14px}.tbl th{background:var(--bg3);color:var(--fg2);text-align:left;padding:7px 9px;font-size:12px;text-transform:uppercase;letter-spacing:.5px}.tbl td{padding:7px 9px;border-top:1px solid var(--line)}.tbl td .actions{justify-content:flex-end}@media (max-width:520px){.big{font-size:21px}.modes button{min-width:0;flex:1 1 30%}}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="hbar">
+        <h1>
+          <img class="logo" src="favicon.ico" alt="" aria-hidden="true">
+          <span>SmartEVSE<span class="hmeta" id="hd-serial" style="font-weight:400"></span><span class="hmeta" id="hd-meta" style="margin-left:10px">&hellip;</span></span>
+        </h1>
+        <span class="spacer"></span>
+        <a class="btn sm" href="/">Back</a>
+      </div>
+    </header>
+    <div class="wrap">
+      <div class="card span2" style="margin-top:14px">
+        <h2>Capacity mode</h2>
+        <p class="sub" style="margin:0 0 8px">
+          Enable
+          <b>only</b>
+          if your electricity provider has a capacity (peak kW) rate: exceeding a set power in a billing period costs more. Requires a Mains meter that feeds kWh data to the SmartEVSE.
+        </p>
+        <div class="fields">
+          <select id="capacity_mode">
+            <option value="0">Disabled</option>
+            <option value="1">Fixed</option>
+            <option value="2">Interval</option>
+            <option value="3">Flanders</option>
+          </select>
         </div>
+        <div class="fields hidden" id="fixedCapacitySection" style="margin-top:10px">
+          <label class="f">Max Sum Mains (A)
+            <input type="number" id="current_max_sum_mains" min="10" max="600" step="1" style="width:90px">
+          </label>
+          <span class="sub">Overall power limit in fixed mode.</span>
+        </div>
+      </div>
+      <div class="hidden" id="intervalsContent">
+        <div class="section">
+          <h2>Power limit intervals</h2>
+          <div class="ln"></div>
+        </div>
+        <div class="grid" style="margin-top:10px">
+          <div class="card">
+            <h2>Add / edit interval</h2>
+            <form id="intervalForm">
+              <input type="hidden" id="editIndex" value="-1">
+              <div class="fields" style="margin-bottom:8px">
+                <label class="f" title="Time when this power limit becomes active (last interval continues until the next day)">Start time
+                  <input type="time" id="start_time" required>
+                </label>
+                <label class="f" title="Maximum allowed power from this time until the next interval">Max power (W)
+                  <input type="number" id="power_limit" min="0" max="32000" step="100" placeholder="e.g. 6000" required>
+                </label>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn hidden" id="cancelEditBtn">Cancel</button>
+                <button type="submit" class="btn pri" id="saveBtn">Add interval</button>
+              </div>
+            </form>
+          </div>
+          <div class="card span2">
+            <h2>Configured intervals</h2>
+            <table class="tbl" id="intervalsTable">
+              <thead>
+                <tr>
+                  <th>Start</th>
+                  <th>Max power</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="intervalsBody"></tbody>
+            </table>
+            <div class="sub hidden" id="noIntervalsMsg" style="padding:10px 0">
+              No intervals defined yet. Add time-based power limits with the form above.
+            </div>
+            <div class="actions" style="margin-top:10px"><button class="btn dgr" id="btnClearAll">Clear all intervals</button></div>
+          </div>
+        </div>
+      </div>
     </div>
+    <div id="toast"></div>
+<script>
+"use strict";
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+/* Follow the theme selected on index.html (localStorage "sevse-theme",
+   "auto" = no attribute -> OS prefers-color-scheme). No pill here: the
+   theme can only be CHANGED on the main page. */
+(function () {
+  let theme;
+  try { theme = localStorage.getItem("sevse-theme") || "auto"; } catch (e) { theme = "auto"; }
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.setAttribute("data-theme", theme);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "sevse-theme") return;
+    if (e.newValue === "light" || e.newValue === "dark") {
+      document.documentElement.setAttribute("data-theme", e.newValue);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  });
+})();
 
-    <script>
-        let intervals = [];
 
-        // Load data from /settings
-        $(document).ready(function() {
-            let endpoint = window.location.origin + '/settings';
+const $ = (id) => document.getElementById(id);
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function toastEl2() { return document.getElementById("toast"); }
+let toastTimer = 0;
+function toast(msg) {
+  const t = toastEl2();
+  if (!t) { alert(msg); return; }
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2500);
+}
 
-            function loadData() {
-                $.ajax({
-                    url: endpoint,
-                    success: function(data) {
-                        $('#version').text(data.version).attr('data-version', data.version);
-                        $('#serialnr').text(data.serialnr);
+function postSettings(params) {
+  return fetch("/settings?" + params.toString(), { method: "POST", cache: "no-store" })
+    .then((r) => r.json())
+    .then((j) => {
+      for (const k in j) if (typeof j[k] === "string" && /not allowed|failed|Can only/i.test(j[k])) { toast(k + ": " + j[k]); return false; }
+      return true;
+    })
+    .catch(() => { toast("Request failed"); return false; });
+}
+function fetchSettings() {
+  return fetch("/settings", { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+}
 
-                        if (data.settings.intervals && Array.isArray(data.settings.intervals)) {
-                            intervals = data.settings.intervals;
-                        } else {
-                            intervals = [];
-                        }
-                        renderTable();
+function renderHeader(d) {
+  if (!d) return;
+  const meta = document.getElementById("hd-meta");
+  if (meta) meta.textContent = d.version;
+  const serial = document.getElementById("hd-serial");
+  if (serial) serial.textContent = "-" + d.serialnr;
+}
+</script>
+<script>
+"use strict";
+let intervals = [];
+let loaded = false;
 
-                        if (data.settings.capacity_mode !== undefined) {
-                            $('#capacity_mode').val(data.settings.capacity_mode).selectmenu('refresh');
-                        }
+function toggleSections() {
+  const mode = $("capacity_mode").value;
+  $("intervalsContent").classList.toggle("hidden", mode !== "2");
+  $("fixedCapacitySection").classList.toggle("hidden", mode !== "1");
+}
 
-                        if (data.settings.current_max_sum_mains !== undefined) {
-                            $('#current_max_sum_mains').val(data.settings.current_max_sum_mains);
-                        }
+function renderTable() {
+  const tbody = $("intervalsBody"), noMsg = $("noIntervalsMsg");
+  tbody.innerHTML = "";
+  noMsg.classList.toggle("hidden", intervals.length > 0);
+  intervals.forEach((iv, index) => {
+    const h = String(Math.floor(iv.start / 60)).padStart(2, "0");
+    const m = String(iv.start % 60).padStart(2, "0");
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + h + ":" + m + "</td>" +
+      "<td>" + iv.power.toLocaleString() + " W</td>" +
+      '<td><div class="actions"><button class="btn sm" data-edit="' + index + '">Edit</button>' +
+      '<button class="btn sm dgr" data-del="' + index + '">Del</button></div></td>';
+    tr.querySelector("[data-edit]").onclick = () => editInterval(index);
+    tr.querySelector("[data-del]").onclick = () => deleteInterval(index);
+    tbody.appendChild(tr);
+  });
+}
 
-                        toggleSections();  // Toggle visibility after loading
-                    },
-                    error: function() {
-                        alert("Failed to load settings from device.");
-                    }
-                });
-            }
+function saveToDevice() {
+  postSettings(new URLSearchParams({ intervals: JSON.stringify(intervals) }))
+    .then((ok) => { if (ok) toast("Intervals saved"); });
+}
 
-            loadData();
-            setInterval(loadData, 30000);
+function addOrUpdateInterval(timeStr, power, editIndex) {
+  const parts = timeStr.split(":").map(Number);
+  if (isNaN(parts[0]) || isNaN(parts[1])) { toast("Select a valid time"); return false; }
+  const startMinutes = parts[0] * 60 + parts[1];
+  if (intervals.some((it, i) => it.start === startMinutes && i !== editIndex)) {
+    toast("An interval already exists at this time");
+    return false;
+  }
+  const entry = { start: startMinutes, power: parseInt(power) };
+  if (editIndex >= 0) intervals[editIndex] = entry; else intervals.push(entry);
+  intervals.sort((a, b) => a.start - b.start);
+  renderTable();
+  saveToDevice();
+  resetForm();
+  return true;
+}
 
-            // Auto-save Capacity Mode on change
-            $('#capacity_mode').on('change', function() {
-                $.post("/settings?capacity_mode=" + $(this).val());
-                toggleSections();
-            });
+function editInterval(index) {
+  const item = intervals[index];
+  $("start_time").value = String(Math.floor(item.start / 60)).padStart(2, "0") + ":" + String(item.start % 60).padStart(2, "0");
+  $("power_limit").value = item.power;
+  $("editIndex").value = index;
+  $("saveBtn").textContent = "Update interval";
+  $("cancelEditBtn").classList.remove("hidden");
+}
 
-            // Auto-save Max Sum Mains on blur
-            $('#current_max_sum_mains').on('change', function() {
-                const val = $(this).val();
-                if (val < 10 || val > 600 || isNaN(val)) {
-                    alert("Value must be between 10 and 600");
-                    return;
-                }
-                //$.post("/settings?current_max_sum_mains=" + val);
-                $.post("/settings?current_max_sum_mains=" + val, function() {
-                }).fail(function() {
-                    alert("Failed to save max sum mains.");
-                });
-            });
-        });
+function deleteInterval(index) {
+  if (!confirm("Delete this interval?")) return;
+  intervals.splice(index, 1);
+  renderTable();
+  saveToDevice();
+}
 
-        function toggleSections() {
-            const mode = $('#capacity_mode').val();
-            $('#intervalsContent').toggle(mode === "2");
-            $('#clearIntervalsSection').toggle(mode === "2");
-            $('#fixedCapacitySection').toggle(mode === "1");
-        }
+function resetForm() {
+  $("intervalForm").reset();
+  $("editIndex").value = -1;
+  $("saveBtn").textContent = "Add interval";
+  $("cancelEditBtn").classList.add("hidden");
+}
 
-        function renderTable() {
-            const tbody = document.getElementById('intervalsBody');
-            const noMsg = document.getElementById('noIntervalsMsg');
-            tbody.innerHTML = '';
+function load() {
+  fetchSettings().then((d) => {
+    loaded = true;
+    renderHeader(d);
+    intervals = (d.settings && Array.isArray(d.settings.intervals)) ? d.settings.intervals : [];
+    renderTable();
+    if (d.settings) {
+      if (d.settings.capacity_mode !== undefined) $("capacity_mode").value = d.settings.capacity_mode;
+      if (d.settings.current_max_sum_mains !== undefined) $("current_max_sum_mains").value = d.settings.current_max_sum_mains;
+    }
+    toggleSections();
+  }).catch(() => toast("Failed to load settings"));
+}
 
-            if (intervals.length === 0) {
-                noMsg.style.display = 'block';
-                return;
-            }
+$("capacity_mode").onchange = (e) => { if (loaded) postSettings(new URLSearchParams({ capacity_mode: e.target.value })); toggleSections(); };
+$("current_max_sum_mains").onchange = (e) => {
+  const v = parseInt(e.target.value);
+  if (isNaN(v) || v < 10 || v > 600) { toast("Value must be between 10 and 600"); load(); return; }
+  postSettings(new URLSearchParams({ current_max_sum_mains: v }));
+};
+$("intervalForm").onsubmit = (e) => {
+  e.preventDefault();
+  addOrUpdateInterval($("start_time").value, $("power_limit").value, parseInt($("editIndex").value));
+};
+$("cancelEditBtn").onclick = resetForm;
+$("btnClearAll").onclick = () => {
+  if (!confirm("Clear ALL intervals? This cannot be undone.")) return;
+  intervals = [];
+  renderTable();
+  saveToDevice();
+};
 
-            noMsg.style.display = 'none';
-
-            intervals.forEach((interval, index) => {
-                const h = Math.floor(interval.start / 60).toString().padStart(2, '0');
-                const m = (interval.start % 60).toString().padStart(2, '0');
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${h}:${m}</td>
-                    <td>${interval.power.toLocaleString()} W</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary" onclick="editInterval(${index})">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteInterval(${index})">Delete</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function saveToDevice() {
-            const payload = {
-                intervals: JSON.stringify(intervals)
-            };
-
-            const query = Object.keys(payload)
-                .map(k => k + "=" + encodeURIComponent(payload[k]))
-                .join("&");
-
-            $.post("/settings?" + query, function() {
-                // Silent success
-            }).fail(function() {
-                alert("Failed to save intervals to device.");
-            });
-        }
-
-        function addOrUpdateInterval(timeStr, power, editIndex = -1) {
-            const [hour, minute] = timeStr.split(':').map(Number);
-            if (isNaN(hour) || isNaN(minute)) {
-                alert("Please select a valid time.");
-                return false;
-            }
-
-            const startMinutes = hour * 60 + minute;
-
-            const duplicate = intervals.some((it, i) => it.start === startMinutes && i !== editIndex);
-            if (duplicate) {
-                alert("An interval already exists at this exact start time.");
-                return false;
-            }
-
-            const entry = { start: startMinutes, power: parseInt(power) };
-
-            if (editIndex >= 0) {
-                intervals[editIndex] = entry;
-            } else {
-                intervals.push(entry);
-            }
-
-            intervals.sort((a, b) => a.start - b.start);
-            renderTable();
-            saveToDevice();
-            resetForm();
-            return true;
-        }
-
-        function editInterval(index) {
-            const item = intervals[index];
-            const h = Math.floor(item.start / 60).toString().padStart(2, '0');
-            const m = (item.start % 60).toString().padStart(2, '0');
-
-            document.getElementById('start_time').value = `${h}:${m}`;
-            document.getElementById('power_limit').value = item.power;
-            document.getElementById('editIndex').value = index;
-            document.getElementById('saveBtn').textContent = "Update Interval";
-            document.getElementById('cancelEditBtn').style.display = 'inline-block';
-        }
-
-        function deleteInterval(index) {
-            if (!confirm("Delete this interval?")) return;
-            intervals.splice(index, 1);
-            renderTable();
-            saveToDevice();
-        }
-
-        function clearAllIntervals() {
-            intervals = [];
-            renderTable();
-            saveToDevice();
-        }
-
-        function resetForm() {
-            document.getElementById('intervalForm').reset();
-            document.getElementById('editIndex').value = -1;
-            document.getElementById('saveBtn').textContent = "Add Interval";
-            document.getElementById('cancelEditBtn').style.display = 'none';
-        }
-
-        document.getElementById('intervalForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const timeStr = document.getElementById('start_time').value;
-            const power   = document.getElementById('power_limit').value;
-
-            if (!timeStr || isNaN(power)) {
-                alert("Please select a time and enter a valid power value.");
-                return;
-            }
-
-            const editIdx = parseInt(document.getElementById('editIndex').value);
-
-            addOrUpdateInterval(timeStr, power, editIdx);
-        });
-
-        document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
-    </script>
-
-</body>
+load();
+</script>
+  </body>
 </html>
