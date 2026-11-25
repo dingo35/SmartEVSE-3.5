@@ -106,6 +106,7 @@
 #define NSR_TX2END      (1 << 3)
 #define NSR_TX1END      (1 << 2)
 #define NSR_LINKST      (1 << 6)    // Link status (1=up)
+#define NSR_RXRDY       (1 << 0)    // RX packet ready in SRAM
 
 #define TCR_TXREQ       (1 << 0)    // TX request
 #define TCR2_RLCP       (1 << 6)    // Retry late collision

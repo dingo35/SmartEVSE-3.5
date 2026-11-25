@@ -2519,7 +2519,7 @@ void ocppInit() {
     //load OCPP library modules: Mongoose WS adapter and Core OCPP library
 
     auto filesystem = MicroOcpp::makeDefaultFilesystemAdapter(
-            MicroOcpp::FilesystemOpt::Use_Mount_FormatOnFail // Enable FS access, mount LittleFS here, format data partition if necessary
+            MicroOcpp::FilesystemOpt::Use // Use the already mounted LittleFS, don't mount or format
             );
 
     OcppWsClient = new MicroOcpp::MOcppMongooseClient(
