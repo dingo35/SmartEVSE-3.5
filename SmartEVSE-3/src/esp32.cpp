@@ -104,6 +104,9 @@ bool setCapacityPeak(int32_t RequestedPeak) {
         MainsMeter.Peak_Period_Power_Month = CapacityMinimumPower;
         LastMonth = CurrentMonth;
     }
+    // In the first quarter of a month the meter can still report the peak of the previous month
+    // (clock difference, publish interval); a real peak of the new month only exists after 00:15.
+    if (t->tm_mday == 1 && t->tm_hour == 0 && t->tm_min < 15) return true;
     if (RequestedPeak > MainsMeter.Peak_Period_Power_Month) {               // only raise, never lower
         MainsMeter.Peak_Period_Power_Month = RequestedPeak;
         _LOG_A("Capacity peak of this month raised to %iW.\n", RequestedPeak);
