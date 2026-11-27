@@ -1688,12 +1688,36 @@ static int countConnections(struct mg_mgr *mgr) {
   return n;
 }
 
+// Mongoose keeps accepted connections open indefinitely, so leaked or
+// half-open ones permanently consume the HTTP budget (only a reboot helped).
+// Stamp each accepted connection in c->data (mongoose uses only its tail) and
+// close it after a period without traffic.
+#define HTTP_IDLE_TIMEOUT_MS 15000
+static void httpConnTouch(struct mg_connection *c) {
+  unsigned long now = millis();
+  memcpy(c->data, &now, sizeof(now));
+}
+static void reapIdleHttpConns(void) {
+  unsigned long now = millis();
+  for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next) {
+    unsigned long last;
+    if (!c->is_accepted || c->is_client || c->is_listening || c->is_websocket || c->is_closing) continue;
+    if (c->pfn_data != NULL) continue;   // static-file transfer in progress
+    memcpy(&last, c->data, sizeof(last));
+    if (now - last > HTTP_IDLE_TIMEOUT_MS) {
+      _LOG_I("Closing idle HTTP connection %lu\n", c->id);
+      c->is_closing = 1;
+    }
+  }
+}
+
 // Connection event handler function
 // indenting lower level two spaces to stay compatible with old StartWebServer
 // We use the same event handler function for HTTP and HTTPS connections
 // fn_data is NULL for plain HTTP, and non-NULL for HTTPS
 static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_ACCEPT) {
+    httpConnTouch(c);
     // Limit concurrent connections to prevent socket exhaustion
     int nconns = countConnections(c->mgr);
     if (nconns > (MAX_HTTP_CONNECTIONS + WS_CONNECTION_RESERVE)) {
@@ -1713,6 +1737,8 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
       struct linger lin = { 1, 0 };
       setsockopt((int) (size_t) c->fd, SOL_SOCKET, SO_LINGER, (const char *) &lin, sizeof(lin));
     }
+  } else if (ev == MG_EV_READ) {
+    httpConnTouch(c);
   } else if (ev == MG_EV_CLOSE) {
     if (c == HttpListener80) {
         _LOG_A("Free HTTP port 80");
@@ -2630,6 +2656,7 @@ void network_loop() {
         if (nw) {
             wifiDriverReload(nw == 2 ? "netwatchdog: link probes dead" : "netwatchdog: dns dead");
         }
+        reapIdleHttpConns();
     }
 
     mg_mgr_poll(&mgr, 100);                                                     // TODO increase this parameter to up to 1000 to make loop() less greedy
