@@ -68,7 +68,12 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
     PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
     ResetKwh = 2;                                                       // if set, reset EV kwh meter at state transition B->C
                                                                         // cleared when charging, reset to 1 when disconnected (state A)
+    Peak_Period_Power_Month = CapacityMinimumPower;                     // monthly capacity peak (W), restored from preferences for the MainsMeter
 }
+
+// Month (1-12) that MainsMeter.Peak_Period_Power_Month belongs to, stored with it in the preferences.
+// 0 = unknown, so it never matches CurrentMonth and the next period starts a new month.
+int8_t LastMonth = 0;
 
 /**
  * Combine Bytes received over modbus
@@ -405,11 +410,10 @@ void Meter::UpdateCapacity() {
     if (LocalTimeSet && now != 0 && Address == MainsMeter.Address) {
         if (CapacityMode == FLANDERS) {
     //Flanders: https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief
-    #define CapacityMinimumPower 2500  // 2.5kW is the minimum billed
+    // CapacityMinimumPower (2.5kW, the minimum billed) is defined in meter.h
     //#define CapacityAutoAdjust 1       // if the power limits are exceeded, you are already paying for the next bracket,
                                        // so you better use it by changing the power limit to the new ceiling
             static time_t LastPeriod = 0;
-            static int8_t LastMonth = 0;
             static int32_t CurrentPeriodStartEnergy = Import_active_energy;
             time_t CurrentPeriod = now / CapacityPeriodSeconds;
             if (CurrentPeriod != LastPeriod) {
@@ -418,22 +422,26 @@ void Meter::UpdateCapacity() {
                 // check if previous period was this months record, and if so, register it
                 LastPeriod = CurrentPeriod;
                 int32_t PreviousPeriodEnergy = Import_active_energy - CurrentPeriodStartEnergy; //Wh
+                if (PreviousPeriodEnergy < 0) PreviousPeriodEnergy = 0;     // energy counter went backwards (meter replaced/reset, or an API meter
+                                                                            // that sent -1 for an unknown energy): would wrap to ~65kW in a uint16_t
                 uint16_t AveragePower = PreviousPeriodEnergy * 3600 / CapacityPeriodSeconds; // average Power use in previous period in W
                 CurrentPeriodStartEnergy = Import_active_energy;
 
                 struct tm t_buf;
                 tm* t = localtime_r(&now, &t_buf);
                 int8_t CurrentMonth = t->tm_mon + 1;  // 1–12
-                if (LastMonth != CurrentMonth) {      // we started a new month
+                if (LastMonth != CurrentMonth) {      // we started a new month (or the stored peak belongs to another month)
                     Peak_Period_Power_Month = CapacityMinimumPower;
+                    LastMonth = CurrentMonth;
                     MaxSumMains = (CapacityMinimumPower - CapacitySafety) / AssumedVoltage;
+                    storeCapacityPeak();
                 } else if (AveragePower > Peak_Period_Power_Month) { //this period is this months record, lets register it
                     Peak_Period_Power_Month = AveragePower;
+                    storeCapacityPeak();
                     //if we upped the peak we should probably adapt MaxSumMains, since we are already paying for it
                     //TODO for now we wait until the next measurement comes in
                 }
                 _LOG_V("Capacity new period has started, average Power was %i, Peak_Period_Power_Month is %i.\n", AveragePower, Peak_Period_Power_Month);
-                LastMonth = CurrentMonth;
             } else {
                 //we are in the middle of a period
                 //calculate time remaining
