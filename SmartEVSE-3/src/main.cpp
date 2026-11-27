@@ -889,9 +889,10 @@ void CalcBalancedCurrent(char mod) {
         }
     }
 
-    // Override current temporary if set
+    // Override current temporary if set, but never above the limits calculated above:
+    // the cable limit (MaxCapacity, socket version) and an OCPP limit must always win.
     if (OverrideCurrent)
-        ChargeCurrent = OverrideCurrent;
+        ChargeCurrent = std::min(ChargeCurrent, OverrideCurrent);
 
     BalancedMax[0] = ChargeCurrent;
                                                                                 // update BalancedMax[0] if the MAX current was adjusted using buttons or CLI
