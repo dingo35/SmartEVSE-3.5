@@ -2105,7 +2105,7 @@ void ModbusRequestLoop() {
                     }
                 }
                 // Request active energy if Circuitmeter is configured
-                if (CircuitMeter.Type && CircuitMeter.Type != EM_API) {     // EM_API is not a modbus device
+                if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD) { // EM_API and EM_HOMEWIZARD are not modbus devices
                     if (energytimer == 15) {
                         _LOG_D("ModbusRequest %u: Request CircuitMeter Import Active Energy Measurement\n", ModbusRequest);
                         requestEnergyMeasurement(CircuitMeter.Type, CircuitMeter.Address, 0);

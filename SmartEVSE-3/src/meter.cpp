@@ -537,18 +537,20 @@ void Meter::setTimeout(uint8_t NewTimeout) {
 // Calls appropriate measurement from response
 void Meter::ResponseToMeasurement(ModBus MB) {
     if (MB.Type == MODBUS_RESPONSE) {
+        // Identify the meter by instance, not by Address: a virtual meter (EM_API /
+        // EM_HOMEWIZARD) may share its unused Address with a real Modbus meter.
         if (MB.Register == EMConfig[Type].IRegister) {
-            if (Address == MainsMeter.Address) {
+            if (this == &MainsMeter) {
                 if (receiveCurrentMeasurement(MB)) {
                     setTimeout(COMM_TIMEOUT);
                 }
                 CalcIsum();
-            } else if (Address == CircuitMeter.Address) {
+            } else if (this == &CircuitMeter) {
                 if (receiveCurrentMeasurement(MB)) {
                     setTimeout(COMM_CIRCTIMEOUT);
                 }
                 CalcImeasured();
-            } else if (Address == EVMeter.Address) {
+            } else {
                 if (receiveCurrentMeasurement(MB)) {
                     setTimeout(COMM_EVTIMEOUT);
                 }
@@ -563,14 +565,14 @@ void Meter::ResponseToMeasurement(ModBus MB) {
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             else {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
-                if (Address == MainsMeter.Address) UpdateCapacity();
+                if (this == &MainsMeter) UpdateCapacity();
             }
             UpdateEnergies();
         } else if (MB.Register == EMConfig[Type].ERegister_Exp) {
             //export active energy
             if (Type == EM_EASTRON3P_INV) {
                 Import_active_energy = receiveEnergyMeasurement(MB.Data);
-                if (Address == MainsMeter.Address) UpdateCapacity();
+                if (this == &MainsMeter) UpdateCapacity();
             } else
                 Export_active_energy = receiveEnergyMeasurement(MB.Data);
             UpdateEnergies();

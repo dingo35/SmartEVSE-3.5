@@ -563,11 +563,11 @@ void HandleModbusResponse(void) {
     switch (MB.Function) {
         case 0x03: // (Read holding register)
         case 0x04: // (Read input register)
-            if (MainsMeter.Type && MainsMeter.Type!=EM_API && MB.Address == MainsMeter.Address) {
+            if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD && MB.Address == MainsMeter.Address) {
                 MainsMeter.ResponseToMeasurement(MB);
-            } else if (CircuitMeter.Type && MB.Address == CircuitMeter.Address) {
+            } else if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD && MB.Address == CircuitMeter.Address) {
                 CircuitMeter.ResponseToMeasurement(MB);
-            } else if (EVMeter.Type && EVMeter.Type != EM_HOMEWIZARD && MB.Address == EVMeter.Address) {
+            } else if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD && MB.Address == EVMeter.Address) {
                 EVMeter.ResponseToMeasurement(MB);
             } else if (LoadBl == 1 && MB.Address > 1 && MB.Address <= NR_EVSES) {
                 // Packet from a Node EVSE, only for Master!
@@ -697,7 +697,7 @@ void ConfigureModbusMode(uint8_t newmode) {
             MBserver.registerWorker(BROADCAST_ADR, ANY_FUNCTION_CODE, &MBbroadcast);
 
             if (EVMeter.Type && EVMeter.Type != EM_API && EVMeter.Type != EM_HOMEWIZARD) MBserver.registerWorker(EVMeter.Address, ANY_FUNCTION_CODE, &MBEVMeterResponse);
-            if (CircuitMeter.Type && CircuitMeter.Type != EM_API) MBserver.registerWorker(CircuitMeter.Address, ANY_FUNCTION_CODE, &MBCircuitMeterResponse);
+            if (CircuitMeter.Type && CircuitMeter.Type != EM_API && CircuitMeter.Type != EM_HOMEWIZARD) MBserver.registerWorker(CircuitMeter.Address, ANY_FUNCTION_CODE, &MBCircuitMeterResponse);
 
             // Start ModbusRTU Node background task
             MBserver.begin(Serial1);
