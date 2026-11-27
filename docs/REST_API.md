@@ -62,6 +62,7 @@ to your curl POST command. -d ''
 &emsp;&emsp;Works only when using NORMAL or SMART mode
 <br>&emsp;&emsp;Desired current multiplied by 10
 <br>&emsp;&emsp;If set to 0, override_current is disabled
+<br>&emsp;&emsp;A value outside MinCurrent..MaxCurrent is clamped to that range; the response returns the value that is used
 
 <br>&emsp;&emsp;Examples:
 <br>&emsp;&emsp;If the desired current is 8.3A the value to be sent is 83
