@@ -34,7 +34,7 @@
 #define EM_FINDER_7E 3
 #define EM_EASTRON3P 4
 #define EM_EASTRON3P_INV 5
-#define EM_ABB 6
+#define EM_ABB_B23 6
 #define EM_SOLAREDGE 7
 #define EM_WAGO 8
 #define EM_API 9
@@ -45,7 +45,8 @@
 #define EM_SCHNEIDER 14
 #define EM_CHINT_3P 15
 #define EM_CARLO_CAVAZZI 16
-#define EM_CHINT_1P 17
+#define EM_ABB_EV3 17
+#define EM_CHINT_1P 117
 #define EM_UNUSED_SLOT4 18
 #define EM_CUSTOM 19
 
