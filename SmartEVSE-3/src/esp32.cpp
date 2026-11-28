@@ -503,9 +503,8 @@ void mqtt_receive_callback(const String topic, const String payload) {
         if (RequestedCurrent == 0) {
             setOverrideCurrent(0);
         } else if (LoadBl < 2 && (Mode == MODE_NORMAL || Mode == MODE_SMART)) { // OverrideCurrent not possible on Slave
-            if (RequestedCurrent >= (MinCurrent * 10) && RequestedCurrent <= (MaxCurrent * 10)) {
-                setOverrideCurrent(RequestedCurrent);
-            }
+            // Clamp to MinCurrent..MaxCurrent instead of silently dropping the value
+            setOverrideCurrent(constrain(RequestedCurrent, MinCurrent * 10, MaxCurrent * 10));
         }
     } else if (topic == MQTTprefix + "/Set/CurrentMaxSumMains" && LoadBl < 2) {
         uint16_t RequestedCurrent = payload.toInt();
@@ -1938,7 +1937,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(Mode == MODE_NORMAL || Mode == MODE_SMART) {
             if(request->hasParam("override_current")) {
                 int current = request->getParam("override_current")->value().toInt();
-                if (LoadBl < 2 && (current == 0 || (current >= ( MinCurrent * 10 ) && current <= ( MaxCurrent * 10 )))) { //OverrideCurrent not possible on Slave
+                if (LoadBl < 2 && current >= 0) {                                   //OverrideCurrent not possible on Slave
+                    // Clamp to MinCurrent..MaxCurrent instead of refusing: a client asking 14A on a 13A
+                    // charger gets 13A (reported back) instead of keeping the previous override.
+                    if (current > 0) current = constrain(current, MinCurrent * 10, MaxCurrent * 10);
                     setOverrideCurrent(current);
                     doc["override_current"] = OverrideCurrent;
                 } else {
